@@ -1,3 +1,5 @@
+"""FastAPI application setup and lifespan management."""
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -16,6 +18,14 @@ settings = Settings()
 
 @asynccontextmanager
 async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
+    """Initialize and clean up application resources.
+
+    Yields
+    ------
+    dict[str, Any]
+        Mapping with initialized ``llm`` instance, Mongo client,
+        context collection names and the Redis vector store.
+    """
     llm = YaLLM()
     embeddings = YaLLMEmbeddings()
 
