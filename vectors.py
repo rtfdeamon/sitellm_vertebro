@@ -47,7 +47,17 @@ class DocumentsParser:
         self.redis_store = RedisVectorStore(embeddings, config)
 
     def parse_document(self, name: str, document_id: str, data: bytes):
-        """Load ``data`` into Redis vector store under ``document_id``."""
+        """Load ``data`` into Redis vector store under ``document_id``.
+
+        Parameters
+        ----------
+        name:
+            Name of the uploaded file used to infer its format.
+        document_id:
+            Unique identifier to store the vectors under.
+        data:
+            Raw file contents to embed.
+        """
         _, file_extension = os.path.splitext(name)
 
         tempfolder = tempfile.gettempdir()

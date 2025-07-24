@@ -19,7 +19,20 @@ llm_router = APIRouter(
 
 @llm_router.post("/ask", response_class=ORJSONResponse, response_model=LLMResponse)
 async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
-    """Return a response from the language model for the given session."""
+    """Return a response from the language model for the given session.
+
+    Parameters
+    ----------
+    request:
+        Incoming request used to access application state.
+    llm_request:
+        Input payload specifying the ``session_id``.
+
+    Returns
+    -------
+    ORJSONResponse
+        JSON response containing the assistant reply under ``text``.
+    """
     mongo_client = request.state.mongo
     context = []
 

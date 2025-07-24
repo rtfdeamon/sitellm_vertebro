@@ -27,7 +27,17 @@ class MongoClient:
         database: str,
         auth_database: str,
     ):
-        """Create asynchronous client and GridFS connection."""
+        """Create asynchronous client and GridFS connection.
+
+        Parameters
+        ----------
+        host, port, username, password:
+            Connection settings for the Mongo instance.
+        database:
+            Main database used by the application.
+        auth_database:
+            Database used for authentication.
+        """
 
         self.url = (
             f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}/{auth_database}"
@@ -38,14 +48,24 @@ class MongoClient:
         self.gridfs = AsyncGridFS(self.db)
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
-        """Return ``True`` if no documents match ``query`` in ``collection``."""
+        """Return ``True`` if no documents match ``query`` in ``collection``.
+
+        This helper allows raising :class:`NotFound` before performing a full
+        query.
+        """
 
         return await self.db[collection].count_documents(query) == 0
 
     async def get_sessions(
         self, collection: str, session_id: str
     ) -> AsyncGenerator[ContextMessage]:
-        """Yield messages for a given ``session_id`` ordered by ``number``."""
+        """Yield messages for a given ``session_id`` ordered by ``number``.
+
+        Raises
+        ------
+        NotFound
+            If the session does not exist.
+        """
         query = {"sessionId": session_id}
 
         if await self.is_query_empty(collection, query):
@@ -59,7 +79,13 @@ class MongoClient:
     async def get_context_preset(
         self, collection: str
     ) -> AsyncGenerator[ContextPreset]:
-        """Yield preset context messages stored in ``collection``."""
+        """Yield preset context messages stored in ``collection``.
+
+        Raises
+        ------
+        NotFound
+            If the collection is empty.
+        """
         query = {}
 
         if await self.is_query_empty(collection, query):
@@ -71,7 +97,13 @@ class MongoClient:
             yield ContextPreset(**message)
 
     async def get_documents(self, collection: str) -> AsyncGenerator[Document]:
-        """Yield document metadata from ``collection``."""
+        """Yield document metadata from ``collection``.
+
+        Raises
+        ------
+        NotFound
+            When no documents are found.
+        """
         query = {}
 
         if await self.is_query_empty(collection, query):
@@ -89,7 +121,13 @@ class MongoClient:
     async def upload_document(
         self, file_name: str, file: bytes, documents_collection: str
     ) -> str:
-        """Upload ``file`` to GridFS and store metadata in ``documents_collection``."""
+        """Upload ``file`` to GridFS and store metadata in ``documents_collection``.
+
+        Returns
+        -------
+        str
+            The generated GridFS ``file_id``.
+        """
         f_id = await self.gridfs.put(file)
         document = Document(name=file_name, description="", fileId=str(f_id))
         await self.db[documents_collection].insert_one(document.model_dump())

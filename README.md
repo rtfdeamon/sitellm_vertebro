@@ -4,6 +4,10 @@ This project exposes a simple API backed by Yandex GPT models using the
 `llama-cpp-python` runtime. Documents are stored in MongoDB/GridFS and their
 embeddings are indexed in Redis.
 
+Before running the application copy `.env.example` to `.env` and fill in the
+connection parameters for MongoDB and Redis. The compose file expects at least
+`MONGO_USERNAME` and `MONGO_PASSWORD` to be set.
+
 ## Requirements
 - gcc or clang
 - cmake
@@ -28,4 +32,18 @@ A Celery worker can be started with:
 
 ```bash
 celery -A worker worker --beat
+```
+
+Alternatively you can start the whole stack using Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+## Testing
+
+Run unit tests with:
+
+```bash
+pytest -q
 ```
