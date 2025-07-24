@@ -1,3 +1,5 @@
+"""FastAPI router with an endpoint for interacting with the LLM."""
+
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import ORJSONResponse
 
@@ -17,6 +19,7 @@ llm_router = APIRouter(
 
 @llm_router.post("/ask", response_class=ORJSONResponse, response_model=LLMResponse)
 async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
+    """Return a response from the language model for the given session."""
     mongo_client = request.state.mongo
     context = []
 

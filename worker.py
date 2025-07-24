@@ -1,3 +1,5 @@
+"""Celery worker tasks for updating the Redis vector store."""
+
 from collections.abc import Generator
 from urllib.parse import quote_plus
 
@@ -27,6 +29,7 @@ celery.conf.beat_schedule = {
 
 
 def update_vector_store():
+    """Parse all documents from MongoDB and update the vector store."""
     vector_store = get_document_parser()
     mongo_client = get_mongo_client()
 
@@ -40,6 +43,7 @@ def update_vector_store():
 def get_documents_sync(
     mongo_client: MongoClient,
 ) -> Generator[tuple[Document, bytes], None]:
+    """Yield documents and their data from GridFS synchronously."""
     for document in mongo_client[settings.mongo.database][
         settings.mongo.documents
     ].find({}, {"_id": False}):
@@ -51,11 +55,13 @@ def get_documents_sync(
 
 
 def get_mongo_client() -> MongoClient:
+    """Return a synchronous MongoDB client."""
     url = f"mongodb://{quote_plus(settings.mongo.username)}:{quote_plus(settings.mongo.password)}@{settings.mongo.host}:{settings.mongo.port}/{settings.mongo.auth}"
     return MongoClient(url)
 
 
 def get_document_parser() -> DocumentsParser:
+    """Construct a ``DocumentsParser`` using YaLLM embeddings."""
     embeddings = YaLLMEmbeddings()
     return DocumentsParser(
         embeddings.get_embeddings_model(),
@@ -70,9 +76,11 @@ def get_document_parser() -> DocumentsParser:
 
 @worker_ready.connect
 def on_startup(*args, **kwargs):
+    """Update the vector store when the worker starts."""
     update_vector_store()
 
 
 @celery.task
 def periodic_update():
+    """Celery beat task that updates the vector store."""
     update_vector_store()

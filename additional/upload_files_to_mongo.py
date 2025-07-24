@@ -1,3 +1,5 @@
+"""Script to upload documents from ``files`` directory to MongoDB."""
+
 import asyncio
 from pathlib import Path
 
@@ -9,6 +11,7 @@ settings = Settings()
 
 
 async def main():
+    """Upload all files from the ``files`` directory into GridFS."""
     mongo_client = MongoClient(
         settings.mongo.host,
         settings.mongo.port,
