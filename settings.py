@@ -1,7 +1,11 @@
+"""Application settings models."""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MongoSettings(BaseSettings):
+    """Settings for MongoDB connection."""
+
     host: str = "localhost"
     port: int = 27017
     username: str | None = None
@@ -16,6 +20,8 @@ class MongoSettings(BaseSettings):
 
 
 class Redis(BaseSettings):
+    """Redis connection parameters."""
+
     host: str = "localhost"
     port: int = 6379
     secure: bool = False
@@ -25,11 +31,15 @@ class Redis(BaseSettings):
 
 
 class CelerySettings(BaseSettings):
+    """Celery broker and result backend configuration."""
+
     broker: str = "redis://localhost:6379"
     result: str = "redis://localhost:6379"
 
 
 class Settings(BaseSettings):
+    """Top level application settings."""
+
     debug: bool = False
 
     mongo: MongoSettings = MongoSettings()
