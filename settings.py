@@ -4,7 +4,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class MongoSettings(BaseSettings):
-    """Settings for MongoDB connection."""
+    """Settings for MongoDB connection.
+
+    Environment variables follow the ``MONGO_`` prefix. For example,
+    ``MONGO_HOST`` and ``MONGO_PORT`` configure the connection host and port.
+    ``MONGO_CONTEXTS`` defines the collection name for conversation contexts.
+    """
 
     host: str = "localhost"
     port: int = 27017
@@ -20,7 +25,11 @@ class MongoSettings(BaseSettings):
 
 
 class Redis(BaseSettings):
-    """Redis connection parameters."""
+    """Redis connection parameters.
+
+    Variables prefixed with ``REDIS_`` configure the vector store backend.
+    Use ``REDIS_PASSWORD`` and ``REDIS_SECURE`` for authentication and TLS.
+    """
 
     host: str = "localhost"
     port: int = 6379
@@ -31,14 +40,23 @@ class Redis(BaseSettings):
 
 
 class CelerySettings(BaseSettings):
-    """Celery broker and result backend configuration."""
+    """Celery broker and result backend configuration.
+
+    The fields read ``CELERY_BROKER`` and ``CELERY_RESULT`` environment
+    variables which are Redis URLs used by the worker and beat services.
+    """
 
     broker: str = "redis://localhost:6379"
     result: str = "redis://localhost:6379"
 
 
 class Settings(BaseSettings):
-    """Top level application settings."""
+    """Top level application settings loaded from ``.env``.
+
+    Nested models use environment prefixes such as ``MONGO_`` and ``REDIS_``.
+    The :class:`pydantic_settings.BaseSettings` machinery automatically reads
+    these variables when the application starts.
+    """
 
     debug: bool = False
 

@@ -1,4 +1,4 @@
-""Script to upload documents from ``files`` directory to MongoDB.
+"""Script to upload documents from ``files`` directory to MongoDB.
 
 The script iterates over all files located in the ``files`` subfolder and
 stores them in GridFS while also creating metadata entries in the ``documents``
