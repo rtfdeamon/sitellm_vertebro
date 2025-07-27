@@ -80,3 +80,4 @@ services:
 volumes:
   mongo_data:
   qdrant_data:
+
