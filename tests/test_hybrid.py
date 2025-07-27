@@ -18,7 +18,6 @@ class FakeDoc(search.Doc):
 
 class FakeQdrant:
     """Mocked Qdrant client returning deterministic results."""
-
     def similarity(self, query, top, method):
         if method == "dense":
             return [FakeDoc("A"), FakeDoc("B"), FakeDoc("C")]
