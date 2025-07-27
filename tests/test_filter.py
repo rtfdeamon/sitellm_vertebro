@@ -1,3 +1,5 @@
+"""Tests for the :mod:`safety.filter` module."""
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -10,10 +12,12 @@ spec.loader.exec_module(safety)
 
 
 def test_safety_check_positive():
+    """Each stopword must trigger ``True`` from :func:`safety_check`."""
     for word in safety.STOPWORDS:
         assert safety.safety_check(f"Текст содержит {word}.")
 
 
 def test_safety_check_negative():
+    """A clean sentence should not be flagged as unsafe."""
     assert not safety.safety_check("Это безопасный текст без запрещенных слов.")
 

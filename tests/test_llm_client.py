@@ -1,3 +1,4 @@
+"""Tests for the asynchronous LLM client."""
 import importlib
 import sys
 import types
@@ -74,6 +75,7 @@ def setup_module(module):
 
 
 def test_generate_success(monkeypatch):
+    """Streaming should yield tokens from successful response."""
     from backend import llm_client
     responses = [FakeResponse(["data: one", "x", "data: two"])]
     session = FakeSession(responses)
@@ -86,6 +88,7 @@ def test_generate_success(monkeypatch):
 
 
 def test_generate_retry(monkeypatch):
+    """Errors trigger retries before succeeding."""
     from backend import llm_client
     responses = [FakeResponse([], status=500), FakeResponse(["data: ok"])]
     session = FakeSession(responses)
@@ -105,6 +108,7 @@ def test_generate_retry(monkeypatch):
 
 
 def test_generate_failure(monkeypatch):
+    """After all retries fail an exception is raised."""
     from backend import llm_client
     responses = [FakeResponse([], status=500)] * 4
     session = FakeSession(responses)

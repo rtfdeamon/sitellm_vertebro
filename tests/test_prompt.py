@@ -1,3 +1,5 @@
+"""Tests for prompt generation utilities."""
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -16,6 +18,7 @@ spec_prompt.loader.exec_module(prompt)
 
 
 def test_build_prompt_basic():
+    """Ensure prompt text selects and formats top documents."""
     long_text = "Sentence. " * 80  # >300 chars
     docs = [
         search.Doc("1", {"text": long_text}, score=0.9),

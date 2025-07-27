@@ -1,3 +1,5 @@
+"""Integration test covering prompt building and LLM output."""
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -30,6 +32,7 @@ spec_llm.loader.exec_module(llm_client)
 
 @pytest.mark.asyncio
 async def test_answer_without_antibiotics(monkeypatch):
+    """Ensure generated answers avoid antibiotics and mention gargling."""
     def fake_search(query: str, k: int = 10):
         return [search.Doc("1", {"text": "Промывайте горло соленой водой."}, score=1.0)]
 

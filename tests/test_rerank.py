@@ -1,3 +1,5 @@
+"""Tests for the cross-encoder reranking logic."""
+
 import importlib.util
 import sys
 import types
@@ -20,6 +22,8 @@ sys.modules[spec_rerank.name] = rerank
 
 
 class FakeCrossEncoder:
+    """Minimal mock of :class:`CrossEncoder` returning predefined scores."""
+
     def __init__(self, scores):
         self.scores = scores
         self.calls = []
@@ -36,6 +40,7 @@ def setup_module(module):
 
 
 def test_rerank_order_and_scores():
+    """Documents should be ordered by descending cross-score."""
     sys.modules["sentence_transformers"].CrossEncoder = lambda name: FakeCrossEncoder([0.1, 0.3, 0.2])
     spec_rerank.loader.exec_module(rerank)
 
@@ -48,6 +53,7 @@ def test_rerank_order_and_scores():
 
 
 def test_rerank_noop_for_small_list():
+    """If ``docs`` length <= top the list is returned unchanged."""
     sys.modules["sentence_transformers"].CrossEncoder = lambda name: FakeCrossEncoder([1])
     spec_rerank.loader.exec_module(rerank)
 
