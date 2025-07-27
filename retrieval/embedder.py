@@ -23,6 +23,7 @@ def get_encoder() -> SentenceTransformer:
 
 @lru_cache(maxsize=128)
 def _encode_cached(text: str) -> np.ndarray:
+    """Return the embedding vector for ``text`` using cached encoder."""
     return get_encoder().encode(text)
 
 

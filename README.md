@@ -47,3 +47,17 @@ Run unit tests with:
 ```bash
 pytest -q
 ```
+
+## Configuration
+
+Key settings are loaded from environment variables or ``.env``:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| ``LLM_URL`` | ``http://localhost:8000`` | vLLM HTTP endpoint used by ``backend.llm_client`` |
+| ``EMB_MODEL_NAME`` | ``sentence-transformers/sbert_large_nlu_ru`` | Embedding model name for the vector store |
+| ``RERANK_MODEL_NAME`` | ``sbert_cross_ru`` | Cross-encoder used for reranking search results |
+| ``REDIS_URL`` | ``redis://localhost:6379/0`` | Redis instance storing cached responses and vectors |
+
+MongoDB and Redis specific variables also use prefixes ``MONGO_`` and
+``REDIS_`` as documented in ``settings.py``.

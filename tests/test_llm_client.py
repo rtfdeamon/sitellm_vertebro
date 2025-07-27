@@ -1,4 +1,5 @@
 """Tests for the asynchronous LLM client."""
+
 import importlib
 import sys
 import types
@@ -64,10 +65,12 @@ class ClientResponseError(Exception):
 
 
 async def _collect(iterator):
+    """Gather all tokens from an async iterator into a list."""
     return [token async for token in iterator]
 
 
 def setup_module(module):
+    """Provide a fake ``aiohttp`` module used by the client."""
     fake_aiohttp = types.ModuleType("aiohttp")
     fake_aiohttp.ClientResponseError = ClientResponseError
     fake_aiohttp.ClientSession = None  # placeholder

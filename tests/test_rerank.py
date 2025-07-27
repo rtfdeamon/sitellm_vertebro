@@ -34,6 +34,7 @@ class FakeCrossEncoder:
 
 
 def setup_module(module):
+    """Prepare fake ``sentence_transformers`` module for tests."""
     fake = types.ModuleType("sentence_transformers")
     fake.CrossEncoder = None  # placeholder
     sys.modules["sentence_transformers"] = fake
