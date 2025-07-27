@@ -1,20 +1,18 @@
-# Base image includes `uv` package manager for deterministic installs
-FROM ghcr.io/astral-sh/uv:debian-slim
 
-WORKDIR app
-# Copy application source
+# Build stage
+FROM python:3.10-slim AS build
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN apt-get update && apt-get install -y g++ gcc libopenblas-dev pkg-config curl \
+    && pip install uv \
+    && uv sync && rm -rf /var/lib/apt/lists/*
 COPY . .
 
-# Install build dependencies required by llama-cpp-python
-RUN apt update && apt install g++ gcc libopenblas-dev pkg-config -y
-# Configure CMake to build CUDA and BLAS support
-ENV CMAKE_ARGS "-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS"
-# Install Python dependencies using uv
-RUN uv sync
-
-
-# The FastAPI application listens on port 8000
+# Runtime stage
+FROM python:3.10-slim
+WORKDIR /app
+COPY --from=build /usr/local /usr/local
+COPY --from=build /app /app
 EXPOSE 8000
-
-# Start the API with uvicorn
+HEALTHCHECK CMD curl -f http://localhost:8000/health || exit 1
 CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0"]

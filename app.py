@@ -7,6 +7,8 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from observability.metrics import MetricsMiddleware, metrics_app
+
 from api import llm_router
 from mongo import MongoClient
 from vectors import DocumentsParser
@@ -64,6 +66,8 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
 
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
+app.add_middleware(MetricsMiddleware)
+app.mount("/metrics", metrics_app)
 app.include_router(
     llm_router,
     prefix="/api/v1",
