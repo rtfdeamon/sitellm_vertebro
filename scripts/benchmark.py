@@ -1,3 +1,5 @@
+"""Measure latency and throughput of the chat endpoint."""
+
 import argparse
 import asyncio
 import json
@@ -8,6 +10,7 @@ import httpx
 
 
 async def _request(client: httpx.AsyncClient, url: str) -> float:
+    """Send a POST request and return latency in milliseconds."""
     start = time.perf_counter()
     resp = await client.post(url, json={"text": "test"})
     resp.raise_for_status()
@@ -15,6 +18,7 @@ async def _request(client: httpx.AsyncClient, url: str) -> float:
 
 
 async def main() -> None:
+    """Run benchmark and print p95 latency and throughput as JSON."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--requests", type=int, default=100)
