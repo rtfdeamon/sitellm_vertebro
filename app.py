@@ -1,9 +1,13 @@
+"""FastAPI application setup and lifespan management."""
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router
 from mongo import MongoClient
@@ -16,6 +20,14 @@ settings = Settings()
 
 @asynccontextmanager
 async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
+    """Initialize and clean up application resources.
+
+    Yields
+    ------
+    dict[str, Any]
+        Mapping with initialized ``llm`` instance, Mongo client,
+        context collection names and the Redis vector store.
+    """
     llm = YaLLM()
     embeddings = YaLLMEmbeddings()
 
@@ -54,6 +66,8 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
 
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
+app.add_middleware(MetricsMiddleware)
+app.mount("/metrics", metrics_app)
 app.include_router(
     llm_router,
     prefix="/api/v1",
