@@ -1,6 +1,7 @@
 """Application settings models."""
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from functools import lru_cache
+from pydantic import AnyUrl, BaseSettings, ConfigDict
 
 
 class MongoSettings(BaseSettings):
@@ -54,16 +55,27 @@ class Settings(BaseSettings):
     """Top level application settings loaded from ``.env``.
 
     Nested models use environment prefixes such as ``MONGO_`` and ``REDIS_``.
-    The :class:`pydantic_settings.BaseSettings` machinery automatically reads
-    these variables when the application starts.
+    The :class:`pydantic.BaseSettings` machinery automatically reads these
+    variables when the application starts.
     """
 
     debug: bool = False
+    llm_url: str = "http://localhost:8000"
+    emb_model_name: str = "sentence-transformers/sbert_large_nlu_ru"
+    rerank_model_name: str = "sbert_cross_ru"
+    redis_url: AnyUrl | str = "redis://localhost:6379/0"
 
     mongo: MongoSettings = MongoSettings()
     celery: CelerySettings = CelerySettings()
     redis: Redis = Redis()
 
-    model_config = SettingsConfigDict(
+    model_config = ConfigDict(
         env_file=".env", env_file_encoding="utf-8", env_nested_delimiter="_"
     )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> "Settings":
+    """Return cached application settings."""
+
+    return Settings()
