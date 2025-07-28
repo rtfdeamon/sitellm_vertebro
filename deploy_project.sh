@@ -71,10 +71,13 @@ QDRANT_URL="http://localhost:6333"
 
 touch .env
 set_var() {
-  if grep -q "^$1=" .env 2>/dev/null; then
-    sed -i "s/^$1=.*/$1=$2/" .env
+  key=$1
+  val=$2
+  esc_val=$(printf '%s' "$val" | sed 's/[\\/&]/\\&/g')
+  if grep -q "^$key=" .env 2>/dev/null; then
+    sed -i.bak "s/^$key=.*/$key=$esc_val/" .env && rm -f .env.bak
   else
-    echo "$1=$2" >> .env
+    echo "$key=$val" >> .env
   fi
 }
 
