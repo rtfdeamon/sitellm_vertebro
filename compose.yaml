@@ -1,5 +1,7 @@
+# Docker Compose stack to run the API, Redis and Mongo locally
 services:
   mongo:
+    # MongoDB stores conversation history and documents
     image: mongo:latest
     restart: unless-stopped
     ports:
@@ -13,12 +15,14 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-smarthelperdb}
 
   redis:
+    # Redis is used for the vector store and Celery broker
     image: redis/redis-stack-server
     restart: unless-stopped
     ports:
       - "6379:6379"
 
   celery_worker:
+    # Processes scheduled tasks that update the vector store
     build:
       context: ./
       dockerfile: Dockerfile
@@ -30,6 +34,7 @@ services:
       - celery_beat
 
   celery_beat:
+    # Scheduler for periodic vector store updates
     build:
       context: ./
       dockerfile: Dockerfile
@@ -40,6 +45,7 @@ services:
       - redis
 
   app:
+    # FastAPI application exposing the LLM endpoints
     build:
       context: ./
       dockerfile: Dockerfile
@@ -50,6 +56,35 @@ services:
     depends_on:
       - redis
       - mongo
+      - qdrant
+      - vllm
+
+  qdrant:
+    image: qdrant/qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  vllm:
+    image: vllm/vllm-openai
+    restart: unless-stopped
+    command: ["--model", "vikhr-gpt-8b-it"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: ["gpu"]
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tg_bot
+    env_file: .env
+    depends_on:
+      - app
 
 volumes:
   mongo_data:
+  qdrant_data:
