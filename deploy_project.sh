@@ -70,29 +70,33 @@ REDIS_URL="redis://:${REDIS_PASS}@localhost:6379/0"
 QDRANT_URL="http://localhost:6333"
 
 touch .env
-set_var() {
-  key=$1
-  val=$2
+update_env_var() {
+  local key="$1" val="$2"
+  local esc_val
   esc_val=$(printf '%s' "$val" | sed 's/[\\/&]/\\&/g')
-  if grep -q "^$key=" .env 2>/dev/null; then
-    sed -i.bak "s/^$key=.*/$key=$esc_val/" .env && rm -f .env.bak
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    if sed --version >/dev/null 2>&1; then
+      sed -i -e "s/^${key}=.*/${key}=${esc_val}/" .env
+    else
+      sed -i '' -e "s/^${key}=.*/${key}=${esc_val}/" .env
+    fi
   else
-    echo "$key=$val" >> .env
+    echo "${key}=${val}" >> .env
   fi
 }
 
-set_var DOMAIN "$DOMAIN"
-set_var LLM_URL "$LLM_URL"
-set_var REDIS_URL "$REDIS_URL"
-set_var QDRANT_URL "$QDRANT_URL"
-set_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
-set_var RERANK_MODEL_NAME "sbert_cross_ru"
-set_var MONGO_HOST "mongo"
-set_var MONGO_PORT "27017"
-set_var MONGO_USERNAME "$MONGO_USERNAME"
-set_var MONGO_PASSWORD "$MONGO_PASSWORD"
-set_var USE_GPU "$USE_GPU"
-set_var GRAFANA_PASSWORD "$GRAFANA_PASS"
+update_env_var DOMAIN "$DOMAIN"
+update_env_var LLM_URL "$LLM_URL"
+update_env_var REDIS_URL "$REDIS_URL"
+update_env_var QDRANT_URL "$QDRANT_URL"
+update_env_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
+update_env_var RERANK_MODEL_NAME "sbert_cross_ru"
+update_env_var MONGO_HOST "mongo"
+update_env_var MONGO_PORT "27017"
+update_env_var MONGO_USERNAME "$MONGO_USERNAME"
+update_env_var MONGO_PASSWORD "$MONGO_PASSWORD"
+update_env_var USE_GPU "$USE_GPU"
+update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
 
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
@@ -102,7 +106,6 @@ printf '[✓] Environment saved to deploy-backups/%s.tar.gz\n' "$timestamp"
 if ! grep -q "^MONGO_PASSWORD=" .env; then
   echo '[!] MONGO_PASSWORD not found in .env'; exit 1
 fi
-
 if ! grep -q "^MONGO_USERNAME=" .env; then
   echo '[!] MONGO_USERNAME not found in .env'; exit 1
 fi
