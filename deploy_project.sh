@@ -102,6 +102,7 @@ printf '[✓] Environment saved to deploy-backups/%s.tar.gz\n' "$timestamp"
 if ! grep -q "^MONGO_PASSWORD=" .env; then
   echo '[!] MONGO_PASSWORD not found in .env'; exit 1
 fi
+
 if ! grep -q "^MONGO_USERNAME=" .env; then
   echo '[!] MONGO_USERNAME not found in .env'; exit 1
 fi
