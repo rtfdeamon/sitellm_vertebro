@@ -1,4 +1,10 @@
 # Docker Compose stack to run the API, Redis and Mongo locally
+x-health-retry: &health
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 20s
+
 services:
   mongo:
     # MongoDB stores conversation history and documents
@@ -13,6 +19,14 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?Should be set}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Should be set}
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-smarthelperdb}
+    healthcheck:
+      <<: *health
+      test:
+        - CMD
+        - mongo
+        - --eval
+        - db.adminCommand('ping')
+        - --quiet
 
   redis:
     # Redis is used for the vector store and Celery broker
@@ -20,6 +34,12 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    healthcheck:
+      <<: *health
+      test:
+        - CMD
+        - redis-cli
+        - ping
 
   celery_worker:
     # Processes scheduled tasks that update the vector store
@@ -30,8 +50,19 @@ services:
     env_file: .env
     command: ["uv", "run", "celery", "-A", "worker", "worker", "--loglevel=INFO"]
     depends_on:
-      - redis
-      - celery_beat
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+      celery_beat:
+        condition: service_started
+    healthcheck:
+      <<: *health
+      test:
+        - CMD-SHELL
+        - test $(pgrep -fc celery) -ge 1
 
   celery_beat:
     # Scheduler for periodic vector store updates
@@ -54,10 +85,14 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - redis
-      - mongo
-      - qdrant
-      - vllm
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
 
   qdrant:
     image: qdrant/qdrant
@@ -68,14 +103,27 @@ services:
       - qdrant_data:/qdrant/storage
 
   vllm:
-    image: vllm/vllm-openai
-    restart: unless-stopped
-    command: ["--model", "vikhr-gpt-8b-it"]
+    image: ghcr.io/vikhrai/vikhr-gpt-8b-it:latest
+    runtime: nvidia
+    environment:
+      - HF_HOME=/data/hf
+      - MODEL_PATH=/models/vikhr-gpt-8b-it
+      - PORT=8080
+    volumes:
+      - ./models:/models:ro
+      - ./data/hf:/data/hf
+    ports:
+      - "8080:8080"
     deploy:
       resources:
         reservations:
           devices:
-            - capabilities: ["gpu"]
+            - capabilities: [gpu]
+    healthcheck:
+      <<: *health
+      test:
+        - CMD-SHELL
+        - curl -sf http://localhost:8080/health || exit 1
 
   telegram-bot:
     build:
