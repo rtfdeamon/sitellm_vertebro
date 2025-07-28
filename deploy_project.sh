@@ -43,6 +43,13 @@ printf '[+] Enable GPU? [y/N]: '
 read ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
 
+printf '[+] Mongo root password [auto-generate if empty]: '
+read MONGO_PASSWORD
+if [ -z "$MONGO_PASSWORD" ]; then
+  MONGO_PASSWORD=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | head -c16)
+fi
+export MONGO_PASSWORD
+
 REDIS_PASS=$(openssl rand -hex 8)
 QDRANT_PASS=$(openssl rand -hex 8)
 GRAFANA_PASS=$(openssl rand -hex 8)
@@ -57,6 +64,7 @@ REDIS_URL=$REDIS_URL
 QDRANT_URL=$QDRANT_URL
 EMB_MODEL_NAME=sentence-transformers/sbert_large_nlu_ru
 RERANK_MODEL_NAME=sbert_cross_ru
+MONGO_PASSWORD=$MONGO_PASSWORD
 GRAFANA_PASSWORD=$GRAFANA_PASS
 ENV
 
@@ -64,6 +72,10 @@ timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
 tar -czf "deploy-backups/${timestamp}.tar.gz" .env compose.yaml
 printf '[✓] Environment saved to deploy-backups/%s.tar.gz\n' "$timestamp"
+
+if ! grep -q "^MONGO_PASSWORD=" .env; then
+  echo '[!] MONGO_PASSWORD not found in .env'; exit 1
+fi
 
 printf '[+] Starting containers...\n'
 PROFILE=""
