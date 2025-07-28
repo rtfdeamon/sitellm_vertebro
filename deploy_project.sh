@@ -1,4 +1,15 @@
 #!/usr/bin/env bash
+
+# ---------------------------------------------------------------------------
+# deploy_project.sh — One-shot bootstrap script for sitellm_vertebro
+# ---------------------------------------------------------------------------
+# Collects configuration, writes ``.env``, builds and runs Docker containers,
+# performs an initial crawl and schedules a nightly crawl via systemd.
+#
+# Usage:
+#   chmod +x deploy_project.sh && ./deploy_project.sh
+# ---------------------------------------------------------------------------
+
 set -euo pipefail
 
 printf '[+] Checking requirements...\n'

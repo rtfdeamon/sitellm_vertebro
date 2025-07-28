@@ -61,3 +61,21 @@ Key settings are loaded from environment variables or ``.env``:
 
 MongoDB and Redis specific variables also use prefixes ``MONGO_`` and
 ``REDIS_`` as documented in ``settings.py``.
+
+## Telegram Bot Usage
+
+The optional Telegram bot can be started with Docker Compose. Set the
+following variables in ``.env``:
+
+* ``TG_BOT_TOKEN`` – bot token from BotFather.
+* ``TG_API_URL`` – URL of the backend chat API (usually ``http://api:8000/api/chat``).
+* ``SUPPORT_GROUP_ID`` – identifier of the operator group.
+
+Then run:
+
+```bash
+docker compose up -d telegram
+```
+
+The bot supports the ``/operator`` command to switch a user into operator mode
+and ``/end`` to return to the LLM.

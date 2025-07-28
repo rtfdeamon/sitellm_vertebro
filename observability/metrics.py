@@ -18,6 +18,7 @@ class MetricsMiddleware:
     """Record Prometheus metrics for each request."""
 
     async def __call__(self, request: Request, call_next):
+        """Measure latency and increment counters for ``request``."""
         start = time.perf_counter()
         response = await call_next(request)
         duration = (time.perf_counter() - start) * 1000

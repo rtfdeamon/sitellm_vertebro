@@ -17,6 +17,8 @@ _POOL: ConnectionPool | None = None
 
 
 def _get_redis() -> Redis:
+    """Return a Redis client using a global connection pool."""
+
     global _POOL
     if _POOL is None:
         _POOL = ConnectionPool.from_url(str(get_settings().redis_url))
