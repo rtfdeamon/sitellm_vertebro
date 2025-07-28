@@ -3,10 +3,14 @@
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import ORJSONResponse, StreamingResponse
 
+import structlog
+
 from backend import llm_client
 
 from models import LLMResponse, LLMRequest, RoleEnum
 from mongo import NotFound
+
+logger = structlog.get_logger(__name__)
 
 llm_router = APIRouter(
     prefix="/llm",
@@ -36,6 +40,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         JSON response containing the assistant reply under ``text``.
     """
     mongo_client = request.state.mongo
+    logger.info("ask", session=str(llm_request.session_id))
     context = []
 
     try:
@@ -61,6 +66,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         )
 
     response = await request.state.llm.respond(context, preset)
+    logger.info("llm answered", length=len(response[-1].text))
 
     return ORJSONResponse(LLMResponse(text=response[-1].text).model_dump())
 
@@ -69,9 +75,12 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 async def chat(question: str) -> StreamingResponse:
     """Stream tokens from the language model using SSE."""
 
+    logger.info("chat", question=question)
+
     async def event_stream():
         async for token in llm_client.generate(question):
             yield f"data: {token}\n\n"
 
     headers = {"X-Model-Name": "vikhr-gpt-8b-it"}
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+    response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+    return response

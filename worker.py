@@ -9,6 +9,7 @@ from pymongo import MongoClient
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
+import structlog
 
 from models import Document
 from settings import Settings
@@ -16,6 +17,8 @@ from vectors import DocumentsParser
 from yallm import YaLLMEmbeddings
 
 settings = Settings()
+
+logger = structlog.get_logger(__name__)
 
 celery = Celery(__name__)
 celery.conf.broker_url = settings.celery.broker
@@ -34,11 +37,12 @@ def update_vector_store():
     All existing documents stored in GridFS are retrieved and parsed
     into vectors which are then added to Redis.
     """
+    logger.info("updating vector store")
     vector_store = get_document_parser()
     mongo_client = get_mongo_client()
 
     for document, data in get_documents_sync(mongo_client):
-        print(document.name)
+        logger.info("embedding", document=document.name)
         vector_store.parse_document(document.name, document.fileId, data)
 
     del vector_store
@@ -75,6 +79,7 @@ def get_mongo_client() -> MongoClient:
     Uses credentials from :class:`Settings` to construct the connection URL.
     """
     url = f"mongodb://{quote_plus(settings.mongo.username)}:{quote_plus(settings.mongo.password)}@{settings.mongo.host}:{settings.mongo.port}/{settings.mongo.auth}"
+    logger.info("connect mongo", host=settings.mongo.host)
     return MongoClient(url)
 
 
@@ -84,6 +89,7 @@ def get_document_parser() -> DocumentsParser:
     The parser is configured to store vectors in Redis using the parameters
     defined in :class:`Settings`.
     """
+    logger.info("create document parser")
     embeddings = YaLLMEmbeddings()
     return DocumentsParser(
         embeddings.get_embeddings_model(),
@@ -103,6 +109,7 @@ def on_startup(*args, **kwargs):
     This hook ensures that the latest documents are embedded as soon as the
     worker process is ready to accept tasks.
     """
+    logger.info("worker ready")
     update_vector_store()
 
 
@@ -113,4 +120,5 @@ def periodic_update():
     Scheduled twice a week via ``beat_schedule`` to keep the Redis index in
     sync with MongoDB.
     """
+    logger.info("scheduled update")
     update_vector_store()

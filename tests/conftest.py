@@ -1,7 +1,18 @@
 """Pytest configuration with basic asyncio support."""
 
 import asyncio
+import types
+import sys
 import pytest
+
+# Provide a minimal ``structlog`` stub for modules that expect it.
+fake_structlog = types.ModuleType("structlog")
+fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
+    info=lambda *args, **kw: None,
+    warning=lambda *args, **kw: None,
+    debug=lambda *args, **kw: None,
+)
+sys.modules.setdefault("structlog", fake_structlog)
 
 
 def pytest_configure(config):

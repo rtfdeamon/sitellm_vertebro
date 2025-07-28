@@ -77,7 +77,14 @@ services:
           devices:
             - capabilities: ["gpu"]
 
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tg_bot
+    env_file: .env
+    depends_on:
+      - app
+
 volumes:
   mongo_data:
   qdrant_data:
-

@@ -7,6 +7,9 @@ import time
 from typing import List
 
 import httpx
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 async def _request(client: httpx.AsyncClient, url: str) -> float:
@@ -25,6 +28,7 @@ async def main() -> None:
     args = parser.parse_args()
 
     url = "http://localhost:8000/api/chat"
+    logger.info("benchmark", requests=args.requests, concurrency=args.concurrency)
     latencies: List[float] = []
     sem = asyncio.Semaphore(args.concurrency)
 
@@ -43,7 +47,9 @@ async def main() -> None:
     p95 = sorted_lat[idx] if sorted_lat else 0.0
     throughput = args.requests / duration if duration else 0.0
 
-    print(json.dumps({"p95_ms": round(p95), "throughput": round(throughput, 2)}))
+    result = {"p95_ms": round(p95), "throughput": round(throughput, 2)}
+    logger.info("result", **result)
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":

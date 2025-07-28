@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import List
 
 from retrieval.search import Doc
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 _MAX_CHARS = 300
@@ -36,7 +39,9 @@ def build_prompt(question: str, docs: List[Doc]) -> str:
         frag = _truncate(text)
         fragments.append(f"Документ #{idx}:\n{frag}")
     docs_block = "\n\n".join(fragments)
-    return (
+    prompt = (
         "SYSTEM: Используй ТОЛЬКО данные ниже для ответа."\
         f"\n\n{docs_block}\n\nQUESTION: {question}\nANSWER:"
     )
+    logger.debug("prompt built", length=len(prompt))
+    return prompt

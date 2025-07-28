@@ -9,6 +9,9 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables.config import ensure_config
 from langchain_core.messages.utils import convert_to_messages
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 YaGPTResponse = namedtuple("YaGPTResponse", ["speaker", "text"])
@@ -17,6 +20,7 @@ YaGPTResponse = namedtuple("YaGPTResponse", ["speaker", "text"])
 class YaLLM:
     """Asynchronous wrapper around ``LlamaCpp`` for text generation."""
     def __init__(self):
+        logger.info("download model")
         hf_hub_download(
             "yandex/YandexGPT-5-Lite-8B-instruct-GGUF",
             "YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf",
@@ -30,6 +34,7 @@ class YaLLM:
             verbose=False,
             n_batch=512,
         )
+        logger.info("model ready")
 
     async def respond(
         self, session: list[dict[str, str]], starting_prompt: list[dict[str, str]]
@@ -70,12 +75,14 @@ class YaLLM:
             text = response.text[position + len(ai_answer_start) - 1 :]
             processed.append(YaGPTResponse(speaker, text))
 
+        logger.info("generated", count=len(processed))
         return processed
 
 
 class YaLLMEmbeddings:
     """Provide embeddings model compatible with ``langchain``."""
     def __init__(self):
+        logger.info("download embeddings model")
         hf_hub_download(
             "yandex/YandexGPT-5-Lite-8B-instruct-GGUF",
             "YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf",
@@ -95,4 +102,5 @@ class YaLLMEmbeddings:
         This model can be passed directly to ``langchain`` vector stores.
         """
 
+        logger.info("embeddings ready")
         return self.embeddings

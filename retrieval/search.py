@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import List, Dict
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass
@@ -22,6 +25,7 @@ qdrant = None  # type: ignore
 def hybrid_search(query: str, k: int = 10) -> List[Doc]:
     """Return top ``k`` documents ranked by RRF."""
 
+    logger.info("hybrid search", query=query)
     dense_scores = qdrant.similarity(query, top=50, method="dense")
     bm25_scores = qdrant.similarity(query, top=50, method="bm25")
 
@@ -37,4 +41,5 @@ def hybrid_search(query: str, k: int = 10) -> List[Doc]:
         item.score += 1 / (rrf_const + rank)
 
     docs = sorted(results.values(), key=lambda d: d.score, reverse=True)
+    logger.info("hybrid search done", returned=len(docs))
     return docs[:k]
