@@ -1,127 +1,93 @@
-"""Tests for the asynchronous LLM client."""
-
+import asyncio
+import types
 import importlib
 import sys
-import types
-import asyncio
-import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-
-class FakeStream:
-    def __init__(self, lines):
-        self._lines = list(lines)
-
-    def __aiter__(self):
-        return self
-
-    async def __anext__(self):
-        if not self._lines:
-            raise StopAsyncIteration
-        return self._lines.pop(0).encode()
+import pytest
 
 
-class FakeResponse:
-    def __init__(self, lines, status=200):
-        self.lines = lines
-        self.status = status
-        self.content = FakeStream(lines)
+class DummyStreamer:
+    def __init__(self):
+        self._queue = []
 
-    async def __aenter__(self):
-        return self
+    def put(self, token):
+        self._queue.append(token)
 
-    async def __aexit__(self, exc_type, exc, tb):
-        pass
+    def __iter__(self):
+        while self._queue:
+            yield self._queue.pop(0)
 
-    def raise_for_status(self):
-        if self.status >= 400:
-            raise ClientResponseError(status=self.status, request_info=None, history=None)
-
-
-class FakeSession:
-    def __init__(self, responses):
-        self.responses = list(responses)
-        self.calls = []
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        pass
-
-    def post(self, url, json):
-        self.calls.append((url, json))
-        return self.responses.pop(0)
+    async def __aiter__(self):
+        for token in list(self._queue):
+            yield token
 
 
-class ClientResponseError(Exception):
-    def __init__(self, status=500, request_info=None, history=None):
-        self.status = status
-        self.request_info = request_info
-        self.history = history
-        super().__init__("error")
+class DummyModel:
+    def __init__(self, tokens, fail_times=0):
+        self.tokens = list(tokens)
+        self.fail_times = fail_times
+        self.calls = 0
+
+    def generate(self, **kwargs):
+        if self.calls < self.fail_times:
+            self.calls += 1
+            raise RuntimeError("fail")
+        streamer = kwargs["streamer"]
+        for t in self.tokens:
+            streamer.put(t)
 
 
-async def _collect(iterator):
-    """Gather all tokens from an async iterator into a list."""
-    return [token async for token in iterator]
+class DummyTokenizer:
+    def __call__(self, text, return_tensors=None):
+        return {}
 
 
-def setup_module(module):
-    """Provide a fake ``aiohttp`` module used by the client."""
-    fake_aiohttp = types.ModuleType("aiohttp")
-    fake_aiohttp.ClientResponseError = ClientResponseError
-    fake_aiohttp.ClientSession = None  # placeholder
-    sys.modules["aiohttp"] = fake_aiohttp
+async def _async_collect(it):
+    return [token async for token in it]
+
+
+def _collect(it):
+    return asyncio.run(_async_collect(it))
+
+
+def _setup(monkeypatch, model, fails=0):
+    from backend import llm_client
+    importlib.reload(llm_client)
+    monkeypatch.setattr(llm_client, "_tokenizer", DummyTokenizer())
+    monkeypatch.setattr(llm_client, "_model", model)
+    counter = {"n": 0}
+
+    def fake_load():
+        if counter["n"] < fails:
+            counter["n"] += 1
+            raise RuntimeError("fail")
+
+    monkeypatch.setattr(llm_client, "_load", fake_load)
+    monkeypatch.setattr(
+        llm_client, "TextIteratorStreamer", lambda *a, **k: DummyStreamer()
+    )
+    return llm_client
 
 
 def test_generate_success(monkeypatch):
-    """Streaming should yield tokens from successful response."""
-    from backend import llm_client
-    responses = [FakeResponse(["data: one", "x", "data: two"])]
-    session = FakeSession(responses)
-    sys.modules["aiohttp"].ClientSession = lambda: session
-    importlib.reload(llm_client)
-
-    result = asyncio.run(_collect(llm_client.generate("hi")))
-    assert result == ["one", "two"]
-    assert session.calls == [("http://localhost:8000", {"prompt": "hi", "stream": True})]
+    model = DummyModel(["a", "b"])
+    llm_client = _setup(monkeypatch, model)
+    tokens = _collect(llm_client.generate("hi"))
+    assert tokens == ["a", "b"]
 
 
 def test_generate_retry(monkeypatch):
-    """Errors trigger retries before succeeding."""
-    from backend import llm_client
-    responses = [FakeResponse([], status=500), FakeResponse(["data: ok"])]
-    session = FakeSession(responses)
-    sys.modules["aiohttp"].ClientSession = lambda: session
-    importlib.reload(llm_client)
-
-    sleeps = []
-
-    async def fake_sleep(t):
-        sleeps.append(t)
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-
-    result = asyncio.run(_collect(llm_client.generate("hi")))
-    assert result == ["ok"]
-    assert len(session.calls) == 2
-    assert sleeps == [0.5]
+    model = DummyModel(["ok"])
+    llm_client = _setup(monkeypatch, model, fails=1)
+    tokens = _collect(llm_client.generate("hi"))
+    assert tokens == ["ok"]
 
 
 def test_generate_failure(monkeypatch):
-    """After all retries fail an exception is raised."""
-    from backend import llm_client
-    responses = [FakeResponse([], status=500)] * 4
-    session = FakeSession(responses)
-    sys.modules["aiohttp"].ClientSession = lambda: session
-    importlib.reload(llm_client)
-
-    async def fake_sleep(t):
-        pass
-    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
-
-    with pytest.raises(ClientResponseError):
-        asyncio.run(_collect(llm_client.generate("hi")))
-    assert len(session.calls) == 4
+    model = DummyModel(["x"], fail_times=4)
+    llm_client = _setup(monkeypatch, model, fails=4)
+    with pytest.raises(RuntimeError):
+        _collect(llm_client.generate("hi"))

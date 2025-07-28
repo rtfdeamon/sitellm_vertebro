@@ -1,5 +1,5 @@
 # Docker Compose stack to run the API, Redis and Mongo locally
-x-health-retry: &health
+x-health: &health_defaults
   interval: 30s
   timeout: 5s
   retries: 3
@@ -20,7 +20,7 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Should be set}
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-smarthelperdb}
     healthcheck:
-      <<: *health
+      <<: *health_defaults
       test:
         - CMD
         - mongo
@@ -35,7 +35,7 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      <<: *health
+      <<: *health_defaults
       test:
         - CMD
         - redis-cli
@@ -59,7 +59,7 @@ services:
       celery_beat:
         condition: service_started
     healthcheck:
-      <<: *health
+      <<: *health_defaults
       test:
         - CMD-SHELL
         - test $(pgrep -fc celery) -ge 1
@@ -93,6 +93,13 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_started
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD
+        - curl
+        - -fs
+        - http://localhost:8000/health
 
   qdrant:
     image: qdrant/qdrant
@@ -120,7 +127,7 @@ services:
           devices:
             - capabilities: [gpu]
     healthcheck:
-      <<: *health
+      <<: *health_defaults
       test:
         - CMD-SHELL
         - curl -sf http://localhost:8080/health || exit 1

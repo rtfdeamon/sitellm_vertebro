@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     emb_model_name: str = "sentence-transformers/sbert_large_nlu_ru"
     rerank_model_name: str = "sbert_cross_ru"
     redis_url: AnyUrl | str = "redis://localhost:6379/0"
+    use_gpu: bool = False
 
     mongo: MongoSettings = MongoSettings()
     celery: CelerySettings = CelerySettings()

@@ -29,6 +29,13 @@ fake_types = types.ModuleType("aiogram.types")
 fake_types.Message = type("Message", (), {"__init__": lambda self, **k: None})
 sys.modules["aiogram.types"] = fake_types
 
+pkg = types.ModuleType("tg_bot")
+pkg.__path__ = [str(Path(__file__).resolve().parents[2] / "tg_bot")]
+sys.modules["tg_bot"] = pkg
+fake_client = types.ModuleType("tg_bot.client")
+fake_client.rag_answer = lambda text: "ok"
+sys.modules["tg_bot.client"] = fake_client
+
 module_path = Path(__file__).resolve().parents[2] / "tg_bot" / "bot.py"
 spec = importlib.util.spec_from_file_location("tg_bot.bot", module_path)
 bot_mod = importlib.util.module_from_spec(spec)

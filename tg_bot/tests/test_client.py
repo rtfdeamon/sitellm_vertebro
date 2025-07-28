@@ -30,6 +30,10 @@ fake_config.get_settings = lambda: types.SimpleNamespace(
 )
 sys.modules["tg_bot.config"] = fake_config
 
+pkg = types.ModuleType("tg_bot")
+pkg.__path__ = [str(Path(__file__).resolve().parents[2] / "tg_bot")]
+sys.modules["tg_bot"] = pkg
+
 fake_safety = types.ModuleType("safety")
 fake_safety.safety_check = lambda text: False
 sys.modules["safety"] = fake_safety

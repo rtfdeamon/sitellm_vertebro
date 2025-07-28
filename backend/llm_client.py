@@ -4,42 +4,75 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 from collections.abc import AsyncIterator
 
-import aiohttp
+try:  # optional heavy deps
+    import torch
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        TextIteratorStreamer,
+    )
+except Exception:  # pragma: no cover - missing deep learning deps
+    torch = None
+    AutoModelForCausalLM = AutoTokenizer = TextIteratorStreamer = None
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+_tokenizer: AutoTokenizer | None = None
+_model: AutoModelForCausalLM | None = None
+
+USE_GPU = os.getenv("USE_GPU", "false").lower() == "true"
+DEVICE = "cuda" if USE_GPU and torch and torch.cuda.is_available() else "cpu"
+MODEL_NAME = os.getenv("LLM_MODEL", "distilgpt2")
+
+
+def _load() -> None:
+    """Load model and tokenizer if not yet initialized."""
+
+    global _tokenizer, _model
+    if _model is not None:
+        return
+    if AutoModelForCausalLM is None:
+        raise RuntimeError("transformers not installed")
+    logger.info("load_model", model=MODEL_NAME, device=DEVICE)
+    _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    _model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+    if torch:
+        _model = _model.to(DEVICE)
+
 
 async def generate(prompt: str) -> AsyncIterator[str]:
-    """Stream model output for ``prompt`` using Server-Sent Events.
-
-    The LLM URL is taken from the ``LLM_URL`` environment variable or defaults
-    to ``http://localhost:8000``. The request body is ``{"prompt": prompt,
-    "stream": true}``. Tokens are yielded for each ``data:`` line in the
-    response. Up to four attempts are made with exponential backoff between
-    0.5 and 4 seconds.
-    """
-
-    url = os.getenv("LLM_URL", "http://localhost:8000")
-    payload = {"prompt": prompt, "stream": True}
+    """Yield tokens from a local model using transformers streaming."""
 
     delay = 0.5
     for attempt in range(4):
         try:
-            logger.info("request", attempt=attempt + 1)
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as response:
-                    response.raise_for_status()
-                    async for raw in response.content:
-                        line = raw.decode().strip()
-                        if line.startswith("data:"):
-                            yield line[5:].strip()
-                    logger.info("success", attempt=attempt + 1)
-                    return
+            await asyncio.to_thread(_load)
+            streamer = TextIteratorStreamer(_tokenizer, skip_prompt=True)
+            inputs = _tokenizer(prompt, return_tensors="pt")
+            if torch:
+                inputs = inputs.to(DEVICE)
+
+            thread = threading.Thread(
+                target=_model.generate,
+                kwargs={
+                    **inputs,
+                    "max_new_tokens": 128,
+                    "streamer": streamer,
+                },
+            )
+            thread.start()
+            for token in streamer:
+                yield token
+                await asyncio.sleep(0)
+            thread.join()
+            logger.info("success", attempt=attempt + 1)
+            return
         except Exception as exc:
-            logger.warning("request failed", attempt=attempt + 1, error=str(exc))
+            logger.warning("generate failed", attempt=attempt + 1, error=str(exc))
             if attempt == 3:
                 raise
             await asyncio.sleep(delay)
