@@ -1,3 +1,10 @@
+"""Script to upload documents from ``files`` directory to MongoDB.
+
+The script iterates over all files located in the ``files`` subfolder and
+stores them in GridFS while also creating metadata entries in the ``documents``
+collection.
+"""
+
 import asyncio
 from pathlib import Path
 
@@ -9,6 +16,12 @@ settings = Settings()
 
 
 async def main():
+    """Upload all files from the ``files`` directory into GridFS.
+
+    A single ``MongoClient`` is created using settings from :class:`Settings`.
+    Every file is read in binary mode and passed to
+    :func:`mongo.MongoClient.upload_document`.
+    """
     mongo_client = MongoClient(
         settings.mongo.host,
         settings.mongo.port,

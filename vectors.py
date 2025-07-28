@@ -1,3 +1,5 @@
+"""Utilities for parsing documents and storing vectors in Redis."""
+
 import os
 import tempfile
 from pathlib import Path
@@ -11,6 +13,7 @@ from redis import Redis
 
 
 class DocumentsParser:
+    """Parse documents and store embeddings in a Redis vector store."""
     def __init__(
         self,
         embeddings: Embeddings,
@@ -21,6 +24,7 @@ class DocumentsParser:
         redis_password: str = None,
         redis_secure: bool = False,
     ):
+        """Create a vector store in Redis and ensure index exists."""
         url = f"redis{'s' if redis_secure else ''}://{':' + redis_password + '@' if redis_password else ''}{redis_host}:{redis_port}/{redis_db}"
         self.embeddings = embeddings
 
@@ -43,6 +47,17 @@ class DocumentsParser:
         self.redis_store = RedisVectorStore(embeddings, config)
 
     def parse_document(self, name: str, document_id: str, data: bytes):
+        """Load ``data`` into Redis vector store under ``document_id``.
+
+        Parameters
+        ----------
+        name:
+            Name of the uploaded file used to infer its format.
+        document_id:
+            Unique identifier to store the vectors under.
+        data:
+            Raw file contents to embed.
+        """
         _, file_extension = os.path.splitext(name)
 
         tempfolder = tempfile.gettempdir()
