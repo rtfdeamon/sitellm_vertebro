@@ -43,12 +43,24 @@ printf '[+] Enable GPU? [y/N]: '
 read ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
 
+printf '[+] Mongo root username [root]: '
+read MONGO_USERNAME
+MONGO_USERNAME=${MONGO_USERNAME:-root}
+export MONGO_USERNAME
+
 printf '[+] Mongo root password [auto-generate if empty]: '
 read MONGO_PASSWORD
 if [ -z "$MONGO_PASSWORD" ]; then
   MONGO_PASSWORD=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | head -c16)
 fi
 export MONGO_PASSWORD
+
+# GPU flag to boolean
+if [ "$ENABLE_GPU" = "y" ] || [ "$ENABLE_GPU" = "Y" ]; then
+  USE_GPU=true
+else
+  USE_GPU=false
+fi
 
 REDIS_PASS=$(openssl rand -hex 8)
 QDRANT_PASS=$(openssl rand -hex 8)
@@ -57,16 +69,27 @@ GRAFANA_PASS=$(openssl rand -hex 8)
 REDIS_URL="redis://:${REDIS_PASS}@localhost:6379/0"
 QDRANT_URL="http://localhost:6333"
 
-cat > .env <<ENV
-DOMAIN=$DOMAIN
-LLM_URL=$LLM_URL
-REDIS_URL=$REDIS_URL
-QDRANT_URL=$QDRANT_URL
-EMB_MODEL_NAME=sentence-transformers/sbert_large_nlu_ru
-RERANK_MODEL_NAME=sbert_cross_ru
-MONGO_PASSWORD=$MONGO_PASSWORD
-GRAFANA_PASSWORD=$GRAFANA_PASS
-ENV
+touch .env
+set_var() {
+  if grep -q "^$1=" .env 2>/dev/null; then
+    sed -i "s/^$1=.*/$1=$2/" .env
+  else
+    echo "$1=$2" >> .env
+  fi
+}
+
+set_var DOMAIN "$DOMAIN"
+set_var LLM_URL "$LLM_URL"
+set_var REDIS_URL "$REDIS_URL"
+set_var QDRANT_URL "$QDRANT_URL"
+set_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
+set_var RERANK_MODEL_NAME "sbert_cross_ru"
+set_var MONGO_HOST "mongo"
+set_var MONGO_PORT "27017"
+set_var MONGO_USERNAME "$MONGO_USERNAME"
+set_var MONGO_PASSWORD "$MONGO_PASSWORD"
+set_var USE_GPU "$USE_GPU"
+set_var GRAFANA_PASSWORD "$GRAFANA_PASS"
 
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
@@ -77,17 +100,21 @@ if ! grep -q "^MONGO_PASSWORD=" .env; then
   echo '[!] MONGO_PASSWORD not found in .env'; exit 1
 fi
 
-printf '[+] Starting containers...\n'
-PROFILE=""
-if [ "${ENABLE_GPU}" = "y" ] || [ "${ENABLE_GPU}" = "Y" ]; then
-  PROFILE="--profile gpu"
+if ! grep -q "^MONGO_USERNAME=" .env; then
+  echo '[!] MONGO_USERNAME not found in .env'; exit 1
 fi
 
-docker compose up -d --build $PROFILE
+printf '[+] Starting containers...\n'
+PROFILE_ARGS=""
+if [ "$USE_GPU" = true ]; then
+  PROFILE_ARGS="--profile gpu"
+fi
+
+docker compose $PROFILE_ARGS up -d --build
 printf '[✓] Containers running\n'
 
 printf '[+] Initial crawl...\n'
-docker compose exec api python crawler/run_crawl.py --domain "$DOMAIN" --max-depth 2 --max-pages 500
+docker compose exec app python crawler/run_crawl.py --domain "$DOMAIN" --max-depth 2 --max-pages 500
 printf '[✓] Initial crawl done\n'
 
 SERVICE=/etc/systemd/system/crawl.service
@@ -99,7 +126,7 @@ Description=Daily crawl job
 [Service]
 Type=oneshot
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/docker compose exec api python crawler/run_crawl.py --domain $DOMAIN --max-depth 2 --max-pages 500
+ExecStart=/usr/bin/docker compose exec app python crawler/run_crawl.py --domain $DOMAIN --max-depth 2 --max-pages 500
 EOF_SERVICE
 
 sudo tee "$TIMER" >/dev/null <<EOF_TIMER
