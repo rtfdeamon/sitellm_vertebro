@@ -1,3 +1,5 @@
+"""Wrappers around LlamaCpp for Yandex GPT models."""
+
 from collections import namedtuple
 
 from huggingface_hub import hf_hub_download
@@ -7,13 +9,18 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables.config import ensure_config
 from langchain_core.messages.utils import convert_to_messages
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 YaGPTResponse = namedtuple("YaGPTResponse", ["speaker", "text"])
 
 
 class YaLLM:
+    """Asynchronous wrapper around ``LlamaCpp`` for text generation."""
     def __init__(self):
+        logger.info("download model")
         hf_hub_download(
             "yandex/YandexGPT-5-Lite-8B-instruct-GGUF",
             "YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf",
@@ -27,10 +34,25 @@ class YaLLM:
             verbose=False,
             n_batch=512,
         )
+        logger.info("model ready")
 
     async def respond(
         self, session: list[dict[str, str]], starting_prompt: list[dict[str, str]]
     ) -> list[YaGPTResponse]:
+        """Generate a response for ``session`` using ``starting_prompt``.
+
+        Parameters
+        ----------
+        session:
+            Conversation history sent to the model.
+        starting_prompt:
+            Initial system messages prepended to ``session``.
+
+        Returns
+        -------
+        list[YaGPTResponse]
+            Processed model output wrapped in ``YaGPTResponse`` named tuples.
+        """
         session = convert_to_messages(starting_prompt + session)
         config = ensure_config(None)
 
@@ -53,11 +75,14 @@ class YaLLM:
             text = response.text[position + len(ai_answer_start) - 1 :]
             processed.append(YaGPTResponse(speaker, text))
 
+        logger.info("generated", count=len(processed))
         return processed
 
 
 class YaLLMEmbeddings:
+    """Provide embeddings model compatible with ``langchain``."""
     def __init__(self):
+        logger.info("download embeddings model")
         hf_hub_download(
             "yandex/YandexGPT-5-Lite-8B-instruct-GGUF",
             "YandexGPT-5-Lite-8B-instruct-Q4_K_M.gguf",
@@ -72,4 +97,10 @@ class YaLLMEmbeddings:
         )
 
     def get_embeddings_model(self) -> Embeddings:
+        """Return the underlying embeddings implementation.
+
+        This model can be passed directly to ``langchain`` vector stores.
+        """
+
+        logger.info("embeddings ready")
         return self.embeddings
