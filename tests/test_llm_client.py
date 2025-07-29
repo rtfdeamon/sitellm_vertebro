@@ -1,3 +1,5 @@
+"""Unit tests for the async LLM client module."""
+
 import asyncio
 import types
 import importlib
