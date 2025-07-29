@@ -56,10 +56,10 @@ services:
         condition: service_healthy
       mongo:
         condition: service_healthy
-      vllm:
-        condition: service_healthy
       celery_beat:
         condition: service_started
+    volumes:
+      - ./data/hf:/root/.cache/huggingface
     healthcheck:
       <<: *health_defaults
       test:
@@ -88,12 +88,12 @@ services:
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/hf:/root/.cache/huggingface
     depends_on:
       redis:
         condition: service_healthy
       mongo:
-        condition: service_healthy
-      vllm:
         condition: service_healthy
       qdrant:
         condition: service_started
@@ -113,28 +113,6 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
-  vllm:
-    image: ghcr.io/vikhrai/vikhr-gpt-8b-it:latest
-    runtime: nvidia
-    environment:
-      - HF_HOME=/data/hf
-      - MODEL_PATH=/models/vikhr-gpt-8b-it
-      - PORT=8080
-    volumes:
-      - ./models:/models:ro
-      - ./data/hf:/data/hf
-    ports:
-      - "8080:8080"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
-    healthcheck:
-      <<: *health_defaults
-      test:
-        - CMD-SHELL
-        - curl -sf http://localhost:8080/health || exit 1
 
   telegram-bot:
     build:

@@ -36,12 +36,12 @@ else
   read DOMAIN
 fi
 
-printf '[+] LLM_URL [http://localhost:8000]: '
-read LLM_URL
-LLM_URL=${LLM_URL:-http://localhost:8000}
 printf '[+] Enable GPU? [y/N]: '
 read ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
+printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
+read LLM_MODEL
+LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
 
 printf '[+] Mongo root username [root]: '
 read MONGO_USERNAME
@@ -86,7 +86,7 @@ update_env_var() {
 }
 
 update_env_var DOMAIN "$DOMAIN"
-update_env_var LLM_URL "$LLM_URL"
+update_env_var LLM_MODEL "$LLM_MODEL"
 update_env_var REDIS_URL "$REDIS_URL"
 update_env_var QDRANT_URL "$QDRANT_URL"
 update_env_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
@@ -111,13 +111,32 @@ if ! grep -q "^MONGO_USERNAME=" .env; then
 fi
 
 printf '[+] Starting containers...\n'
-PROFILE_ARGS=""
 if [ "$USE_GPU" = true ]; then
-  PROFILE_ARGS="--profile gpu"
+  echo '[+] Starting project in GPU mode'
+else
+  echo '[+] Starting project in CPU mode'
 fi
 
-docker compose $PROFILE_ARGS up -d --build
+docker compose up -d --build
 printf '[✓] Containers running\n'
+
+if [ -d "./knowledge_base" ]; then
+  printf '[+] Uploading knowledge base...\n'
+  docker compose exec app python additional/upload_files_to_mongo.py
+  printf '[+] Indexing documents...\n'
+  docker compose exec celery_worker python - <<'PY'
+from worker import update_vector_store
+update_vector_store()
+PY
+  printf '[✓] Knowledge base indexed\n'
+fi
+
+printf '[+] Waiting for API health check...\n'
+if curl -sf http://localhost:8000/health >/dev/null; then
+  echo '[✓] API is healthy'
+else
+  echo '[!] API health check failed'
+fi
 
 printf '[+] Initial crawl...\n'
 docker compose exec app python crawler/run_crawl.py --domain "$DOMAIN" --max-depth 2 --max-pages 500

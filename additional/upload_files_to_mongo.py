@@ -1,8 +1,8 @@
-"""Script to upload documents from ``files`` directory to MongoDB.
+"""Script to upload documents from the ``knowledge_base`` directory to MongoDB.
 
-The script iterates over all files located in the ``files`` subfolder and
-stores them in GridFS while also creating metadata entries in the ``documents``
-collection.
+The script iterates over all files located in the ``knowledge_base`` folder
+and stores them in GridFS while also creating metadata entries in the
+``documents`` collection.
 """
 
 import asyncio
@@ -16,7 +16,7 @@ settings = Settings()
 
 
 async def main():
-    """Upload all files from the ``files`` directory into GridFS.
+    """Upload all files from the ``knowledge_base`` directory into GridFS.
 
     A single ``MongoClient`` is created using settings from :class:`Settings`.
     Every file is read in binary mode and passed to
@@ -31,7 +31,10 @@ async def main():
         settings.mongo.auth,
     )
 
-    for file in (Path(__file__).parent / "files").iterdir():
+    base = Path(__file__).parent.parent / "knowledge_base"
+    if not base.is_dir():
+        return
+    for file in base.iterdir():
         with file.open("rb") as f:
             await mongo_client.upload_document(
                 file.name, f.read(), settings.mongo.documents

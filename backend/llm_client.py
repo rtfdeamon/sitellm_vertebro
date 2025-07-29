@@ -17,16 +17,19 @@ try:  # optional heavy deps
 except Exception:  # pragma: no cover - missing deep learning deps
     torch = None
     AutoModelForCausalLM = AutoTokenizer = TextIteratorStreamer = None
+from settings import Settings
 import structlog
 
 logger = structlog.get_logger(__name__)
 
+settings = Settings()
+
 _tokenizer: AutoTokenizer | None = None
 _model: AutoModelForCausalLM | None = None
 
-USE_GPU = os.getenv("USE_GPU", "false").lower() == "true"
+USE_GPU = settings.use_gpu
 DEVICE = "cuda" if USE_GPU and torch and torch.cuda.is_available() else "cpu"
-MODEL_NAME = os.getenv("LLM_MODEL", "distilgpt2")
+MODEL_NAME = settings.llm_model
 
 
 def _load() -> None:

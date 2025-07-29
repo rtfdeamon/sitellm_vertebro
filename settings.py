@@ -65,6 +65,7 @@ class Settings(BaseSettings):
     rerank_model_name: str = "sbert_cross_ru"
     redis_url: AnyUrl | str = "redis://localhost:6379/0"
     use_gpu: bool = False
+    llm_model: str = "distilgpt2"
 
     mongo: MongoSettings = MongoSettings()
     celery: CelerySettings = CelerySettings()
