@@ -30,8 +30,10 @@ services:
 
   redis:
     # Redis is used for the vector store and Celery broker
-    image: redis/redis-stack-server
+    image: bitnami/redis:7.0
     restart: unless-stopped
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - "6379:6379"
     healthcheck:
