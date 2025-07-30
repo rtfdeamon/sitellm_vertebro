@@ -79,3 +79,13 @@ docker compose up -d telegram
 
 The bot supports the ``/operator`` command to switch a user into operator mode
 and ``/end`` to return to the LLM.
+
+## Project Structure
+
+```
+backend/      - application logic and FastAPI router
+retrieval/    - search utilities and embedding models
+tg_bot/       - optional Telegram bot implementation
+observability/ - Prometheus metrics setup
+scripts/      - helper scripts like benchmark and crawler
+``` 
