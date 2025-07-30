@@ -19,7 +19,9 @@ YaGPTResponse = namedtuple("YaGPTResponse", ["speaker", "text"])
 
 class YaLLM:
     """Asynchronous wrapper around ``LlamaCpp`` for text generation."""
-    def __init__(self):
+
+    def __init__(self) -> None:
+        """Download the model and prepare the ``LlamaCpp`` instance."""
         logger.info("download model")
         hf_hub_download(
             "yandex/YandexGPT-5-Lite-8B-instruct-GGUF",
@@ -81,7 +83,9 @@ class YaLLM:
 
 class YaLLMEmbeddings:
     """Provide embeddings model compatible with ``langchain``."""
-    def __init__(self):
+
+    def __init__(self) -> None:
+        """Download the embeddings model and initialize the wrapper."""
         logger.info("download embeddings model")
         hf_hub_download(
             "yandex/YandexGPT-5-Lite-8B-instruct-GGUF",
