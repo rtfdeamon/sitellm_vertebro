@@ -16,11 +16,17 @@ fake_redis.Redis = object
 sys.modules["redis.asyncio"] = fake_redis
 fake_settings = types.ModuleType("settings")
 fake_settings.get_settings = lambda: types.SimpleNamespace(redis_url="redis://")
+old_settings = sys.modules.get("settings")
 sys.modules["settings"] = fake_settings
 spec.loader.exec_module(cache)
+if old_settings is None:
+    del sys.modules["settings"]
+else:
+    sys.modules["settings"] = old_settings
 
 
 class FakeRedis:
+    """Minimal in-memory Redis replacement used in tests."""
     def __init__(self):
         self.store = {}
 

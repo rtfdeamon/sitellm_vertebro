@@ -1,15 +1,6 @@
-FROM python:3.10-slim AS build
+FROM python:3.10-slim
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN apt-get update && apt-get install -y gcc g++ \
-    && pip install uv \
-    && uv sync && rm -rf /var/lib/apt/lists/*
-
-FROM python:3.10-slim
-ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
-WORKDIR /app
-COPY --from=build /usr/local /usr/local
-RUN pip install torch==2.3.1+cpu torchvision==0.18.1+cpu
-
+RUN apt-get update && apt-get install -y gcc g++ && pip install uv && uv sync && rm -rf /var/lib/apt/lists/*
 COPY tg_bot ./tg_bot
 CMD ["python", "-m", "tg_bot.run"]

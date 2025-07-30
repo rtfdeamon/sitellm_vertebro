@@ -52,6 +52,7 @@ spec.loader.exec_module(bot_mod)
 
 
 class FakeMessage:
+    """Capture messages sent by handlers during tests."""
     def __init__(self, text="hi"):
         self.text = text
         self.sent = []

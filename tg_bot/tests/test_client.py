@@ -42,6 +42,7 @@ spec.loader.exec_module(client)
 
 
 class FakeStream:
+    """Yield predefined lines and support context manager API."""
     def __init__(self, lines, status=200):
         self.lines = lines
         self.status = status
@@ -62,6 +63,7 @@ class FakeStream:
 
 
 class FakeClient:
+    """Return ``FakeStream`` objects for ``stream`` calls."""
     def __init__(self, streams):
         self.streams = list(streams)
         self.calls = []

@@ -6,6 +6,22 @@ from pathlib import Path
 import types
 import pytest
 
+fake_pydantic = types.ModuleType("pydantic")
+fake_pydantic.AnyUrl = str
+fake_pydantic.BaseSettings = object
+fake_pydantic.ConfigDict = dict
+sys.modules.setdefault("pydantic", fake_pydantic)
+
+fake_structlog = types.ModuleType("structlog")
+fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
+    info=lambda *x, **y: None,
+    warning=lambda *x, **y: None,
+    debug=lambda *x, **y: None,
+)
+sys.modules.setdefault("structlog", fake_structlog)
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 module_search = Path(__file__).resolve().parents[1] / "retrieval" / "search.py"
 spec_search = importlib.util.spec_from_file_location("retrieval.search", module_search)
 search = importlib.util.module_from_spec(spec_search)
