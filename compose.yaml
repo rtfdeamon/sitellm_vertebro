@@ -1,5 +1,13 @@
+# Docker Compose stack to run the API, Redis and Mongo locally
+x-health: &health_defaults
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 20s
+
 services:
   mongo:
+    # MongoDB stores conversation history and documents
     image: mongo:latest
     restart: unless-stopped
     ports:
@@ -11,25 +19,57 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?Should be set}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Should be set}
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-smarthelperdb}
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD
+        - mongo
+        - --eval
+        - db.adminCommand('ping')
+        - --quiet
 
   redis:
-    image: redis/redis-stack-server
+    # Redis is used for the vector store and Celery broker
+    image: bitnami/redis:7.0
     restart: unless-stopped
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
     ports:
       - "6379:6379"
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD
+        - redis-cli
+        - ping
 
   celery_worker:
+    # Processes scheduled tasks that update the vector store
     build:
       context: ./
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
     command: ["uv", "run", "celery", "-A", "worker", "worker", "--loglevel=INFO"]
     depends_on:
-      - redis
-      - celery_beat
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      celery_beat:
+        condition: service_started
+    volumes:
+      - ./data/hf:/root/.cache/huggingface
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - test $(pgrep -fc celery) -ge 1
 
   celery_beat:
+    # Scheduler for periodic vector store updates
     build:
       context: ./
       dockerfile: Dockerfile
@@ -40,16 +80,50 @@ services:
       - redis
 
   app:
+    # FastAPI application exposing the LLM endpoints
     build:
       context: ./
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
+    environment:
+      MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
     ports:
       - "8000:8000"
+    volumes:
+      - ./data/hf:/root/.cache/huggingface
     depends_on:
-      - redis
-      - mongo
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD
+        - curl
+        - -fs
+        - http://localhost:8000/health
+
+  qdrant:
+    image: qdrant/qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tg_bot
+    env_file: .env
+    depends_on:
+      - app
 
 volumes:
   mongo_data:
+  qdrant_data:
