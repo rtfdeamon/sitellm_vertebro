@@ -10,5 +10,6 @@ ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 WORKDIR /app
 COPY --from=build /usr/local /usr/local
 RUN pip install torch==2.3.1+cpu torchvision==0.18.1+cpu
+
 COPY tg_bot ./tg_bot
 CMD ["python", "-m", "tg_bot.run"]
