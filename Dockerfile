@@ -4,6 +4,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN apt-get update && apt-get install -y g++ gcc libopenblas-dev pkg-config curl \
     && pip install uv \
+    && pip install torch==2.0.1+cpu -f https://download.pytorch.org/whl/cpu/torch_stable.html \
     && uv sync && rm -rf /var/lib/apt/lists/*
 COPY . .
 
