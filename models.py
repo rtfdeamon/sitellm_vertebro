@@ -1,3 +1,5 @@
+"""Pydantic models used throughout the application."""
+
 from enum import StrEnum
 from uuid import UUID
 
@@ -5,6 +7,8 @@ from pydantic import BaseModel, Field, ConfigDict
 
 
 class LLMRequest(BaseModel):
+    """Model for a request to the language model."""
+
     session_id: UUID = Field(alias="sessionId")
 
     model_config = ConfigDict(
@@ -17,6 +21,8 @@ class LLMRequest(BaseModel):
 
 
 class LLMResponse(BaseModel):
+    """Response returned by the language model."""
+
     text: str
 
     model_config = ConfigDict(
@@ -29,11 +35,15 @@ class LLMResponse(BaseModel):
 
 
 class RoleEnum(StrEnum):
+    """Role of the participant in a conversation."""
+
     assistant = "assistant"
     user = "user"
 
 
 class ContextMessage(BaseModel):
+    """Single message stored in a conversation session."""
+
     session_id: UUID = Field(alias="sessionId")
     text: str
     role: RoleEnum
@@ -52,6 +62,8 @@ class ContextMessage(BaseModel):
 
 
 class ContextPreset(BaseModel):
+    """Default prompt shown to the LLM before conversation starts."""
+
     text: str
     role: RoleEnum
     number: int = Field(ge=0)
@@ -68,6 +80,8 @@ class ContextPreset(BaseModel):
 
 
 class Document(BaseModel):
+    """Metadata about a document stored in MongoDB/GridFS."""
+
     name: str
     description: str
     fileId: str

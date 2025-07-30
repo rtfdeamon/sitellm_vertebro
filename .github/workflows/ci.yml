@@ -1,0 +1,32 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv pip install --system -e .[dev]
+      - name: Run tests
+        run: pytest -q
+      - name: Benchmark
+        run: |
+          python scripts/benchmark.py --requests 50 > bench.json
+          python - <<'PY'
+import json, sys
+with open('bench.json') as f:
+    data=json.load(f)
+if data['p95_ms'] > 4000:
+    sys.exit(1)
+PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench
+          path: bench.json
