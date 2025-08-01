@@ -1,12 +1,40 @@
-FROM ghcr.io/astral-sh/uv:debian-slim
+# Build stage
+FROM python:3.10-slim AS build
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        # gcc, g++, make, libc headers
+        build-essential \
+        # needed by llama-cpp-python’s CMake scripts
+        git \
+        # recent CMake for scikit-build-core
+        cmake \
+        ninja-build \
+        pkg-config \
+        curl \
+        libopenblas-dev \
+        # Python headers for native wheels
+        python3-dev \
+    && export PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
+    && export FORCE_CMAKE=1 CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF" \
+    && pip install --no-cache-dir "llama-cpp-python>=0.3.14,<0.4" \
+    && pip install --no-cache-dir uv \
+    && uv sync \
+    # optional: slim the final image
+    && apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build \
+    && rm -rf /var/lib/apt/lists/*
 
-WORKDIR app
+# make sure CMake sees the compilers
+ENV CC=/usr/bin/gcc
+ENV CXX=/usr/bin/g++
 COPY . .
 
-RUN apt update && apt install g++ gcc libopenblas-dev pkg-config -y
-ENV CMAKE_ARGS "-DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS"
-RUN uv sync
-
+# Runtime stage
+FROM python:3.10-slim
+WORKDIR /app
+COPY --from=build /usr/local /usr/local
+COPY --from=build /app /app
 EXPOSE 8000
-
+HEALTHCHECK CMD curl -f http://localhost:8000/health || exit 1
 CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0"]
