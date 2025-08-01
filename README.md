@@ -4,9 +4,9 @@ This project exposes a simple API backed by Yandex GPT models using the
 `llama-cpp-python` runtime. Documents are stored in MongoDB/GridFS and their
 embeddings are indexed in Redis.
 
-Before running the application, copy the provided `.env.example` file to `.env`
-and fill in the connection parameters for MongoDB and Redis. The compose file
-expects at least `MONGO_USERNAME` and `MONGO_PASSWORD` to be set.
+Before running the application copy `.env.example` to `.env` and fill in the
+connection parameters for MongoDB and Redis. The compose file expects at least
+`MONGO_USERNAME` and `MONGO_PASSWORD` to be set.
 
 ## Requirements
 - gcc or clang
@@ -39,11 +39,6 @@ Alternatively you can start the whole stack using Docker Compose:
 ```bash
 docker compose up --build
 ```
-The compose file uses MongoDB `7` and Qdrant `v1.9` images.
-
-To enable GPU acceleration set `USE_GPU=true` in your `.env` file. The compose
-file will then start the `vllm` service by passing `--profile gpu` to
-`docker compose` via `deploy_project.sh`.
 
 ## Testing
 

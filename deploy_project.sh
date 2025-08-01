@@ -113,11 +113,11 @@ fi
 printf '[+] Starting containers...\n'
 if [ "$USE_GPU" = true ]; then
   echo '[+] Starting project in GPU mode'
-  docker compose --profile gpu up -d --build
 else
   echo '[+] Starting project in CPU mode'
-  docker compose up -d --build
 fi
+
+docker compose up -d --build
 printf '[✓] Containers running\n'
 
 if [ -d "./knowledge_base" ]; then

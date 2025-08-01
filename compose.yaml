@@ -8,7 +8,7 @@ x-health: &health_defaults
 services:
   mongo:
     # MongoDB stores conversation history and documents
-    image: mongo:7
+    image: mongo:latest
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -98,7 +98,7 @@ services:
       mongo:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       <<: *health_defaults
       test:
@@ -108,37 +108,12 @@ services:
         - http://localhost:8000/health
 
   qdrant:
-    image: qdrant/qdrant:v1.9
+    image: qdrant/qdrant
     restart: unless-stopped
     ports:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
-    healthcheck:
-      <<: *health_defaults
-      test:
-        - CMD
-        - curl
-        - -f
-        - http://localhost:6333/readyz
-
-  vllm:
-    # Optional vLLM server used when ``USE_GPU=true``
-    profiles:
-      - gpu
-    image: vllm/vllm-openai:latest
-    env_file: .env
-    command:
-      - python
-      - -m
-      - vllm.entrypoints.openai.api_server
-      - --model
-      - ${LLM_MODEL}
-      - --host
-      - 0.0.0.0
-    ports:
-      - "8001:8000"
-
 
   telegram-bot:
     build:

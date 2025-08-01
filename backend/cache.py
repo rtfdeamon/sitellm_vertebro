@@ -6,8 +6,6 @@ import hashlib
 from functools import wraps
 from typing import Any, Awaitable, Callable, Coroutine
 
-import json
-
 from redis.asyncio import ConnectionPool, Redis
 import structlog
 
@@ -32,21 +30,14 @@ def cache_response(func: Callable[..., Awaitable[str]]) -> Callable[..., Corouti
     """Cache decorated coroutine results in Redis for 24h."""
 
     @wraps(func)
-    async def wrapper(*args: Any, **kwargs: Any) -> str:
-        params = args
-        if params and not isinstance(params[0], str):
-            params = params[1:]
-        try:
-            payload = json.dumps({"a": params, "k": kwargs}, sort_keys=True).encode()
-        except Exception:
-            payload = repr({"a": params, "k": kwargs}).encode()
-        key = hashlib.sha1(payload).hexdigest()
+    async def wrapper(question: str, *args: Any, **kwargs: Any) -> str:
+        key = hashlib.sha1(question.lower().encode()).hexdigest()
         redis = _get_redis()
         cached = await redis.get(key)
         if cached is not None:
             logger.info("cache hit", key=key)
             return cached.decode()
-        answer = await func(*args, **kwargs)
+        answer = await func(question, *args, **kwargs)
         await redis.setex(key, 86400, answer)
         logger.info("cache store", key=key)
         return answer
