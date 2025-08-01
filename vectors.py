@@ -60,10 +60,10 @@ class DocumentsParser:
         """
         _, file_extension = os.path.splitext(name)
 
-        tempfolder = tempfile.gettempdir()
-        saved_file = Path(tempfolder) / name
-        with saved_file.open("wb") as tmp:
+        # use a dedicated temporary file to avoid name collisions
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
             tmp.write(data)
+            saved_file = Path(tmp.name)
 
         try:
             match file_extension:
@@ -72,7 +72,7 @@ class DocumentsParser:
                 case ".docx":
                     parser = Docx2txtLoader(saved_file)
                 case ".pdf":
-                    parser = PyPDFLoader(file_path=tmp.name, mode="single")
+                    parser = PyPDFLoader(file_path=str(saved_file), mode="single")
                 case _:
                     raise ValueError("Unsupported file extension")
 
