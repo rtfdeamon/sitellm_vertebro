@@ -8,7 +8,7 @@ x-health: &health_defaults
 services:
   mongo:
     # MongoDB stores conversation history and documents
-    image: mongo:latest
+    image: mongo:7
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -108,7 +108,7 @@ services:
         - http://localhost:8000/health
 
   qdrant:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:v1.9
     restart: unless-stopped
     ports:
       - "6333:6333"

@@ -39,6 +39,7 @@ Alternatively you can start the whole stack using Docker Compose:
 ```bash
 docker compose up --build
 ```
+The compose file uses MongoDB `7` and Qdrant `v1.9` images.
 
 ## Testing
 
