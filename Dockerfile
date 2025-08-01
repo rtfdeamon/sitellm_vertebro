@@ -4,13 +4,17 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        build-essential \        # gcc, g++, make, libc headers
-        git \                    # needed by llama-cpp-python’s CMake scripts
-        cmake \                  # ensures a recent CMake
+        # gcc, g++, make, libc headers
+        build-essential \
+        # needed by llama-cpp-python’s CMake scripts
+        git \
+        # recent CMake for scikit-build-core
+        cmake \
         pkg-config \
         curl \
         libopenblas-dev \
-        python3-dev \            # Python headers for any native wheels
+        # Python headers for native wheels
+        python3-dev \
     && pip install --no-cache-dir uv \
     && uv sync \
     # optional: slim the final image
