@@ -1,0 +1,82 @@
+"""Async client for generating text from an external LLM service."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import threading
+from collections.abc import AsyncIterator
+
+try:  # optional heavy deps
+    import torch
+    from transformers import (
+        AutoModelForCausalLM,
+        AutoTokenizer,
+        TextIteratorStreamer,
+    )
+except Exception:  # pragma: no cover - missing deep learning deps
+    torch = None
+    AutoModelForCausalLM = AutoTokenizer = TextIteratorStreamer = None
+from settings import Settings
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+settings = Settings()
+
+_tokenizer: AutoTokenizer | None = None
+_model: AutoModelForCausalLM | None = None
+
+USE_GPU = settings.use_gpu
+DEVICE = "cuda" if USE_GPU and torch and torch.cuda.is_available() else "cpu"
+MODEL_NAME = settings.llm_model
+
+
+def _load() -> None:
+    """Load model and tokenizer if not yet initialized."""
+
+    global _tokenizer, _model
+    if _model is not None:
+        return
+    if AutoModelForCausalLM is None:
+        raise RuntimeError("transformers not installed")
+    logger.info("load_model", model=MODEL_NAME, device=DEVICE)
+    _tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    _model = AutoModelForCausalLM.from_pretrained(MODEL_NAME)
+    if torch:
+        _model = _model.to(DEVICE)
+
+
+async def generate(prompt: str) -> AsyncIterator[str]:
+    """Yield tokens from a local model using transformers streaming."""
+
+    delay = 0.5
+    for attempt in range(4):
+        try:
+            await asyncio.to_thread(_load)
+            streamer = TextIteratorStreamer(_tokenizer, skip_prompt=True)
+            inputs = _tokenizer(prompt, return_tensors="pt")
+            if torch:
+                inputs = inputs.to(DEVICE)
+
+            thread = threading.Thread(
+                target=_model.generate,
+                kwargs={
+                    **inputs,
+                    "max_new_tokens": 128,
+                    "streamer": streamer,
+                },
+            )
+            thread.start()
+            for token in streamer:
+                yield token
+                await asyncio.sleep(0)
+            thread.join()
+            logger.info("success", attempt=attempt + 1)
+            return
+        except Exception as exc:
+            logger.warning("generate failed", attempt=attempt + 1, error=str(exc))
+            if attempt == 3:
+                raise
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 4)
