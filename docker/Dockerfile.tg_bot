@@ -1,6 +1,12 @@
 FROM python:3.10-slim
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
+
+# Environment variables required for building llama-cpp-python
+ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu
+ENV FORCE_CMAKE=1
+ENV CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF"
+
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
@@ -10,6 +16,7 @@ RUN apt-get update && \
         curl \
         libopenblas-dev \
         python3-dev && \
+    pip install --no-cache-dir "llama-cpp-python>=0.3.14,<0.4" && \
     pip install --no-cache-dir uv && \
     uv sync && \
     apt-get purge -y --auto-remove git cmake build-essential python3-dev && \
