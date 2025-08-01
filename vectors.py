@@ -72,7 +72,7 @@ class DocumentsParser:
                 case ".docx":
                     parser = Docx2txtLoader(saved_file)
                 case ".pdf":
-                    parser = PyPDFLoader(file_path=str(saved_file), mode="single")
+                    parser = PyPDFLoader(file_path=tmp.name, mode="single")
                 case _:
                     raise ValueError("Unsupported file extension")
 

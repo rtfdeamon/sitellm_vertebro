@@ -1,6 +1,17 @@
-.env
-.venv/
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Virtual environments
+.venv/
+
+# Python environment files
+.env
+
+# Editors
 .idea/
 .vscode/
+
+# Others
+*.log
+
