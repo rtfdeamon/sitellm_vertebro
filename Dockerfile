@@ -10,15 +10,18 @@ RUN apt-get update && \
         git \
         # recent CMake for scikit-build-core
         cmake \
+        ninja-build \
         pkg-config \
         curl \
         libopenblas-dev \
         # Python headers for native wheels
         python3-dev \
+    && export PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
+    && pip install --no-cache-dir "llama-cpp-python>=0.3.14,<0.4" \
     && pip install --no-cache-dir uv \
     && uv sync \
     # optional: slim the final image
-    && apt-get purge -y --auto-remove git cmake build-essential python3-dev \
+    && apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
 # make sure CMake sees the compilers
