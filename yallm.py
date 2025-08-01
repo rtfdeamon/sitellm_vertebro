@@ -13,6 +13,11 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+from backend.cache import cache_response
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 
 YaGPTResponse = namedtuple("YaGPTResponse", ["speaker", "text"])
 
@@ -38,6 +43,7 @@ class YaLLM:
         )
         logger.info("model ready")
 
+    @cache_response
     async def respond(
         self, session: list[dict[str, str]], starting_prompt: list[dict[str, str]]
     ) -> list[YaGPTResponse]:
