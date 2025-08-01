@@ -65,15 +65,18 @@ class DocumentsParser:
         with saved_file.open("wb") as tmp:
             tmp.write(data)
 
-        match file_extension:
-            case ".txt":
-                parser = TextLoader(saved_file)
-            case ".docx":
-                parser = Docx2txtLoader(saved_file)
-            case ".pdf":
-                parser = PyPDFLoader(file_path=tmp.name, mode="single")
-            case _:
-                raise ValueError("Unsupported file extension")
+        try:
+            match file_extension:
+                case ".txt":
+                    parser = TextLoader(saved_file)
+                case ".docx":
+                    parser = Docx2txtLoader(saved_file)
+                case ".pdf":
+                    parser = PyPDFLoader(file_path=tmp.name, mode="single")
+                case _:
+                    raise ValueError("Unsupported file extension")
 
-        document = parser.load()
-        self.redis_store.add_documents(document, ids=[document_id])
+            document = parser.load()
+            self.redis_store.add_documents(document, ids=[document_id])
+        finally:
+            saved_file.unlink(missing_ok=True)
