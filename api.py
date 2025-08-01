@@ -65,10 +65,10 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
             status_code=500, detail="Incorrect session state in database"
         )
 
-    response = await request.state.llm.respond(context, preset)
-    logger.info("llm answered", length=len(response[-1].text))
+    answer = await request.state.llm.respond(context, preset)
+    logger.info("llm answered", length=len(answer))
 
-    return ORJSONResponse(LLMResponse(text=response[-1].text).model_dump())
+    return ORJSONResponse(LLMResponse(text=answer).model_dump())
 
 
 @llm_router.post("/chat")

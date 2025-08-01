@@ -9,6 +9,8 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables.config import ensure_config
 from langchain_core.messages.utils import convert_to_messages
+
+from backend.cache import cache_response
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -38,9 +40,10 @@ class YaLLM:
         )
         logger.info("model ready")
 
+    @cache_response
     async def respond(
         self, session: list[dict[str, str]], starting_prompt: list[dict[str, str]]
-    ) -> list[YaGPTResponse]:
+    ) -> str:
         """Generate a response for ``session`` using ``starting_prompt``.
 
         Parameters
@@ -52,8 +55,8 @@ class YaLLM:
 
         Returns
         -------
-        list[YaGPTResponse]
-            Processed model output wrapped in ``YaGPTResponse`` named tuples.
+        str
+            Text of the assistant reply.
         """
         session = convert_to_messages(starting_prompt + session)
         config = ensure_config(None)
@@ -78,7 +81,7 @@ class YaLLM:
             processed.append(YaGPTResponse(speaker, text))
 
         logger.info("generated", count=len(processed))
-        return processed
+        return processed[-1].text if processed else ""
 
 
 class YaLLMEmbeddings:
