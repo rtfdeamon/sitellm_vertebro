@@ -98,7 +98,7 @@ services:
       mongo:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
       <<: *health_defaults
       test:
@@ -114,6 +114,13 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:6333/readyz
 
 
   telegram-bot:
