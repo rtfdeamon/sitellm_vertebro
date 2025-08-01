@@ -115,6 +115,23 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
 
+  vllm:
+    # Optional vLLM server used when ``USE_GPU=true``
+    profiles:
+      - gpu
+    image: vllm/vllm-openai:latest
+    env_file: .env
+    command:
+      - python
+      - -m
+      - vllm.entrypoints.openai.api_server
+      - --model
+      - ${LLM_MODEL}
+      - --host
+      - 0.0.0.0
+    ports:
+      - "8001:8000"
+
 
   telegram-bot:
     build:

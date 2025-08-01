@@ -40,6 +40,10 @@ Alternatively you can start the whole stack using Docker Compose:
 docker compose up --build
 ```
 
+To enable GPU acceleration set `USE_GPU=true` in your `.env` file. The compose
+file will then start the `vllm` service by passing `--profile gpu` to
+`docker compose` via `deploy_project.sh`.
+
 ## Testing
 
 Run unit tests with:
