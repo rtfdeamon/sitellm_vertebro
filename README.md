@@ -41,6 +41,10 @@ docker compose up --build
 ```
 The compose file uses MongoDB `7` and Qdrant `v1.9` images.
 
+To enable GPU acceleration set `USE_GPU=true` in your `.env` file. The compose
+file will then start the `vllm` service by passing `--profile gpu` to
+`docker compose` via `deploy_project.sh`.
+
 ## Testing
 
 Run unit tests with:
