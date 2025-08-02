@@ -15,10 +15,10 @@ RUN apt-get update && \
 
 # Use a portable CPU build of llama-cpp-python
 ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu
-ENV FORCE_CMAKE=1
+# Disable all GPU/metal/BLAS back-ends and SIMD so that build falls back to pure C
 ENV CMAKE_ARGS="-DLLAMA_CUBLAS=OFF -DLLAMA_METAL=OFF -DLLAMA_BLAS=OFF -DGGML_NO_SIMD=ON"
 
-RUN pip install --no-cache-dir "llama-cpp-python>=0.3.14,<0.4" && \
+RUN pip install --no-cache-dir --prefer-binary "llama-cpp-python>=0.3.14,<0.4" && \
     pip install --no-cache-dir uv && \
     uv sync && \
     apt-get purge -y --auto-remove git cmake build-essential python3-dev && \
