@@ -13,11 +13,11 @@ RUN apt-get update && \
         libopenblas-dev \
         python3-dev
 
-# Prefer prebuilt CPU-only wheel for llama-cpp-python to avoid SIMD issues
-ENV PIP_INDEX_URL=https://pypi.org/simple \
-    PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu
+# Use prebuilt CPU-only wheel for llama-cpp-python to avoid SIMD issues
+ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
+    CMAKE_ARGS="-DLLAMA_CUBLAS=OFF -DLLAMA_METAL=OFF -DLLAMA_BLAS=OFF -DGGML_NO_SIMD=ON"
 
-RUN pip install --no-cache-dir "llama-cpp-python==0.3.2.post4" && \
+RUN pip install --no-cache-dir "llama-cpp-python==0.3.14" && \
     pip install --no-cache-dir uv && \
     uv sync && \
     apt-get purge -y --auto-remove git cmake build-essential python3-dev && \
