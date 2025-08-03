@@ -18,7 +18,7 @@ RUN apt-get update && \
         python3-dev \
     && export PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
     && export FORCE_CMAKE=1 CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF" \
-    && pip install --no-cache-dir "llama-cpp-python>=0.3.14,<0.4" \
+    && pip install --no-cache-dir "llama-cpp-python==0.3.2" \
     && pip install --no-cache-dir uv \
     && uv sync \
     # optional: slim the final image

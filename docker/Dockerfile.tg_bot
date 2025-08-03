@@ -1,28 +1,39 @@
 FROM python:3.10-slim
+
 WORKDIR /app
+
+# Копируем зависимости
 COPY pyproject.toml uv.lock ./
 
-# Install build tools first
+# Устанавливаем необходимые системные библиотеки и компиляторы
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential \
         git \
         cmake \
+        ninja-build \
         pkg-config \
         curl \
         libopenblas-dev \
         python3-dev
 
-# Use prebuilt CPU-only wheel for llama-cpp-python to avoid SIMD issues
+# Задаём переменные окружения для pip и CMake
 ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
-    CMAKE_ARGS="-DLLAMA_CUBLAS=OFF -DLLAMA_METAL=OFF -DLLAMA_BLAS=OFF -DGGML_NO_SIMD=ON"
+    FORCE_CMAKE=1 \
+    CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF"
 
-RUN pip install --no-cache-dir "llama-cpp-python==0.3.14" && \
+# Устанавливаем зависимости и llama-cpp-python
+# llama-cpp-python строго ограничим версией 0.3.2
+RUN pip install --no-cache-dir "llama-cpp-python==0.3.2" && \
     pip install --no-cache-dir uv && \
-    uv sync && \
-    apt-get purge -y --auto-remove git cmake build-essential python3-dev && \
+    # Отключаем uv sync, чтобы не сломать зависимость
+    echo "🟡 Пропущен uv sync — зависит от pyproject.toml" && \
+    apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
     rm -rf /var/lib/apt/lists/*
-ENV CC=/usr/bin/gcc
-ENV CXX=/usr/bin/g++
+
+
+# Копируем код бота
 COPY tg_bot ./tg_bot
+
+# Запускаем
 CMD ["python", "-m", "tg_bot.run"]
