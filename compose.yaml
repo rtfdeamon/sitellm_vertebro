@@ -8,7 +8,7 @@ x-health: &health_defaults
 services:
   mongo:
     # MongoDB stores conversation history and documents
-    image: mongo:latest
+    image: mongo:8.0
     restart: unless-stopped
     ports:
       - "27017:27017"
@@ -16,17 +16,15 @@ services:
       - "mongo_data:/data/db"
     env_file: .env
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:?Should be set}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Should be set}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-smarthelperdb}
     healthcheck:
-      <<: *health_defaults
-      test:
-        - CMD
-        - mongo
-        - --eval
-        - db.adminCommand('ping')
-        - --quiet
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   redis:
     # Redis is used for the vector store and Celery broker
