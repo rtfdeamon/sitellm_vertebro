@@ -5,11 +5,11 @@ import sys
 import types
 import asyncio
 from pathlib import Path
-import pytest
-fake_pydantic = types.ModuleType("pydantic");
-fake_pydantic.AnyUrl = str;
-fake_pydantic.BaseSettings = object;
-fake_pydantic.ConfigDict = dict;
+fake_pydantic = types.ModuleType("pydantic")
+fake_pydantic.AnyUrl = str
+fake_pydantic.BaseSettings = object
+fake_pydantic.ConfigDict = dict
+_real_pydantic = sys.modules.get("pydantic")
 sys.modules["pydantic"] = fake_pydantic
 fake_structlog = types.ModuleType("structlog")
 fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
@@ -18,7 +18,10 @@ fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
     debug=lambda *x, **y: None,
 )
 sys.modules["structlog"] = fake_structlog
-fake_httpx = types.ModuleType("httpx"); fake_httpx.AsyncClient = None; fake_httpx.HTTPError = Exception; sys.modules["httpx"] = fake_httpx
+fake_httpx = types.ModuleType("httpx")
+fake_httpx.AsyncClient = None
+fake_httpx.HTTPError = Exception
+sys.modules["httpx"] = fake_httpx
 
 fake_filters = types.ModuleType("aiogram.filters")
 fake_filters.CommandStart = object
@@ -49,6 +52,11 @@ fake_aiogram.filters = fake_filters
 sys.modules["aiogram"] = fake_aiogram
 
 spec.loader.exec_module(bot_mod)
+
+if _real_pydantic is None:
+    del sys.modules["pydantic"]
+else:
+    sys.modules["pydantic"] = _real_pydantic
 
 
 class FakeMessage:

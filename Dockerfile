@@ -2,6 +2,7 @@
 FROM python:3.10-slim AS build
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
+ENV UV_SYSTEM_PYTHON=1 UV_CACHE_DIR=/tmp/uv
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         # gcc, g++, make, libc headers
@@ -18,9 +19,8 @@ RUN apt-get update && \
         python3-dev \
     && export PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
     && export FORCE_CMAKE=1 CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF" \
-    && pip install --no-cache-dir "llama-cpp-python==0.3.2" \
     && pip install --no-cache-dir uv \
-    && uv sync --system --no-cache \
+    && uv sync --no-cache \
     # optional: slim the final image
     && apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build \
     && rm -rf /var/lib/apt/lists/*
