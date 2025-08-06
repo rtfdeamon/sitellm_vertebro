@@ -72,3 +72,9 @@ app.include_router(
     llm_router,
     prefix="/api/v1",
 )
+
+
+@app.get("/health")
+def health() -> dict[str, str]:
+    """Simple health check endpoint."""
+    return {"status": "ok"}
