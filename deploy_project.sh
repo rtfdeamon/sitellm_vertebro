@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+# Enable Docker BuildKit for faster image builds
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 printf '[+] Checking requirements...\n'
 if ! command -v docker >/dev/null 2>&1; then
   echo '[!] docker not found'; exit 1
@@ -33,23 +37,23 @@ if [ "$AUTO_YES" -eq 1 ]; then
   DOMAIN="${DOMAIN?DOMAIN env variable required with --yes}"
 else
   printf '[+] Domain: '
-  read DOMAIN
+  read -r DOMAIN
 fi
 
 printf '[+] Enable GPU? [y/N]: '
-read ENABLE_GPU
+read -r ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
 printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
-read LLM_MODEL
+read -r LLM_MODEL
 LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
 
 printf '[+] Mongo root username [root]: '
-read MONGO_USERNAME
+read -r MONGO_USERNAME
 MONGO_USERNAME=${MONGO_USERNAME:-root}
 export MONGO_USERNAME
 
 printf '[+] Mongo root password [auto-generate if empty]: '
-read MONGO_PASSWORD
+read -r MONGO_PASSWORD
 if [ -z "$MONGO_PASSWORD" ]; then
   MONGO_PASSWORD=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | head -c16)
 fi
@@ -63,7 +67,6 @@ else
 fi
 
 REDIS_PASS=$(openssl rand -hex 8)
-QDRANT_PASS=$(openssl rand -hex 8)
 GRAFANA_PASS=$(openssl rand -hex 8)
 
 REDIS_URL="redis://:${REDIS_PASS}@localhost:6379/0"
