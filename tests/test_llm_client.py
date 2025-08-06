@@ -1,7 +1,6 @@
 """Unit tests for the async LLM client module."""
 
 import asyncio
-import types
 import importlib
 import sys
 from pathlib import Path
@@ -46,8 +45,12 @@ class DummyModel:
 
 class DummyTokenizer:
     """No-op tokenizer used for testing."""
+    class _Inputs(dict):
+        def to(self, device):
+            return self
+
     def __call__(self, text, return_tensors=None):
-        return {}
+        return self._Inputs()
 
 
 async def _async_collect(it):

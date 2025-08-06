@@ -20,7 +20,7 @@ RUN apt-get update && \
     && export FORCE_CMAKE=1 CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF" \
     && pip install --no-cache-dir "llama-cpp-python==0.3.2" \
     && pip install --no-cache-dir uv \
-    && uv sync \
+    && uv pip install --system --no-cache -r uv.lock \
     # optional: slim the final image
     && apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build \
     && rm -rf /var/lib/apt/lists/*

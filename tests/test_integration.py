@@ -6,11 +6,6 @@ from pathlib import Path
 import types
 import pytest
 
-fake_pydantic = types.ModuleType("pydantic")
-fake_pydantic.AnyUrl = str
-fake_pydantic.BaseSettings = object
-fake_pydantic.ConfigDict = dict
-sys.modules.setdefault("pydantic", fake_pydantic)
 
 fake_structlog = types.ModuleType("structlog")
 fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
