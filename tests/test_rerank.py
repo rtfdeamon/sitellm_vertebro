@@ -1,4 +1,4 @@
-"""Tests for the cross-encoder reranking logic."""
+"""Unit tests ensuring cross-encoder reranking sorts documents by predicted relevance."""
 
 import importlib.util
 import sys

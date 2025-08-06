@@ -1,3 +1,7 @@
+# Dockerfile for building the FastAPI application and Celery services.
+#
+# Dependencies are installed in a separate build stage using ``uv`` so the
+# final runtime image remains lean.
 # Build stage
 FROM python:3.10-slim AS build
 WORKDIR /app
@@ -20,7 +24,7 @@ RUN apt-get update && \
     && export PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
     && export FORCE_CMAKE=1 CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF" \
     && pip install --no-cache-dir uv \
-    && uv pip install --system --no-cache -r uv.lock \
+    && uv sync --no-cache \
     # optional: slim the final image
     && apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build \
     && rm -rf /var/lib/apt/lists/*

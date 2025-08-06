@@ -1,4 +1,4 @@
-"""Tests for prompt generation utilities."""
+"""Integration tests for building prompts from retrieved documents."""
 
 import importlib.util
 import sys
