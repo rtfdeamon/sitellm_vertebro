@@ -1,4 +1,4 @@
-"""Tests for the :mod:`safety.filter` module."""
+"""Unit tests for the safety filter that flags unsafe medical terms."""
 
 import importlib.util
 import sys

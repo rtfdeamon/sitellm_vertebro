@@ -1,7 +1,8 @@
 """Application settings models."""
 
 from functools import lru_cache
-from pydantic import AnyUrl, BaseSettings, ConfigDict
+from pydantic import AnyUrl, ConfigDict
+from pydantic_settings import BaseSettings
 
 
 class MongoSettings(BaseSettings):
@@ -55,7 +56,7 @@ class Settings(BaseSettings):
     """Top level application settings loaded from ``.env``.
 
     Nested models use environment prefixes such as ``MONGO_`` and ``REDIS_``.
-    The :class:`pydantic.BaseSettings` machinery automatically reads these
+    The :class:`pydantic_settings.BaseSettings` machinery automatically reads these
     variables when the application starts.
     """
 

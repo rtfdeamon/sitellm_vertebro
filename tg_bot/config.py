@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import AnyUrl, BaseSettings, ConfigDict
+from pydantic import AnyUrl, ConfigDict
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
