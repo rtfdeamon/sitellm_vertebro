@@ -6,7 +6,8 @@
 FROM python:3.10-slim AS build
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-ENV UV_SYSTEM_PYTHON=1 UV_CACHE_DIR=/tmp/uv
+# Increase UV_HTTP_TIMEOUT to accommodate large wheel downloads such as scikit-learn.
+ENV UV_SYSTEM_PYTHON=1 UV_CACHE_DIR=/tmp/uv UV_HTTP_TIMEOUT=600
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         # gcc, g++, make, libc headers
