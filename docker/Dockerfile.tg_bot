@@ -5,35 +5,27 @@ WORKDIR /app
 # Копируем зависимости
 COPY pyproject.toml uv.lock ./
 
-# Устанавливаем необходимые системные библиотеки и компиляторы
-RUN apt-get update && \
+# Устанавливаем необходимые системные библиотеки, компиляторы и синхронизируем Python-зависимости
+RUN --mount=type=cache,target=/var/cache/apt \
+    --mount=type=cache,target=/var/lib/apt \
+    --mount=type=cache,target=/root/.cache/uv \
+    apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        build-essential \
-        git \
-        cmake \
-        ninja-build \
-        pkg-config \
-        curl \
-        libopenblas-dev \
-        python3-dev
+        build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
+    pip install --no-cache-dir 'uv>=0.8' && \
+    uv pip sync uv.lock --no-cache && \
+    pip install --no-cache-dir requests && \
+    apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
+    rm -rf /var/lib/apt/lists/*
 
 # Задаём переменные окружения для pip и CMake
 ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
     FORCE_CMAKE=1 \
     CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF"
 
-# Устанавливаем зависимости и llama-cpp-python
-# llama-cpp-python строго ограничим версией 0.3.2
-RUN pip install --no-cache-dir "llama-cpp-python==0.3.2" && \
-    pip install --no-cache-dir uv && \
-    # Отключаем uv sync, чтобы не сломать зависимость
-    echo "🟡 Пропущен uv sync — зависит от pyproject.toml" && \
-    apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
-    rm -rf /var/lib/apt/lists/*
-
-
 # Копируем код бота
 COPY tg_bot ./tg_bot
 
 # Запускаем
 CMD ["python", "-m", "tg_bot.run"]
+

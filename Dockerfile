@@ -1,4 +1,4 @@
-# Build stage: installs dependencies into a virtual environment.
+# Build stage: installs dependencies into the system environment.
 FROM python:3.10-slim AS build
 
 WORKDIR /src
@@ -15,17 +15,17 @@ RUN --mount=type=cache,target=/var/cache/apt \
         build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Cache pip/uv downloads.
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir uv
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --venv /opt/venv --no-cache
+# Cache pip/uv downloads and sync dependencies.
+RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir 'uv>=0.8'
+RUN --mount=type=cache,target=/root/.cache/uv uv pip sync uv.lock --no-cache
 
 COPY . .
 
-# Runtime stage: copy only venv and application source.
+# Runtime stage: copy dependencies and application source.
 FROM python:3.10-slim
-ENV PATH="/opt/venv/bin:$PATH"
 
-COPY --from=build /opt/venv /opt/venv
+COPY --from=build /usr/local /usr/local
+RUN pip install --no-cache-dir requests
 COPY --from=build /src /app
 
 WORKDIR /app
