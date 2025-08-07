@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
 
 # Cache pip/uv downloads and sync dependencies.
 RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir 'uv>=0.8'
-RUN --mount=type=cache,target=/root/.cache/uv uv pip sync uv.lock --no-cache
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --no-cache
 
 COPY . .
 
