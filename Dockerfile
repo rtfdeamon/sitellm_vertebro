@@ -9,7 +9,7 @@ ENV UV_HTTP_TIMEOUT=600
 
 # Cache apt packages between builds.
 RUN --mount=type=cache,target=/var/cache/apt \
-    --mount=type=cache,target=/var/lib/apt \
+    rm -f /var/lib/apt/lists/lock && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
