@@ -13,8 +13,8 @@ RUN --mount=type=cache,target=/var/cache/apt \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
     pip install --no-cache-dir 'uv>=0.8' && \
-    uv sync --no-cache && \
-    pip install --no-cache-dir requests && \
+    uv pip sync uv.lock --no-cache && \
+    pip install --no-cache-dir requests beautifulsoup4 && \
     apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
     rm -rf /var/lib/apt/lists/*
 
