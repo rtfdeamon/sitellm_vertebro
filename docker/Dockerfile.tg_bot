@@ -8,10 +8,11 @@ COPY pyproject.toml uv.lock ./
 # Устанавливаем необходимые системные библиотеки, компиляторы и синхронизируем Python-зависимости
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
+    --mount=type=cache,target=/root/.cache/uv \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
-    pip install --no-cache-dir uv && \
+    pip install --no-cache-dir 'uv>=0.8' && \
     uv pip sync uv.lock --no-cache && \
     pip install --no-cache-dir requests && \
     apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
