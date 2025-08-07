@@ -7,17 +7,19 @@ COPY pyproject.toml uv.lock ./
 # Increase timeout for large wheel downloads.
 ENV UV_HTTP_TIMEOUT=600
 
-# Cache apt packages between builds.
+# Cache apt/uv downloads, remove stale locks, install build deps and sync Python deps.
 RUN --mount=type=cache,target=/var/cache/apt \
-    rm -f /var/lib/apt/lists/lock && \
+    --mount=type=cache,target=/root/.cache/uv \
+    rm -f /var/lib/apt/lists/lock \
+          /var/cache/apt/archives/lock \
+          /var/cache/apt/archives/partial/lock && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# Cache pip/uv downloads and sync dependencies.
-RUN --mount=type=cache,target=/root/.cache/pip pip install --no-cache-dir 'uv>=0.8'
-RUN --mount=type=cache,target=/root/.cache/uv uv pip sync --no-cache
+    pip install --no-cache-dir 'uv>=0.8' && \
+    uv pip sync --no-cache && \
+    apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 

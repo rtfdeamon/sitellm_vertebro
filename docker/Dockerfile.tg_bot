@@ -8,14 +8,16 @@ COPY pyproject.toml uv.lock ./
 # Устанавливаем необходимые системные библиотеки, компиляторы и синхронизируем Python-зависимости
 RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/root/.cache/uv \
-    rm -f /var/lib/apt/lists/lock && \
+    rm -f /var/lib/apt/lists/lock \
+          /var/cache/apt/archives/lock \
+          /var/cache/apt/archives/partial/lock && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && \
     pip install --no-cache-dir 'uv>=0.8' && \
     uv pip sync --no-cache && \
     apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Задаём переменные окружения для pip и CMake
 ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
