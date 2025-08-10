@@ -128,6 +128,7 @@ for svc in app telegram-bot celery_worker celery_beat; do
   fi
 done
 
+
 docker compose up -d
 printf '[✓] Containers running\n'
 
