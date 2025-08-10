@@ -7,7 +7,7 @@ COPY pyproject.toml uv.lock ./
 
  # Устанавливаем необходимые системные библиотеки, компиляторы и Python-зависимости
  RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=apt-cache-tg \
-    --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=uv-cache-tg \
+     --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=uv-cache-tg \
     bash -euxo pipefail -c '\
       export DEBIAN_FRONTEND=noninteractive; \
       mkdir -p /var/cache/apt/archives/partial; \
