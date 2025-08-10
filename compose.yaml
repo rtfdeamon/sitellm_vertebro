@@ -108,10 +108,8 @@ services:
     healthcheck:
       <<: *health_defaults
       test:
-        - CMD
-        - curl
-        - -fs
-        - http://localhost:8000/health
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/health')"
 
   qdrant:
     image: qdrant/qdrant

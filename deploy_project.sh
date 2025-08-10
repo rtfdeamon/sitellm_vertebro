@@ -149,7 +149,10 @@ fi
 
 printf '[+] Waiting for API health check...\n'
 for i in {1..40}; do
-  if docker compose exec -T app sh -c 'curl -fsS http://127.0.0.1:${PORT:-8000}/health >/dev/null'; then
+  if docker compose exec -T app python - <<'PY' >/dev/null 2>&1; then
+import os, urllib.request, sys
+urllib.request.urlopen(f"http://127.0.0.1:{os.environ.get('PORT', '8000')}/health")
+PY
     echo "[✓] API healthy"
     break
   fi
@@ -170,7 +173,7 @@ Description=Daily crawl job
 [Service]
 Type=oneshot
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/docker compose exec app python crawler/run_crawl.py --domain $DOMAIN --max-depth 2 --max-pages 500
+ExecStart=/usr/bin/docker compose exec -e CRAWL_START_URL=${CRAWL_START_URL} app python crawler/run_crawl.py --url ${CRAWL_START_URL} --max-depth 2 --max-pages 500
 EOF_SERVICE
 
 sudo tee "$TIMER" >/dev/null <<EOF_TIMER
