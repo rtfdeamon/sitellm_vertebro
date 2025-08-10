@@ -120,7 +120,15 @@ else
   echo '[+] Starting project in CPU mode'
 fi
 
-docker compose up -d --build
+printf '[+] Building images sequentially...\n'
+for svc in app telegram-bot celery_worker celery_beat; do
+  if ! docker compose build --pull "$svc"; then
+    printf '[!] Failed to build %s\n' "$svc"
+    exit 1
+  fi
+done
+
+docker compose up -d
 printf '[✓] Containers running\n'
 
 if [ -d "./knowledge_base" ]; then
