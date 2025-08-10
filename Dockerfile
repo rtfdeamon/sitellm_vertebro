@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
           build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && break || sleep 3; \
       done; \
       pip install --no-cache-dir "uv>=0.8"; \
-      uv pip sync --system --no-cache uv.lock; \
+      uv pip sync --system --no-cache pyproject.toml; \
       apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build; \
       apt-get clean; rm -rf /var/lib/apt/lists/* \
     '
