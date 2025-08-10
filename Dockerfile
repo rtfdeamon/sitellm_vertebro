@@ -11,7 +11,7 @@ ENV UV_HTTP_TIMEOUT=600
 ARG APT_CACHE_ID=apt-cache-app
 ARG UV_CACHE_ID=uv-cache-app
 
-# Cache apt/uv downloads, remove stale locks, install build deps and sync Python deps.
+# Cache apt/uv downloads, remove stale locks, install build deps and install Python deps.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
     --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
