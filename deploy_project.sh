@@ -120,7 +120,8 @@ else
   echo '[+] Starting project in CPU mode'
 fi
 
-docker compose up -d --build
+docker compose build --pull --no-parallel
+docker compose up -d
 printf '[✓] Containers running\n'
 
 if [ -d "./knowledge_base" ]; then
