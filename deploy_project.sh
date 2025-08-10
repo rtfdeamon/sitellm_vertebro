@@ -40,6 +40,10 @@ else
   read -r DOMAIN
 fi
 
+# Autodetect crawl start URL from DOMAIN if not provided
+: "${CRAWL_START_URL:=https://${DOMAIN}}"
+export CRAWL_START_URL
+
 printf '[+] Enable GPU? [y/N]: '
 read -r ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
@@ -89,6 +93,7 @@ update_env_var() {
 }
 
 update_env_var DOMAIN "$DOMAIN"
+update_env_var CRAWL_START_URL "$CRAWL_START_URL"
 update_env_var LLM_MODEL "$LLM_MODEL"
 update_env_var REDIS_URL "$REDIS_URL"
 update_env_var QDRANT_URL "$QDRANT_URL"
@@ -143,14 +148,17 @@ PY
 fi
 
 printf '[+] Waiting for API health check...\n'
-if curl -sf http://localhost:8000/health >/dev/null; then
-  echo '[✓] API is healthy'
-else
-  echo '[!] API health check failed'
-fi
+for i in {1..40}; do
+  if docker compose exec -T app sh -c 'curl -fsS http://127.0.0.1:${PORT:-8000}/health >/dev/null'; then
+    echo "[✓] API healthy"
+    break
+  fi
+  sleep 3
+done || { echo "[!] API health check failed"; exit 1; }
 
 printf '[+] Initial crawl...\n'
-docker compose exec app python crawler/run_crawl.py --domain "$DOMAIN" --max-depth 2 --max-pages 500
+docker compose exec -e CRAWL_START_URL="${CRAWL_START_URL}" \
+  app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500
 printf '[✓] Initial crawl done\n'
 
 SERVICE=/etc/systemd/system/crawl.service
