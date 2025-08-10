@@ -50,6 +50,7 @@ services:
     env_file: .env
     environment:
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
+      CRAWL_START_URL: ${CRAWL_START_URL}
     command: ["uv", "run", "celery", "-A", "worker", "worker", "--loglevel=INFO"]
     depends_on:
       redis:
@@ -92,6 +93,7 @@ services:
     env_file: .env
     environment:
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
+      CRAWL_START_URL: ${CRAWL_START_URL}
     ports:
       - "8000:8000"
     volumes:
@@ -106,10 +108,8 @@ services:
     healthcheck:
       <<: *health_defaults
       test:
-        - CMD
-        - curl
-        - -fs
-        - http://localhost:8000/health
+        - CMD-SHELL
+        - python -c "import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/health')"
 
   qdrant:
     image: qdrant/qdrant
