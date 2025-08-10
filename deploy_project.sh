@@ -40,6 +40,9 @@ else
   read -r DOMAIN
 fi
 
+# Autodetect crawl start URL from DOMAIN if not provided
+export CRAWL_START_URL="${CRAWL_START_URL:-https://${DOMAIN}}"
+
 printf '[+] Enable GPU? [y/N]: '
 read -r ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
@@ -89,6 +92,7 @@ update_env_var() {
 }
 
 update_env_var DOMAIN "$DOMAIN"
+update_env_var CRAWL_START_URL "$CRAWL_START_URL"
 update_env_var LLM_MODEL "$LLM_MODEL"
 update_env_var REDIS_URL "$REDIS_URL"
 update_env_var QDRANT_URL "$QDRANT_URL"
@@ -141,17 +145,32 @@ update_vector_store()
 PY
   printf '[✓] Knowledge base indexed\n'
 fi
-
 printf '[+] Waiting for API health check...\n'
-if curl -sf http://localhost:8000/health >/dev/null; then
-  echo '[✓] API is healthy'
-else
-  echo '[!] API health check failed'
-fi
+APP_PORT="$(docker compose port app ${PORT:-8000} | awk -F: '{print $2}')"
+APP_PORT="${APP_PORT:-8000}"
+ok=""
+for i in $(seq 1 40); do
+  if curl -fsS "http://127.0.0.1:${APP_PORT}/healthz" >/dev/null 2>&1 || \
+     curl -fsS "http://127.0.0.1:${APP_PORT}/health"  >/dev/null 2>&1; then
+    ok=1; break
+  fi
+  st="$(docker compose ps --status=restarting --services | grep -E '^app$' || true)"
+  if [ -n "$st" ] && [ "$i" -eq 8 ]; then
+    echo "[!] app is restarting, last 200 lines:"
+    docker compose logs --tail=200 app || true
+  fi
+  sleep 2
+done
+[ -n "${ok}" ] || { echo "[!] API health check failed"; exit 1; }
+echo "[✓] API is healthy"
 
 printf '[+] Initial crawl...\n'
-docker compose exec app python crawler/run_crawl.py --domain "$DOMAIN" --max-depth 2 --max-pages 500
-printf '[✓] Initial crawl done\n'
+if [ -n "${CRAWL_START_URL:-}" ]; then
+  docker compose exec -T app sh -lc "python crawler/run_crawl.py --url '${CRAWL_START_URL}' --max-depth 2 --max-pages 500" || true
+else
+  echo "[i] CRAWL_START_URL not set; skipping initial crawl"
+fi
+echo "[✓] Done"
 
 SERVICE=/etc/systemd/system/crawl.service
 TIMER=/etc/systemd/system/crawl.timer
@@ -162,7 +181,7 @@ Description=Daily crawl job
 [Service]
 Type=oneshot
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/docker compose exec app python crawler/run_crawl.py --domain $DOMAIN --max-depth 2 --max-pages 500
+ExecStart=/usr/bin/docker compose exec -e CRAWL_START_URL=${CRAWL_START_URL} app python crawler/run_crawl.py --url ${CRAWL_START_URL} --max-depth 2 --max-pages 500
 EOF_SERVICE
 
 sudo tee "$TIMER" >/dev/null <<EOF_TIMER
