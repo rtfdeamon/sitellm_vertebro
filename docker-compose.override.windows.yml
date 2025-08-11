@@ -1,0 +1,43 @@
+# Lightweight overrides for Windows / low-power CPUs (e.g. ultrabooks)
+# Safe to use with Docker Desktop. Adjust limits via env if нужно.
+version: "3.9"
+
+x-common-resources: &common
+  # Эти лимиты помогают не «удушать» слабые машины.
+  # Работает в Docker Desktop (WSL2). Меняйте через переменные окружения.
+  mem_limit: ${SERVICE_MEM_LIMIT:-1g}
+  cpus: ${SERVICE_CPUS:-1.0}
+
+services:
+  app:
+    <<: *common
+    environment:
+      # Меньше воркеров — меньше нагрузка на CPU/RAM
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-1}
+    # Порты берём из .env (APP_PORT)
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+  celery_worker:
+    <<: *common
+    environment:
+      # Ограничим параллелизм Celery
+      CELERY_WORKERS: ${CELERY_WORKERS:-1}
+
+  celery_beat:
+    <<: *common
+
+  telegram-bot:
+    <<: *common
+
+  mongo:
+    <<: *common
+    # Для Mongo лучше чуть больше RAM, если есть возможность
+    mem_limit: ${MONGO_MEM_LIMIT:-1.5g}
+
+  redis:
+    <<: *common
+
+  qdrant:
+    <<: *common
+    mem_limit: ${QDRANT_MEM_LIMIT:-1.5g}
