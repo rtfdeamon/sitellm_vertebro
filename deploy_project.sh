@@ -146,7 +146,6 @@ update_vector_store()
 PY
   printf '[✓] Knowledge base indexed\n'
 fi
-
 printf '[+] Waiting for API health check...\n'
 for i in {1..40}; do
   if docker compose exec -T app python - <<'PY' >/dev/null 2>&1; then

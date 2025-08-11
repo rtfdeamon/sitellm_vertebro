@@ -17,16 +17,23 @@ COPY pyproject.toml uv.lock ./
 
 # Правильная установка зависимостей через uv.lock
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
-    --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
       export DEBIAN_FRONTEND=noninteractive; \
-      mkdir -p /var/cache/apt/archives/partial; \
-      rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/cache/apt/archives/partial/lock; \
-      for i in 1 2 3 4 5; do \
-        apt-get -o Acquire::Retries=5 update && \
-        apt-get -y -o Dpkg::Use-Pty=0 --no-install-recommends install \
-          build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && break || sleep 3; \
-      done; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends \
+        build-essential git cmake ninja-build pkg-config curl \
+        libopenblas-dev python3-dev; \
+      rm -rf /var/lib/apt/lists/* \
+    '
+
+WORKDIR /src
+COPY pyproject.toml uv.lock ./
+
+# Корректная установка зависимостей через uv:
+# 1) если есть uv.lock → воспроизводимая установка
+# 2) иначе читаем зависимости из pyproject.toml
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
+    bash -euxo pipefail -c '\
       pip install --no-cache-dir "uv>=0.8"; \
       uv pip sync --system --no-cache pyproject.toml; \
       apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build; \
@@ -59,7 +66,6 @@ RUN bash -euxo pipefail -c '\
 # Переносим установленный питон/пакеты и приложение
 COPY --from=build /usr/local /usr/local
 COPY --from=build /src /app
-
 WORKDIR /app
 
 # Healthcheck и старт-скрипт
