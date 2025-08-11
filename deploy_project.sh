@@ -40,6 +40,10 @@ else
   read -r DOMAIN
 fi
 
+# Autodetect crawl start URL from DOMAIN if not provided
+: "${CRAWL_START_URL:=https://${DOMAIN}}"
+export CRAWL_START_URL
+
 printf '[+] Enable GPU? [y/N]: '
 read -r ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
@@ -89,6 +93,7 @@ update_env_var() {
 }
 
 update_env_var DOMAIN "$DOMAIN"
+update_env_var CRAWL_START_URL "$CRAWL_START_URL"
 update_env_var LLM_MODEL "$LLM_MODEL"
 update_env_var REDIS_URL "$REDIS_URL"
 update_env_var QDRANT_URL "$QDRANT_URL"
@@ -141,17 +146,25 @@ update_vector_store()
 PY
   printf '[✓] Knowledge base indexed\n'
 fi
-
 printf '[+] Waiting for API health check...\n'
-if curl -sf http://localhost:8000/health >/dev/null; then
-  echo '[✓] API is healthy'
-else
-  echo '[!] API health check failed'
-fi
+NETWORK="$(docker compose ps -q app | xargs -r docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>/dev/null)"
+NETWORK="${NETWORK:-sitellm_vertebro_default}"
+ok=""
+for i in $(seq 1 40); do
+  if docker run --rm --network "$NETWORK" curlimages/curl:8.7.1 \
+      -fsS "http://app:${PORT:-8000}/healthz" >/dev/null 2>&1; then
+    ok=1; break
+  fi
+  sleep 3
+done
+[ -n "$ok" ] || { echo "[!] API health check failed"; exit 1; }
+echo "[✓] API is healthy"
 
 printf '[+] Initial crawl...\n'
-docker compose exec app python crawler/run_crawl.py --domain "$DOMAIN" --max-depth 2 --max-pages 500
-printf '[✓] Initial crawl done\n'
+docker compose run --rm \
+  -e CRAWL_START_URL="${CRAWL_START_URL}" \
+  app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500 || true
+echo "[✓] Done"
 
 SERVICE=/etc/systemd/system/crawl.service
 TIMER=/etc/systemd/system/crawl.timer
@@ -162,7 +175,7 @@ Description=Daily crawl job
 [Service]
 Type=oneshot
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/docker compose exec app python crawler/run_crawl.py --domain $DOMAIN --max-depth 2 --max-pages 500
+ExecStart=/usr/bin/docker compose exec -e CRAWL_START_URL=${CRAWL_START_URL} app python crawler/run_crawl.py --url ${CRAWL_START_URL} --max-depth 2 --max-pages 500
 EOF_SERVICE
 
 sudo tee "$TIMER" >/dev/null <<EOF_TIMER
