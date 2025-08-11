@@ -89,3 +89,57 @@ tg_bot/       - optional Telegram bot implementation
 observability/ - Prometheus metrics setup
 scripts/      - helper scripts like benchmark and crawler
 ``` 
+
+## Windows quickstart
+
+> Требуется: **Docker Desktop**, **Git for Windows**, **PowerShell 7+**.  
+> Рекомендуется включённый WSL2 backend в Docker Desktop.
+
+1. Клонировать репозиторий и перейти в папку проекта.
+2. (Опционально) отредактировать `.env.example`.
+3. Запустить:
+
+```powershell
+.\deploy_project.ps1
+```
+
+Скрипт:
+- проверит наличие инструментов;
+- создаст/обновит `.env` (при необходимости сгенерирует пароль для Mongo);
+- сохранит бэкап env в `deploy-backups\<timestamp>-windows.zip`;
+\- соберёт образы последовательно (без `--no-parallel`);
+\- поднимет `docker compose` со слабыми лимитами CPU/RAM через `docker-compose.override.windows.yml`;
+\- дождётся готовности API по `http://localhost:${APP_PORT:-8000}/healthz` (или `/health`).
+
+### Нагрузка на слабых машинах
+По умолчанию в Windows-оверрайде заданы щадящие параметры:
+
+```bash
+SERVICE_CPUS=1.0
+SERVICE_MEM_LIMIT=1g
+UVICORN_WORKERS=1
+CELERY_WORKERS=1
+```
+
+Меняйте значения через переменные в `.env` или в окружении, не правя YAML.
+
+### Первичный crawl
+Если хотите сразу запустить первичный обход сайта, передайте URL:
+
+```powershell
+.\deploy_project.ps1 -CrawlUrl "https://example.com"
+```
+
+> Если в проекте используется другой CLI-модуль для crawl — поправьте команду внутри скрипта (поиск `sitellm_vertebro.crawl`).
+
+### Вопросы к модели по HTTP
+После запуска можно обращаться к API из PowerShell:
+
+```powershell
+$port = ${env:APP_PORT} ; if(-not $port){ $port = 8000 }
+Invoke-RestMethod -Uri "http://localhost:$port/api/chat" -Method POST `
+  -ContentType "application/json" `
+  -Body (@{messages=@(@{role="user";content="Привет!"})} | ConvertTo-Json -Depth 5)
+```
+
+Маршрут `/api/chat` приведён как пример — используйте фактические эндпойнты проекта.

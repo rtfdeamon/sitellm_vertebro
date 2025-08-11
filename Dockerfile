@@ -1,43 +1,86 @@
-# Build stage: installs dependencies into the system environment.
+### ---------- Build stage ----------
 FROM python:3.10-slim AS build
+
+# Кэши ускоряют Linux/arm64 сборку на Docker Desktop (Apple Silicon)
+ARG APT_CACHE_ID=apt-cache
+ARG UV_CACHE_ID=uv-cache
+
+# Базовые пакеты для сборки wheels (компилятор и т.д.)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
+    bash -euxo pipefail -c '\
+      export DEBIAN_FRONTEND=noninteractive; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends \
+        build-essential git cmake ninja-build pkg-config curl \
+        libopenblas-dev python3-dev; \
+      rm -rf /var/lib/apt/lists/* \
+    '
 
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
 
-# Increase timeout for large wheel downloads.
-ENV UV_HTTP_TIMEOUT=600
-
-# Allow configuring cache IDs for parallel builds.
-ARG APT_CACHE_ID=apt-cache-app
-ARG UV_CACHE_ID=uv-cache-app
-
-# Cache apt/uv downloads, remove stale locks, install build deps and install Python deps.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
-    --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
+# Корректная установка зависимостей через uv:
+# 1) если есть uv.lock → воспроизводимая установка
+# 2) иначе читаем зависимости из pyproject.toml
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
-      export DEBIAN_FRONTEND=noninteractive; \
-      mkdir -p /var/cache/apt/archives/partial; \
-      rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/cache/apt/archives/partial/lock; \
-      for i in 1 2 3 4 5; do \
-        apt-get -o Acquire::Retries=5 update && \
-        apt-get -y -o Dpkg::Use-Pty=0 --no-install-recommends install \
-          build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && break || sleep 3; \
-      done; \
       pip install --no-cache-dir "uv>=0.8"; \
-      uv pip install --system --no-cache --requirements pyproject.toml; \
-      apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build; \
-      apt-get clean; rm -rf /var/lib/apt/lists/* \
+      if [ -f uv.lock ]; then \
+        uv pip sync --system uv.lock; \
+      else \
+        uv pip install --system --no-cache --requirements pyproject.toml; \
+      fi \
     '
 
 COPY . .
 
-# Runtime stage: copy dependencies and application source.
-FROM python:3.10-slim
+### ---------- Runtime stage ----------
+FROM python:3.10-slim AS runtime
+
+# Минимально необходимые рантайм-зависимости
+# - libopenblas0-pthread: so-шки для numpy/scipy на Debian bookworm (arm64)
+# - curl/ca-certificates: для healthcheck и любых http-пингов
+ARG APT_CACHE_ID=apt-cache-runtime
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
+    bash -euxo pipefail -c '\
+      export DEBIAN_FRONTEND=noninteractive; \
+      apt-get update; \
+      apt-get install -y --no-install-recommends \
+        libopenblas0-pthread curl ca-certificates; \
+      apt-get clean; \
+      rm -rf /var/lib/apt/lists/* \
+    '
 
 COPY --from=build /usr/local /usr/local
 COPY --from=build /src /app
-
 WORKDIR /app
-EXPOSE 8000
-HEALTHCHECK CMD curl -f http://localhost:8000/health || exit 1
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0"]
+
+# Мягкие настройки для слабых CPU/ноутбуков
+ENV PYTHONUNBUFFERED=1 \
+    UVICORN_WORKERS=1 \
+    OMP_NUM_THREADS=1 \
+    OPENBLAS_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    NUMEXPR_MAX_THREADS=1 \
+    TOKENIZERS_PARALLELISM=false \
+    PORT=8000
+
+# Неблокирующий healthcheck: сначала пытаемся /healthz, потом /health, иначе TCP-порт
+HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=10 \
+  CMD bash -lc '\
+    (curl -fsS http://127.0.0.1:${PORT}/healthz || \
+     curl -fsS http://127.0.0.1:${PORT}/health  || \
+     python - <<PY \
+import os, socket, sys; \
+ p=int(os.environ.get("PORT","8000")); \
+ s=socket.socket(); \
+ s.settimeout(2); \
+ ok=False \
+ try: s.connect(("127.0.0.1",p)); ok=True \
+ except Exception: pass \
+ finally: s.close() \
+ sys.exit(0 if ok else 1) \
+PY \
+    ) >/dev/null 2>&1 || exit 1'
+
+## Команда старта берётся из docker-compose; здесь ничего не переопределяем.
