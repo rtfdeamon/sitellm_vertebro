@@ -63,6 +63,7 @@ ENV PYTHONUNBUFFERED=1 \
     MKL_NUM_THREADS=1 \
     NUMEXPR_MAX_THREADS=1 \
     TOKENIZERS_PARALLELISM=false \
+    PYTHONPATH=/app \
     PORT=8000
 
 # Неблокирующий healthcheck: сначала пытаемся /healthz, потом /health, иначе TCP-порт

@@ -9,7 +9,11 @@ import httpx
 import structlog
 
 from .config import get_settings
-from safety import safety_check
+try:
+    # Prefer absolute import when project root is on PYTHONPATH
+    from safety import safety_check
+except ModuleNotFoundError:  # pragma: no cover - fallback for local runs
+    from ..safety import safety_check  # type: ignore
 
 logger = structlog.get_logger(__name__)
 
