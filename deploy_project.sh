@@ -148,13 +148,16 @@ PY
 fi
 printf '[+] Waiting for API health check...\n'
 ok=""
-for i in $(seq 1 40); do
+for i in {1..40}; do
   if docker compose exec -T app sh -c 'curl -fsS http://127.0.0.1:${PORT:-8000}/healthz >/dev/null 2>&1 || curl -fsS http://127.0.0.1:${PORT:-8000}/health >/dev/null 2>&1'; then
-    ok=1; break
+    echo "[✓] API healthy"
+    ok=1
+    break
   fi
   sleep 3
 done
 [ -n "$ok" ] || { echo "[!] API health check failed"; exit 1; }
+
 echo "[✓] API is healthy"
 
 printf '[+] Initial crawl...\n'
