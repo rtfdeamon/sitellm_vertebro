@@ -147,12 +147,9 @@ PY
   printf '[✓] Knowledge base indexed\n'
 fi
 printf '[+] Waiting for API health check...\n'
-NETWORK="$(docker compose ps -q app | xargs -r docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' 2>/dev/null)"
-NETWORK="${NETWORK:-sitellm_vertebro_default}"
 ok=""
 for i in $(seq 1 40); do
-  if docker run --rm --network "$NETWORK" curlimages/curl:8.7.1 \
-      -fsS "http://app:${PORT:-8000}/healthz" >/dev/null 2>&1; then
+  if docker compose exec -T app sh -c 'curl -fsS http://127.0.0.1:${PORT:-8000}/healthz >/dev/null 2>&1 || curl -fsS http://127.0.0.1:${PORT:-8000}/health >/dev/null 2>&1'; then
     ok=1; break
   fi
   sleep 3

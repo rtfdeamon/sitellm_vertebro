@@ -19,17 +19,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
 
-# Корректная установка зависимостей через uv:
-# 1) если есть uv.lock → воспроизводимая установка
-# 2) иначе читаем зависимости из pyproject.toml
+# Устанавливаем зависимости из pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
       pip install --no-cache-dir "uv>=0.8"; \
-      if [ -f uv.lock ]; then \
-        uv pip sync --system uv.lock; \
-      else \
-        uv pip install --system --no-cache --requirements pyproject.toml; \
-      fi \
+      uv pip install --system --no-cache --requirements pyproject.toml; \
     '
 
 COPY . .
@@ -38,7 +32,8 @@ COPY . .
 FROM python:3.10-slim AS runtime
 
 # Минимально необходимые рантайм-зависимости
-# - libopenblas0-pthread: so-шки для numpy/scipy на Debian bookworm (arm64)
+# - libopenblas: so-шки для numpy/scipy
+# - build-essential и др. — чтобы при необходимости собирать колёса
 # - curl/ca-certificates: для healthcheck и любых http-пингов
 ARG APT_CACHE_ID=apt-cache-runtime
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
@@ -46,7 +41,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
       export DEBIAN_FRONTEND=noninteractive; \
       apt-get update; \
       apt-get install -y --no-install-recommends \
-        libopenblas0-pthread curl ca-certificates; \
+        libopenblas0-pthread libopenblas-dev \
+        build-essential cmake ninja-build pkg-config \
+        curl ca-certificates; \
       apt-get clean; \
       rm -rf /var/lib/apt/lists/* \
     '
