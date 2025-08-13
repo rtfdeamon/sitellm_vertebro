@@ -104,6 +104,7 @@ services:
       CMAKE_ARGS: "-DLLAMA_CUBLAS=OFF -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
+      PYTHONPATH: /app
     ports:
       - "8000:8000"
     command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}", "--workers", "${UVICORN_WORKERS:-1}"]
@@ -134,6 +135,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.tg_bot
     env_file: .env
+    environment:
+      PYTHONPATH: /app
     restart: unless-stopped
     depends_on:
       - app
