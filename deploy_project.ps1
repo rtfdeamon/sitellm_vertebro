@@ -99,6 +99,7 @@ try {
   if (-not $Domain){ $Domain = Read-Host "Домен (например, mmvs.ru). Можно оставить пустым" }
   if (-not $MongoPassword){ $MongoPassword = New-RandomPassword 30 }
   $gpuFlag = if ($GPU) { "1" } else { "0" }
+  if (-not $CrawlUrl -and $Domain){ $CrawlUrl = "https://$Domain" }
 
   # .env
   Ensure-File ".env" ".env.example"
@@ -109,7 +110,7 @@ try {
   Set-EnvVarInFile ".env" "MONGO_INITDB_ROOT_USERNAME" $MongoUser
   Set-EnvVarInFile ".env" "MONGO_INITDB_ROOT_PASSWORD" $MongoPassword
   Set-EnvVarInFile ".env" "APP_PORT" "$AppPort"
-  if ($CrawlUrl){ Set-EnvVarInFile ".env" "CRAWL_START_URL" $CrawlUrl }
+  Set-EnvVarInFile ".env" "CRAWL_START_URL" $CrawlUrl
 
   # Бэкап env
   $stamp = (Get-Date).ToString("yyyyMMddHHmmss")
@@ -183,7 +184,7 @@ try {
     Write-Info "Старт первичного crawl по $CrawlUrl"
     Write-Warn "Если имя CLI-модуля проекта иное — поправьте команду ниже под ваш код."
     try {
-      Compose @("run","--rm","app","python","-m","sitellm_vertebro.crawl","--url",$CrawlUrl)
+      Compose @("run","--rm","-e","CRAWL_START_URL=$CrawlUrl","app","python","-m","sitellm_vertebro.crawl","--url",$CrawlUrl)
     } catch {
       Write-Warn "CLI для crawl не найден или завершился с ошибкой. Шаг можно выполнить вручную позднее."
     }
