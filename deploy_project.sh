@@ -149,7 +149,7 @@ fi
 printf '[+] Waiting for API health check...\n'
 ok=""
 for i in {1..40}; do
-  if docker compose exec -T app sh -c 'curl -fsS http://127.0.0.1:${PORT:-8000}/healthz >/dev/null 2>&1 || curl -fsS http://127.0.0.1:${PORT:-8000}/health >/dev/null 2>&1'; then
+  if docker compose exec -T app python scripts/healthcheck.py >/dev/null 2>&1; then
     echo "[✓] API healthy"
     ok=1
     break
