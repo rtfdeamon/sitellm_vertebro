@@ -26,6 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
       uv pip install --system --no-cache --requirements pyproject.toml; \
     '
 
+# Остальной исходный код
 COPY . .
 
 ### ---------- Runtime stage ----------

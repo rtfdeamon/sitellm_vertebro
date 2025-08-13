@@ -3,6 +3,9 @@ x-health: &health_defaults
   interval: 15s
   timeout: 3s
   retries: 10
+  interval: 15s
+  timeout: 3s
+  retries: 10
   start_period: 20s
 
 services:
@@ -107,6 +110,7 @@ services:
       PYTHONPATH: /app
     ports:
       - "8000:8000"
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}", "--workers", "${UVICORN_WORKERS:-1}"]
     command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}", "--workers", "${UVICORN_WORKERS:-1}"]
     volumes:
       - ./data/hf:/root/.cache/huggingface
