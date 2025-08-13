@@ -67,29 +67,97 @@ function Set-EnvVarInFile([string]$file, [string]$name, [string]$value){
 }
 
 function Get-ComposeCmd(){
+  # Проверяем наличие docker compose (v2)
   if (Test-Cmd "docker"){
-    # docker compose (v2) предпочительнее
     try {
-      $v = (docker compose version) 2>$null
-      if ($LASTEXITCODE -eq 0) { return @("docker","compose") }
+      $null = (docker compose version) 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        return @("docker","compose")
+      }
     } catch {}
   }
-  if (Test-Cmd "docker-compose"){ return @("docker-compose") }
-  throw "Docker Compose не найден (ни 'docker compose', ни 'docker-compose')."
+  # Проверяем наличие docker-compose (v1)
+  if (Test-Cmd "docker-compose"){
+    try {
+      $null = (docker-compose version) 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        return @("docker-compose")
+      }
+    } catch {}
+  }
+  throw "Docker Compose не найден или не исполняется (ни 'docker compose', ни 'docker-compose'). Проверьте, что Docker Desktop установлен, и перезапустите PowerShell."
 }
 
 function Compose([string[]]$args){
-  & $script:ComposeCmd @args
+  if (-not $script:ComposeCmd -or $script:ComposeCmd.Count -eq 0) {
+    throw "Docker Compose не найден или не инициализирован. Проверьте установку Docker Desktop и перезапустите PowerShell."
+  }
+  try {
+    & $script:ComposeCmd @args
+  } catch {
+    throw "Ошибка запуска Docker Compose: $($_.Exception.Message)"
+  }
   if ($LASTEXITCODE -ne 0){ throw "Команда 'docker compose $args' завершилась ошибкой." }
+}
+
+function Test-DockerAvailability {
+    Write-Info "Проверка Docker..."
+    
+    # Check Docker installation
+    $dockerPath = (Get-Command "docker" -ErrorAction SilentlyContinue).Path
+    if (-not $dockerPath) {
+        Write-Err "Docker не установлен или не доступен в PATH."
+        Write-Host "→ Установите Docker Desktop с https://www.docker.com/products/docker-desktop" -ForegroundColor Yellow
+        return $false
+    }
+
+    # Check Docker service
+    $dockerService = Get-Service "com.docker.service" -ErrorAction SilentlyContinue
+    if (-not $dockerService -or $dockerService.Status -ne 'Running') {
+        Write-Err "Служба Docker не запущена."
+        Write-Host "→ Запустите Docker Desktop и попробуйте снова." -ForegroundColor Yellow
+        return $false
+    }
+
+    # Test Docker functionality
+    try {
+        $null = docker version 2>&1
+        if ($LASTEXITCODE -ne 0) { throw "Docker version check failed" }
+    } catch {
+        Write-Err "Docker установлен, но не отвечает."
+        Write-Host "→ Перезапустите Docker Desktop и попробуйте снова." -ForegroundColor Yellow
+        return $false
+    }
+
+    return $true
 }
 
 try {
   Push-Location $PSScriptRoot
 
-  Write-Info "Проверка требований…"
-  Require-Cmd "git" "Установите Git for Windows."
-  Require-Cmd "docker" "Установите Docker Desktop и запустите его."
-  $ComposeCmd = Get-ComposeCmd
+  Write-Host "[+] Проверка требований…"
+
+  if (-not (Test-DockerAvailability)) {
+      exit 1
+  }
+
+  # Check docker-compose availability using existing Get-ComposeCmd function
+  $script:ComposeCmd = Get-ComposeCmd
+
+  # Явная проверка запуска docker compose до сборки
+  try {
+    & $script:ComposeCmd version | Out-Null
+  } catch {
+    Write-Err "Docker Compose не исполняется (PATH не обновлён или требуется перезапуск PowerShell)."
+    Write-Host "→ Закройте все окна PowerShell и откройте новое, либо перезагрузите компьютер после установки Docker Desktop." -ForegroundColor Yellow
+    exit 1
+  }
+  if ($LASTEXITCODE -ne 0) {
+    Write-Err "Docker Compose не исполняется (ошибка запуска). Проверьте установку и перезапустите PowerShell."
+    Write-Host "→ Закройте все окна PowerShell и откройте новое, либо перезагрузите компьютер после установки Docker Desktop." -ForegroundColor Yellow
+    exit 1
+  }
+
   if ($PSVersionTable.PSVersion.Major -lt 7){
     Write-Warn "Рекомендуется PowerShell 7+. Текущая версия: $($PSVersionTable.PSVersion)"
   }
