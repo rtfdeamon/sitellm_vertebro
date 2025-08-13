@@ -4,8 +4,14 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+
+import structlog
+import logging
+import os
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from observability.metrics import MetricsMiddleware, metrics_app
 
@@ -14,6 +20,25 @@ from mongo import MongoClient
 from vectors import DocumentsParser
 from yallm import YaLLM, YaLLMEmbeddings
 from settings import Settings
+from core.status import status_dict
+
+
+# Создаем уникальный лог-файл для каждого запуска
+log_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_filename = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_path = os.path.join(log_dir, log_filename)
+
+# Настройка structlog для записи в файл
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[logging.FileHandler(log_path), logging.StreamHandler()]
+)
+structlog.configure(
+    processors=[structlog.processors.JSONRenderer()],
+    logger_factory=structlog.stdlib.LoggerFactory(),
+)
 
 settings = Settings()
 
@@ -72,9 +97,16 @@ app.include_router(
     llm_router,
     prefix="/api/v1",
 )
+app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     """Simple health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/status")
+def status() -> dict[str, object]:
+    """Return aggregated crawler and database status."""
+    return status_dict()

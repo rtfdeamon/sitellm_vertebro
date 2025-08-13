@@ -40,6 +40,22 @@ Alternatively you can start the whole stack using Docker Compose:
 docker compose up --build
 ```
 
+## One-shot deployment
+
+For an automated setup on Linux or macOS the repository ships a helper
+script:
+
+```bash
+./deploy_project.sh
+```
+
+The script asks for your domain name, writes a `.env` file, builds the Docker
+images sequentially, waits for the API to become healthy from inside the
+`app` container and then launches an initial crawl.  The crawl start URL
+defaults to `https://<DOMAIN>` but can be overridden by setting
+`CRAWL_START_URL` before running the script.  Run with `--yes` to skip
+interactive prompts.
+
 ## Testing
 
 Run unit tests with:
@@ -143,3 +159,12 @@ Invoke-RestMethod -Uri "http://localhost:$port/api/chat" -Method POST `
 ```
 
 Маршрут `/api/chat` приведён как пример — используйте фактические эндпойнты проекта.
+
+## Web Chat Widget
+
+After the stack is running the application serves a small widget at
+``/widget/``. Open [http://localhost:8000/widget/](http://localhost:8000/widget/)
+in a browser and type a question to see the model's answer streamed live.
+
+To reuse the widget in another site copy ``widget/index.html`` and adjust the
+``EventSource`` URL to your deployment.

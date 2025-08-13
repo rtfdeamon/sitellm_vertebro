@@ -9,12 +9,35 @@ from pymongo import MongoClient
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
+
 import structlog
+import logging
+import os
+from datetime import datetime
 
 from models import Document
 from settings import Settings
 from vectors import DocumentsParser
 from yallm import YaLLMEmbeddings
+from core.status import status_dict
+
+
+# Создаем уникальный лог-файл для каждого запуска воркера
+log_dir = os.path.join(os.path.dirname(__file__), "logs")
+os.makedirs(log_dir, exist_ok=True)
+log_filename = f"worker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+log_path = os.path.join(log_dir, log_filename)
+
+# Настройка structlog для записи в файл
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(message)s",
+    handlers=[logging.FileHandler(log_path), logging.StreamHandler()]
+)
+structlog.configure(
+    processors=[structlog.processors.JSONRenderer()],
+    logger_factory=structlog.stdlib.LoggerFactory(),
+)
 
 settings = Settings()
 
@@ -27,7 +50,11 @@ celery.conf.beat_schedule = {
     "update-vector-store-biweekly": {
         "task": "worker.periodic_update",
         "schedule": crontab(day_of_week=[3, 6]),
-    }
+    },
+    "status-report-every-30s": {
+        "task": "status.report",
+        "schedule": 30.0,
+    },
 }
 
 
@@ -122,3 +149,20 @@ def periodic_update():
     """
     logger.info("scheduled update")
     update_vector_store()
+
+
+@celery.task(name="status.report")
+def status_report():
+    """Log a short status summary."""
+    s = status_dict()
+    logger.info(
+        "status",
+        fill=s["fill_percent"],
+        mongo=s["db"]["mongo_docs"],
+        qdrant=s["db"]["qdrant_points"],
+        queued=s["crawler"]["queued"],
+        in_progress=s["crawler"]["in_progress"],
+        done=s["crawler"]["done"],
+        failed=s["crawler"]["failed"],
+        last=s["crawler"]["last_url"],
+    )

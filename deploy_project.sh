@@ -147,6 +147,26 @@ PY
   printf '[✓] Knowledge base indexed\n'
 fi
 printf '[+] Waiting for API health check...\n'
+<<<<<<< HEAD
+ok=""
+for i in {1..40}; do
+  if docker compose exec -T app sh -c 'curl -fsS http://127.0.0.1:${PORT:-8000}/health >/dev/null' ; then
+    echo "[✓] API healthy"
+    ok=1
+    break
+  fi
+  sleep 3
+done
+[ -n "$ok" ] || { echo "[!] API health check failed"; exit 1; }
+
+echo "[✓] API is healthy"
+
+printf '[+] Initial crawl...\n'
+docker compose run --rm \
+  -e CRAWL_START_URL="${CRAWL_START_URL}" \
+  app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500 || true
+echo "[✓] Done"
+=======
 for i in {1..40}; do
   if docker compose exec -T app python - <<'PY' >/dev/null 2>&1; then
 import os, urllib.request, sys
@@ -162,6 +182,7 @@ printf '[+] Initial crawl...\n'
 docker compose exec -e CRAWL_START_URL="${CRAWL_START_URL}" \
   app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500
 printf '[✓] Initial crawl done\n'
+>>>>>>> main
 
 SERVICE=/etc/systemd/system/crawl.service
 TIMER=/etc/systemd/system/crawl.timer

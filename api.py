@@ -71,9 +71,15 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     return ORJSONResponse(LLMResponse(text=response[-1].text).model_dump())
 
 
-@llm_router.post("/chat")
+@llm_router.get("/chat")
 async def chat(question: str) -> StreamingResponse:
-    """Stream tokens from the language model using SSE."""
+    """Stream tokens from the language model using server-sent events.
+
+    Parameters
+    ----------
+    question:
+        Text sent as a query parameter. Example: ``/chat?question=hi``.
+    """
 
     logger.info("chat", question=question)
 
