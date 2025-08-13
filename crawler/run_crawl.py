@@ -37,6 +37,8 @@ from typing import Iterable, List, Set, Tuple
 import requests
 from bs4 import BeautifulSoup
 from pymongo import MongoClient, UpdateOne
+from redis import Redis
+from contextlib import contextmanager
 
 # ----------------------------- Константы ----------------------------- #
 DEFAULT_MAX_PAGES: int = int(os.getenv("CRAWL_MAX_PAGES", "500"))
@@ -45,6 +47,38 @@ DEFAULT_START_URL: str | None = os.getenv("CRAWL_START_URL")
 DEFAULT_MONGO_URI: str = os.getenv(
     "MONGO_URI", "mongodb://root:changeme@mongo:27017"
 )
+REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
+r = Redis(host=os.getenv("REDIS_HOST", "redis"), port=int(os.getenv("REDIS_PORT", "6379")), decode_responses=True)
+
+def _incr(key: str, delta: int = 1):
+    try:
+        r.incrby(REDIS_PREFIX + key, delta)
+    except Exception:
+        pass
+
+def _set(key: str, value):
+    try:
+        r.set(REDIS_PREFIX + key, value)
+    except Exception:
+        pass
+
+def on_crawler_start():
+    _set("started_at", time.time())
+
+@contextmanager
+def mark_url(url: str):
+    _incr("in_progress", 1)
+    _incr("queued", -1)
+
+    _set("last_url", url)
+    try:
+        yield
+        _incr("done", 1)
+    except Exception:
+        _incr("failed", 1)
+        raise
+    finally:
+        _incr("in_progress", -1)
 
 HEADERS = {
     "User-Agent": (
@@ -96,6 +130,7 @@ def crawl(
 
     visited: Set[str] = set()
     queue: deque[Tuple[str, int]] = deque([(start_url, 0)])
+    _incr("queued", 1)
 
     while queue and len(visited) < max_pages:
         url, depth = queue.popleft()
@@ -103,19 +138,21 @@ def crawl(
             continue
         visited.add(url)
 
-        html, ctype = fetch(url)
-        if html is None:
-            continue
+        with mark_url(url):
+            html, ctype = fetch(url)
+            if html is None:
+                continue
 
-        yield url, html, ctype
+            yield url, html, ctype
 
-        # Ограничиваем домен, чтобы не уползти далеко
-        if allowed_domain and urlparse.urlparse(url).netloc != allowed_domain:
-            continue
+            # Ограничиваем домен, чтобы не уползти далеко
+            if allowed_domain and urlparse.urlparse(url).netloc != allowed_domain:
+                continue
 
-        for link in extract_links(html, url):
-            if link not in visited:
-                queue.append((link, depth + 1))
+            for link in extract_links(html, url):
+                if link not in visited:
+                    queue.append((link, depth + 1))
+                    _incr("queued", 1)
 
 
 # -------------------------- MongoDB utils ---------------------------- #
@@ -173,6 +210,8 @@ def main() -> None:  # noqa: D401
 
     col = get_mongo_collection(args.mongo_uri)
     buffer: list[dict] = []
+
+    on_crawler_start()
 
     try:
         for url, html, ctype in crawl(

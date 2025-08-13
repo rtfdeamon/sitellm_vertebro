@@ -10,6 +10,7 @@ dependencies = [
     "docx2txt>=0.9",
     "fastapi>=0.115.14",
     "fastapi-cli>=0.0.7",
+    "rich>=13.7",
     "huggingface-hub>=0.33.1",
     "langchain>=0.3.26",
     "langchain-community>=0.3.27",

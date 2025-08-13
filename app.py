@@ -15,6 +15,7 @@ from mongo import MongoClient
 from vectors import DocumentsParser
 from yallm import YaLLM, YaLLMEmbeddings
 from settings import Settings
+from core.status import status_dict
 
 settings = Settings()
 
@@ -80,3 +81,9 @@ app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 def health() -> dict[str, str]:
     """Simple health check endpoint."""
     return {"status": "ok"}
+
+
+@app.get("/status")
+def status() -> dict[str, object]:
+    """Return aggregated crawler and database status."""
+    return status_dict()
