@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from observability.metrics import MetricsMiddleware, metrics_app
 
@@ -72,6 +73,7 @@ app.include_router(
     llm_router,
     prefix="/api/v1",
 )
+app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 
 
 @app.get("/health")
