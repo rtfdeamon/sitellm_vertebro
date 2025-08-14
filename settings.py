@@ -73,7 +73,11 @@ class Settings(BaseSettings):
     redis: Redis = Redis()
 
     model_config = ConfigDict(
-        env_file=".env", env_file_encoding="utf-8", env_nested_delimiter="_"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_nested_delimiter="_",
+        case_sensitive=False,
+        extra="ignore",
     )
 
 
