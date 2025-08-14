@@ -100,7 +100,7 @@ app.include_router(
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 
 
-@app.get("/health")
+@app.get("/health", include_in_schema=False)
 def health() -> dict[str, str]:
     """Simple health check endpoint."""
     return {"status": "ok"}

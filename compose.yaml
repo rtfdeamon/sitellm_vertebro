@@ -3,9 +3,6 @@ x-health: &health_defaults
   interval: 15s
   timeout: 3s
   retries: 10
-  interval: 15s
-  timeout: 3s
-  retries: 10
   start_period: 20s
 
 services:
@@ -101,6 +98,8 @@ services:
         UV_CACHE_ID: uv-cache-app
     restart: unless-stopped
     env_file: .env
+    ports:
+      - "8000:8000"
     environment:
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
       CRAWL_START_URL: ${CRAWL_START_URL:-https://mmvs.ru}
@@ -108,22 +107,29 @@ services:
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
       PYTHONPATH: /app
-    ports:
-      - "8000:8000"
-    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}", "--workers", "${UVICORN_WORKERS:-1}"]
-    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}", "--workers", "${UVICORN_WORKERS:-1}"]
+    command: >
+      sh -lc "
+        uv run uvicorn app:app
+        --host 0.0.0.0
+        --port 8000
+        --workers ${APP_WORKERS:-1}
+        --timeout-keep-alive 30
+      "
     volumes:
       - ./data/hf:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
     depends_on:
-      redis:
-        condition: service_healthy
       mongo:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       qdrant:
         condition: service_started
-    healthcheck:
-      <<: *health_defaults
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${PORT:-8000}/healthz || curl -fsS http://127.0.0.1:${PORT:-8000}/health || exit 1"]
 
   qdrant:
     image: qdrant/qdrant
