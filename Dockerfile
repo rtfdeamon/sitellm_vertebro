@@ -64,22 +64,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
     PORT=8000
 
-# Неблокирующий healthcheck: сначала пытаемся /healthz, потом /health, иначе TCP-порт
+# Простая проверка готовности API
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=10 \
-  CMD bash -lc '\
-    (curl -fsS http://127.0.0.1:${PORT}/healthz || \
-     curl -fsS http://127.0.0.1:${PORT}/health  || \
-     python - <<PY \
-import os, socket, sys; \
- p=int(os.environ.get("PORT","8000")); \
- s=socket.socket(); \
- s.settimeout(2); \
- ok=False \
- try: s.connect(("127.0.0.1",p)); ok=True \
- except Exception: pass \
- finally: s.close() \
- sys.exit(0 if ok else 1) \
-PY \
-    ) >/dev/null 2>&1 || exit 1'
+  CMD curl -fsS http://127.0.0.1:${PORT}/healthz || exit 1
 
 ## Команда старта берётся из docker-compose; здесь ничего не переопределяем.
