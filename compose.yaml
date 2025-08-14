@@ -109,14 +109,9 @@ services:
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
       PYTHONPATH: /app
-    command: >
-      sh -lc "
-        uv run uvicorn app:app
-        --host ${APP_HOST:-0.0.0.0}
-        --port ${APP_PORT:-8000}
-        --workers ${APP_WORKERS:-1}
-        --timeout-keep-alive 30
-      "
+    ports:
+      - "8000:8000"
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}", "--workers", "${UVICORN_WORKERS:-1}"]
     volumes:
       - ./data/hf:/root/.cache/huggingface
     healthcheck:
