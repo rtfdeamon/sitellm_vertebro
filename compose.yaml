@@ -3,9 +3,6 @@ x-health: &health_defaults
   interval: 15s
   timeout: 3s
   retries: 10
-  interval: 15s
-  timeout: 3s
-  retries: 10
   start_period: 20s
 
 services:
