@@ -120,7 +120,7 @@ services:
     volumes:
       - ./data/hf:/root/.cache/huggingface
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 20
