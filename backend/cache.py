@@ -9,7 +9,7 @@ from typing import Any, Awaitable, Callable, Coroutine
 from redis.asyncio import ConnectionPool, Redis
 import structlog
 
-from settings import get_settings
+from .settings import get_settings
 
 logger = structlog.get_logger(__name__)
 

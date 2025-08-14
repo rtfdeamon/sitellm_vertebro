@@ -21,6 +21,10 @@ from vectors import DocumentsParser
 from yallm import YaLLM, YaLLMEmbeddings
 from settings import Settings
 from core.status import status_dict
+from backend.settings import settings as base_settings
+from pymongo import MongoClient as SyncMongoClient
+import redis
+import requests
 
 
 # Создаем уникальный лог-файл для каждого запуска
@@ -100,10 +104,41 @@ app.include_router(
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 
 
-@app.get("/health")
-def health() -> dict[str, str]:
-    """Simple health check endpoint."""
-    return {"status": "ok"}
+def _mongo_ok() -> bool:
+    try:
+        mc = SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=500)
+        mc.admin.command("ping")
+        return True
+    except Exception:
+        return False
+
+
+def _redis_ok() -> bool:
+    try:
+        r = redis.from_url(base_settings.redis_url, socket_connect_timeout=0.5)
+        return bool(r.ping())
+    except Exception:
+        return False
+
+
+def _qdrant_ok() -> bool:
+    try:
+        resp = requests.get(f"{base_settings.qdrant_url}/healthz", timeout=0.8)
+        return resp.ok
+    except Exception:
+        return False
+
+
+@app.get("/health", include_in_schema=False)
+def health() -> dict[str, object]:
+    """Health check with external service probes."""
+    checks = {
+        "mongo": _mongo_ok(),
+        "redis": _redis_ok(),
+        "qdrant": _qdrant_ok(),
+    }
+    status = "ok" if all(checks.values()) else "degraded"
+    return {"status": status, **checks}
 
 
 @app.get("/status")

@@ -5,6 +5,8 @@ from __future__ import annotations
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 import structlog
+import requests
+from backend.settings import settings
 
 logger = structlog.get_logger(__name__)
 
@@ -60,5 +62,28 @@ def setup(dp: Dispatcher) -> None:
     logger.info("register handlers")
     dp.message.register(start_handler, CommandStart())
     dp.message.register(help_handler, Command("help"))
+    dp.message.register(status_handler, Command("status"))
     dp.message.register(text_handler, lambda m: m.text and not m.text.startswith("/"))
     dp.message.register(unknown_handler)
+
+
+async def status_handler(message: types.Message) -> None:
+    """Return crawler and DB status from the API."""
+    try:
+        resp = requests.get("http://app:8000/status", timeout=3)
+        data = resp.json()
+        mongo = data["db"].get("mongo_collections", {})
+        qpts = data["db"].get("qdrant_points")
+        text = ["<b>DB</b>"]
+        for k, v in mongo.items():
+            text.append(f"• {k}: {v}")
+        text.append(f"• qdrant_points: {qpts}")
+        text.append("\n<b>Crawler</b>")
+        for k, v in data.get("crawler", {}).items():
+            text.append(
+                f"• {k}: queued={v.get('queued',0)} fetched={v.get('fetched',0)} "
+                f"parsed={v.get('parsed',0)} indexed={v.get('indexed',0)} errors={v.get('errors',0)}"
+            )
+        await message.answer("\n".join(text), parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"Не удалось получить статус: {e}")
