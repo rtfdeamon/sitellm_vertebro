@@ -101,6 +101,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      APP_HOST: "0.0.0.0"
+      APP_PORT: "8000"
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
       CRAWL_START_URL: ${CRAWL_START_URL:-https://mmvs.ru}
       CMAKE_ARGS: "-DLLAMA_CUBLAS=OFF -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
