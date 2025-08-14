@@ -17,12 +17,10 @@ try:  # optional heavy deps
 except Exception:  # pragma: no cover - missing deep learning deps
     torch = None
     AutoModelForCausalLM = AutoTokenizer = TextIteratorStreamer = None
-from settings import Settings
+from .settings import settings
 import structlog
 
 logger = structlog.get_logger(__name__)
-
-settings = Settings()
 
 _tokenizer: AutoTokenizer | None = None
 _model: AutoModelForCausalLM | None = None
