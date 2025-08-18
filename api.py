@@ -5,12 +5,16 @@ from fastapi.responses import ORJSONResponse, StreamingResponse
 
 import structlog
 
-from backend import llm_client
+from backend import llm_client, prompt
+from retrieval import search
+import textnorm
 
 from models import LLMResponse, LLMRequest, RoleEnum
 from mongo import NotFound
+from settings import get_settings
 
 logger = structlog.get_logger(__name__)
+settings = get_settings()
 
 llm_router = APIRouter(
     prefix="/llm",
@@ -72,21 +76,45 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
 
 @llm_router.get("/chat")
-async def chat(question: str) -> StreamingResponse:
-    """Stream tokens from the language model using server-sent events.
+async def chat(request: Request, question: str) -> StreamingResponse:
+    """Process the query through RAG pipeline and stream LLM answer with full logging."""
 
-    Parameters
-    ----------
-    question:
-        Text sent as a query parameter. Example: ``/chat?question=hi``.
-    """
+    logger.info("raw query", query=question)
+    normalized_query = textnorm.normalize_query(question)
+    logger.info("normalized query", query=normalized_query)
+    rewritten_query = await textnorm.rewrite_query(normalized_query)
+    logger.info("rewritten query", query=rewritten_query)
 
-    logger.info("chat", question=question)
+    docs_kw = await request.state.mongo.search_documents(
+        settings.mongo.documents, rewritten_query
+    )
+    docs_vec = await search.vector_search(rewritten_query)
+
+    results = {}
+    for rank, doc in enumerate(docs_vec, start=1):
+        item = results.setdefault(
+            doc.id, search.Doc(doc.id, getattr(doc, "payload", None))
+        )
+        item.score += 1 / (60 + rank)
+    for rank, doc in enumerate(docs_kw, start=1):
+        item = results.setdefault(doc.fileId, search.Doc(doc.fileId, None))
+        item.score += 1 / (60 + rank)
+
+    docs_combined = sorted(results.values(), key=lambda d: d.score, reverse=True)
+    doc_ids = [doc.id for doc in docs_combined]
+    logger.info("documents found", ids=doc_ids)
+
+    prompt_text = prompt.build_prompt(question, docs_combined)
+    logger.debug("prompt built", length=len(prompt_text))
 
     async def event_stream():
-        async for token in llm_client.generate(question):
+        answer = ""
+        async for token in llm_client.generate(prompt_text):
+            answer += token
             yield f"data: {token}\n\n"
+        logger.info("model answer", answer=answer)
 
-    headers = {"X-Model-Name": "vikhr-gpt-8b-it"}
-    response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
-    return response
+    headers = {"X-Model-Name": settings.llm_model}
+    return StreamingResponse(
+        event_stream(), media_type="text/event-stream", headers=headers
+    )
