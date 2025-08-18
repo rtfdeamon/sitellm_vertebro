@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Dict
+from dataclasses import asdict, dataclass
+from typing import Dict, List
+import hashlib, json
 import structlog
+
+from backend.cache import _get_redis
 
 logger = structlog.get_logger(__name__)
 
@@ -43,3 +46,27 @@ def hybrid_search(query: str, k: int = 10) -> List[Doc]:
     docs = sorted(results.values(), key=lambda d: d.score, reverse=True)
     logger.info("hybrid search done", returned=len(docs))
     return docs[:k]
+
+
+async def vector_search(query: str, k: int = 50) -> List[Doc]:
+    """Perform dense vector search for ``query`` and return top ``k`` docs (cached)."""
+
+    logger.info("vector search", query=query)
+    key = "vector:" + hashlib.sha1(query.lower().encode()).hexdigest()
+    redis = _get_redis()
+    cached = await redis.get(key)
+    if cached is not None:
+        logger.info("cache hit", key=key)
+        docs_list = json.loads(cached.decode())
+        docs = [Doc(**d) for d in docs_list]
+    else:
+        results = qdrant.similarity(query, top=k, method="dense")
+        docs = [
+            Doc(doc.id, getattr(doc, "payload", None), getattr(doc, "score", 0.0))
+            for doc in results
+        ]
+        docs_list = [asdict(doc) for doc in docs]
+        await redis.setex(key, 86400, json.dumps(docs_list, ensure_ascii=False))
+        logger.info("cache store", key=key)
+    logger.info("vector search done", returned=len(docs))
+    return docs
