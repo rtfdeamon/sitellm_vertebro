@@ -1,18 +1,21 @@
+"""Basic text normalization and rewriting utilities."""
+
 import structlog
-from backend.cache import cache_query_rewrite
 
 logger = structlog.get_logger(__name__)
 
 
-def normalize_query(text: str) -> str:
-    """Normalize the user query (e.g., strip whitespace and lowercase)."""
-    normalized = text.strip().lower()
-    logger.debug("normalized query", original=text, normalized=normalized)
-    return normalized
+def normalize_query(query: str) -> str:
+    """Return a normalized version of ``query``.
+
+    Currently this is a placeholder that returns the query unchanged.
+    """
+    return query
 
 
-@cache_query_rewrite
-async def rewrite_query(text: str) -> str:
-    """Rewrite the query for better retrieval using an LLM (LLM#2)."""
-    # TODO: Use an LLM to rephrase the query. For now, return the text unchanged.
-    return text
+async def rewrite_query(query: str) -> str:
+    """Return an optional rewrite of ``query`` using an auxiliary model.
+
+    This default implementation simply echoes the input query.
+    """
+    return query
