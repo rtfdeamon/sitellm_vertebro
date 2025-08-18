@@ -10,6 +10,7 @@ from langchain_core.prompt_values import ChatPromptValue
 from langchain_core.runnables.config import ensure_config
 from langchain_core.messages.utils import convert_to_messages
 import structlog
+from backend.cache import cache_response
 
 logger = structlog.get_logger(__name__)
 

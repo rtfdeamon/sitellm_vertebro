@@ -17,6 +17,7 @@ from settings import get_settings
 from mongo import NotFound, MongoClient
 
 logger = structlog.get_logger(__name__)
+settings = get_settings()
 
 # ``textnorm`` may not be available in all environments. Provide fallbacks
 # so that importing this module does not fail during tests.
@@ -184,6 +185,8 @@ async def chat(request: Request, question: str) -> StreamingResponse:
     async def event_stream():
         async for token in pipeline.stream(question):
             yield f"data: {token}\n\n"
+        logger.info("model answer", answer=answer)
 
     headers = {"X-Model-Name": get_settings().llm_model}
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+  
