@@ -1,16 +1,120 @@
 """FastAPI router with an endpoint for interacting with the LLM."""
 
+from __future__ import annotations
+
+import inspect
+
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import ORJSONResponse, StreamingResponse
 
 import structlog
 
-from backend import llm_client
+from backend import llm_client, prompt
+from backend.settings import settings as base_settings
+from retrieval import search
+from settings import get_settings
 
-from models import LLMResponse, LLMRequest, RoleEnum
-from mongo import NotFound
+from mongo import NotFound, MongoClient
 
 logger = structlog.get_logger(__name__)
+
+# ``textnorm`` may not be available in all environments. Provide fallbacks
+# so that importing this module does not fail during tests.
+try:  # pragma: no cover - optional dependency
+    import textnorm  # type: ignore
+except Exception:  # pragma: no cover - missing optional module
+    class _TextNorm:  # noqa: D401 - simple namespace for fallbacks
+        """Fallback normalizer used when ``textnorm`` isn't installed."""
+
+        @staticmethod
+        def normalize_query(query: str) -> str:
+            return query
+
+        @staticmethod
+        async def rewrite_query(query: str) -> str:  # pragma: no cover - trivial
+            return query
+
+    textnorm = _TextNorm()  # type: ignore
+
+
+class QueryLogger:
+    """Wrapper class to log all steps of the query processing pipeline."""
+
+    def __init__(self, mongo_client: MongoClient, llm_client_module):
+        self.mongo = mongo_client
+        self.llm_client = llm_client_module
+        self.documents_collection = get_settings().mongo.documents
+        # Initialize Qdrant client if not already set
+        if search.qdrant is None:  # pragma: no cover - network/client setup
+            try:
+                from qdrant_client import QdrantClient
+
+                search.qdrant = QdrantClient(url=str(base_settings.qdrant_url))
+                logger.info("qdrant ready")
+            except Exception as e:  # pragma: no cover - optional service
+                logger.warning("qdrant init failed", error=str(e))
+
+    async def stream(self, question: str):
+        """Async generator yielding answer tokens while logging each step."""
+
+        # Raw query
+        logger.info("raw query", query=question)
+        normalized = textnorm.normalize_query(question)
+        logger.info("normalized query", query=normalized)
+        rewritten = await textnorm.rewrite_query(normalized)
+        logger.info("rewritten query", query=rewritten)
+
+        # Retrieve documents via prefilter and vector search
+        docs_kw = []
+        if hasattr(self.mongo, "search_documents"):
+            try:
+                func = getattr(self.mongo, "search_documents")
+                docs_kw = await func(self.documents_collection, rewritten)
+            except Exception as e:  # pragma: no cover - external service
+                logger.warning("search_documents failed", error=str(e))
+
+        vector_search = getattr(search, "vector_search", None)
+        try:
+            if vector_search is None:
+                docs_vec = search.hybrid_search(rewritten)
+            elif inspect.iscoroutinefunction(vector_search):
+                docs_vec = await vector_search(rewritten)
+            else:
+                docs_vec = vector_search(rewritten)
+        except Exception as e:  # pragma: no cover - external service
+            logger.warning("vector search failed", error=str(e))
+            docs_vec = []
+
+        # RRF combination of results
+        results = {}
+        for rank, doc in enumerate(docs_vec, start=1):
+            item = results.setdefault(
+                doc.id, search.Doc(doc.id, getattr(doc, "payload", None))
+            )
+            item.score += 1 / (60 + rank)
+        for rank, doc in enumerate(docs_kw, start=1):
+            doc_id = getattr(doc, "id", None) or getattr(doc, "fileId", None)
+            item = results.setdefault(doc_id, search.Doc(doc_id, getattr(doc, "payload", None)))
+            item.score += 1 / (60 + rank)
+        docs_combined = sorted(results.values(), key=lambda d: d.score, reverse=True)
+        logger.info("documents found", ids=[d.id for d in docs_combined])
+
+        prompt_text = prompt.build_prompt(question, docs_combined)
+
+        # Stream model answer tokens
+        answer = ""
+        async for token in self.llm_client.generate(prompt_text):
+            answer += token
+            yield token
+        logger.info("model answer", answer=answer)
+
+    async def run(self, question: str) -> str:
+        """Generate the full answer text with all steps logged."""
+
+        tokens = []
+        async for token in self.stream(question):
+            tokens.append(token)
+        return "".join(tokens)
 
 llm_router = APIRouter(
     prefix="/llm",
@@ -72,21 +176,14 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
 
 @llm_router.get("/chat")
-async def chat(question: str) -> StreamingResponse:
-    """Stream tokens from the language model using server-sent events.
+async def chat(request: Request, question: str) -> StreamingResponse:
+    """Stream tokens from the language model with all steps logged."""
 
-    Parameters
-    ----------
-    question:
-        Text sent as a query parameter. Example: ``/chat?question=hi``.
-    """
-
-    logger.info("chat", question=question)
+    pipeline = QueryLogger(request.state.mongo, llm_client)
 
     async def event_stream():
-        async for token in llm_client.generate(question):
+        async for token in pipeline.stream(question):
             yield f"data: {token}\n\n"
 
-    headers = {"X-Model-Name": "vikhr-gpt-8b-it"}
-    response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
-    return response
+    headers = {"X-Model-Name": get_settings().llm_model}
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
