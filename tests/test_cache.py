@@ -10,6 +10,7 @@ module_path = Path(__file__).resolve().parents[1] / "backend" / "cache.py"
 spec = importlib.util.spec_from_file_location("backend.cache", module_path)
 cache = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = cache
+old_redis = sys.modules.get("redis.asyncio")
 fake_redis = types.ModuleType("redis.asyncio")
 fake_redis.ConnectionPool = object
 fake_redis.Redis = object
@@ -23,6 +24,10 @@ if old_settings is None:
     del sys.modules["settings"]
 else:
     sys.modules["settings"] = old_settings
+if old_redis is None:
+    del sys.modules["redis.asyncio"]
+else:
+    sys.modules["redis.asyncio"] = old_redis
 
 
 class FakeRedis:

@@ -2,12 +2,18 @@
 
 from collections.abc import AsyncGenerator
 from urllib.parse import quote_plus
+import hashlib
+import json
 
+import structlog
 from bson import ObjectId
 from gridfs import AsyncGridFS
 from pymongo import AsyncMongoClient
 
+from backend.cache import _get_redis
 from models import ContextMessage, ContextPreset, Document
+
+logger = structlog.get_logger(__name__)
 
 
 class NotFound(Exception):
@@ -112,6 +118,28 @@ class MongoClient:
         cursor = self.db[collection].find(query, {"_id": False})
         async for message in cursor:
             yield Document(**message)
+
+    async def search_documents(self, collection: str, query: str) -> list[Document]:
+        """Return documents from ``collection`` whose fields match ``query`` (cached)."""
+        # Use a text index on 'name' or 'description' for keyword search
+        search_query = {"$text": {"$search": query}}
+        key = "prefilter:" + hashlib.sha1(query.lower().encode()).hexdigest()
+        redis = _get_redis()
+        cached = await redis.get(key)
+        if cached:
+            logger.info("cache hit", key=key)
+            docs_data = json.loads(cached.decode())
+            return [Document(**d) for d in docs_data]
+        cursor = self.db[collection].find(
+            search_query, {"_id": False, "score": {"$meta": "textScore"}}
+        )
+        cursor = cursor.sort([("score", {"$meta": "textScore"})]).limit(50)
+        documents = [Document(**doc) async for doc in cursor]
+        # Cache the search results as a list of document dicts
+        docs_data = [doc.model_dump() for doc in documents]
+        await redis.setex(key, 86400, json.dumps(docs_data, ensure_ascii=False))
+        logger.info("cache store", key=key)
+        return documents
 
     async def get_gridfs_file(self, file_id: str) -> bytes:
         """Return file contents from GridFS by ``file_id``."""
