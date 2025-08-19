@@ -151,7 +151,7 @@ printf '[+] Waiting for API health check...\n'
 HOST_PORT=$(docker compose port app 8000 | awk -F: '{print $2}')
 ok=""
 for i in {1..40}; do
-  if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null; then
+  if curl -fsS "http://127.0.0.1:${HOST_PORT}/health" >/dev/null; then
     echo "[✓] API healthy"
     ok=1
     break

@@ -9,7 +9,10 @@ from typing import Any, Awaitable, Callable, Coroutine
 from redis.asyncio import ConnectionPool, Redis
 import structlog
 
-from settings import get_settings
+try:
+    from backend.settings import get_settings
+except ModuleNotFoundError:  # pragma: no cover - fallback for tests
+    from settings import get_settings
 
 logger = structlog.get_logger(__name__)
 
@@ -44,4 +47,26 @@ def cache_response(func: Callable[..., Awaitable[str]]) -> Callable[..., Corouti
 
     return wrapper
 
-__all__ = ["cache_response"]
+
+def cache_query_rewrite(
+    func: Callable[..., Awaitable[str]]
+) -> Callable[..., Coroutine[Any, Any, str]]:
+    """Cache query rewrite results in Redis for 24h."""
+
+    @wraps(func)
+    async def wrapper(query: str, *args: Any, **kwargs: Any) -> str:
+        key = "rewrite:" + hashlib.sha1(query.lower().encode()).hexdigest()
+        redis = _get_redis()
+        cached = await redis.get(key)
+        if cached is not None:
+            logger.info("cache hit", key=key)
+            return cached.decode()
+        rewritten = await func(query, *args, **kwargs)
+        await redis.setex(key, 86400, rewritten)
+        logger.info("cache store", key=key)
+        return rewritten
+
+    return wrapper
+
+
+__all__ = ["cache_response", "cache_query_rewrite"]
