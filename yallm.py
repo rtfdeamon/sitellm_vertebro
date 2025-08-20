@@ -14,8 +14,6 @@ from backend.cache import cache_response
 
 logger = structlog.get_logger(__name__)
 
-logger = structlog.get_logger(__name__)
-
 YaGPTResponse = namedtuple("YaGPTResponse", ["speaker", "text"])
 
 
