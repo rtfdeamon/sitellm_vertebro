@@ -83,7 +83,7 @@ MongoDB and Redis specific variables also use prefixes ``MONGO_`` and
 The optional Telegram bot can be started with Docker Compose. Set the
 following variables in ``.env``:
 
-* ``TG_BOT_TOKEN`` – bot token from BotFather.
+* ``BOT_TOKEN`` – bot token from BotFather.
 * ``TG_API_URL`` – URL of the backend chat API (usually ``http://api:8000/api/chat``).
 * ``SUPPORT_GROUP_ID`` – identifier of the operator group.
 

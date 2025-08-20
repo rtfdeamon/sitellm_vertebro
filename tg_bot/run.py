@@ -15,9 +15,9 @@ from observability.logging import configure_logging
 configure_logging()
 logger = structlog.get_logger(__name__)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TOKEN = os.getenv("BOT_TOKEN", "").strip()
 if not TOKEN:
-    logger.warning("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
+    logger.warning("[telegram] BOT_TOKEN is empty — bot disabled")
     sys.exit(0)
 
 from .bot import setup
