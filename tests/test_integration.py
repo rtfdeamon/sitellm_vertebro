@@ -4,7 +4,62 @@ import importlib.util
 import sys
 from pathlib import Path
 import types
+import uuid
+
 import pytest
+from starlette.exceptions import HTTPException
+from starlette.requests import Request
+
+
+class DummyRouter:
+    def __init__(self, *a, **k):
+        pass
+
+    def post(self, *a, **k):
+        def decorator(func):
+            return func
+
+        return decorator
+
+    def get(self, *a, **k):
+        def decorator(func):
+            return func
+
+        return decorator
+
+
+fake_fastapi = types.ModuleType("fastapi")
+fake_fastapi.APIRouter = DummyRouter
+fake_fastapi.Request = Request
+fake_fastapi.HTTPException = HTTPException
+
+fake_responses = types.ModuleType("fastapi.responses")
+
+class ORJSONResponse:  # minimal placeholder
+    def __init__(self, content):
+        self.content = content
+
+
+class StreamingResponse:  # placeholder
+    def __init__(self, *a, **k):
+        pass
+
+
+fake_responses.ORJSONResponse = ORJSONResponse
+fake_responses.StreamingResponse = StreamingResponse
+fake_fastapi.responses = fake_responses
+
+sys.modules["fastapi"] = fake_fastapi
+sys.modules["fastapi.responses"] = fake_responses
+
+fake_mongo = types.ModuleType("mongo")
+
+class NotFound(Exception):
+    pass
+
+
+fake_mongo.NotFound = NotFound
+sys.modules["mongo"] = fake_mongo
 
 
 fake_structlog = types.ModuleType("structlog")
@@ -40,6 +95,9 @@ llm_client = importlib.util.module_from_spec(spec_llm)
 sys.modules[spec_llm.name] = llm_client
 spec_llm.loader.exec_module(llm_client)
 
+from api import ask_llm
+from models import LLMRequest
+
 
 @pytest.mark.asyncio
 async def test_answer_without_antibiotics(monkeypatch):
@@ -64,3 +122,26 @@ async def test_answer_without_antibiotics(monkeypatch):
 
     assert "промывайте" in answer.lower()
     assert "антибиот" not in answer.lower()
+
+
+class DummyMongo:
+    async def get_context_preset(self, collection):
+        if False:
+            yield
+
+    async def get_sessions(self, collection, session_id):
+        if False:
+            yield
+
+
+@pytest.mark.asyncio
+async def test_request_without_history():
+    request = Request({"type": "http"})
+    request.state.mongo = DummyMongo()
+    request.state.context_presets_collection = None
+    request.state.contexts_collection = None
+    request.state.llm = types.SimpleNamespace(respond=lambda *a, **k: None)
+    llm_request = LLMRequest(sessionId=uuid.uuid4())
+    with pytest.raises(HTTPException) as exc:
+        await ask_llm(request, llm_request)
+    assert exc.value.status_code == 400

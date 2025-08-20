@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 
@@ -26,12 +27,17 @@ from .config import get_settings
 async def init_bot() -> None:
     """Initialize bot and start polling."""
 
-    settings = get_settings()
-    bot = Bot(token=settings.bot_token)
-    dp = Dispatcher()
-    setup(dp)
     logger.info("bot starting")
-    await dp.start_polling(bot)
+    try:
+        settings = get_settings()
+        bot = Bot(token=settings.bot_token)
+        dp = Dispatcher()
+        setup(dp)
+        logger.info("connecting to telegram")
+        await dp.start_polling(bot)
+    except Exception:
+        logger.exception("bot failed")
+        raise
 
 
 if __name__ == "__main__":
