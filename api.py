@@ -60,9 +60,12 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     except NotFound:
         raise HTTPException(status_code=404, detail="Can't find specified sessionId")
 
+    if not context:
+        raise HTTPException(status_code=400, detail="No conversation history provided")
+
     if context[-1]["role"] == RoleEnum.assistant:
         raise HTTPException(
-            status_code=500, detail="Incorrect session state in database"
+            status_code=400, detail="Last message role cannot be assistant"
         )
 
     response = await request.state.llm.respond(context, preset)
