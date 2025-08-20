@@ -23,6 +23,8 @@ from settings import Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
 from pymongo import MongoClient as SyncMongoClient
+from qdrant_client import QdrantClient
+from retrieval import search as retrieval_search
 import redis
 import requests
 
@@ -60,6 +62,9 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
     llm = YaLLM()
     embeddings = YaLLMEmbeddings()
 
+    qdrant_client = QdrantClient(url=base_settings.qdrant_url)
+    retrieval_search.qdrant = qdrant_client
+
     mongo_client = MongoClient(
         settings.mongo.host,
         settings.mongo.port,
@@ -91,6 +96,7 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
 
     del llm
     await mongo_client.client.close()
+    qdrant_client.close()
 
 
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
