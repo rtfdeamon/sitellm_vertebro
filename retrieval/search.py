@@ -29,6 +29,8 @@ def hybrid_search(query: str, k: int = 10) -> List[Doc]:
     """Return top ``k`` documents ranked by RRF."""
 
     logger.info("hybrid search", query=query)
+    if qdrant is None:
+        raise RuntimeError("Qdrant not configured")
     dense_scores = qdrant.similarity(query, top=50, method="dense")
     bm25_scores = qdrant.similarity(query, top=50, method="bm25")
 
@@ -52,6 +54,8 @@ async def vector_search(query: str, k: int = 50) -> List[Doc]:
     """Perform dense vector search for ``query`` and return top ``k`` docs (cached)."""
 
     logger.info("vector search", query=query)
+    if qdrant is None:
+        raise RuntimeError("Qdrant not configured")
     key = "vector:" + hashlib.sha1(query.lower().encode()).hexdigest()
     redis = _get_redis()
     cached = await redis.get(key)
