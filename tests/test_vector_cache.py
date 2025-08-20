@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 import types
+import time
+import asyncio
 import pytest
 
 # Prepare module for import with stubbed dependencies
@@ -60,6 +62,14 @@ class FakeQdrant:
         return [R("A")]
 
 
+class SlowQdrant(FakeQdrant):
+    """Qdrant client with intentionally slow similarity call."""
+
+    def similarity(self, query, top, method):
+        time.sleep(0.2)
+        return super().similarity(query, top, method)
+
+
 @pytest.mark.asyncio
 async def test_vector_search_cache(monkeypatch):
     """Second call should be served from cache without hitting qdrant."""
@@ -74,4 +84,22 @@ async def test_vector_search_cache(monkeypatch):
 
     assert [doc.id for doc in first] == ["A"]
     assert [doc.id for doc in second] == ["A"]
+    assert qdrant.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_vector_search_async(monkeypatch):
+    """`vector_search` should not block the event loop."""
+
+    redis = FakeRedis()
+    monkeypatch.setattr(search, "_get_redis", lambda: redis)
+    qdrant = SlowQdrant()
+    search.qdrant = qdrant
+
+    start = time.perf_counter()
+    await asyncio.gather(search.vector_search("hi", k=1), asyncio.sleep(0.1))
+    duration = time.perf_counter() - start
+
+    # Without ``to_thread`` this would take ~0.3s (0.2s + 0.1s)
+    assert duration < 0.25
     assert qdrant.calls == 1
