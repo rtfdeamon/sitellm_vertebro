@@ -13,6 +13,7 @@ class Settings(BaseSettings):
 
     bot_token: str
     backend_url: AnyUrl = "http://localhost:9000/api/chat"
+    api_base_url: AnyUrl = "http://app:8000"
     request_timeout: int = 30
 
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")

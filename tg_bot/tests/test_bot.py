@@ -35,6 +35,11 @@ sys.modules["aiogram.types"] = fake_types
 pkg = types.ModuleType("tg_bot")
 pkg.__path__ = [str(Path(__file__).resolve().parents[2] / "tg_bot")]
 sys.modules["tg_bot"] = pkg
+fake_config = types.ModuleType("tg_bot.config")
+fake_config.get_settings = lambda: types.SimpleNamespace(
+    api_base_url="http://api", request_timeout=10
+)
+sys.modules["tg_bot.config"] = fake_config
 fake_client = types.ModuleType("tg_bot.client")
 fake_client.rag_answer = lambda text: "ok"
 sys.modules["tg_bot.client"] = fake_client
@@ -66,7 +71,7 @@ class FakeMessage:
         self.sent = []
         self.chat = types.SimpleNamespace(do=lambda action: asyncio.sleep(0))
 
-    async def answer(self, text):
+    async def answer(self, text, **kwargs):
         self.sent.append(text)
 
 
@@ -75,3 +80,56 @@ def test_unknown_command():
     msg = FakeMessage("/unknown")
     asyncio.run(bot_mod.unknown_handler(msg))
     assert msg.sent == ["Unknown command"]
+
+
+def test_status_handler():
+    """Handler should fetch and format status data asynchronously."""
+    calls = {}
+
+    class FakeResp:
+        def json(self):
+            return {
+                "db": {
+                    "mongo_collections": {"users": 1},
+                    "qdrant_points": 2,
+                },
+                "crawler": {
+                    "main": {
+                        "queued": 1,
+                        "fetched": 2,
+                        "parsed": 3,
+                        "indexed": 4,
+                        "errors": 0,
+                    }
+                },
+            }
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def get(self, url):
+            calls["url"] = url
+            return FakeResp()
+
+    fake_httpx.AsyncClient = lambda timeout=None: FakeClient()
+    bot_mod.get_settings = lambda: types.SimpleNamespace(
+        api_base_url="http://api", request_timeout=1
+    )
+    msg = FakeMessage("/status")
+    asyncio.run(bot_mod.status_handler(msg))
+    assert calls["url"] == "http://api/status"
+    expected = (
+        "<b>DB</b>\n"
+        "• users: 1\n"
+        "• qdrant_points: 2\n\n"
+        "<b>Crawler</b>\n"
+        "• main: queued=1 fetched=2 parsed=3 indexed=4 errors=0"
+    )
+    assert msg.sent == [expected]
