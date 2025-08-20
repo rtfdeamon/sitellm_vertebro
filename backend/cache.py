@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable, Coroutine
 import json
 import importlib
 from types import SimpleNamespace
+import dataclasses
 
 from redis.asyncio import ConnectionPool, Redis
 import structlog
@@ -64,7 +65,8 @@ def cache_response(
         cached = await redis.get(key)
         if cached is not None:
             logger.info("cache hit", key=key)
-            return _deserialize(json.loads(cached))
+            data = cached.decode() if isinstance(cached, (bytes, bytearray)) else cached
+            return _deserialize(json.loads(data))
         answer = await func(*args, **kwargs)
         serialized = json.dumps(_serialize(answer))
         await redis.setex(key, 86400, serialized)
@@ -106,6 +108,11 @@ def _serialize(obj: Any) -> Any:
         return {key: _serialize(val) for key, val in obj.items()}
     if isinstance(obj, SimpleNamespace):
         return {"__cls__": "types.SimpleNamespace", **_serialize(obj.__dict__)}
+    if dataclasses.is_dataclass(obj):
+        return {
+            "__cls__": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
+            **_serialize(dataclasses.asdict(obj)),
+        }
     if hasattr(obj, "model_dump"):
         return {
             "__cls__": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
