@@ -138,7 +138,7 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
 
   qdrant:
     image: qdrant/qdrant
@@ -147,6 +147,9 @@ services:
       - "6333:6333"
     volumes:
       - qdrant_data:/qdrant/storage
+    healthcheck:
+      <<: *health_defaults
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/ready || exit 1"]
 
 
   telegram-bot:
