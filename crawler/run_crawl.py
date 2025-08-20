@@ -26,7 +26,6 @@ $ python crawler/run_crawl.py --url "https://example.com" --max-pages 1000
 from __future__ import annotations
 
 import argparse
-import logging
 import os
 import sys
 import time
@@ -36,9 +35,16 @@ from typing import Iterable, List, Set, Tuple
 
 import requests
 from bs4 import BeautifulSoup
+from contextlib import contextmanager
 from pymongo import MongoClient, UpdateOne
 from redis import Redis
-from contextlib import contextmanager
+import structlog
+
+from observability.logging import configure_logging
+
+
+configure_logging()
+logger = structlog.get_logger(__name__)
 
 # ----------------------------- Константы ----------------------------- #
 DEFAULT_MAX_PAGES: int = int(os.getenv("CRAWL_MAX_PAGES", "500"))
@@ -97,7 +103,7 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
         resp.raise_for_status()
         return resp.text, resp.headers.get("content-type", "")
     except Exception as exc:  # noqa: BLE001
-        logging.warning("⚠️  fetch failed %s: %s", url, exc)
+        logger.warning("fetch failed", url=url, error=str(exc))
         return None, None
 
 
@@ -203,10 +209,12 @@ def main() -> None:  # noqa: D401
 
     domain = args.domain or urlparse.urlparse(args.url).netloc
 
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s ▶ %(message)s"
+    logger.info(
+        "crawler started",
+        url=args.url,
+        depth=args.max_depth,
+        pages=args.max_pages,
     )
-    logging.info("🚀 Crawler started → %s (depth=%s, pages=%s)", args.url, args.max_depth, args.max_pages)
 
     col = get_mongo_collection(args.mongo_uri)
     buffer: list[dict] = []
@@ -220,7 +228,7 @@ def main() -> None:  # noqa: D401
             max_depth=args.max_depth,
             allowed_domain=domain,
         ):
-            logging.info("📥 %s", url)
+            logger.info("page fetched", url=url)
             buffer.append(
                 {
                     "url": url,
@@ -236,9 +244,9 @@ def main() -> None:  # noqa: D401
         if buffer:
             store_batch(col, buffer)
 
-        logging.info("✅ Crawl complete (%s pages).", args.max_pages)
+        logger.info("crawl complete", pages=args.max_pages)
     except KeyboardInterrupt:
-        logging.warning("⏹ Interrupted by user. Flushing buffer…")
+        logger.warning("interrupted by user, flushing buffer")
         if buffer:
             store_batch(col, buffer)
 

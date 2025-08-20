@@ -4,15 +4,11 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
-
-import structlog
-import logging
-import os
-from datetime import datetime
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from observability.logging import configure_logging
 from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router
@@ -29,22 +25,7 @@ import redis
 import requests
 
 
-# Создаем уникальный лог-файл для каждого запуска
-log_dir = os.path.join(os.path.dirname(__file__), "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_filename = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-log_path = os.path.join(log_dir, log_filename)
-
-# Настройка structlog для записи в файл
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.FileHandler(log_path), logging.StreamHandler()]
-)
-structlog.configure(
-    processors=[structlog.processors.JSONRenderer()],
-    logger_factory=structlog.stdlib.LoggerFactory(),
-)
+configure_logging()
 
 settings = Settings()
 

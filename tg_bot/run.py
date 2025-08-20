@@ -10,22 +10,15 @@ import sys
 from aiogram import Bot, Dispatcher
 import structlog
 
-
-def configure_logging() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(message)s")
-    structlog.configure(
-        processors=[structlog.processors.JSONRenderer()],
-        logger_factory=structlog.stdlib.LoggerFactory(),
-    )
-
+from observability.logging import configure_logging
 
 configure_logging()
 logger = structlog.get_logger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
-    logger.error("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
-    sys.exit(1)
+    logger.warning("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
+    sys.exit(0)
 
 from .bot import setup
 from .config import get_settings
