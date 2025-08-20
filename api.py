@@ -51,6 +51,9 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
             )
         ]
     except NotFound:
+        logger.warning(
+            "preset not found", session=str(llm_request.session_id)
+        )
         raise HTTPException(status_code=404, detail="Preset not found")
     try:
         async for message in mongo_client.get_sessions(
@@ -58,9 +61,15 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         ):
             context.append({"role": str(message.role), "content": message.text})
     except NotFound:
+        logger.warning(
+            "session not found", session=str(llm_request.session_id)
+        )
         raise HTTPException(status_code=404, detail="Can't find specified sessionId")
 
     if context[-1]["role"] == RoleEnum.assistant:
+        logger.error(
+            "incorrect session state", session=str(llm_request.session_id)
+        )
         raise HTTPException(
             status_code=500, detail="Incorrect session state in database"
         )
