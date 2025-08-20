@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 from functools import wraps
 from typing import Any, Awaitable, Callable, Coroutine
-import pickle
+import json
+import importlib
+from types import SimpleNamespace
 
 from redis.asyncio import ConnectionPool, Redis
 import structlog
@@ -62,9 +64,10 @@ def cache_response(
         cached = await redis.get(key)
         if cached is not None:
             logger.info("cache hit", key=key)
-            return pickle.loads(cached)
+            return _deserialize(json.loads(cached))
         answer = await func(*args, **kwargs)
-        await redis.setex(key, 86400, pickle.dumps(answer))
+        serialized = json.dumps(_serialize(answer))
+        await redis.setex(key, 86400, serialized)
         logger.info("cache store", key=key)
         return answer
 
@@ -93,3 +96,47 @@ def cache_query_rewrite(
 
 
 __all__ = ["cache_response", "cache_query_rewrite"]
+
+
+def _serialize(obj: Any) -> Any:
+    """Recursively convert objects to JSON-serializable structures."""
+    if isinstance(obj, list):
+        return [_serialize(item) for item in obj]
+    if isinstance(obj, dict):
+        return {key: _serialize(val) for key, val in obj.items()}
+    if isinstance(obj, SimpleNamespace):
+        return {"__cls__": "types.SimpleNamespace", **_serialize(obj.__dict__)}
+    if hasattr(obj, "model_dump"):
+        return {
+            "__cls__": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
+            **_serialize(obj.model_dump()),
+        }
+    if hasattr(obj, "__dict__"):
+        return {
+            "__cls__": f"{obj.__class__.__module__}.{obj.__class__.__name__}",
+            **_serialize(obj.__dict__),
+        }
+    return obj
+
+
+def _deserialize(obj: Any) -> Any:
+    """Reconstruct objects previously serialized with :func:`_serialize`."""
+    if isinstance(obj, list):
+        return [_deserialize(item) for item in obj]
+    if isinstance(obj, dict):
+        cls_name = obj.get("__cls__")
+        if cls_name:
+            payload = {k: _deserialize(v) for k, v in obj.items() if k != "__cls__"}
+            if cls_name == "types.SimpleNamespace":
+                return SimpleNamespace(**payload)
+            module_name, _, class_name = cls_name.rpartition(".")
+            try:
+                module = importlib.import_module(module_name)
+                cls = getattr(module, class_name)
+                if hasattr(cls, "model_validate"):
+                    return cls.model_validate(payload)  # type: ignore[call-arg]
+                return cls(**payload)
+            except Exception:  # pragma: no cover - fallback on failure
+                return payload
+        return {k: _deserialize(v) for k, v in obj.items()}
+    return obj

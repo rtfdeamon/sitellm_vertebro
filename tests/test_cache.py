@@ -40,7 +40,7 @@ class FakeRedis:
         return None if val is None else val
 
     async def setex(self, key, ttl, value):
-        self.store[key] = value.encode() if isinstance(value, str) else value
+        self.store[key] = value
 
 
 @pytest.mark.asyncio
