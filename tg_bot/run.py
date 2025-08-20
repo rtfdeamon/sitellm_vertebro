@@ -9,15 +9,18 @@ import sys
 from aiogram import Bot, Dispatcher
 import structlog
 
+from observability.logging import configure_logging
+
+configure_logging()
+logger = structlog.get_logger(__name__)
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
-    print("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
+    logger.warning("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
     sys.exit(0)
 
 from .bot import setup
 from .config import get_settings
-
-logger = structlog.get_logger(__name__)
 
 
 async def init_bot() -> None:

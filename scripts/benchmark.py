@@ -9,6 +9,9 @@ from typing import List
 import httpx
 import structlog
 
+from observability.logging import configure_logging
+
+configure_logging()
 logger = structlog.get_logger(__name__)
 
 
@@ -49,7 +52,7 @@ async def main() -> None:
 
     result = {"p95_ms": round(p95), "throughput": round(throughput, 2)}
     logger.info("result", **result)
-    print(json.dumps(result))
+    logger.info("result_json", json=json.dumps(result))
 
 
 if __name__ == "__main__":

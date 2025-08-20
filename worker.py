@@ -11,33 +11,17 @@ from celery.schedules import crontab
 from celery.signals import worker_ready
 
 import structlog
-import logging
-import os
-from datetime import datetime
 
 from models import Document
 from settings import Settings
 from vectors import DocumentsParser
 from yallm import YaLLMEmbeddings
 from core.status import status_dict
+from observability.logging import configure_logging
 
 
-# Создаем уникальный лог-файл для каждого запуска воркера
-log_dir = os.path.join(os.path.dirname(__file__), "logs")
-os.makedirs(log_dir, exist_ok=True)
-log_filename = f"worker_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-log_path = os.path.join(log_dir, log_filename)
 
-# Настройка structlog для записи в файл
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(message)s",
-    handlers=[logging.FileHandler(log_path), logging.StreamHandler()]
-)
-structlog.configure(
-    processors=[structlog.processors.JSONRenderer()],
-    logger_factory=structlog.stdlib.LoggerFactory(),
-)
+configure_logging()
 
 settings = Settings()
 
