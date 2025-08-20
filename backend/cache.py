@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from functools import wraps
 from typing import Any, Awaitable, Callable, Coroutine
+import pickle
 
 from redis.asyncio import ConnectionPool, Redis
 import structlog
@@ -29,19 +30,41 @@ def _get_redis() -> Redis:
     return Redis(connection_pool=_POOL)
 
 
-def cache_response(func: Callable[..., Awaitable[str]]) -> Callable[..., Coroutine[Any, Any, str]]:
+def cache_response(
+    func: Callable[..., Awaitable[Any]]
+) -> Callable[..., Coroutine[Any, Any, Any]]:
     """Cache decorated coroutine results in Redis for 24h."""
 
     @wraps(func)
-    async def wrapper(question: str, *args: Any, **kwargs: Any) -> str:
+    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+        question: str | None = None
+        if "question" in kwargs and isinstance(kwargs["question"], str):
+            question = kwargs["question"]
+        else:
+            for arg in args:
+                if isinstance(arg, str):
+                    question = arg
+                    break
+                if (
+                    isinstance(arg, list)
+                    and arg
+                    and isinstance(arg[-1], dict)
+                ):
+                    msg = arg[-1]
+                    text = msg.get("content") or msg.get("text")
+                    if isinstance(text, str):
+                        question = text
+                        break
+        if question is None:
+            raise ValueError("No question string found for caching")
         key = hashlib.sha1(question.lower().encode()).hexdigest()
         redis = _get_redis()
         cached = await redis.get(key)
         if cached is not None:
             logger.info("cache hit", key=key)
-            return cached.decode()
-        answer = await func(question, *args, **kwargs)
-        await redis.setex(key, 86400, answer)
+            return pickle.loads(cached)
+        answer = await func(*args, **kwargs)
+        await redis.setex(key, 86400, pickle.dumps(answer))
         logger.info("cache store", key=key)
         return answer
 
