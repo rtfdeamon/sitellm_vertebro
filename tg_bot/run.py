@@ -3,32 +3,48 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 
 from aiogram import Bot, Dispatcher
 import structlog
 
+
+def configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    structlog.configure(
+        processors=[structlog.processors.JSONRenderer()],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+    )
+
+
+configure_logging()
+logger = structlog.get_logger(__name__)
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
-    print("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
-    sys.exit(0)
+    logger.error("[telegram] TELEGRAM_BOT_TOKEN is empty — bot disabled")
+    sys.exit(1)
 
 from .bot import setup
 from .config import get_settings
-
-logger = structlog.get_logger(__name__)
 
 
 async def init_bot() -> None:
     """Initialize bot and start polling."""
 
-    settings = get_settings()
-    bot = Bot(token=settings.bot_token)
-    dp = Dispatcher()
-    setup(dp)
     logger.info("bot starting")
-    await dp.start_polling(bot)
+    try:
+        settings = get_settings()
+        bot = Bot(token=settings.bot_token)
+        dp = Dispatcher()
+        setup(dp)
+        logger.info("connecting to telegram")
+        await dp.start_polling(bot)
+    except Exception:
+        logger.exception("bot failed")
+        raise
 
 
 if __name__ == "__main__":
