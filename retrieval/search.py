@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from typing import Dict, List
+import asyncio
 import hashlib, json
 import structlog
 
@@ -64,7 +65,12 @@ async def vector_search(query: str, k: int = 50) -> List[Doc]:
         docs_list = json.loads(cached.decode())
         docs = [Doc(**d) for d in docs_list]
     else:
-        results = qdrant.similarity(query, top=k, method="dense")
+        # ``qdrant.similarity`` is a blocking call; run it in a thread so the
+        # event loop stays responsive. In production consider using an
+        # asynchronous Qdrant client or a dedicated thread pool.
+        results = await asyncio.to_thread(
+            qdrant.similarity, query, top=k, method="dense"
+        )
         docs = [
             Doc(doc.id, getattr(doc, "payload", None), getattr(doc, "score", 0.0))
             for doc in results
