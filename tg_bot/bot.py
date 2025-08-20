@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command
+from aiogram import Dispatcher, types
+from aiogram.filters import Command, CommandStart
+import httpx
 import structlog
-import requests
-from backend.settings import settings
+
+from .config import get_settings
+from .client import rag_answer
 
 logger = structlog.get_logger(__name__)
-
-from .client import rag_answer
 
 
 async def start_handler(message: types.Message) -> None:
@@ -69,8 +69,11 @@ def setup(dp: Dispatcher) -> None:
 
 async def status_handler(message: types.Message) -> None:
     """Return crawler and DB status from the API."""
+    settings = get_settings()
     try:
-        resp = requests.get("http://app:8000/status", timeout=3)
+        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            resp = await client.get(f"{settings.api_base_url}/status")
+        resp.raise_for_status()
         data = resp.json()
         mongo = data["db"].get("mongo_collections", {})
         qpts = data["db"].get("qdrant_points")
