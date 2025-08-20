@@ -7,6 +7,9 @@ from typing import Any, Dict, Optional
 from pymongo import MongoClient
 from redis import Redis
 from qdrant_client import QdrantClient
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
@@ -53,15 +56,28 @@ def _safe_int(x) -> int:
 
 def get_status() -> Status:
     # Redis counters
+    redis_host = os.getenv("REDIS_HOST", "redis")
+    redis_port = int(os.getenv("REDIS_PORT", "6379"))
     try:
-        r = Redis(host=os.getenv("REDIS_HOST", "redis"), port=int(os.getenv("REDIS_PORT", "6379")), decode_responses=True, socket_connect_timeout=1)
+        r = Redis(
+            host=redis_host,
+            port=redis_port,
+            decode_responses=True,
+            socket_connect_timeout=1,
+        )
         q = _safe_int(r.get(REDIS_PREFIX + "queued"))
         p = _safe_int(r.get(REDIS_PREFIX + "in_progress"))
         d = _safe_int(r.get(REDIS_PREFIX + "done"))
         f = _safe_int(r.get(REDIS_PREFIX + "failed"))
         last_url = r.get(REDIS_PREFIX + "last_url")
         started_at = float(r.get(REDIS_PREFIX + "started_at") or 0)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "redis connection failed",
+            host=redis_host,
+            port=redis_port,
+            error=str(exc),
+        )
         q = p = d = f = 0
         last_url = None
         started_at = 0
@@ -81,7 +97,13 @@ def get_status() -> Status:
                     mongo_docs += mdb[col].estimated_document_count()
                 except Exception:
                     pass
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "mongo connection failed",
+            uri=MONGO_URI,
+            db=MONGO_DB,
+            error=str(exc),
+        )
         mongo_docs = 0
 
     # Qdrant
@@ -90,7 +112,14 @@ def get_status() -> Status:
         qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=0.2)
         info = qc.get_collection(QDRANT_COLL)
         points = info.vectors_count or 0
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "qdrant connection failed",
+            host=QDRANT_HOST,
+            port=QDRANT_PORT,
+            collection=QDRANT_COLL,
+            error=str(exc),
+        )
         points = 0
 
     total_now = max(mongo_docs, points)
