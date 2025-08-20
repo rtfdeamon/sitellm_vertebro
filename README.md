@@ -125,7 +125,7 @@ scripts/      - helper scripts like benchmark and crawler
 - сохранит бэкап env в `deploy-backups\<timestamp>-windows.zip`;
 \- соберёт образы последовательно (без `--no-parallel`);
 \- поднимет `docker compose` со слабыми лимитами CPU/RAM через `docker-compose.override.windows.yml`;
-\- дождётся готовности API по `http://localhost:${APP_PORT:-8000}/health`.
+\- дождётся готовности API по `http://localhost:${APP_PORT:-8000}/healthz`.
 
 ### Нагрузка на слабых машинах
 По умолчанию в Windows-оверрайде заданы щадящие параметры:

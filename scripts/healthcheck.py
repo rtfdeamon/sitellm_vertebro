@@ -6,7 +6,7 @@ import urllib.request
 url = os.environ.get("HEALTHCHECK_URL")
 if not url:
     port = os.environ.get("PORT", "8000")
-    url = f"http://127.0.0.1:{port}/health"
+    url = f"http://127.0.0.1:{port}/healthz"
 
 def main() -> int:
     try:
