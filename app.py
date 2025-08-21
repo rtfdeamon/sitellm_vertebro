@@ -12,6 +12,7 @@ from observability.logging import configure_logging
 from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router
+from crawler.api import router as crawler_router
 from mongo import MongoClient
 from vectors import DocumentsParser
 from yallm import YaLLM, YaLLMEmbeddings
@@ -88,6 +89,7 @@ app.include_router(
     llm_router,
     prefix="/api/v1",
 )
+app.include_router(crawler_router)
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 
 

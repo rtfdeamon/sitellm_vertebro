@@ -30,6 +30,7 @@ logger = structlog.get_logger(__name__)
 celery = Celery(__name__)
 celery.conf.broker_url = settings.celery.broker
 celery.conf.result_backend = settings.celery.result
+celery.autodiscover_tasks(["crawler"])
 celery.conf.beat_schedule = {
     "update-vector-store-biweekly": {
         "task": "worker.periodic_update",
