@@ -2,10 +2,15 @@
 
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import ORJSONResponse, StreamingResponse
+import asyncio
+
+import redis.asyncio as redis
 
 import structlog
 
 from backend import llm_client
+from backend.crawler_reporting import Reporter, CHANNEL
+from backend.settings import settings as backend_settings
 
 from models import LLMResponse, LLMRequest, RoleEnum
 from mongo import NotFound
@@ -20,6 +25,11 @@ llm_router = APIRouter(
         404: {"description": "Can't find specified sessionId"},
         500: {"description": "Internal Server Error"},
     },
+)
+
+crawler_router = APIRouter(
+    prefix="/crawler",
+    tags=["crawler"],
 )
 
 
@@ -102,3 +112,37 @@ async def chat(question: str) -> StreamingResponse:
     headers = {"X-Model-Name": "vikhr-gpt-8b-it"}
     response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
     return response
+
+
+@crawler_router.get("/status", response_class=ORJSONResponse)
+async def crawler_status() -> ORJSONResponse:
+    """Return current crawler progress for all jobs."""
+
+    reporter = Reporter()
+    data = await asyncio.to_thread(reporter.get_all)
+    return ORJSONResponse(data)
+
+
+@crawler_router.get("/stream")
+async def crawler_stream() -> StreamingResponse:
+    """Stream crawler progress updates via Server-Sent Events."""
+
+    redis_conn = redis.from_url(backend_settings.redis_url)
+    pubsub = redis_conn.pubsub()
+    await pubsub.subscribe(CHANNEL)
+
+    async def event_stream():
+        try:
+            async for message in pubsub.listen():
+                if message.get("type") != "message":
+                    continue
+                data = message.get("data")
+                if isinstance(data, bytes):
+                    data = data.decode()
+                yield f"data: {data}\n\n"
+        finally:
+            await pubsub.unsubscribe(CHANNEL)
+            await pubsub.close()
+            await redis_conn.close()
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
