@@ -6,11 +6,11 @@
 сохраняются в MongoDB (по умолчанию mongodb://root:changeme@mongo:27017,
 можно переопределить переменной окружения `MONGO_URI`).
 
-При желании сюда легко добавить:
-* расчёт эмбеддингов и отправку в Qdrant;
-* очереди Celery для асинхронного краулинга;
-* дедубликацию по MD5/URL‑нормализации;
-* парсинг sitemap.xml и robots.txt.
+Поддерживает:
+* загрузку и проверку `robots.txt`;
+* разбор `sitemap.xml` и расширение начальной очереди ссылками из него;
+* лёгкое расширение функциональности: расчёт эмбеддингов, Celery,
+  дедубликация по MD5 и прочее.
 
 Переменные окружения / CLI‑параметры
 -----------------------------------
@@ -18,6 +18,8 @@ MONGO_URI          – строка подключения к Mongo ("mongodb://
 CRAWL_START_URL    – стартовая точка обхода.
 CRAWL_MAX_PAGES    – максимальное число страниц (по умолчанию 500).
 CRAWL_MAX_DEPTH    – максимальная глубина (по умолчанию 3).
+CRAWL_SITEMAP_URL  – явно указанный URL sitemap (по умолчанию /sitemap.xml).
+CRAWL_IGNORE_ROBOTS – игнорировать `robots.txt` ("1"/"0").
 
 Пример запуска вручную в контейнере:
 $ python crawler/run_crawl.py --url "https://example.com" --max-pages 1000
@@ -39,6 +41,8 @@ from contextlib import contextmanager
 from pymongo import MongoClient, UpdateOne
 from redis import Redis
 import structlog
+from urllib import robotparser
+import xml.etree.ElementTree as ET
 
 from observability.logging import configure_logging
 
@@ -53,6 +57,8 @@ DEFAULT_START_URL: str | None = os.getenv("CRAWL_START_URL")
 DEFAULT_MONGO_URI: str = os.getenv(
     "MONGO_URI", "mongodb://root:changeme@mongo:27017"
 )
+DEFAULT_SITEMAP_URL: str | None = os.getenv("CRAWL_SITEMAP_URL")
+DEFAULT_IGNORE_ROBOTS: bool = os.getenv("CRAWL_IGNORE_ROBOTS", "0") == "1"
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 r = Redis(host=os.getenv("REDIS_HOST", "redis"), port=int(os.getenv("REDIS_PORT", "6379")), decode_responses=True)
 
@@ -101,7 +107,12 @@ async def fetch(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | 
     try:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.text, resp.headers.get("content-type", "")
+        ctype = resp.headers.get("content-type", "")
+        main_type = ctype.split(";")[0].strip().lower()
+        if main_type != "text/html":
+            logger.info("skip non-html", url=url, content_type=ctype)
+            return None, ctype
+        return resp.text, ctype
     except Exception as exc:  # noqa: BLE001
         logger.warning("fetch failed", url=url, error=str(exc))
         return None, None
@@ -186,7 +197,6 @@ async def crawl(
                 w.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
 
-
 # -------------------------- MongoDB utils ---------------------------- #
 
 def get_mongo_collection(
@@ -213,19 +223,31 @@ def store_batch(col, docs: List[dict]):  # noqa: ANN001
 # ------------------------------ main --------------------------------- #
 
 async def async_main(args) -> None:
-    domain = args.domain or urlparse.urlparse(args.url).netloc
 
+    domain = args.domain or urlparse.urlparse(args.url).netloc
     logger.info(
         "crawler started",
-        url=args.url,
-        depth=args.max_depth,
-        pages=args.max_pages,
+        url=url,
+        depth=max_depth,
+        pages=max_pages,
     )
 
+    try:
+        asyncio.run(run(args, domain))
+    except KeyboardInterrupt:
+        logger.warning("interrupted by user, flushing buffer")
+
+
+async def run(args, domain: str) -> None:
     col = get_mongo_collection(args.mongo_uri)
     buffer: list[dict] = []
+    crawled = 0
 
     on_crawler_start()
+
+    robot = None if args.ignore_robots else get_robot_parser(args.url)
+    sitemap_url = args.sitemap_url or urlparse.urljoin(args.url, "/sitemap.xml")
+    initial_urls = parse_sitemap(sitemap_url)
 
     try:
         async for url, html, ctype in crawl(
@@ -233,16 +255,21 @@ async def async_main(args) -> None:
             max_pages=args.max_pages,
             max_depth=args.max_depth,
             allowed_domain=domain,
+            robot_parser=robot,
+            initial_urls=initial_urls,
         ):
             logger.info("page fetched", url=url)
+            crawled += 1
             buffer.append(
                 {
-                    "url": url,
+                    "url": page_url,
                     "content_type": ctype,
                     "html": html,
                     "ts": time.time(),
                 }
             )
+            if progress_callback:
+                progress_callback(page_url)
             if len(buffer) >= BATCH_SIZE:
                 await asyncio.to_thread(store_batch, col, buffer)
                 buffer.clear()
@@ -277,6 +304,7 @@ def main() -> None:  # noqa: D401
         sys.exit("❌ Need --url or set CRAWL_START_URL")
 
     asyncio.run(async_main(args))
+
 
 
 if __name__ == "__main__":
