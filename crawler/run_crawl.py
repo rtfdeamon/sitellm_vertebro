@@ -107,7 +107,12 @@ async def fetch(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | 
     try:
         resp = await client.get(url)
         resp.raise_for_status()
-        return resp.text, resp.headers.get("content-type", "")
+        ctype = resp.headers.get("content-type", "")
+        main_type = ctype.split(";")[0].strip().lower()
+        if main_type != "text/html":
+            logger.info("skip non-html", url=url, content_type=ctype)
+            return None, ctype
+        return resp.text, ctype
     except Exception as exc:  # noqa: BLE001
         logger.warning("fetch failed", url=url, error=str(exc))
         return None, None
