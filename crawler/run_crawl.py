@@ -28,14 +28,14 @@ $ python crawler/run_crawl.py --url "https://example.com" --max-pages 1000
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import sys
 import time
 import urllib.parse as urlparse
-from collections import deque
-from typing import Iterable, List, Set, Tuple, Callable
+from typing import AsyncIterator, Callable, List, Set, Tuple
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
 from pymongo import MongoClient, UpdateOne
@@ -102,10 +102,10 @@ BATCH_SIZE = 50  # сколько документов пушим в Mongo за 
 
 # ------------------------- Вспомогательные функции ------------------- #
 
-def fetch(url: str) -> Tuple[str | None, str | None]:
+async def fetch(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | None]:
     """Скачивает страницу. Возвращает (html, content_type)."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        resp = await client.get(url)
         resp.raise_for_status()
         return resp.text, resp.headers.get("content-type", "")
     except Exception as exc:  # noqa: BLE001
@@ -127,87 +127,80 @@ def extract_links(html: str, base_url: str) -> List[str]:
     return links
 
 
-def get_robot_parser(start_url: str) -> robotparser.RobotFileParser:
-    """Загружает и парсит robots.txt для домена."""
-    robots_url = urlparse.urljoin(start_url, "/robots.txt")
-    rp = robotparser.RobotFileParser()
-    try:
-        rp.set_url(robots_url)
-        rp.read()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("robots.txt fetch failed", url=robots_url, error=str(exc))
-    return rp
-
-
-def parse_sitemap(sitemap_url: str) -> List[str]:
-    """Возвращает список URL из sitemap.xml."""
-    try:
-        resp = requests.get(sitemap_url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
-        resp.raise_for_status()
-        root = ET.fromstring(resp.text)
-        return [
-            loc.text.strip()
-            for loc in root.findall(
-                ".//{http://www.sitemaps.org/schemas/sitemap/0.9}loc"
-            )
-            if loc.text and loc.text.strip().startswith("http")
-        ]
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("sitemap fetch failed", url=sitemap_url, error=str(exc))
-        return []
-
-
-def crawl(
+async def crawl(
     start_url: str,
     *,
     max_pages: int = DEFAULT_MAX_PAGES,
     max_depth: int = DEFAULT_MAX_DEPTH,
     allowed_domain: str | None = None,
-    robot_parser: robotparser.RobotFileParser | None = None,
-    initial_urls: Iterable[str] | None = None,
-) -> Iterable[Tuple[str, str, str]]:
-    """BFS‑обход сайта (non‑blocking, без параллелизма).
-
-    Yields:
-        (url, html, content_type)
-    """
+    concurrency: int = 5,
+    client_factory: Callable[[], httpx.AsyncClient] | None = None,
+) -> AsyncIterator[Tuple[str, str, str]]:
+    """Асинхронный BFS‑обход сайта."""
 
     visited: Set[str] = set()
-    queue: deque[Tuple[str, int]] = deque([(start_url, 0)])
+    queue: asyncio.Queue[Tuple[str, int]] = asyncio.Queue()
+    results: asyncio.Queue[Tuple[str, str, str]] = asyncio.Queue()
+    await queue.put((start_url, 0))
     _incr("queued", 1)
     if initial_urls:
         for url in initial_urls:
             queue.append((url, 0))
             _incr("queued", 1)
 
-    while queue and len(visited) < max_pages:
-        url, depth = queue.popleft()
-        if url in visited or depth > max_depth:
-            continue
-        if robot_parser and not robot_parser.can_fetch(HEADERS["User-Agent"], url):
-            continue
-        visited.add(url)
+    client_factory = client_factory or (
+        lambda: httpx.AsyncClient(headers=HEADERS, timeout=REQUEST_TIMEOUT)
+    )
 
-        with mark_url(url):
-            html, ctype = fetch(url)
-            if html is None:
-                continue
-
-            yield url, html, ctype
-
-            # Ограничиваем домен, чтобы не уползти далеко
-            if allowed_domain and urlparse.urlparse(url).netloc != allowed_domain:
-                continue
-
-            for link in extract_links(html, url):
-                if link in visited:
+    async with client_factory() as client:
+        async def worker() -> None:
+            while True:
+                try:
+                    url, depth = await queue.get()
+                except asyncio.CancelledError:
+                    break
+                if url in visited or depth > max_depth or len(visited) >= max_pages:
+                    _incr("queued", -1)
+                    queue.task_done()
                     continue
-                if robot_parser and not robot_parser.can_fetch(
-                    HEADERS["User-Agent"], link
-                ):
+                visited.add(url)
+                try:
+                    with mark_url(url):
+                        html, ctype = await fetch(client, url)
+                except Exception:  # noqa: BLE001
+                    html, ctype = None, None
+                if html is not None:
+                    await results.put((url, html, ctype))
+                    if not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain:
+                        for link in extract_links(html, url):
+                            if link not in visited:
+                                await queue.put((link, depth + 1))
+                                _incr("queued", 1)
+                queue.task_done()
+
+        workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
+        yielded = 0
+        try:
+            while yielded < max_pages:
+                try:
+                    url, html, ctype = await asyncio.wait_for(results.get(), timeout=1)
+                except asyncio.TimeoutError:
+                    if queue.empty() and all(w.done() for w in workers):
+                        break
                     continue
-                queue.append((link, depth + 1))
-                _incr("queued", 1)
+                yielded += 1
+                yield url, html, ctype
+        finally:
+            for w in workers:
+                w.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
+            while not queue.empty():
+                try:
+                    queue.get_nowait()
+                    _incr("queued", -1)
+                except asyncio.QueueEmpty:  # pragma: no cover - defensive
+                    break
+
 
 
 # -------------------------- MongoDB utils ---------------------------- #
@@ -248,8 +241,7 @@ def run(
     if not url:
         sys.exit("❌ Need --url or set CRAWL_START_URL")
 
-    domain = domain or urlparse.urlparse(url).netloc
-
+    domain = args.domain or urlparse.urlparse(args.url).netloc
     logger.info(
         "crawler started",
         url=url,
@@ -257,8 +249,16 @@ def run(
         pages=max_pages,
     )
 
-    col = get_mongo_collection(mongo_uri)
+    try:
+        asyncio.run(run(args, domain))
+    except KeyboardInterrupt:
+        logger.warning("interrupted by user, flushing buffer")
+
+
+async def run(args, domain: str) -> None:
+    col = get_mongo_collection(args.mongo_uri)
     buffer: list[dict] = []
+    crawled = 0
 
     on_crawler_start()
 
@@ -267,15 +267,16 @@ def run(
     initial_urls = parse_sitemap(sitemap_url)
 
     try:
-        for page_url, html, ctype in crawl(
-            url,
-            max_pages=max_pages,
-            max_depth=max_depth,
+        async for url, html, ctype in crawl(
+            args.url,
+            max_pages=args.max_pages,
+            max_depth=args.max_depth,
             allowed_domain=domain,
             robot_parser=robot,
             initial_urls=initial_urls,
         ):
-            logger.info("page fetched", url=page_url)
+            logger.info("page fetched", url=url)
+            crawled += 1
             buffer.append(
                 {
                     "url": page_url,
@@ -287,17 +288,12 @@ def run(
             if progress_callback:
                 progress_callback(page_url)
             if len(buffer) >= BATCH_SIZE:
-                store_batch(col, buffer)
+                await asyncio.to_thread(store_batch, col, buffer)
                 buffer.clear()
-        # финальный слив
+    finally:
         if buffer:
-            store_batch(col, buffer)
-
-        logger.info("crawl complete", pages=max_pages)
-    except KeyboardInterrupt:
-        logger.warning("interrupted by user, flushing buffer")
-        if buffer:
-            store_batch(col, buffer)
+            await asyncio.to_thread(store_batch, col, buffer)
+        logger.info("crawl complete", pages=crawled)
 
 
 # ------------------------------ main --------------------------------- #
