@@ -1,51 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Crawler Progress</title>
-  <style>
-    body { font-family: sans-serif; }
-    pre { background: #f0f0f0; padding: 1rem; }
-  </style>
+  <meta charset="UTF-8">
+  <title>Crawler Admin</title>
 </head>
 <body>
-  <h1>Crawler Progress</h1>
-  <pre id="output"></pre>
+  <form id="crawler-form">
+    <label>URL: <input type="url" id="url" required></label><br>
+    <label>Depth: <input type="number" id="depth" min="1" value="1"></label><br>
+    <label>Pages: <input type="number" id="pages" min="1" value="10"></label><br>
+    <button type="submit">Запустить</button>
+  </form>
+
+  <h2>Status</h2>
+  <ul>
+    <li>Queued: <span id="queued">0</span></li>
+    <li>In progress: <span id="in_progress">0</span></li>
+    <li>Done: <span id="done">0</span></li>
+    <li>Failed: <span id="failed">0</span></li>
+  </ul>
+
   <script>
-    const output = document.getElementById('output');
+    const form = document.getElementById('crawler-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        url: document.getElementById('url').value,
+        depth: Number(document.getElementById('depth').value),
+        pages: Number(document.getElementById('pages').value),
+      };
+      await fetch('/api/v1/crawler/run', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+    });
 
-    function render(data) {
-      output.textContent = JSON.stringify(data, null, 2);
-    }
-
-    async function poll() {
+    async function pollStatus() {
       try {
         const resp = await fetch('/api/v1/crawler/status');
         if (resp.ok) {
-          const json = await resp.json();
-          render(json);
+          const data = await resp.json();
+          document.getElementById('queued').textContent = data.queued;
+          document.getElementById('in_progress').textContent = data.in_progress;
+          document.getElementById('done').textContent = data.done;
+          document.getElementById('failed').textContent = data.failed;
         }
       } catch (err) {
-        console.error('Polling error', err);
+        console.error(err);
       }
     }
-
-    if (window.EventSource) {
-      const es = new EventSource('/api/v1/crawler/stream');
-      es.onmessage = (e) => {
-        try {
-          render(JSON.parse(e.data));
-        } catch (err) {
-          console.error('Invalid SSE data', err);
-        }
-      };
-      es.onerror = () => {
-        es.close();
-        setInterval(poll, 2000);
-      };
-    } else {
-      setInterval(poll, 2000);
-    }
+    setInterval(pollStatus, 3000);
+    pollStatus();
   </script>
 </body>
 </html>
