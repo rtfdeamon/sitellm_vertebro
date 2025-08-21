@@ -43,4 +43,3 @@ def test_unavailable_redis(monkeypatch):
 
     reporter.update(progress)
     assert reporter.get_all() == {}
-

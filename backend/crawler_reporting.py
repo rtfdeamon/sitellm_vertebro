@@ -2,10 +2,12 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 import json
 import time
-import redis
 from typing import Optional, Dict, Any
 import structlog
 from .settings import settings
+
+
+logger = structlog.get_logger(__name__)
 
 CHANNEL = "crawler:events"
 KEY_TPL = "crawler:progress:{job_id}"
@@ -54,3 +56,4 @@ class Reporter:
             logger.warning("redis get_all failed", error=str(exc))
             return {}
         return res
+
