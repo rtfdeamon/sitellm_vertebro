@@ -1,3 +1,5 @@
+"""HTTP‑эндпоинты запуска краулера."""
+
 from __future__ import annotations
 
 from uuid import uuid4
