@@ -6,10 +6,15 @@ import sys
 
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from fastapi.responses import ORJSONResponse, StreamingResponse
+import asyncio
+
+import redis.asyncio as redis
 
 import structlog
 
 from backend import llm_client
+from backend.crawler_reporting import Reporter, CHANNEL
+from backend.settings import settings as backend_settings
 
 from models import LLMResponse, LLMRequest, RoleEnum
 from mongo import NotFound
@@ -27,6 +32,11 @@ llm_router = APIRouter(
         404: {"description": "Can't find specified sessionId"},
         500: {"description": "Internal Server Error"},
     },
+)
+
+crawler_router = APIRouter(
+    prefix="/crawler",
+    tags=["crawler"],
 )
 
 
@@ -150,4 +160,3 @@ async def crawler_status() -> dict[str, object]:
     """Return current crawler and database status."""
 
     return status_dict()
-
