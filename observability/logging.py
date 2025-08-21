@@ -10,6 +10,8 @@ import structlog
 def configure_logging() -> None:
     """Configure stdlib logging and structlog."""
     logging.basicConfig(level=logging.INFO, format="%(message)s")
+    if not hasattr(structlog, "configure"):
+        return
     structlog.configure(
         processors=[
             structlog.processors.TimeStamper(fmt="iso"),
