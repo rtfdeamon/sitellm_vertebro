@@ -20,6 +20,12 @@ def render():
     t.add_row("Done", str(s['crawler']['done']))
     t.add_row("Failed", str(s['crawler']['failed']))
     t.add_row("Last URL", str(s['crawler']['last_url'] or '—'))
+    freshness = s.get("freshness")
+    age = f"{freshness/3600:.1f}h ago" if freshness is not None else "unknown"
+    stale = freshness is None or freshness > 24 * 3600
+    color = "red" if stale else "green"
+    last_iso = s.get("last_crawl_iso") or "—"
+    t.add_row("Last crawl", f"[{color}]{last_iso} ({age})[/]")
 
     p = Progress(
         TextColumn("[progress.description]{task.description}"),

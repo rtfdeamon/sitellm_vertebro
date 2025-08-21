@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, asdict
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 from pymongo import MongoClient
@@ -44,6 +45,8 @@ class Status:
     ts: float
     crawler: CrawlerStats
     db: DbStats
+    last_crawl_ts: Optional[float] = None
+    last_crawl_iso: Optional[str] = None
     notes: str = ""
 
 
@@ -84,6 +87,7 @@ def get_status() -> Status:
 
     # Mongo
     mongo_docs = 0
+    last_crawl_ts: Optional[float] = None
     try:
         mc = MongoClient(MONGO_URI, serverSelectionTimeoutMS=200)
         mdb = mc[MONGO_DB]
@@ -91,6 +95,13 @@ def get_status() -> Status:
             names = mdb.list_collection_names()
         except Exception:
             names = []
+        if "documents" in names:
+            try:
+                doc = mdb["documents"].find_one(sort=[("ts", -1)])
+                if doc and doc.get("ts"):
+                    last_crawl_ts = float(doc["ts"])
+            except Exception:
+                pass
         for col in ("documents", "pages", "chunks"):
             if col in names:
                 try:
@@ -105,6 +116,7 @@ def get_status() -> Status:
             error=str(exc),
         )
         mongo_docs = 0
+        last_crawl_ts = None
 
     # Qdrant
     points = 0
@@ -128,11 +140,17 @@ def get_status() -> Status:
 
     ok = (f == 0) and (q == 0) and (p == 0) and (total_now > 0)
 
+    last_crawl_iso = (
+        datetime.utcfromtimestamp(last_crawl_ts).isoformat() if last_crawl_ts else None
+    )
+
     return Status(
         ok=ok,
         ts=time.time(),
         crawler=CrawlerStats(q, p, d, f, last_url, started_at if started_at > 0 else None),
         db=DbStats(mongo_docs, points, target, fill_percent),
+        last_crawl_ts=last_crawl_ts,
+        last_crawl_iso=last_crawl_iso,
         notes="" if ok else "Идет индексирование или есть ошибки; смотрите counters.",
     )
 
@@ -141,4 +159,8 @@ def status_dict() -> Dict[str, Any]:
     s = get_status()
     out = asdict(s)
     out["fill_percent"] = out["db"]["fill_percent"]
+    if out.get("last_crawl_ts"):
+        out["freshness"] = time.time() - out["last_crawl_ts"]
+    else:
+        out["freshness"] = None
     return out

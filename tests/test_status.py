@@ -110,6 +110,9 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
     result = status.status_dict()
 
     assert isinstance(result, dict)
+    assert "last_crawl_ts" in result
+    assert "last_crawl_iso" in result
+    assert "freshness" in result
     assert dummy.warnings or dummy.exceptions
 
     if service == "redis":
@@ -125,3 +128,52 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
         assert kwargs["host"] == "qdranttest"
         assert kwargs["port"] == 4321
         assert kwargs["collection"] == "colltest"
+
+
+def test_status_contains_last_crawl(monkeypatch):
+    fake_pymongo = types.ModuleType("pymongo")
+    fake_pymongo.MongoClient = object
+    sys.modules["pymongo"] = fake_pymongo
+
+    fake_redis_mod = types.ModuleType("redis")
+    fake_redis_mod.Redis = object
+    sys.modules["redis"] = fake_redis_mod
+
+    fake_qdrant_mod = types.ModuleType("qdrant_client")
+    fake_qdrant_mod.QdrantClient = object
+    sys.modules["qdrant_client"] = fake_qdrant_mod
+
+    import core.status as status
+    importlib.reload(status)
+
+    monkeypatch.setattr(status, "Redis", RedisStub)
+    monkeypatch.setattr(status, "QdrantClient", QdrantStub)
+
+    class MongoWithDoc:
+        def __init__(self, *a, **k):
+            pass
+
+        def __getitem__(self, name):
+            class DB:
+                def list_collection_names(self):
+                    return ["documents"]
+
+                def __getitem__(self, col):
+                    class Coll:
+                        def estimated_document_count(self):
+                            return 1
+
+                        def find_one(self, *a, **k):
+                            return {"ts": 1.0}
+
+                    return Coll()
+
+            return DB()
+
+    monkeypatch.setattr(status, "MongoClient", MongoWithDoc)
+    monkeypatch.setattr(status.time, "time", lambda: 2.0)
+
+    result = status.status_dict()
+    assert result["last_crawl_ts"] == 1.0
+    assert result["freshness"] == 1.0
+    assert result["last_crawl_iso"].startswith("1970-01-01T00:00:01")
