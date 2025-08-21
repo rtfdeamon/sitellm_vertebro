@@ -3,6 +3,7 @@
 import sys
 import uuid
 import pytest
+from bson import ObjectId
 
 # Ensure any test stubs for ``mongo`` are cleared before importing the real module.
 sys.modules.pop("mongo", None)
@@ -12,7 +13,7 @@ from mongo import MongoClient
 class _FakeGridFS:
     """Minimal GridFS stub returning a predefined id."""
 
-    def __init__(self, f_id: uuid.UUID):
+    def __init__(self, f_id: ObjectId):
         self._id = f_id
 
     async def put(self, _file: bytes):  # pragma: no cover - simple stub
@@ -39,7 +40,7 @@ class _FakeDB:
 async def test_upload_document_returns_str() -> None:
     """``upload_document`` should return the file id as string."""
 
-    f_id = uuid.uuid4()
+    f_id = ObjectId()
     mc = MongoClient.__new__(MongoClient)
     mc.gridfs = _FakeGridFS(f_id)
     collection = _FakeCollection()

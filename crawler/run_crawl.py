@@ -6,11 +6,11 @@
 сохраняются в MongoDB (по умолчанию mongodb://root:changeme@mongo:27017,
 можно переопределить переменной окружения `MONGO_URI`).
 
-При желании сюда легко добавить:
-* расчёт эмбеддингов и отправку в Qdrant;
-* очереди Celery для асинхронного краулинга;
-* дедубликацию по MD5/URL‑нормализации;
-* парсинг sitemap.xml и robots.txt.
+Поддерживает:
+* загрузку и проверку `robots.txt`;
+* разбор `sitemap.xml` и расширение начальной очереди ссылками из него;
+* лёгкое расширение функциональности: расчёт эмбеддингов, Celery,
+  дедубликация по MD5 и прочее.
 
 Переменные окружения / CLI‑параметры
 -----------------------------------
@@ -18,6 +18,8 @@ MONGO_URI          – строка подключения к Mongo ("mongodb://
 CRAWL_START_URL    – стартовая точка обхода.
 CRAWL_MAX_PAGES    – максимальное число страниц (по умолчанию 500).
 CRAWL_MAX_DEPTH    – максимальная глубина (по умолчанию 3).
+CRAWL_SITEMAP_URL  – явно указанный URL sitemap (по умолчанию /sitemap.xml).
+CRAWL_IGNORE_ROBOTS – игнорировать `robots.txt` ("1"/"0").
 
 Пример запуска вручную в контейнере:
 $ python crawler/run_crawl.py --url "https://example.com" --max-pages 1000
@@ -26,19 +28,21 @@ $ python crawler/run_crawl.py --url "https://example.com" --max-pages 1000
 from __future__ import annotations
 
 import argparse
+import asyncio
 import os
 import sys
 import time
 import urllib.parse as urlparse
-from collections import deque
-from typing import Iterable, List, Set, Tuple
+from typing import AsyncIterator, List, Set, Tuple
 
-import requests
+import httpx
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
 from pymongo import MongoClient, UpdateOne
 from redis import Redis
 import structlog
+from urllib import robotparser
+import xml.etree.ElementTree as ET
 
 from observability.logging import configure_logging
 
@@ -53,6 +57,8 @@ DEFAULT_START_URL: str | None = os.getenv("CRAWL_START_URL")
 DEFAULT_MONGO_URI: str = os.getenv(
     "MONGO_URI", "mongodb://root:changeme@mongo:27017"
 )
+DEFAULT_SITEMAP_URL: str | None = os.getenv("CRAWL_SITEMAP_URL")
+DEFAULT_IGNORE_ROBOTS: bool = os.getenv("CRAWL_IGNORE_ROBOTS", "0") == "1"
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 r = Redis(host=os.getenv("REDIS_HOST", "redis"), port=int(os.getenv("REDIS_PORT", "6379")), decode_responses=True)
 
@@ -96,12 +102,17 @@ BATCH_SIZE = 50  # сколько документов пушим в Mongo за 
 
 # ------------------------- Вспомогательные функции ------------------- #
 
-def fetch(url: str) -> Tuple[str | None, str | None]:
-    """Скачивает страницу. Возвращает (html, content_type)."""
+async def fetch(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | None]:
+    """Скачивает страницу асинхронно. Возвращает (html, content_type)."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        resp = await client.get(url)
         resp.raise_for_status()
-        return resp.text, resp.headers.get("content-type", "")
+        ctype = resp.headers.get("content-type", "")
+        main_type = ctype.split(";")[0].strip().lower()
+        if main_type != "text/html":
+            logger.info("skip non-html", url=url, content_type=ctype)
+            return None, ctype
+        return resp.text, ctype
     except Exception as exc:  # noqa: BLE001
         logger.warning("fetch failed", url=url, error=str(exc))
         return None, None
@@ -121,45 +132,70 @@ def extract_links(html: str, base_url: str) -> List[str]:
     return links
 
 
-def crawl(
+async def crawl(
     start_url: str,
     *,
     max_pages: int = DEFAULT_MAX_PAGES,
     max_depth: int = DEFAULT_MAX_DEPTH,
     allowed_domain: str | None = None,
-) -> Iterable[Tuple[str, str, str]]:
-    """BFS‑обход сайта (non‑blocking, без параллелизма).
+    concurrency: int = 5,
+) -> AsyncIterator[Tuple[str, str, str]]:
+    """Асинхронный BFS‑обход сайта.
 
     Yields:
         (url, html, content_type)
     """
 
     visited: Set[str] = set()
-    queue: deque[Tuple[str, int]] = deque([(start_url, 0)])
+    url_queue: asyncio.Queue[Tuple[str, int]] = asyncio.Queue()
+    result_queue: asyncio.Queue[Tuple[str, str, str]] = asyncio.Queue()
+    visited_lock = asyncio.Lock()
+
+    await url_queue.put((start_url, 0))
     _incr("queued", 1)
 
-    while queue and len(visited) < max_pages:
-        url, depth = queue.popleft()
-        if url in visited or depth > max_depth:
-            continue
-        visited.add(url)
+    async with httpx.AsyncClient(headers=HEADERS, timeout=REQUEST_TIMEOUT) as client:
 
-        with mark_url(url):
-            html, ctype = fetch(url)
-            if html is None:
-                continue
+        async def worker() -> None:
+            while True:
+                url, depth = await url_queue.get()
+                async with visited_lock:
+                    if url in visited or depth > max_depth or len(visited) >= max_pages:
+                        url_queue.task_done()
+                        continue
+                    visited.add(url)
+                with mark_url(url):
+                    html, ctype = await fetch(client, url)
+                if html:
+                    await result_queue.put((url, html, ctype))
+                    if (
+                        not allowed_domain
+                        or urlparse.urlparse(url).netloc == allowed_domain
+                    ):
+                        for link in extract_links(html, url):
+                            async with visited_lock:
+                                if link not in visited:
+                                    await url_queue.put((link, depth + 1))
+                                    _incr("queued", 1)
+                url_queue.task_done()
 
-            yield url, html, ctype
+        workers = [asyncio.create_task(worker()) for _ in range(concurrency)]
 
-            # Ограничиваем домен, чтобы не уползти далеко
-            if allowed_domain and urlparse.urlparse(url).netloc != allowed_domain:
-                continue
-
-            for link in extract_links(html, url):
-                if link not in visited:
-                    queue.append((link, depth + 1))
-                    _incr("queued", 1)
-
+        pages = 0
+        try:
+            while pages < max_pages:
+                try:
+                    url, html, ctype = await asyncio.wait_for(result_queue.get(), timeout=1)
+                except asyncio.TimeoutError:
+                    if url_queue.empty():
+                        break
+                    continue
+                pages += 1
+                yield url, html, ctype
+        finally:
+            for w in workers:
+                w.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
 
 # -------------------------- MongoDB utils ---------------------------- #
 
@@ -186,6 +222,66 @@ def store_batch(col, docs: List[dict]):  # noqa: ANN001
 
 # ------------------------------ main --------------------------------- #
 
+async def async_main(args) -> None:
+
+    domain = args.domain or urlparse.urlparse(args.url).netloc
+    logger.info(
+        "crawler started",
+        url=url,
+        depth=max_depth,
+        pages=max_pages,
+    )
+
+    try:
+        asyncio.run(run(args, domain))
+    except KeyboardInterrupt:
+        logger.warning("interrupted by user, flushing buffer")
+
+
+async def run(args, domain: str) -> None:
+    col = get_mongo_collection(args.mongo_uri)
+    buffer: list[dict] = []
+    crawled = 0
+
+    on_crawler_start()
+
+    robot = None if args.ignore_robots else get_robot_parser(args.url)
+    sitemap_url = args.sitemap_url or urlparse.urljoin(args.url, "/sitemap.xml")
+    initial_urls = parse_sitemap(sitemap_url)
+
+    try:
+        async for url, html, ctype in crawl(
+            args.url,
+            max_pages=args.max_pages,
+            max_depth=args.max_depth,
+            allowed_domain=domain,
+            robot_parser=robot,
+            initial_urls=initial_urls,
+        ):
+            logger.info("page fetched", url=url)
+            crawled += 1
+            buffer.append(
+                {
+                    "url": page_url,
+                    "content_type": ctype,
+                    "html": html,
+                    "ts": time.time(),
+                }
+            )
+            if progress_callback:
+                progress_callback(page_url)
+            if len(buffer) >= BATCH_SIZE:
+                await asyncio.to_thread(store_batch, col, buffer)
+                buffer.clear()
+        if buffer:
+            await asyncio.to_thread(store_batch, col, buffer)
+        logger.info("crawl complete", pages=args.max_pages)
+    except KeyboardInterrupt:
+        logger.warning("interrupted by user, flushing buffer")
+        if buffer:
+            await asyncio.to_thread(store_batch, col, buffer)
+
+
 def main() -> None:  # noqa: D401
     """CLI‑входная точка."""
 
@@ -207,48 +303,8 @@ def main() -> None:  # noqa: D401
     if not args.url:
         sys.exit("❌ Need --url or set CRAWL_START_URL")
 
-    domain = args.domain or urlparse.urlparse(args.url).netloc
+    asyncio.run(async_main(args))
 
-    logger.info(
-        "crawler started",
-        url=args.url,
-        depth=args.max_depth,
-        pages=args.max_pages,
-    )
-
-    col = get_mongo_collection(args.mongo_uri)
-    buffer: list[dict] = []
-
-    on_crawler_start()
-
-    try:
-        for url, html, ctype in crawl(
-            args.url,
-            max_pages=args.max_pages,
-            max_depth=args.max_depth,
-            allowed_domain=domain,
-        ):
-            logger.info("page fetched", url=url)
-            buffer.append(
-                {
-                    "url": url,
-                    "content_type": ctype,
-                    "html": html,
-                    "ts": time.time(),
-                }
-            )
-            if len(buffer) >= BATCH_SIZE:
-                store_batch(col, buffer)
-                buffer.clear()
-        # финальный слив
-        if buffer:
-            store_batch(col, buffer)
-
-        logger.info("crawl complete", pages=args.max_pages)
-    except KeyboardInterrupt:
-        logger.warning("interrupted by user, flushing buffer")
-        if buffer:
-            store_batch(col, buffer)
 
 
 if __name__ == "__main__":
