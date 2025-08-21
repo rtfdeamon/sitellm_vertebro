@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 import types
+import json
+from dataclasses import dataclass
 import pytest
 
 module_path = Path(__file__).resolve().parents[1] / "backend" / "cache.py"
@@ -37,7 +39,7 @@ class FakeRedis:
 
     async def get(self, key):
         val = self.store.get(key)
-        return None if val is None else val
+        return None if val is None else val.encode()
 
     async def setex(self, key, ttl, value):
         self.store[key] = value
@@ -62,3 +64,35 @@ async def test_cache_decorator(monkeypatch):
     assert first == "hi!"
     assert second == "hi!"
     assert len(calls) == 1
+    stored = next(iter(redis.store.values()))
+    assert json.loads(stored) == "hi!"
+
+
+@dataclass
+class Sample:
+    x: int
+
+
+@pytest.mark.asyncio
+async def test_cache_serializes_dataclass(monkeypatch):
+    """Dataclasses should round-trip through cache."""
+    redis = FakeRedis()
+    monkeypatch.setattr(cache, "_get_redis", lambda: redis)
+
+    calls: list[str] = []
+
+    @cache.cache_response
+    async def func(q: str) -> Sample:
+        calls.append(q)
+        return Sample(x=1)
+
+    first = await func("hi")
+    second = await func("hi")
+
+    assert first == Sample(x=1)
+    assert second == Sample(x=1)
+    assert len(calls) == 1
+    stored = next(iter(redis.store.values()))
+    data = json.loads(stored)
+    assert data["__cls__"].endswith("Sample")
+    assert data["x"] == 1
