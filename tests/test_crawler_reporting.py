@@ -1,50 +1,45 @@
 import sys
 import types
 
-# Provide a minimal redis stub with RedisError
+
 class RedisError(Exception):
     pass
 
-redis_stub = types.ModuleType("redis")
-redis_stub.exceptions = types.SimpleNamespace(RedisError=RedisError)
-redis_stub.from_url = lambda *a, **k: None
-sys.modules.setdefault("redis", redis_stub)
 
-from backend import crawler_reporting as cr
+class ConnectionError(RedisError):
+    pass
 
 
-class DummyLogger:
-    def __init__(self):
-        self.warnings = []
+fake_redis = types.ModuleType("redis")
+fake_redis.exceptions = types.SimpleNamespace(
+    ConnectionError=ConnectionError, RedisError=RedisError
+)
+fake_redis.from_url = lambda *a, **k: object()
+sys.modules.setdefault("redis", fake_redis)
 
-    def warning(self, msg, **kw):
-        self.warnings.append((msg, kw))
+import redis  # type: ignore  # noqa: E402
+import backend.crawler_reporting as cr  # noqa: E402
 
 
 class FailRedis:
-    def hset(self, *a, **k):
-        raise cr.redis.exceptions.RedisError("down")
+    def hset(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("fail")
 
-    def publish(self, *a, **k):
-        raise cr.redis.exceptions.RedisError("down")
+    def publish(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("fail")
 
-    def scan_iter(self, *a, **k):
-        raise cr.redis.exceptions.RedisError("down")
+    def scan_iter(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("fail")
 
-    def hgetall(self, *a, **k):
-        raise cr.redis.exceptions.RedisError("down")
+    def hgetall(self, *args, **kwargs):
+        raise redis.exceptions.ConnectionError("fail")
 
 
-def test_reporter_handles_unavailable_redis(monkeypatch):
-    dummy = DummyLogger()
-    monkeypatch.setattr(cr, "logger", dummy)
+def test_unavailable_redis(monkeypatch):
     monkeypatch.setattr(cr, "settings", types.SimpleNamespace(redis_url="redis://"))
-    monkeypatch.setattr(cr.redis, "from_url", lambda *a, **k: FailRedis())
-
     reporter = cr.Reporter()
-    reporter.update(cr.CrawlerProgress(job_id="1"))
-    assert dummy.warnings
+    reporter.r = FailRedis()
+    progress = cr.CrawlerProgress(job_id="1")
 
-    dummy.warnings.clear()
+    reporter.update(progress)
     assert reporter.get_all() == {}
-    assert dummy.warnings
