@@ -64,6 +64,14 @@ Run unit tests with:
 pytest -q
 ```
 
+## Documentation
+
+Build the HTML documentation with:
+
+```bash
+sphinx-build -b html docs build/docs
+```
+
 ## Configuration
 
 Key settings are loaded from environment variables or ``.env``:
