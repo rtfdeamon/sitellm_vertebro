@@ -33,7 +33,7 @@ import sys
 import time
 import urllib.parse as urlparse
 from collections import deque
-from typing import Iterable, List, Set, Tuple
+from typing import Iterable, List, Set, Tuple, Callable
 
 import requests
 from bs4 import BeautifulSoup
@@ -233,6 +233,73 @@ def store_batch(col, docs: List[dict]):  # noqa: ANN001
         col.bulk_write(requests_)
 
 
+# ------------------------------ run ---------------------------------- #
+
+def run(
+    url: str,
+    *,
+    max_pages: int = DEFAULT_MAX_PAGES,
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    domain: str | None = None,
+    mongo_uri: str = DEFAULT_MONGO_URI,
+    progress_callback: Callable[[str], None] | None = None,
+) -> None:
+    """Запускает краулер."""
+    if not url:
+        sys.exit("❌ Need --url or set CRAWL_START_URL")
+
+    domain = domain or urlparse.urlparse(url).netloc
+
+    logger.info(
+        "crawler started",
+        url=url,
+        depth=max_depth,
+        pages=max_pages,
+    )
+
+    col = get_mongo_collection(mongo_uri)
+    buffer: list[dict] = []
+
+    on_crawler_start()
+
+    robot = None if args.ignore_robots else get_robot_parser(args.url)
+    sitemap_url = args.sitemap_url or urlparse.urljoin(args.url, "/sitemap.xml")
+    initial_urls = parse_sitemap(sitemap_url)
+
+    try:
+        for page_url, html, ctype in crawl(
+            url,
+            max_pages=max_pages,
+            max_depth=max_depth,
+            allowed_domain=domain,
+            robot_parser=robot,
+            initial_urls=initial_urls,
+        ):
+            logger.info("page fetched", url=page_url)
+            buffer.append(
+                {
+                    "url": page_url,
+                    "content_type": ctype,
+                    "html": html,
+                    "ts": time.time(),
+                }
+            )
+            if progress_callback:
+                progress_callback(page_url)
+            if len(buffer) >= BATCH_SIZE:
+                store_batch(col, buffer)
+                buffer.clear()
+        # финальный слив
+        if buffer:
+            store_batch(col, buffer)
+
+        logger.info("crawl complete", pages=max_pages)
+    except KeyboardInterrupt:
+        logger.warning("interrupted by user, flushing buffer")
+        if buffer:
+            store_batch(col, buffer)
+
+
 # ------------------------------ main --------------------------------- #
 
 def main() -> None:  # noqa: D401
@@ -251,70 +318,15 @@ def main() -> None:  # noqa: D401
         default=DEFAULT_MONGO_URI,
         help="MongoDB connection string (mongodb://user:pass@host:port)",
     )
-    parser.add_argument(
-        "--sitemap-url",
-        default=DEFAULT_SITEMAP_URL,
-        help="Explicit sitemap URL to seed from (по умолчанию /sitemap.xml)",
-    )
-    parser.add_argument(
-        "--ignore-robots",
-        action="store_true",
-        default=DEFAULT_IGNORE_ROBOTS,
-        help="Ignore robots.txt rules",
-    )
     args = parser.parse_args()
 
-    if not args.url:
-        sys.exit("❌ Need --url or set CRAWL_START_URL")
-
-    domain = args.domain or urlparse.urlparse(args.url).netloc
-
-    logger.info(
-        "crawler started",
-        url=args.url,
-        depth=args.max_depth,
-        pages=args.max_pages,
+    run(
+        args.url,
+        max_pages=args.max_pages,
+        max_depth=args.max_depth,
+        domain=args.domain,
+        mongo_uri=args.mongo_uri,
     )
-
-    col = get_mongo_collection(args.mongo_uri)
-    buffer: list[dict] = []
-
-    on_crawler_start()
-
-    robot = None if args.ignore_robots else get_robot_parser(args.url)
-    sitemap_url = args.sitemap_url or urlparse.urljoin(args.url, "/sitemap.xml")
-    initial_urls = parse_sitemap(sitemap_url)
-
-    try:
-        for url, html, ctype in crawl(
-            args.url,
-            max_pages=args.max_pages,
-            max_depth=args.max_depth,
-            allowed_domain=domain,
-            robot_parser=robot,
-            initial_urls=initial_urls,
-        ):
-            logger.info("page fetched", url=url)
-            buffer.append(
-                {
-                    "url": url,
-                    "content_type": ctype,
-                    "html": html,
-                    "ts": time.time(),
-                }
-            )
-            if len(buffer) >= BATCH_SIZE:
-                store_batch(col, buffer)
-                buffer.clear()
-        # финальный слив
-        if buffer:
-            store_batch(col, buffer)
-
-        logger.info("crawl complete", pages=args.max_pages)
-    except KeyboardInterrupt:
-        logger.warning("interrupted by user, flushing buffer")
-        if buffer:
-            store_batch(col, buffer)
 
 
 if __name__ == "__main__":

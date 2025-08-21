@@ -111,8 +111,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(BasicAuthMiddleware)
 app.mount("/metrics", metrics_app)
-app.include_router(llm_router, prefix="/api/v1")
-app.include_router(crawler_router, prefix="/api/v1")
+app.include_router(
+    llm_router,
+    prefix="/api/v1",
+)
+app.include_router(crawler_router)
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 

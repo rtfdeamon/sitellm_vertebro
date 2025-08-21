@@ -1,43 +1,36 @@
 from __future__ import annotations
 
-import subprocess
-from fastapi import APIRouter, BackgroundTasks
-from pydantic import BaseModel, HttpUrl, Field
+from uuid import uuid4
+from fastapi import APIRouter
+from pydantic import BaseModel
 
-from core.status import status_dict
+from .run_crawl import DEFAULT_MAX_PAGES, DEFAULT_MAX_DEPTH, DEFAULT_MONGO_URI
+from .tasks import start_crawl
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 
 class CrawlRequest(BaseModel):
-    url: HttpUrl
-    depth: int = Field(ge=1, default=3)
-    pages: int = Field(ge=1, default=500)
+    url: str
+    max_pages: int | None = None
+    max_depth: int | None = None
+    domain: str | None = None
+    mongo_uri: str | None = None
 
 
-def _run_crawler(url: str, depth: int, pages: int) -> None:
-    subprocess.Popen(
-        [
-            "python",
-            "crawler/run_crawl.py",
-            "--url",
-            url,
-            "--max-depth",
-            str(depth),
-            "--max-pages",
-            str(pages),
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+class CrawlResponse(BaseModel):
+    job_id: str
+
+
+@router.post("/run", response_model=CrawlResponse)
+def run_crawler(request: CrawlRequest) -> CrawlResponse:
+    job_id = str(uuid4())
+    start_crawl.delay(
+        request.url,
+        max_pages=request.max_pages or DEFAULT_MAX_PAGES,
+        max_depth=request.max_depth or DEFAULT_MAX_DEPTH,
+        domain=request.domain,
+        mongo_uri=request.mongo_uri or DEFAULT_MONGO_URI,
+        job_id=job_id,
     )
-
-
-@router.post("/run")
-async def run_crawler(req: CrawlRequest, background: BackgroundTasks) -> dict[str, str]:
-    background.add_task(_run_crawler, req.url, req.depth, req.pages)
-    return {"status": "started"}
-
-
-@router.get("/status")
-def crawler_status() -> dict[str, int | None]:
-    return status_dict()["crawler"]
+    return CrawlResponse(job_id=job_id)
