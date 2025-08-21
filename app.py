@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from observability.logging import configure_logging
 from observability.metrics import MetricsMiddleware, metrics_app
 
-from api import llm_router
+from api import llm_router, crawler_router
 from mongo import MongoClient
 from vectors import DocumentsParser
 from yallm import YaLLM, YaLLMEmbeddings
@@ -86,6 +86,10 @@ app.add_middleware(MetricsMiddleware)
 app.mount("/metrics", metrics_app)
 app.include_router(
     llm_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    crawler_router,
     prefix="/api/v1",
 )
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")

@@ -1,6 +1,10 @@
-"""FastAPI router with an endpoint for interacting with the LLM."""
+"""FastAPI routers for interacting with the LLM and crawler."""
 
-from fastapi import APIRouter, Request, HTTPException
+from pathlib import Path
+import subprocess
+import sys
+
+from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from fastapi.responses import ORJSONResponse, StreamingResponse
 
 import structlog
@@ -9,6 +13,9 @@ from backend import llm_client
 
 from models import LLMResponse, LLMRequest, RoleEnum
 from mongo import NotFound
+from pydantic import BaseModel
+
+from core.status import status_dict
 
 logger = structlog.get_logger(__name__)
 
@@ -102,3 +109,45 @@ async def chat(question: str) -> StreamingResponse:
     headers = {"X-Model-Name": "vikhr-gpt-8b-it"}
     response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
     return response
+
+
+class CrawlRequest(BaseModel):
+    start_url: str
+    max_pages: int = 500
+    max_depth: int = 3
+
+
+crawler_router = APIRouter(prefix="/crawler", tags=["crawler"])
+
+
+def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
+    script = Path(__file__).resolve().parent / "crawler" / "run_crawl.py"
+    cmd = [
+        sys.executable,
+        str(script),
+        "--url",
+        start_url,
+        "--max-pages",
+        str(max_pages),
+        "--max-depth",
+        str(max_depth),
+    ]
+    subprocess.Popen(cmd)
+
+
+@crawler_router.post("/run", status_code=202)
+async def run_crawler(req: CrawlRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+    """Start the crawler in a background task."""
+
+    background_tasks.add_task(
+        _spawn_crawler, req.start_url, req.max_pages, req.max_depth
+    )
+    return {"status": "started"}
+
+
+@crawler_router.get("/status")
+async def crawler_status() -> dict[str, object]:
+    """Return current crawler and database status."""
+
+    return status_dict()
+
