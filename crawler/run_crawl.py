@@ -101,7 +101,12 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
     try:
         resp = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
-        return resp.text, resp.headers.get("content-type", "")
+        ctype = resp.headers.get("content-type", "")
+        main_type = ctype.split(";")[0].strip().lower()
+        if main_type != "text/html":
+            logger.info("skip non-html", url=url, content_type=ctype)
+            return None, ctype
+        return resp.text, ctype
     except Exception as exc:  # noqa: BLE001
         logger.warning("fetch failed", url=url, error=str(exc))
         return None, None
