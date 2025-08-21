@@ -3,10 +3,15 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
+import base64
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
 
 from observability.logging import configure_logging
 from observability.metrics import MetricsMiddleware, metrics_app
@@ -29,6 +34,26 @@ import requests
 configure_logging()
 
 settings = Settings()
+
+ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path.startswith("/admin"):
+            auth = request.headers.get("Authorization")
+            if auth and auth.lower().startswith("basic "):
+                try:
+                    encoded = auth.split(" ", 1)[1]
+                    decoded = base64.b64decode(encoded).decode()
+                    username, password = decoded.split(":", 1)
+                    if username == ADMIN_USER and password == ADMIN_PASSWORD:
+                        return await call_next(request)
+                except Exception:  # noqa: BLE001
+                    pass
+            return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -84,6 +109,7 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
 app.add_middleware(MetricsMiddleware)
+app.add_middleware(BasicAuthMiddleware)
 app.mount("/metrics", metrics_app)
 app.include_router(
     llm_router,
@@ -91,6 +117,7 @@ app.include_router(
 )
 app.include_router(crawler_router)
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
+app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 
 
 def _mongo_ok() -> bool:

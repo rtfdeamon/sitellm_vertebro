@@ -156,8 +156,8 @@ class MongoClient:
         str
             The generated GridFS ``file_id``.
         """
-        f_id = str(await self.gridfs.put(file))
-        document = Document(name=file_name, description="", fileId=f_id)
+        f_id = await self.gridfs.put(file)
+        document = Document(name=file_name, description="", fileId=str(f_id))
         await self.db[documents_collection].insert_one(document.model_dump())
 
-        return f_id
+        return str(f_id)
