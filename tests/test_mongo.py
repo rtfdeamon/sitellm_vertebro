@@ -1,8 +1,12 @@
 """Tests for MongoDB helpers."""
 
+import sys
+import uuid
 import pytest
 from bson import ObjectId
 
+# Ensure any test stubs for ``mongo`` are cleared before importing the real module.
+sys.modules.pop("mongo", None)
 from mongo import MongoClient
 
 
