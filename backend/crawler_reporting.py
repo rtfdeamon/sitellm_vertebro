@@ -1,9 +1,10 @@
 from __future__ import annotations
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import json
 import time
 from typing import Optional, Dict, Any
 import structlog
+import redis
 from .settings import settings
 
 
@@ -16,7 +17,7 @@ KEY_TPL = "crawler:progress:{job_id}"
 @dataclass
 class CrawlerProgress:
     job_id: str
-    started_at: float = time.time()
+    started_at: float = field(default_factory=time.time)
     queued: int = 0
     fetched: int = 0
     parsed: int = 0
@@ -27,10 +28,6 @@ class CrawlerProgress:
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
-
-
-logger = structlog.get_logger(__name__)
-
 
 class Reporter:
     def __init__(self) -> None:
