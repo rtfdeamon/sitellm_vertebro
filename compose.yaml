@@ -27,6 +27,7 @@ services:
     # Redis is used for the vector store and Celery broker
     image: bitnami/redis:7.0
     restart: unless-stopped
+    env_file: .env
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     ports:
@@ -36,6 +37,8 @@ services:
       test:
         - CMD
         - redis-cli
+        - -a
+        - ${REDIS_PASSWORD}
         - ping
 
   celery_worker:
