@@ -37,9 +37,10 @@ configure_logging()
 settings = Settings()
 
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD_DIGEST = bytes.fromhex(
-    os.getenv("ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest())
+ADMIN_PASSWORD_HASH = os.getenv(
+    "ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest()
 )
+ADMIN_PASSWORD_DIGEST = bytes.fromhex(ADMIN_PASSWORD_HASH)
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):

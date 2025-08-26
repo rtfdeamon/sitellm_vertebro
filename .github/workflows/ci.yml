@@ -14,8 +14,8 @@ jobs:
         run: |
           pip install uv
           uv pip install --system -e .[dev]
-      - name: Lint
-        run: ruff check .
+      - name: Ruff lint
+        run: ruff .
       - name: Run tests
         run: pytest -q
       - name: Benchmark
