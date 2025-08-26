@@ -164,6 +164,7 @@ def health() -> dict[str, object]:
     status = "ok" if all(checks.values()) else "degraded"
     return {"status": status, **checks}
 
+
 @app.get("/status")
 def status() -> dict[str, object]:
     """Return aggregated crawler and database status."""
