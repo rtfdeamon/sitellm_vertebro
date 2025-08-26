@@ -4,6 +4,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 import base64
+import hmac
+import hashlib
 import os
 
 from fastapi import FastAPI
@@ -35,7 +37,9 @@ configure_logging()
 settings = Settings()
 
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin")
+_default_hash = hashlib.sha256(b"admin").hexdigest()
+_admin_password_hash = os.getenv("ADMIN_PASSWORD", _default_hash)
+ADMIN_PASSWORD_DIGEST = bytes.fromhex(_admin_password_hash)
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -47,7 +51,10 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                     encoded = auth.split(" ", 1)[1]
                     decoded = base64.b64decode(encoded).decode()
                     username, password = decoded.split(":", 1)
-                    if username == ADMIN_USER and password == ADMIN_PASSWORD:
+                    password_digest = hashlib.sha256(password.encode()).digest()
+                    if username == ADMIN_USER and hmac.compare_digest(
+                        password_digest, ADMIN_PASSWORD_DIGEST
+                    ):
                         return await call_next(request)
                 except Exception:  # noqa: BLE001
                     pass
@@ -157,6 +164,7 @@ def health() -> dict[str, object]:
     }
     status = "ok" if all(checks.values()) else "degraded"
     return {"status": status, **checks}
+
 
 @app.get("/status")
 def status() -> dict[str, object]:
