@@ -4,8 +4,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 import base64
-import hmac
 import hashlib
+import hmac
 import os
 
 from fastapi import FastAPI
@@ -37,9 +37,9 @@ configure_logging()
 settings = Settings()
 
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
-_default_hash = hashlib.sha256(b"admin").hexdigest()
-_admin_password_hash = os.getenv("ADMIN_PASSWORD", _default_hash)
-ADMIN_PASSWORD_DIGEST = bytes.fromhex(_admin_password_hash)
+ADMIN_PASSWORD_DIGEST = bytes.fromhex(
+    os.getenv("ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest())
+)
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -51,11 +51,10 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                     encoded = auth.split(" ", 1)[1]
                     decoded = base64.b64decode(encoded).decode()
                     username, password = decoded.split(":", 1)
-                    password_digest = hashlib.sha256(password.encode()).digest()
-                    if username == ADMIN_USER and hmac.compare_digest(
-                        password_digest, ADMIN_PASSWORD_DIGEST
-                    ):
-                        return await call_next(request)
+                    if username == ADMIN_USER:
+                        hashed = hashlib.sha256(password.encode()).digest()
+                        if hmac.compare_digest(hashed, ADMIN_PASSWORD_DIGEST):
+                            return await call_next(request)
                 except Exception:  # noqa: BLE001
                     pass
             return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
