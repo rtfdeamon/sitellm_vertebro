@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import importlib.util
 import sys
 import types
@@ -128,6 +129,10 @@ def client(monkeypatch):
     monkeypatch.setitem(sys.modules, "retrieval", retrieval_pkg)
     monkeypatch.setitem(sys.modules, "retrieval.search", search_mod)
 
+    # Ensure admin credentials are set via environment variables
+    monkeypatch.setenv("ADMIN_USERNAME", "admin")
+    monkeypatch.setenv("ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest())
+
     spec = importlib.util.spec_from_file_location(
         "app_real", Path(__file__).resolve().parents[1] / "app.py"
     )
@@ -139,6 +144,7 @@ def client(monkeypatch):
 def test_admin_requires_auth(client):
     response = client.get("/admin")
     assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Basic"
 
 
 def test_admin_with_basic_auth(client):
