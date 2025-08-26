@@ -20,7 +20,10 @@ def wait_tcp(host: str, port: int, timeout=2.0) -> bool:
 def wait_http(url: str, timeout=2.0) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:
-            return r.status < 500
+            ok = 200 <= r.status < 400
+            if not ok:
+                print(f"unexpected status {r.status} for {url}", file=sys.stderr)
+            return ok
     except Exception:
         return False
 
