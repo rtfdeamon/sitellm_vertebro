@@ -34,12 +34,7 @@ services:
       - "6379:6379"
     healthcheck:
       <<: *health_defaults
-      test:
-        - CMD
-        - redis-cli
-        - -a
-        - ${REDIS_PASSWORD}
-        - ping
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping"]
 
   celery_worker:
     # Processes scheduled tasks that update the vector store
