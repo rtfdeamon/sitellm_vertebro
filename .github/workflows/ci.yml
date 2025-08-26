@@ -15,8 +15,7 @@ jobs:
           pip install uv
           uv pip install --system -e .[dev]
       - name: Lint
-        run: ruff . || ruff check .
-        continue-on-error: true
+        run: ruff check .
       - name: Run tests
         run: pytest -q
       - name: Benchmark
