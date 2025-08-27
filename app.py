@@ -166,6 +166,12 @@ def health() -> dict[str, object]:
     return {"status": status, **checks}
 
 
+@app.get("/healthz", include_in_schema=False)
+def healthz() -> dict[str, str]:
+    """Lightweight liveness probe used by container healthchecks."""
+    return {"status": "ok"}
+
+
 @app.get("/status")
 def status() -> dict[str, object]:
     """Return aggregated crawler and database status."""

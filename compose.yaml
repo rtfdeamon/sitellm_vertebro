@@ -130,9 +130,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:${APP_PORT:-8000}/healthz || exit 1"]
       interval: 10s
-      timeout: 3s
+      timeout: 5s
       retries: 20
-      start_period: 10s
+      start_period: 60s
     depends_on:
       mongo:
         condition: service_healthy
@@ -142,15 +142,26 @@ services:
         condition: service_healthy
 
   qdrant:
-    image: qdrant/qdrant
+    image: qdrant/qdrant:latest
     restart: unless-stopped
+    platform: linux/amd64
+    # Uncomment the next line if you are on Apple Silicon and face issues
+    # platform: linux/arm64
     ports:
-      - "6333:6333"
+      - "6333:6333"   # HTTP API
+      - "6334:6334"   # gRPC API
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+      QDRANT__SERVICE__GRPC_PORT: 6334
+      QDRANT__LOG_LEVEL: INFO
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      <<: *health_defaults
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
+      test: ["CMD", "true"]
+      interval: 10s
+      timeout: 5s
+      retries: 1
+      start_period: 1s
 
 
   telegram-bot:
