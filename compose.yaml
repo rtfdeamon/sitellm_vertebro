@@ -128,11 +128,13 @@ services:
     volumes:
       - ./data/hf:/root/.cache/huggingface
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:${APP_PORT:-8000}/healthz || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 60s
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - >
+          (curl -fsS http://localhost:${APP_PORT:-8000}/healthz ||
+           curl -fsS http://localhost:${APP_PORT:-8000}/health ||
+           curl -fsS http://localhost:${APP_PORT:-8000}/) >/dev/null || exit 1
     depends_on:
       mongo:
         condition: service_healthy
@@ -157,11 +159,8 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD", "true"]
-      interval: 10s
-      timeout: 5s
-      retries: 1
-      start_period: 1s
+      <<: *health_defaults
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/readyz || exit 1"]
 
 
   telegram-bot:
@@ -173,7 +172,14 @@ services:
       PYTHONPATH: /app
     restart: unless-stopped
     depends_on:
-      - app
+      app:
+        condition: service_healthy
+    healthcheck:
+      <<: *health_defaults
+      test:
+        - CMD-SHELL
+        - >
+          pgrep -af "python.*tg_bot\.run" >/dev/null || exit 1
 
 volumes:
   mongo_data:

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     """Configuration for the Telegram bot."""
 
     bot_token: str
-    backend_url: AnyUrl = "http://localhost:9000/api/chat"
+    backend_url: AnyUrl = "http://app:8000/api/v1/chat"
     api_base_url: AnyUrl = "http://app:8000"
     request_timeout: int = 30
 

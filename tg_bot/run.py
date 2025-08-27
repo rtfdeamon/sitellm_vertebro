@@ -15,11 +15,6 @@ from observability.logging import configure_logging
 configure_logging()
 logger = structlog.get_logger(__name__)
 
-TOKEN = os.getenv("BOT_TOKEN", "").strip()
-if not TOKEN:
-    logger.warning("[telegram] BOT_TOKEN is empty — bot disabled")
-    sys.exit(0)
-
 from .bot import setup
 from .config import get_settings
 
@@ -30,7 +25,12 @@ async def init_bot() -> None:
     logger.info("bot starting")
     try:
         settings = get_settings()
-        bot = Bot(token=settings.bot_token)
+        token = (settings.bot_token or "").strip()
+        if not token:
+            logger.warning("[telegram] BOT_TOKEN is empty — bot disabled")
+            return
+
+        bot = Bot(token=token)
         dp = Dispatcher()
         setup(dp)
         logger.info("connecting to telegram")
