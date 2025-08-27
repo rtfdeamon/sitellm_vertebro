@@ -150,7 +150,7 @@ services:
       - qdrant_data:/qdrant/storage
     healthcheck:
       <<: *health_defaults
-      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/ready || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz || exit 1"]
 
 
   telegram-bot:
