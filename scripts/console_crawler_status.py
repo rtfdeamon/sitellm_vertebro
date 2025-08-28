@@ -1,3 +1,5 @@
+"""Simple TUI to display per-job crawler progress in real time."""
+
 from time import sleep
 from rich.table import Table
 from rich.live import Live
@@ -6,6 +8,7 @@ from backend.crawler_reporting import Reporter
 
 
 def render(rows):
+    """Render a table from the mapping returned by :meth:`Reporter.get_all`."""
     t = Table(title="Crawler status", box=box.SIMPLE_HEAVY)
     t.add_column("Job")
     t.add_column("Queued")
@@ -30,6 +33,7 @@ def render(rows):
 
 
 def main() -> None:
+    """Run a loop that refreshes the display every second."""
     rep = Reporter()
     with Live(refresh_per_second=2) as live:
         while True:

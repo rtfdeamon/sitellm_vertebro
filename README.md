@@ -72,6 +72,10 @@ Build the HTML documentation with:
 sphinx-build -b html docs build/docs
 ```
 
+Inline code is documented with comprehensive docstrings across modules; the
+Sphinx configuration is set to include undoc-members so new symbols will be
+picked up automatically.
+
 ## Configuration
 
 Key settings are loaded from environment variables or ``.env``:

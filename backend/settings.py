@@ -1,3 +1,13 @@
+"""Backend settings with environment-variable aliases.
+
+This module defines a small :class:`Settings` model that reads configuration
+from ``.env`` and the process environment. It supports backwards-compatible
+aliases (e.g. ``MONGO_URI`` and ``mongo.uri``) via ``pydantic``
+``AliasChoices`` so the app can be configured in different deployment styles.
+
+Use :func:`get_settings` to access a singleton instance.
+"""
+
 from __future__ import annotations
 from pydantic import Field, AliasChoices
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -44,4 +54,9 @@ settings = Settings()
 
 
 def get_settings() -> Settings:
+    """Return the global :class:`Settings` instance.
+
+    The object is instantiated at import time and reused across the
+    application to avoid parsing the environment repeatedly.
+    """
     return settings

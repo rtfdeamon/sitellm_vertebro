@@ -1,3 +1,12 @@
+"""Aggregate health and progress metrics from Redis, Mongo and Qdrant.
+
+This module is used by both the HTTP API and CLI utilities to display a
+succinct snapshot of the system state: crawler queue counters, database fill
+level and freshness of the last crawl. External connections are performed with
+short timeouts and failures are logged but tolerated to keep the status page
+responsive.
+"""
+
 from __future__ import annotations
 import os
 import time
@@ -23,6 +32,7 @@ TARGET_DOCS = int(os.getenv("TARGET_DOCS", "1000"))
 
 @dataclass
 class CrawlerStats:
+    """Counters describing the crawler queue and activity."""
     queued: int = 0
     in_progress: int = 0
     done: int = 0
@@ -33,6 +43,7 @@ class CrawlerStats:
 
 @dataclass
 class DbStats:
+    """Database-related metrics for MongoDB and Qdrant."""
     mongo_docs: int = 0
     qdrant_points: int = 0
     target_docs: int = 0
@@ -41,6 +52,7 @@ class DbStats:
 
 @dataclass
 class Status:
+    """Top-level structure returned by :func:`get_status`."""
     ok: bool
     ts: float
     crawler: CrawlerStats
@@ -58,6 +70,12 @@ def _safe_int(x) -> int:
 
 
 def get_status() -> Status:
+    """Collect and return the current :class:`Status`.
+
+    Connects to Redis, MongoDB and Qdrant using environment variables for
+    endpoints. Any connection errors are logged and treated as zeros in the
+    resulting metrics so the status endpoint never fails hard.
+    """
     # Redis counters
     redis_host = os.getenv("REDIS_HOST", "redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
@@ -156,6 +174,7 @@ def get_status() -> Status:
 
 
 def status_dict() -> Dict[str, Any]:
+    """Return the status as a plain dictionary with convenience fields."""
     s = get_status()
     out = asdict(s)
     out["fill_percent"] = out["db"]["fill_percent"]

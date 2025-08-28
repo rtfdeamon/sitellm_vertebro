@@ -1,3 +1,5 @@
+"""Console dashboard showing crawler and DB status using Rich."""
+
 from time import sleep
 from rich.live import Live
 from rich.table import Table
@@ -7,6 +9,7 @@ from core.status import status_dict
 
 
 def render():
+    """Build a Rich renderable with current status metrics."""
     s = status_dict()
     t = Table(title="Crawler & DB status", expand=True)
     t.add_column("Metric", style="bold cyan")
@@ -44,6 +47,7 @@ def render():
 
 
 def main():
+    """Continuously refresh the dashboard in the terminal."""
     with Live(render(), refresh_per_second=2, screen=False) as live:
         while True:
             sleep(0.5)
