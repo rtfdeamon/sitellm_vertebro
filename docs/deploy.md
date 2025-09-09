@@ -22,7 +22,10 @@
  - `DOMAIN` (опц.): домен для reverse‑proxy (Caddy) и TLS.
  - `LETSENCRYPT_EMAIL` (опц.): контактный e‑mail для ACME у Caddy.
  - `INSTALL_PROXY` (опц.): если `caddy`, установит reverse‑proxy автоматически.
- - `OPEN_APP_PORT` (опц.): `1` чтобы открыть 8000 в firewall (по умолчанию 0).
+- `OPEN_APP_PORT` (опц.): `1` чтобы открыть 8000 в firewall (по умолчанию 0).
+ - `USE_GPU` (опц.): `true/1` для включения GPU-режима (compose.gpu.yaml).
+ - `INSTALL_NVIDIA_TOOLKIT` (опц.): `1` — поставить NVIDIA Container Toolkit.
+ - `INSTALL_NVIDIA_DRIVER` (опц.): `1` — попытаться поставить проприетарный драйвер NVIDIA (может потребовать перезагрузку).
 
 Как это работает:
 - Workflow: `.github/workflows/deploy.yml`.
@@ -82,6 +85,9 @@ scripts/remote_deploy.sh user@server
 - Клонируют репозиторий в `APP_DIR` и подготовят `.env`.
 - Создадут `systemd` сервис для `docker compose up -d` и таймер ежедневного краула.
 - Запустят стек (после чего API будет доступен на `http://<server>:8000`).
+ - При `--domain`/`DOMAIN` — настроят Caddy с TLS. При `USE_GPU=true` — применят `compose.gpu.yaml`
+   с `device_requests` для NVIDIA и переменными сборки для CUDA; при необходимости
+   установят `nvidia-container-toolkit` и драйвер (если заданы соответствующие флаги).
 
 Обновление на новой ревизии одной командой
 -----------------------------------------

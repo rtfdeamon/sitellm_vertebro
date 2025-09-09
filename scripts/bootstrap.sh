@@ -25,6 +25,9 @@ DOMAIN=${DOMAIN:-}
 LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-}
 # Firewall options: open 80/443 always if proxy installed; open 8000 if OPEN_APP_PORT=1
 OPEN_APP_PORT=${OPEN_APP_PORT:-0}
+USE_GPU=${USE_GPU:-}
+INSTALL_NVIDIA_TOOLKIT=${INSTALL_NVIDIA_TOOLKIT:-}
+INSTALL_NVIDIA_DRIVER=${INSTALL_NVIDIA_DRIVER:-}
 
 SUDO=""
 if [ "${EUID}" -ne 0 ]; then
@@ -121,6 +124,7 @@ prepare_env() {
   : "${CRAWL_START_URL:=https://mmvs.ru}"
   : "${LLM_MODEL:=Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}"
   : "${DOMAIN:=${DOMAIN:-}}"
+  : "${USE_GPU:=${USE_GPU:-}}"
 
   update_env_var MONGO_USERNAME "${MONGO_USERNAME}"
   update_env_var MONGO_PASSWORD "${MONGO_PASSWORD}"
@@ -137,6 +141,9 @@ prepare_env() {
   update_env_var GRAFANA_PASSWORD "${GRAFANA_PASSWORD}"
   if [ -n "${DOMAIN}" ]; then
     update_env_var DOMAIN "${DOMAIN}"
+  fi
+  if [ -n "${USE_GPU}" ]; then
+    update_env_var USE_GPU "${USE_GPU}"
   fi
 }
 
@@ -284,6 +291,56 @@ EOF
   log "caddy configured; ensure DNS for ${DOMAIN} points to this host"
 }
 
+install_nvidia_toolkit() {
+  # Install NVIDIA Container Toolkit for Docker
+  log "installing NVIDIA Container Toolkit"
+  if [ -r /etc/os-release ]; then . /etc/os-release; fi
+  case "${ID:-}" in
+    ubuntu|debian)
+      ${SUDO} apt-get update -y
+      ${SUDO} apt-get install -y curl gnupg ca-certificates
+      distribution=$(. /etc/os-release;echo $ID$VERSION_ID) && \
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | ${SUDO} gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+      curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+        ${SUDO} tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
+      ${SUDO} apt-get update -y
+      ${SUDO} apt-get install -y nvidia-container-toolkit
+      ${SUDO} nvidia-ctk runtime configure --runtime=docker || true
+      ${SUDO} systemctl restart docker || true
+      ;;
+    *)
+      log "NVIDIA toolkit install skipped (unsupported OS)"
+      return 0
+      ;;
+  esac
+}
+
+install_nvidia_driver() {
+  # Attempt installing NVIDIA proprietary driver (may require reboot)
+  log "installing NVIDIA driver (optional)"
+  if [ -r /etc/os-release ]; then . /etc/os-release; fi
+  case "${ID:-}" in
+    ubuntu)
+      ${SUDO} apt-get update -y
+      if command -v ubuntu-drivers >/dev/null 2>&1; then
+        ${SUDO} apt-get install -y ubuntu-drivers-common
+        ${SUDO} ubuntu-drivers install -g || true
+      else
+        ${SUDO} apt-get install -y nvidia-driver-535 || ${SUDO} apt-get install -y nvidia-driver || true
+      fi
+      ;;
+    debian)
+      ${SUDO} apt-get update -y
+      ${SUDO} apt-get install -y nvidia-driver || true
+      ;;
+    *)
+      log "NVIDIA driver install skipped (unsupported OS)"
+      ;;
+  esac
+  log "NVIDIA driver installation requested; reboot may be required"
+}
+
 main() {
   install_docker
   ensure_repo
@@ -296,6 +353,13 @@ main() {
   setup_firewall
   if [ "$INSTALL_PROXY" = "caddy" ]; then
     install_caddy
+  fi
+  # Optional GPU setup
+  if [ "${USE_GPU}" = "true" ] || [ "${INSTALL_NVIDIA_TOOLKIT}" = "1" ]; then
+    install_nvidia_toolkit
+  fi
+  if [ "${INSTALL_NVIDIA_DRIVER}" = "1" ]; then
+    install_nvidia_driver
   fi
   log "bootstrap complete"
 }

@@ -1,0 +1,26 @@
+services:
+  app:
+    environment:
+      # Enable CUDA backend in llama-cpp-python build
+      CMAKE_ARGS: "-DGGML_CUDA=on"
+      LLAMA_CPP_PYTHON_BUILD: "cmake"
+      # Use CUDA wheels for PyTorch
+      PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    device_requests:
+      - driver: nvidia
+        count: all
+        capabilities: [gpu]
+
+  celery_worker:
+    environment:
+      CMAKE_ARGS: "-DGGML_CUDA=on"
+      LLAMA_CPP_PYTHON_BUILD: "cmake"
+      PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+      NVIDIA_VISIBLE_DEVICES: "all"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+    device_requests:
+      - driver: nvidia
+        count: all
+        capabilities: [gpu]

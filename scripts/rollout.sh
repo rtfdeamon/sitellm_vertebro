@@ -37,6 +37,16 @@ if [ ! -f ".env" ]; then
   exit 1
 fi
 
+# Compose command (GPU override if USE_GPU=true and compose.gpu.yaml present)
+COMPOSE_FILES=(-f compose.yaml)
+if [ -f compose.gpu.yaml ]; then
+  if grep -q '^USE_GPU=\(true\|1\|yes\)$' .env 2>/dev/null || [ "${USE_GPU:-}" = "true" ] || [ "${USE_GPU:-}" = "1" ]; then
+    COMPOSE_FILES+=(-f compose.gpu.yaml)
+    echo "[+] GPU override enabled (compose.gpu.yaml)"
+  fi
+fi
+COMPOSE_CMD=("${DOCKER_BIN}" compose "${COMPOSE_FILES[@]}")
+
 printf '[+] Updating git checkout (%s) ...\n' "$BRANCH"
 if [ -d .git ]; then
   git fetch --all --prune
@@ -47,15 +57,15 @@ else
 fi
 
 printf '[+] Building images (with cache refresh) ...\n'
-"${DOCKER_BIN}" compose pull || true
-"${DOCKER_BIN}" compose build --pull
+"${COMPOSE_CMD[@]}" pull || true
+"${COMPOSE_CMD[@]}" build --pull
 
 printf '[+] Applying stack ...\n'
-"${DOCKER_BIN}" compose up -d --remove-orphans
+"${COMPOSE_CMD[@]}" up -d --remove-orphans
 
 printf '[+] Waiting for API health ...\n'
 # Resolve exposed port for app:8000 and probe health endpoints
-APP_PORT=$("${DOCKER_BIN}" compose port app 8000 | awk -F: '{print $2}')
+APP_PORT=$("${COMPOSE_CMD[@]}" port app 8000 | awk -F: '{print $2}')
 if [ -z "${APP_PORT}" ]; then
   echo "[!] Could not resolve app:8000 published port"
   exit 1

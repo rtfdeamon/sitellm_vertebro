@@ -129,22 +129,29 @@ else
   echo '[+] Starting project in CPU mode'
 fi
 
+# Compose command (optionally include GPU overrides)
+COMPOSE_FILES=(-f compose.yaml)
+if [ "$USE_GPU" = true ] && [ -f compose.gpu.yaml ]; then
+  COMPOSE_FILES+=(-f compose.gpu.yaml)
+fi
+COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
+
 printf '[+] Building images sequentially...\n'
 for svc in app telegram-bot celery_worker celery_beat; do
-  if ! docker compose build --pull "$svc"; then
+  if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
     printf '[!] Failed to build %s\n' "$svc"
     exit 1
   fi
 done
 
-docker compose up -d
+"${COMPOSE_CMD[@]}" up -d
 printf '[✓] Containers running\n'
 
 if [ -d "./knowledge_base" ]; then
   printf '[+] Uploading knowledge base...\n'
-  docker compose exec app python additional/upload_files_to_mongo.py
+  "${COMPOSE_CMD[@]}" exec app python additional/upload_files_to_mongo.py
   printf '[+] Indexing documents...\n'
-  docker compose exec celery_worker python - <<'PY'
+  "${COMPOSE_CMD[@]}" exec celery_worker python - <<'PY'
 from worker import update_vector_store
 update_vector_store()
 PY
@@ -152,7 +159,7 @@ PY
 fi
 
 printf '[+] Waiting for API health check...\n'
-HOST_PORT=$(docker compose port app 8000 | awk -F: '{print $2}')
+HOST_PORT=$("${COMPOSE_CMD[@]}" port app 8000 | awk -F: '{print $2}')
 ok=""
 for i in {1..40}; do
   if curl -fsS "http://127.0.0.1:${HOST_PORT}/health" >/dev/null; then
@@ -165,7 +172,7 @@ done
 [ -n "$ok" ] || { echo "[!] API health check failed"; exit 1; }
 
 printf '[+] Initial crawl...\n'
-docker compose run --rm \
+"${COMPOSE_CMD[@]}" run --rm \
   -e CRAWL_START_URL="${CRAWL_START_URL}" \
   app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500 || true
 echo "[✓] Done"
@@ -179,7 +186,7 @@ Description=Daily crawl job
 [Service]
 Type=oneshot
 WorkingDirectory=$(pwd)
-ExecStart=/usr/bin/docker compose exec -e CRAWL_START_URL=${CRAWL_START_URL} app python crawler/run_crawl.py --url ${CRAWL_START_URL} --max-depth 2 --max-pages 500
+ExecStart=/usr/bin/docker compose -f $(pwd)/compose.yaml $( [ -f $(pwd)/compose.gpu.yaml ] && echo "-f $(pwd)/compose.gpu.yaml" ) exec -e CRAWL_START_URL=${CRAWL_START_URL} app python crawler/run_crawl.py --url ${CRAWL_START_URL} --max-depth 2 --max-pages 500
 EOF_SERVICE
 
 sudo tee "$TIMER" >/dev/null <<EOF_TIMER
