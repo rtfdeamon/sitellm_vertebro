@@ -23,19 +23,23 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || '22' }}
           script_stop: true
-          envs: APP_DIR,REPO_URL,CRAWL_START_URL,LLM_MODEL,MONGO_USERNAME,MONGO_PASSWORD,REDIS_PASSWORD,GRAFANA_PASSWORD
+          envs: APP_DIR,REPO_URL,CRAWL_START_URL,LLM_MODEL,MONGO_USERNAME,MONGO_PASSWORD,REDIS_PASSWORD,GRAFANA_PASSWORD,DOMAIN,LETSENCRYPT_EMAIL,INSTALL_PROXY,OPEN_APP_PORT
           script: |
             set -euo pipefail
             APP_DIR="${APP_DIR:-${{ secrets.APP_DIR }}}"
             REPO_URL="${REPO_URL:-${{ secrets.REPO_URL }}}"
             BRANCH=main
-            if [ -z "$APP_DIR" ]; then echo "APP_DIR not set"; exit 1; fi
+            if [ -z "$APP_DIR" ]; then APP_DIR="/opt/sitellm_vertebro"; fi
             # Prefer repo URL from secret; fall back to base repo
             if [ -z "$REPO_URL" ]; then
               REPO_URL="https://github.com/rtfdeamon/sitellm_vertebro.git"
             fi
             export APP_DIR REPO_URL BRANCH
             export CRAWL_START_URL="${CRAWL_START_URL:-${{ secrets.CRAWL_START_URL }}}"
+            export DOMAIN="${DOMAIN:-${{ secrets.DOMAIN }}}"
+            export LETSENCRYPT_EMAIL="${LETSENCRYPT_EMAIL:-${{ secrets.LETSENCRYPT_EMAIL }}}"
+            export INSTALL_PROXY="${INSTALL_PROXY:-${{ secrets.INSTALL_PROXY }}}"
+            export OPEN_APP_PORT="${OPEN_APP_PORT:-${{ secrets.OPEN_APP_PORT }}}"
             export LLM_MODEL="${LLM_MODEL:-${{ secrets.LLM_MODEL }}}"
             export MONGO_USERNAME="${MONGO_USERNAME:-${{ secrets.MONGO_USERNAME }}}"
             export MONGO_PASSWORD="${MONGO_PASSWORD:-${{ secrets.MONGO_PASSWORD }}}"
@@ -55,9 +59,10 @@ jobs:
             git reset --hard "origin/${BRANCH}" || true
             if [ -x scripts/bootstrap.sh ]; then
               APP_DIR="$APP_DIR" REPO_URL="$REPO_URL" BRANCH="$BRANCH" \
-              CRAWL_START_URL="$CRAWL_START_URL" LLM_MODEL="$LLM_MODEL" \
+              CRAWL_START_URL="$CRAWL_START_URL" LLM_MODEL="$LLM_MODEL" DOMAIN="$DOMAIN" \
               MONGO_USERNAME="$MONGO_USERNAME" MONGO_PASSWORD="$MONGO_PASSWORD" \
               REDIS_PASSWORD="$REDIS_PASSWORD" GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
+              LETSENCRYPT_EMAIL="$LETSENCRYPT_EMAIL" INSTALL_PROXY="$INSTALL_PROXY" OPEN_APP_PORT="$OPEN_APP_PORT" \
               bash scripts/bootstrap.sh
             fi
             # Roll out latest revision; use sudo docker if needed

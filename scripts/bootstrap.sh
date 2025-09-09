@@ -18,6 +18,13 @@ set -euo pipefail
 APP_DIR=${APP_DIR:-/opt/sitellm_vertebro}
 REPO_URL=${REPO_URL:-https://github.com/rtfdeamon/sitellm_vertebro.git}
 BRANCH=${BRANCH:-main}
+# Optional reverse-proxy + TLS via Caddy when DOMAIN is set
+# INSTALL_PROXY=caddy to force; set LETSENCRYPT_EMAIL for ACME contact email
+INSTALL_PROXY=${INSTALL_PROXY:-}
+DOMAIN=${DOMAIN:-}
+LETSENCRYPT_EMAIL=${LETSENCRYPT_EMAIL:-}
+# Firewall options: open 80/443 always if proxy installed; open 8000 if OPEN_APP_PORT=1
+OPEN_APP_PORT=${OPEN_APP_PORT:-0}
 
 SUDO=""
 if [ "${EUID}" -ne 0 ]; then
@@ -113,6 +120,7 @@ prepare_env() {
   : "${GRAFANA_PASSWORD:=$(openssl rand -hex 8)}"
   : "${CRAWL_START_URL:=https://mmvs.ru}"
   : "${LLM_MODEL:=Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}"
+  : "${DOMAIN:=${DOMAIN:-}}"
 
   update_env_var MONGO_USERNAME "${MONGO_USERNAME}"
   update_env_var MONGO_PASSWORD "${MONGO_PASSWORD}"
@@ -127,6 +135,9 @@ prepare_env() {
   update_env_var CRAWL_START_URL "${CRAWL_START_URL}"
   update_env_var LLM_MODEL "${LLM_MODEL}"
   update_env_var GRAFANA_PASSWORD "${GRAFANA_PASSWORD}"
+  if [ -n "${DOMAIN}" ]; then
+    update_env_var DOMAIN "${DOMAIN}"
+  fi
 }
 
 install_units() {
@@ -183,11 +194,109 @@ EOF
   ${SUDO} systemctl enable --now crawl.timer
 }
 
+setup_firewall() {
+  # Open required ports if firewall is active
+  # - Always try to open SSH (22), HTTP (80), HTTPS (443)
+  # - Optionally open APP port (8000) if OPEN_APP_PORT=1
+  local open_app=${OPEN_APP_PORT}
+  if command -v ufw >/dev/null 2>&1; then
+    # Apply rules only if ufw is active (avoid enabling automatically)
+    if ufw status | grep -qi active; then
+      ${SUDO} ufw allow 22/tcp || true
+      ${SUDO} ufw allow 80/tcp || true
+      ${SUDO} ufw allow 443/tcp || true
+      if [ "$open_app" = "1" ]; then
+        ${SUDO} ufw allow 8000/tcp || true
+      fi
+    fi
+  elif command -v firewall-cmd >/dev/null 2>&1; then
+    if ${SUDO} firewall-cmd --state >/dev/null 2>&1; then
+      ${SUDO} firewall-cmd --permanent --add-service=ssh || true
+      ${SUDO} firewall-cmd --permanent --add-service=http || true
+      ${SUDO} firewall-cmd --permanent --add-service=https || true
+      if [ "$open_app" = "1" ]; then
+        ${SUDO} firewall-cmd --permanent --add-port=8000/tcp || true
+      fi
+      ${SUDO} firewall-cmd --reload || true
+    fi
+  else
+    # No known firewall tool; skip
+    :
+  fi
+}
+
+install_caddy() {
+  # Install and configure Caddy as reverse proxy with automatic TLS
+  # Requires DOMAIN to be set and DNS pointing to this server.
+  if [ -z "${DOMAIN}" ]; then
+    log "DOMAIN is empty; skipping Caddy install"
+    return 0
+  fi
+  log "installing Caddy reverse proxy for domain ${DOMAIN}"
+  if [ -r /etc/os-release ]; then . /etc/os-release; fi
+  case "${ID:-}" in
+    ubuntu|debian)
+      ${SUDO} apt-get update -y
+      ${SUDO} apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl gnupg
+      if [ ! -f /usr/share/keyrings/caddy-stable-archive-keyring.gpg ]; then
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | ${SUDO} gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      fi
+      if [ ! -f /etc/apt/sources.list.d/caddy-stable.list ]; then
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | ${SUDO} tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+      fi
+      ${SUDO} apt-get update -y
+      ${SUDO} apt-get install -y caddy
+      ;;
+    *)
+      log "Non Debian/Ubuntu OS; attempting to install caddy from default repo"
+      ${SUDO} apt-get update -y 2>/dev/null || true
+      ${SUDO} apt-get install -y caddy 2>/dev/null || {
+        log "Caddy install skipped (unsupported OS)."
+        return 0
+      }
+      ;;
+  esac
+
+  # Write Caddyfile
+  local cfile=/etc/caddy/Caddyfile
+  if [ -n "${LETSENCRYPT_EMAIL}" ]; then
+    ${SUDO} tee "$cfile" >/dev/null <<EOF
+{
+  email ${LETSENCRYPT_EMAIL}
+}
+
+${DOMAIN} {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8000
+}
+EOF
+  else
+    ${SUDO} tee "$cfile" >/dev/null <<EOF
+${DOMAIN} {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8000
+}
+EOF
+  fi
+
+  ${SUDO} systemctl enable --now caddy
+  ${SUDO} systemctl reload caddy || true
+  log "caddy configured; ensure DNS for ${DOMAIN} points to this host"
+}
+
 main() {
   install_docker
   ensure_repo
   prepare_env
   install_units
+  # Decide whether to install proxy
+  if [ -z "$INSTALL_PROXY" ] && [ -n "$DOMAIN" ]; then
+    INSTALL_PROXY=caddy
+  fi
+  setup_firewall
+  if [ "$INSTALL_PROXY" = "caddy" ]; then
+    install_caddy
+  fi
   log "bootstrap complete"
 }
 

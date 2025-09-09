@@ -16,7 +16,14 @@ export COMPOSE_DOCKER_CLI_BUILD=1
 
 APP_DIR=${APP_DIR:-$(pwd)}
 BRANCH=${BRANCH:-main}
-DOCKER_BIN=${DOCKER_BIN:-docker}
+# Auto-detect whether sudo is required for docker
+if [ -z "${DOCKER_BIN:-}" ]; then
+  if docker info >/dev/null 2>&1; then
+    DOCKER_BIN=docker
+  else
+    DOCKER_BIN="sudo docker"
+  fi
+fi
 
 cd "$APP_DIR"
 
