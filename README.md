@@ -56,6 +56,12 @@ defaults to `https://<DOMAIN>` but can be overridden by setting
 `CRAWL_START_URL` before running the script.  Run with `--yes` to skip
 interactive prompts.
 
+## Auto-deploy (push to main)
+
+For automatic rollout to a target server on each push to `main`, see
+`docs/deploy.md`. It describes required GitHub Action secrets and a
+non-interactive server-side script used by the workflow.
+
 ## Testing
 
 Run unit tests with:

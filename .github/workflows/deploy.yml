@@ -1,0 +1,73 @@
+name: Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Echo context
+        run: |
+          echo "repo=${{ github.repository }}"
+          echo "sha=${{ github.sha }}"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          script_stop: true
+          envs: APP_DIR,REPO_URL,CRAWL_START_URL,LLM_MODEL,MONGO_USERNAME,MONGO_PASSWORD,REDIS_PASSWORD,GRAFANA_PASSWORD
+          script: |
+            set -euo pipefail
+            APP_DIR="${APP_DIR:-${{ secrets.APP_DIR }}}"
+            REPO_URL="${REPO_URL:-${{ secrets.REPO_URL }}}"
+            BRANCH=main
+            if [ -z "$APP_DIR" ]; then echo "APP_DIR not set"; exit 1; fi
+            # Prefer repo URL from secret; fall back to this repo
+            if [ -z "$REPO_URL" ]; then
+              REPO_URL="https://github.com/${{ github.repository }}.git"
+            fi
+            export APP_DIR REPO_URL BRANCH
+            export CRAWL_START_URL="${CRAWL_START_URL:-${{ secrets.CRAWL_START_URL }}}"
+            export LLM_MODEL="${LLM_MODEL:-${{ secrets.LLM_MODEL }}}"
+            export MONGO_USERNAME="${MONGO_USERNAME:-${{ secrets.MONGO_USERNAME }}}"
+            export MONGO_PASSWORD="${MONGO_PASSWORD:-${{ secrets.MONGO_PASSWORD }}}"
+            export REDIS_PASSWORD="${REDIS_PASSWORD:-${{ secrets.REDIS_PASSWORD }}}"
+            export GRAFANA_PASSWORD="${GRAFANA_PASSWORD:-${{ secrets.GRAFANA_PASSWORD }}}"
+            # Run bootstrap (installs docker, clones repo, prepares .env, sets up systemd)
+            if [ ! -d "$APP_DIR/.git" ]; then
+              mkdir -p "$APP_DIR"
+            fi
+            # Fetch bootstrap script: if repo not yet present, we clone then run it
+            if [ ! -d "$APP_DIR/.git" ]; then
+              git clone "$REPO_URL" "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+            git fetch --all --prune || true
+            git checkout "$BRANCH" || true
+            git reset --hard "origin/${BRANCH}" || true
+            if [ -x scripts/bootstrap.sh ]; then
+              APP_DIR="$APP_DIR" REPO_URL="$REPO_URL" BRANCH="$BRANCH" \
+              CRAWL_START_URL="$CRAWL_START_URL" LLM_MODEL="$LLM_MODEL" \
+              MONGO_USERNAME="$MONGO_USERNAME" MONGO_PASSWORD="$MONGO_PASSWORD" \
+              REDIS_PASSWORD="$REDIS_PASSWORD" GRAFANA_PASSWORD="$GRAFANA_PASSWORD" \
+              bash scripts/bootstrap.sh
+            fi
+            # Roll out latest revision; use sudo docker if needed
+            if [ -x scripts/rollout.sh ]; then
+              APP_DIR="$APP_DIR" BRANCH="$BRANCH" DOCKER_BIN="sudo docker" bash scripts/rollout.sh
+            else
+              export DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1
+              if ! command -v docker >/dev/null; then echo "docker not found"; exit 1; fi
+              if [ ! -f .env ]; then echo ".env missing"; exit 1; fi
+              sudo docker compose pull || true
+              sudo docker compose build --pull
+              sudo docker compose up -d --remove-orphans
+            fi

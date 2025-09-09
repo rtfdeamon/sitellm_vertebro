@@ -5,6 +5,10 @@ FROM python:3.10-slim AS build
 ARG APT_CACHE_ID=apt-cache
 ARG UV_CACHE_ID=uv-cache
 
+# Ускорители и надёжность сетевых скачиваний для uv/pip во время сборки
+ENV UV_HTTP_TIMEOUT=180 \
+    UV_HTTP_MAX_RETRIES=5
+
 # Базовые пакеты для сборки wheels (компилятор и т.д.)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
     bash -euxo pipefail -c '\
@@ -23,7 +27,8 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
       pip install --no-cache-dir "uv>=0.8"; \
-      uv pip install --system --no-cache --requirements pyproject.toml; \
+      # Синхронизируем зависимости строго по lock-файлу, чтобы кэш слоёв не инвалидировался при изменении исходников
+      uv pip install --system -r uv.lock; \
     '
 
 # Остальной исходный код
@@ -42,8 +47,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
       export DEBIAN_FRONTEND=noninteractive; \
       apt-get update; \
       apt-get install -y --no-install-recommends \
-        libopenblas0-pthread libopenblas-dev \
-        build-essential cmake ninja-build pkg-config \
+        libopenblas0-pthread \
         curl ca-certificates; \
       apt-get clean; \
       rm -rf /var/lib/apt/lists/* \
@@ -68,4 +72,4 @@ ENV PYTHONUNBUFFERED=1 \
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=10 \
   CMD curl -fsS http://127.0.0.1:${PORT}/health || exit 1
 
-CMD ["uv", "run", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

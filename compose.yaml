@@ -160,7 +160,8 @@ services:
       - qdrant_data:/qdrant/storage
     healthcheck:
       <<: *health_defaults
-      test: ["CMD-SHELL", "curl -fsS http://localhost:6333/readyz || exit 1"]
+      # Official image lacks curl; use busybox wget available in scratch-based builds
+      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz >/dev/null 2>&1 || exit 1"]
 
 
   telegram-bot:
