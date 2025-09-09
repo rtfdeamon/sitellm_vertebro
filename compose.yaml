@@ -42,8 +42,8 @@ services:
       context: ./
       dockerfile: Dockerfile
       args:
-        APT_CACHE_ID: apt-cache-worker
-        UV_CACHE_ID: uv-cache-worker
+        APT_CACHE_ID: apt-cache
+        UV_CACHE_ID: uv-cache
     restart: unless-stopped
     env_file: .env
     environment:
@@ -75,8 +75,8 @@ services:
       context: ./
       dockerfile: Dockerfile
       args:
-        APT_CACHE_ID: apt-cache-beat
-        UV_CACHE_ID: uv-cache-beat
+        APT_CACHE_ID: apt-cache
+        UV_CACHE_ID: uv-cache
     restart: unless-stopped
     env_file: .env
     command: ["uv", "run", "celery", "-A", "worker", "beat", "--loglevel=INFO"]
@@ -101,8 +101,8 @@ services:
       context: ./
       dockerfile: Dockerfile
       args:
-        APT_CACHE_ID: apt-cache-app
-        UV_CACHE_ID: uv-cache-app
+        APT_CACHE_ID: apt-cache
+        UV_CACHE_ID: uv-cache
     restart: unless-stopped
     env_file: .env
     ports:
