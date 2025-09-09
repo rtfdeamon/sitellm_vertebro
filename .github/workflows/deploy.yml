@@ -30,9 +30,9 @@ jobs:
             REPO_URL="${REPO_URL:-${{ secrets.REPO_URL }}}"
             BRANCH=main
             if [ -z "$APP_DIR" ]; then echo "APP_DIR not set"; exit 1; fi
-            # Prefer repo URL from secret; fall back to this repo
+            # Prefer repo URL from secret; fall back to base repo
             if [ -z "$REPO_URL" ]; then
-              REPO_URL="https://github.com/${{ github.repository }}.git"
+              REPO_URL="https://github.com/rtfdeamon/sitellm_vertebro.git"
             fi
             export APP_DIR REPO_URL BRANCH
             export CRAWL_START_URL="${CRAWL_START_URL:-${{ secrets.CRAWL_START_URL }}}"

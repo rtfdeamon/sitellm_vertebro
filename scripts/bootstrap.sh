@@ -9,14 +9,14 @@
 #
 # Usage (on target server):
 #   APP_DIR=/opt/sitellm_vertebro \
-#   REPO_URL=https://github.com/<owner>/<repo>.git \
+#   REPO_URL=https://github.com/rtfdeamon/sitellm_vertebro.git \
 #   CRAWL_START_URL=https://example.com \
 #   bash scripts/bootstrap.sh
 
 set -euo pipefail
 
 APP_DIR=${APP_DIR:-/opt/sitellm_vertebro}
-REPO_URL=${REPO_URL:-}
+REPO_URL=${REPO_URL:-https://github.com/rtfdeamon/sitellm_vertebro.git}
 BRANCH=${BRANCH:-main}
 
 SUDO=""
@@ -192,4 +192,3 @@ main() {
 }
 
 main "$@"
-

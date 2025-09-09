@@ -17,9 +17,8 @@
 - `SSH_PORT` (опционально): порт SSH, по умолчанию 22.
 - `APP_DIR`: путь на сервере, куда разворачивается проект, например `/opt/sitellm_vertebro`.
 - `REPO_URL` (опционально): URL репозитория для `git clone` на сервере.
-  - Для публичного репо можно не задавать — будет использован
-    `https://github.com/<owner>/<repo>.git`.
-  - Для приватного — используйте Deploy Key (SSH) или https с токеном.
+  - По умолчанию используется `https://github.com/rtfdeamon/sitellm_vertebro.git`.
+  - Для приватного доступа используйте Deploy Key (SSH) или HTTPS с токеном.
 
 Как это работает:
 - Workflow: `.github/workflows/deploy.yml`.
