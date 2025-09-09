@@ -27,8 +27,8 @@ COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
       pip install --no-cache-dir "uv>=0.8"; \
-      # Синхронизируем зависимости строго по lock-файлу, чтобы кэш слоёв не инвалидировался при изменении исходников
-      uv pip install --system -r uv.lock; \
+      # Устанавливаем зависимости из pyproject.toml (uv.lock используется uv при sync, но не для pip install)
+      uv pip install --system --no-cache --requirements pyproject.toml; \
     '
 
 # Остальной исходный код
