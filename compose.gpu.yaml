@@ -2,15 +2,9 @@ services:
   app:
     build:
       args:
-        PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cu121"
-        CMAKE_ARGS: "-DGGML_CUDA=on"
-        LLAMA_CPP_PYTHON_BUILD: "cmake"
+        # Use prebuilt CUDA wheels for torch and llama-cpp-python
+        PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cu121 https://abetlen.github.io/llama-cpp-python/whl/cu121"
     environment:
-      # Enable CUDA backend in llama-cpp-python build
-      CMAKE_ARGS: "-DGGML_CUDA=on"
-      LLAMA_CPP_PYTHON_BUILD: "cmake"
-      # Use CUDA wheels for PyTorch (CUDA 12.1 example)
-      PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     gpus: "all"
@@ -18,13 +12,8 @@ services:
   celery_worker:
     build:
       args:
-        PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cu121"
-        CMAKE_ARGS: "-DGGML_CUDA=on"
-        LLAMA_CPP_PYTHON_BUILD: "cmake"
+        PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cu121 https://abetlen.github.io/llama-cpp-python/whl/cu121"
     environment:
-      CMAKE_ARGS: "-DGGML_CUDA=on"
-      LLAMA_CPP_PYTHON_BUILD: "cmake"
-      PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     gpus: "all"
