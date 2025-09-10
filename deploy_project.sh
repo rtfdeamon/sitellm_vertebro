@@ -235,19 +235,11 @@ PY
 fi
 
 printf '[+] Waiting for API health check...\n'
-HOST_PORT=$("${COMPOSE_CMD[@]}" port app 8000 | awk -F: '{print $2}')
-if [ -z "$HOST_PORT" ]; then
-  echo "[!] Could not resolve published app port; recent app logs:" >&2
-  "${COMPOSE_CMD[@]}" logs --no-color --tail=200 app || true
-  exit 1
-fi
-
+# Prefer probing from inside the container to avoid host NAT issues
 ok=""
 attempts=${HEALTH_MAX_ATTEMPTS:-120}
 for i in $(seq 1 "$attempts"); do
-  if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null || \
-     curl -fsS "http://127.0.0.1:${HOST_PORT}/health" >/dev/null || \
-     curl -fsS "http://127.0.0.1:${HOST_PORT}/" >/dev/null; then
+  if "${COMPOSE_CMD[@]}" exec -T app sh -lc "curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/healthz || curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/health || curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/" >/dev/null 2>&1; then
     echo "[✓] API healthy"
     ok=1
     break
