@@ -1,4 +1,5 @@
 # Docker Compose stack to run the API, Redis and Mongo locally
+name: sitellm_vertebro
 x-health: &health_defaults
   interval: 15s
   timeout: 3s
