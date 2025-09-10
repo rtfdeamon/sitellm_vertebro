@@ -28,6 +28,43 @@ if ! command -v openssl >/dev/null 2>&1; then
 fi
 printf '[✓] All required tools installed\n'
 
+# Open firewall ports for external access
+open_firewall_ports() {
+  # Defaults
+  local open_app_port=${OPEN_APP_PORT:-1}
+  local open_http=${OPEN_HTTP:-0}
+  local open_https=${OPEN_HTTPS:-0}
+
+  # If DOMAIN provided, also open 80/443 by default
+  if [ -n "${DOMAIN:-}" ]; then
+    [ -z "${OPEN_HTTP:-}" ] && open_http=1
+    [ -z "${OPEN_HTTPS:-}" ] && open_https=1
+  fi
+
+  # Resolve app port from .env (fallback 8000)
+  local app_port
+  app_port=$(awk -F= '/^APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
+  app_port=${app_port:-8000}
+
+  # UFW
+  if command -v ufw >/dev/null 2>&1; then
+    if ufw status | grep -qi active; then
+      [ "$open_app_port" = "1" ] && sudo ufw allow "${app_port}/tcp" || true
+      [ "$open_http" = "1" ] && sudo ufw allow 80/tcp || true
+      [ "$open_https" = "1" ] && sudo ufw allow 443/tcp || true
+      return
+    fi
+  fi
+
+  # firewalld
+  if command -v firewall-cmd >/dev/null 2>&1 && sudo firewall-cmd --state >/dev/null 2>&1; then
+    [ "$open_app_port" = "1" ] && sudo firewall-cmd --permanent --add-port="${app_port}/tcp" || true
+    [ "$open_http" = "1" ] && sudo firewall-cmd --permanent --add-service=http || true
+    [ "$open_https" = "1" ] && sudo firewall-cmd --permanent --add-service=https || true
+    sudo firewall-cmd --reload || true
+  fi
+}
+
 ensure_nvidia_toolkit() {
   if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
     echo '[✓] NVIDIA runtime already configured in Docker'
@@ -105,6 +142,9 @@ fi
 if [ "$USE_GPU" = true ]; then
   ensure_nvidia_toolkit
 fi
+
+# Open firewall after environment is prepared
+open_firewall_ports
 
 REDIS_PASS=$(openssl rand -hex 8)
 GRAFANA_PASS=$(openssl rand -hex 8)
