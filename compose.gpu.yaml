@@ -2,7 +2,7 @@ services:
   app:
     build:
       args:
-        PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+        PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cu121"
         CMAKE_ARGS: "-DGGML_CUDA=on"
         LLAMA_CPP_PYTHON_BUILD: "cmake"
     environment:
@@ -18,7 +18,7 @@ services:
   celery_worker:
     build:
       args:
-        PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+        PIP_EXTRA_INDEX_URL: "https://download.pytorch.org/whl/cu121"
         CMAKE_ARGS: "-DGGML_CUDA=on"
         LLAMA_CPP_PYTHON_BUILD: "cmake"
     environment:

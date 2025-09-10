@@ -4,14 +4,14 @@ FROM python:3.10-slim AS build
 # Кэши ускоряют Linux/arm64 сборку на Docker Desktop (Apple Silicon)
 ARG APT_CACHE_ID=apt-cache
 ARG UV_CACHE_ID=uv-cache
-ARG PIP_INDEX_URL
+ARG PIP_EXTRA_INDEX_URL
 ARG CMAKE_ARGS
 ARG LLAMA_CPP_PYTHON_BUILD
 
 # Ускорители и надёжность сетевых скачиваний для uv/pip во время сборки
 ENV UV_HTTP_TIMEOUT=180 \
     UV_HTTP_MAX_RETRIES=5
-ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+ENV PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL} \
     CMAKE_ARGS=${CMAKE_ARGS} \
     LLAMA_CPP_PYTHON_BUILD=${LLAMA_CPP_PYTHON_BUILD}
 
@@ -32,8 +32,9 @@ COPY pyproject.toml uv.lock ./
 # Устанавливаем зависимости из pyproject.toml
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
-      pip install --no-cache-dir "uv>=0.8"; \
-      # Устанавливаем зависимости из pyproject.toml (uv.lock используется uv при sync, но не для pip install)
+      # Явно используем PyPI для установки uv, чтобы не зависеть от PIP_* переменных
+      pip install --no-cache-dir -i https://pypi.org/simple "uv>=0.8"; \
+      # Устанавливаем зависимости из pyproject.toml; для колёс CUDA используется PIP_EXTRA_INDEX_URL
       uv pip install --system --no-cache --requirements pyproject.toml; \
     '
 
