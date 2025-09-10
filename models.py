@@ -1,6 +1,14 @@
-"""Pydantic models used throughout the application."""
+"""Pydantic models used throughout the application.
 
-from enum import StrEnum
+Adds a compatibility shim for ``enum.StrEnum`` on Python < 3.11.
+"""
+
+from enum import Enum
+try:  # Python 3.11+
+    from enum import StrEnum as _StrEnum
+except ImportError:  # Python 3.10 fallback
+    class _StrEnum(str, Enum):
+        pass
 from uuid import UUID
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -34,7 +42,7 @@ class LLMResponse(BaseModel):
     )
 
 
-class RoleEnum(StrEnum):
+class RoleEnum(_StrEnum):
     """Role of the participant in a conversation."""
 
     assistant = "assistant"
