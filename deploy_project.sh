@@ -236,16 +236,25 @@ fi
 
 printf '[+] Waiting for API health check...\n'
 HOST_PORT=$("${COMPOSE_CMD[@]}" port app 8000 | awk -F: '{print $2}')
+if [ -z "$HOST_PORT" ]; then
+  echo "[!] Could not resolve published app port; recent app logs:" >&2
+  "${COMPOSE_CMD[@]}" logs --no-color --tail=200 app || true
+  exit 1
+fi
+
 ok=""
-for i in {1..40}; do
-  if curl -fsS "http://127.0.0.1:${HOST_PORT}/health" >/dev/null; then
+attempts=${HEALTH_MAX_ATTEMPTS:-120}
+for i in $(seq 1 "$attempts"); do
+  if curl -fsS "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null || \
+     curl -fsS "http://127.0.0.1:${HOST_PORT}/health" >/dev/null || \
+     curl -fsS "http://127.0.0.1:${HOST_PORT}/" >/dev/null; then
     echo "[✓] API healthy"
     ok=1
     break
   fi
   sleep 3
 done
-[ -n "$ok" ] || { echo "[!] API health check failed"; exit 1; }
+[ -n "$ok" ] || { echo "[!] API health check failed"; "${COMPOSE_CMD[@]}" logs --no-color --tail=200 app || true; exit 1; }
 
 printf '[+] Initial crawl...\n'
 "${COMPOSE_CMD[@]}" run --rm \
