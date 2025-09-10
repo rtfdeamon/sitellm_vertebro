@@ -41,10 +41,13 @@ open_firewall_ports() {
     [ -z "${OPEN_HTTPS:-}" ] && open_https=1
   fi
 
-  # Resolve app port from .env (fallback 8000)
-  local app_port
-  app_port=$(awk -F= '/^APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
-  app_port=${app_port:-8000}
+  # Resolve app port from .env (fallback 8000), tolerate missing file
+  local app_port="8000"
+  if [ -f .env ]; then
+    local v
+    v=$(awk -F= '/^APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+    if [ -n "$v" ]; then app_port="$v"; fi
+  fi
 
   # UFW
   if command -v ufw >/dev/null 2>&1; then
@@ -143,8 +146,7 @@ if [ "$USE_GPU" = true ]; then
   ensure_nvidia_toolkit
 fi
 
-# Open firewall after environment is prepared
-open_firewall_ports
+# (Firewall ports will be opened later, after .env is created)
 
 REDIS_PASS=$(openssl rand -hex 8)
 GRAFANA_PASS=$(openssl rand -hex 8)
@@ -197,6 +199,9 @@ fi
 if ! grep -q "^MONGO_USERNAME=" .env; then
   echo '[!] MONGO_USERNAME not found in .env'; exit 1
 fi
+
+# Now that .env exists, open firewall ports if applicable
+open_firewall_ports
 
 printf '[+] Starting containers...\n'
 if [ "$USE_GPU" = true ]; then
