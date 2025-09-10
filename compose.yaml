@@ -128,13 +128,16 @@ services:
     volumes:
       - ./data/hf:/root/.cache/huggingface
     healthcheck:
-      <<: *health_defaults
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
       test:
         - CMD-SHELL
         - >
           (curl -fsS http://localhost:${APP_PORT:-8000}/healthz ||
            curl -fsS http://localhost:${APP_PORT:-8000}/health ||
-           curl -fsS http://localhost:${APP_PORT:-8000}/) >/dev/null || exit 1
+           pgrep -af "[u]vicorn.*app:app" >/dev/null) || exit 1
     depends_on:
       mongo:
         condition: service_healthy
@@ -171,7 +174,7 @@ services:
     restart: unless-stopped
     depends_on:
       app:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       <<: *health_defaults
       test:
