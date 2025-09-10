@@ -37,13 +37,18 @@ ensure_nvidia_toolkit() {
   if [ -r /etc/os-release ]; then . /etc/os-release; fi
   case "${ID:-}" in
     ubuntu|debian)
+      set -e
       export DEBIAN_FRONTEND=noninteractive
       apt-get update -y
       apt-get install -y curl gnupg ca-certificates
-      distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-      curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      distribution=$(. /etc/os-release; echo ${ID}${VERSION_ID})
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+        gpg --dearmor -o /etc/apt/keyrings/nvidia-container-toolkit.gpg
+      chmod a+r /etc/apt/keyrings/nvidia-container-toolkit.gpg
+      curl -fsSL https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list | \
+        sed 's#deb https://#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.gpg] https://#g' \
+        > /etc/apt/sources.list.d/nvidia-container-toolkit.list
       apt-get update -y
       apt-get install -y nvidia-container-toolkit
       nvidia-ctk runtime configure --runtime=docker || true

@@ -292,17 +292,20 @@ EOF
 }
 
 install_nvidia_toolkit() {
-  # Install NVIDIA Container Toolkit for Docker
+  # Install NVIDIA Container Toolkit for Docker (Ubuntu/Debian)
   log "installing NVIDIA Container Toolkit"
   if [ -r /etc/os-release ]; then . /etc/os-release; fi
   case "${ID:-}" in
     ubuntu|debian)
       ${SUDO} apt-get update -y
       ${SUDO} apt-get install -y curl gnupg ca-certificates
-      distribution=$(. /etc/os-release;echo $ID$VERSION_ID) && \
-      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | ${SUDO} gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-      curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+      distribution=$(. /etc/os-release; echo ${ID}${VERSION_ID})
+      ${SUDO} install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+        ${SUDO} gpg --dearmor -o /etc/apt/keyrings/nvidia-container-toolkit.gpg
+      ${SUDO} chmod a+r /etc/apt/keyrings/nvidia-container-toolkit.gpg
+      curl -fsSL https://nvidia.github.io/libnvidia-container/${distribution}/libnvidia-container.list | \
+        sed 's#deb https://#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.gpg] https://#g' | \
         ${SUDO} tee /etc/apt/sources.list.d/nvidia-container-toolkit.list >/dev/null
       ${SUDO} apt-get update -y
       ${SUDO} apt-get install -y nvidia-container-toolkit
