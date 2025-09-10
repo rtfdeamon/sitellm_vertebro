@@ -41,11 +41,11 @@ open_firewall_ports() {
     [ -z "${OPEN_HTTPS:-}" ] && open_https=1
   fi
 
-  # Resolve app port from .env (fallback 8000), tolerate missing file
-  local app_port="8000"
+  # Resolve external app port from .env (fallback 18000), tolerate missing file
+  local app_port="18000"
   if [ -f .env ]; then
     local v
-    v=$(awk -F= '/^APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+    v=$(awk -F= '/^HOST_APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
     if [ -n "$v" ]; then app_port="$v"; fi
   fi
 
@@ -187,6 +187,11 @@ update_env_var MONGO_PASSWORD "$MONGO_PASSWORD"
 update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017"
 update_env_var USE_GPU "$USE_GPU"
 update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
+update_env_var HOST_APP_PORT "${HOST_APP_PORT:-18000}"
+update_env_var HOST_MONGO_PORT "${HOST_MONGO_PORT:-27027}"
+update_env_var HOST_REDIS_PORT "${HOST_REDIS_PORT:-16379}"
+update_env_var HOST_QDRANT_HTTP_PORT "${HOST_QDRANT_HTTP_PORT:-16333}"
+update_env_var HOST_QDRANT_GRPC_PORT "${HOST_QDRANT_GRPC_PORT:-16334}"
 
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
