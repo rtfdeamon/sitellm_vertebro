@@ -262,6 +262,8 @@ printf '[+] Initial crawl...\n'
   app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500 || true
 echo "[✓] Done"
 
+# Configure systemd timer only on Linux with systemd
+if [ -d /run/systemd/system ]; then
 SERVICE=/etc/systemd/system/crawl.service
 TIMER=/etc/systemd/system/crawl.timer
 sudo tee "$SERVICE" >/dev/null <<EOF_SERVICE
@@ -289,6 +291,10 @@ EOF_TIMER
 sudo systemctl daemon-reload
 sudo systemctl enable --now crawl.timer
 printf '[✓] Scheduled daily crawl at 02:00\n'
+
+else
+  echo '[i] Non-systemd OS detected; skipping crawl.timer setup'
+fi
 
 printf '[✓] Deployment complete\n'
 echo "API: http://$DOMAIN/api"
