@@ -4,10 +4,16 @@ FROM python:3.10-slim AS build
 # Кэши ускоряют Linux/arm64 сборку на Docker Desktop (Apple Silicon)
 ARG APT_CACHE_ID=apt-cache
 ARG UV_CACHE_ID=uv-cache
+ARG PIP_INDEX_URL
+ARG CMAKE_ARGS
+ARG LLAMA_CPP_PYTHON_BUILD
 
 # Ускорители и надёжность сетевых скачиваний для uv/pip во время сборки
 ENV UV_HTTP_TIMEOUT=180 \
     UV_HTTP_MAX_RETRIES=5
+ENV PIP_INDEX_URL=${PIP_INDEX_URL} \
+    CMAKE_ARGS=${CMAKE_ARGS} \
+    LLAMA_CPP_PYTHON_BUILD=${LLAMA_CPP_PYTHON_BUILD}
 
 # Базовые пакеты для сборки wheels (компилятор и т.д.)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \

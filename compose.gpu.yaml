@@ -1,5 +1,10 @@
 services:
   app:
+    build:
+      args:
+        PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+        CMAKE_ARGS: "-DGGML_CUDA=on"
+        LLAMA_CPP_PYTHON_BUILD: "cmake"
     environment:
       # Enable CUDA backend in llama-cpp-python build
       CMAKE_ARGS: "-DGGML_CUDA=on"
@@ -11,6 +16,11 @@ services:
     gpus: "all"
 
   celery_worker:
+    build:
+      args:
+        PIP_INDEX_URL: "https://download.pytorch.org/whl/cu121"
+        CMAKE_ARGS: "-DGGML_CUDA=on"
+        LLAMA_CPP_PYTHON_BUILD: "cmake"
     environment:
       CMAKE_ARGS: "-DGGML_CUDA=on"
       LLAMA_CPP_PYTHON_BUILD: "cmake"
