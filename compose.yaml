@@ -60,14 +60,14 @@ services:
       mongo:
         condition: service_healthy
       celery_beat:
-        condition: service_healthy
+        condition: service_started
     volumes:
       - ./data/hf:/root/.cache/huggingface
     healthcheck:
       <<: *health_defaults
       test:
         - CMD-SHELL
-        - test $(pgrep -fc celery) -ge 1
+        - pgrep -af "[c]elery.*worker" >/dev/null || exit 1
 
   celery_beat:
     # Scheduler for periodic vector store updates
@@ -93,7 +93,7 @@ services:
       <<: *health_defaults
       test:
         - CMD-SHELL
-        - test $(pgrep -fc "celery beat") -ge 1
+        - pgrep -af "[c]elery.*beat" >/dev/null || exit 1
 
   app:
     # FastAPI application exposing the LLM endpoints
