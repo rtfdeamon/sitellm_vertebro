@@ -85,9 +85,11 @@ scripts/remote_deploy.sh user@server
 - Клонируют репозиторий в `APP_DIR` и подготовят `.env`.
 - Создадут `systemd` сервис для `docker compose up -d` и таймер ежедневного краула.
 - Запустят стек (после чего API будет доступен на `http://<server>:8000`).
- - При `--domain`/`DOMAIN` — настроят Caddy с TLS. При `USE_GPU=true` — применят `compose.gpu.yaml`
-   с `device_requests` для NVIDIA и переменными сборки для CUDA; при необходимости
-   установят `nvidia-container-toolkit` и драйвер (если заданы соответствующие флаги).
+- При `--domain`/`DOMAIN` — настроят Caddy с TLS. При `USE_GPU=true` — применят `compose.gpu.yaml`
+  с `device_requests` для NVIDIA и переменными сборки для CUDA; при необходимости
+  установят `nvidia-container-toolkit` и драйвер (если заданы соответствующие флаги).
+  В `deploy_project.sh` добавлена автоматическая попытка установить NVIDIA Container Toolkit
+  для Debian/Ubuntu при ответе `Enable GPU? y`.
 
 Обновление на новой ревизии одной командой
 -----------------------------------------

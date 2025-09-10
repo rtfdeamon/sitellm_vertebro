@@ -28,6 +28,33 @@ if ! command -v openssl >/dev/null 2>&1; then
 fi
 printf '[✓] All required tools installed\n'
 
+ensure_nvidia_toolkit() {
+  if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
+    echo '[✓] NVIDIA runtime already configured in Docker'
+    return
+  fi
+  echo '[+] Installing NVIDIA Container Toolkit (Debian/Ubuntu)'
+  if [ -r /etc/os-release ]; then . /etc/os-release; fi
+  case "${ID:-}" in
+    ubuntu|debian)
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -y
+      apt-get install -y curl gnupg ca-certificates
+      distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+      curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+      curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+        sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+      apt-get update -y
+      apt-get install -y nvidia-container-toolkit
+      nvidia-ctk runtime configure --runtime=docker || true
+      systemctl restart docker || true
+      ;;
+    *)
+      echo '[!] Unsupported distro for automatic NVIDIA toolkit install; install manually'
+      ;;
+  esac
+}
+
 AUTO_YES=0
 if [ "${1-}" = "--yes" ]; then
   AUTO_YES=1
@@ -68,6 +95,10 @@ if [ "$ENABLE_GPU" = "y" ] || [ "$ENABLE_GPU" = "Y" ]; then
   USE_GPU=true
 else
   USE_GPU=false
+fi
+
+if [ "$USE_GPU" = true ]; then
+  ensure_nvidia_toolkit
 fi
 
 REDIS_PASS=$(openssl rand -hex 8)
