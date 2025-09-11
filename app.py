@@ -25,6 +25,7 @@ from yallm import YaLLM, YaLLMEmbeddings
 from settings import Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
+import httpx
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from retrieval import search as retrieval_search
@@ -72,8 +73,43 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
         Mapping with initialized ``llm`` instance, Mongo client,
         context collection names and the Redis vector store.
     """
-    llm = YaLLM()
-    embeddings = YaLLMEmbeddings()
+    # If external model service configured, avoid local model load
+    if base_settings.model_base_url:
+        class _Msg:
+            def __init__(self, text: str):
+                self.text = text
+
+        class HTTPModelClient:
+            def __init__(self, base_url: str, api_key: str | None = None):
+                self.base_url = base_url.rstrip('/')
+                self.api_key = api_key
+
+            async def respond(self, context: list[dict], preset: list[dict]):
+                prompt_parts: list[str] = []
+                for m in preset + context:
+                    role = m.get("role", "user")
+                    text = m.get("content", "")
+                    prompt_parts.append(f"{role}: {text}")
+                prompt = "\n".join(prompt_parts)
+                headers = {}
+                if self.api_key:
+                    headers["Authorization"] = f"Bearer {self.api_key}"
+                async with httpx.AsyncClient(timeout=60) as client:
+                    r = await client.post(
+                        f"{self.base_url}/v1/completions",
+                        json={"prompt": prompt, "stream": False},
+                        headers=headers,
+                    )
+                    r.raise_for_status()
+                    data = r.json()
+                    text = data.get("text", "")
+                    return [_Msg(text)]
+
+        llm = HTTPModelClient(base_settings.model_base_url, base_settings.model_api_key)
+        embeddings = None
+    else:
+        llm = YaLLM()
+        embeddings = YaLLMEmbeddings()
 
     qdrant_client = QdrantClient(url=base_settings.qdrant_url)
     retrieval_search.qdrant = qdrant_client
@@ -89,15 +125,17 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
     contexts_collection = settings.mongo.contexts
     context_presets_collection = settings.mongo.presets
 
-    vector_store = DocumentsParser(
-        embeddings.get_embeddings_model(),
-        settings.redis.vector,
-        settings.redis.host,
-        settings.redis.port,
-        0,
-        settings.redis.password,
-        settings.redis.secure,
-    )
+    vector_store = None
+    if embeddings is not None:
+        vector_store = DocumentsParser(
+            embeddings.get_embeddings_model(),
+            settings.redis.vector,
+            settings.redis.host,
+            settings.redis.port,
+            0,
+            settings.redis.password,
+            settings.redis.secure,
+        )
 
     yield {
         "llm": llm,
