@@ -25,6 +25,8 @@ class MongoSettings(BaseSettings):
     vectors: str = "vectors"
     documents: str = "documents"
 
+    model_config = ConfigDict(extra="ignore")
+
 
 class Redis(BaseSettings):
     """Redis connection parameters.
@@ -40,6 +42,8 @@ class Redis(BaseSettings):
 
     vector: str | None = "vector"
 
+    model_config = ConfigDict(extra="ignore")
+
 
 class CelerySettings(BaseSettings):
     """Celery broker and result backend configuration.
@@ -50,6 +54,8 @@ class CelerySettings(BaseSettings):
 
     broker: str = "redis://localhost:6379"
     result: str = "redis://localhost:6379"
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class Settings(BaseSettings):
