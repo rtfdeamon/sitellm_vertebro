@@ -41,12 +41,15 @@ open_firewall_ports() {
     [ -z "${OPEN_HTTPS:-}" ] && open_https=1
   fi
 
-  # Resolve external app port from .env (fallback 18000), tolerate missing file
+  # Resolve external app/model ports from .env (fallbacks), tolerate missing file
   local app_port="18000"
+  local model_port="18001"
   if [ -f .env ]; then
     local v
     v=$(awk -F= '/^HOST_APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
     if [ -n "$v" ]; then app_port="$v"; fi
+    v=$(awk -F= '/^HOST_MODEL_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+    if [ -n "$v" ]; then model_port="$v"; fi
   fi
 
   # UFW
@@ -55,6 +58,8 @@ open_firewall_ports() {
       [ "$open_app_port" = "1" ] && sudo ufw allow "${app_port}/tcp" || true
       [ "$open_http" = "1" ] && sudo ufw allow 80/tcp || true
       [ "$open_https" = "1" ] && sudo ufw allow 443/tcp || true
+      # Also open model service port if defined
+      [ "$open_app_port" = "1" ] && sudo ufw allow "${model_port}/tcp" || true
       return
     fi
   fi
@@ -64,6 +69,7 @@ open_firewall_ports() {
     [ "$open_app_port" = "1" ] && sudo firewall-cmd --permanent --add-port="${app_port}/tcp" || true
     [ "$open_http" = "1" ] && sudo firewall-cmd --permanent --add-service=http || true
     [ "$open_https" = "1" ] && sudo firewall-cmd --permanent --add-service=https || true
+    [ "$open_app_port" = "1" ] && sudo firewall-cmd --permanent --add-port="${model_port}/tcp" || true
     sudo firewall-cmd --reload || true
   fi
 }
@@ -192,6 +198,7 @@ update_env_var HOST_MONGO_PORT "${HOST_MONGO_PORT:-27027}"
 update_env_var HOST_REDIS_PORT "${HOST_REDIS_PORT:-16379}"
 update_env_var HOST_QDRANT_HTTP_PORT "${HOST_QDRANT_HTTP_PORT:-16333}"
 update_env_var HOST_QDRANT_GRPC_PORT "${HOST_QDRANT_GRPC_PORT:-16334}"
+update_env_var HOST_MODEL_PORT "${HOST_MODEL_PORT:-18001}"
 
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
