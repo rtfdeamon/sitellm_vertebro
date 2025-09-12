@@ -245,10 +245,46 @@ PY
   printf '[✓] Knowledge base indexed\n'
 fi
 
+printf '[+] Verifying app -> Redis connectivity...\n'
+# Quick connectivity probe from inside app container using app settings
+if ! "${COMPOSE_CMD[@]}" exec -T app sh -lc 'python - <<"PY"
+import sys
+try:
+    from backend.settings import settings as s
+except Exception as e:
+    print("[!] cannot import settings:", e)
+    sys.exit(1)
+
+try:
+    import redis
+except Exception as e:
+    print("[!] redis lib missing:", e)
+    sys.exit(1)
+
+url = getattr(s, "redis_url", None)
+if not url:
+    scheme = "rediss" if getattr(s.redis, "secure", False) else "redis"
+    auth = (":" + (s.redis.password or "") + "@") if getattr(s.redis, "password", None) else ""
+    url = f"{scheme}://{auth}{s.redis.host}:{s.redis.port}/0"
+
+ok = False
+try:
+    r = redis.from_url(url, socket_connect_timeout=2)
+    ok = bool(r.ping())
+except Exception as e:
+    print("[!] Redis ping failed:", url, e)
+    sys.exit(1)
+
+print("[✓] Redis reachable:", url)
+PY'; then
+  echo '[!] App cannot reach Redis; aborting.'
+  exit 1
+fi
+
 printf '[+] Waiting for API health check...\n'
 # Prefer probing from inside the container to avoid host NAT issues
 ok=""
-attempts=${HEALTH_MAX_ATTEMPTS:-120}
+attempts=${HEALTH_MAX_ATTEMPTS:-300}
 for i in $(seq 1 "$attempts"); do
   if "${COMPOSE_CMD[@]}" exec -T app sh -lc "curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/healthz || curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/health || curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/" >/dev/null 2>&1; then
     echo "[✓] API healthy"
