@@ -6,6 +6,8 @@ import asyncio
 import os
 import threading
 from collections.abc import AsyncIterator
+import json
+import httpx
 
 try:  # optional heavy deps
     import torch
@@ -27,7 +29,8 @@ _model: AutoModelForCausalLM | None = None
 
 USE_GPU = settings.use_gpu
 DEVICE = "cuda" if USE_GPU and torch and torch.cuda.is_available() else "cpu"
-MODEL_NAME = settings.llm_model
+MODEL_NAME = settings.ollama_model or settings.llm_model
+OLLAMA_BASE = settings.ollama_base_url
 
 
 def _load() -> None:
@@ -46,8 +49,35 @@ def _load() -> None:
 
 
 async def generate(prompt: str) -> AsyncIterator[str]:
-    """Yield tokens from a local model using transformers streaming."""
+    """Yield tokens from the configured LLM backend.
 
+    - If ``OLLAMA_BASE_URL`` is set, stream from Ollama ``/api/generate``.
+    - Otherwise, fallback to local transformers with streaming.
+    """
+
+    if OLLAMA_BASE:
+        url = f"{OLLAMA_BASE.rstrip('/')}/api/generate"
+        payload = {"model": MODEL_NAME, "prompt": prompt, "stream": True}
+        logger.info("ollama_generate", url=url, model=MODEL_NAME)
+        async with httpx.AsyncClient(timeout=None) as client:
+            async with client.stream("POST", url, json=payload) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except Exception:
+                        continue
+                    token = data.get("response")
+                    if token:
+                        yield token
+                        await asyncio.sleep(0)
+                    if data.get("done"):
+                        break
+        return
+
+    # Fallback: local transformers runtime
     delay = 0.5
     for attempt in range(4):
         try:

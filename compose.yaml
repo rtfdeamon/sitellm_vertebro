@@ -114,9 +114,8 @@ services:
       APP_PORT: "8000"
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
       CRAWL_START_URL: ${CRAWL_START_URL:-https://mmvs.ru}
-      CMAKE_ARGS: "-DLLAMA_CUBLAS=OFF -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
-      LLAMA_CPP_PYTHON_BUILD: "cmake"
-      PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
+      # If you run Ollama on the host, this points containers to it
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       PYTHONPATH: /app
     command: [
       "uvicorn", "app:app",
@@ -127,6 +126,8 @@ services:
     ]
     volumes:
       - ./data/hf:/root/.cache/huggingface
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       interval: 15s
       timeout: 5s

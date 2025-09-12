@@ -51,8 +51,12 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, env=["APP_PORT", "app_port"])
 
     # Optional: use external model microservice instead of local model loading
-    model_base_url: Optional[str] = Field(default=None, env=["MODEL_BASE_URL", "model.base_url"]).
+    model_base_url: Optional[str] = Field(default=None, env=["MODEL_BASE_URL", "model.base_url"])
     model_api_key: Optional[str] = Field(default=None, env=["MODEL_API_KEY", "model.api_key"])
+
+    # Optional: use host Ollama runtime
+    ollama_base_url: Optional[str] = Field(default=None, env=["OLLAMA_BASE_URL", "ollama.base_url"])  # e.g. http://host.docker.internal:11434
+    ollama_model: Optional[str] = Field(default=None, env=["OLLAMA_MODEL", "ollama.model"])  # defaults to llm_model if not set
 
 
 settings = Settings()
