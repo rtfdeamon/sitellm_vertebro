@@ -18,23 +18,32 @@ class DocumentsParser:
         self,
         embeddings: Embeddings,
         index_name: str,
-        redis_host: str,
-        redis_port: int,
+        redis_host: str | None = None,
+        redis_port: int | None = None,
         redis_db: int = 0,
-        redis_password: str = None,
+        redis_password: str | None = None,
         redis_secure: bool = False,
+        redis_url: str | None = None,
     ):
         """Create a vector store in Redis and ensure index exists."""
-        url = f"redis{'s' if redis_secure else ''}://{':' + redis_password + '@' if redis_password else ''}{redis_host}:{redis_port}/{redis_db}"
+        if redis_url:
+            url = redis_url
+        else:
+            redis_host = redis_host or "localhost"
+            redis_port = int(redis_port or 6379)
+            url = f"redis{'s' if redis_secure else ''}://{':' + redis_password + '@' if redis_password else ''}{redis_host}:{redis_port}/{redis_db}"
         self.embeddings = embeddings
 
-        client = Redis(
-            host=redis_host,
-            port=redis_port,
-            db=redis_db,
-            password=redis_password,
-            ssl=redis_secure,
-        )
+        if redis_url:
+            client = Redis.from_url(redis_url)
+        else:
+            client = Redis(
+                host=redis_host,
+                port=redis_port,
+                db=redis_db,
+                password=redis_password,
+                ssl=redis_secure,
+            )
         exists = True
         try:
             client.ft(index_name).info()

@@ -135,6 +135,7 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
             0,
             settings.redis.password,
             settings.redis.secure,
+            redis_url=base_settings.redis_url if hasattr(base_settings, 'redis_url') else None,
         )
 
     yield {

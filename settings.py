@@ -81,10 +81,16 @@ class Settings(BaseSettings):
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        env_nested_delimiter="_",
+        # Use double underscore to avoid collisions with top-level names
+        env_nested_delimiter="__",
         case_sensitive=False,
         extra="ignore",
     )
+
+    # Ensure nested settings only read their own prefixes
+    MongoSettings.model_config = ConfigDict(extra="ignore", env_prefix="MONGO_")
+    Redis.model_config = ConfigDict(extra="ignore", env_prefix="REDIS_")
+    CelerySettings.model_config = ConfigDict(extra="ignore", env_prefix="CELERY_")
 
 
 @lru_cache(maxsize=1)
