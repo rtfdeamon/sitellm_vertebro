@@ -6,50 +6,152 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>LLM Chat Widget</title>
+  <title>LLM Chat</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 1rem; }
-    #messages { border: 1px solid #ccc; padding: 0.5rem; height: 200px; overflow-y: auto; margin-bottom: 1rem; }
-    .user { color: #0057b8; }
-    .assistant { color: #008000; }
-    form { display: flex; gap: 0.5rem; }
-    input[type=text] { flex: 1; padding: 0.5rem; }
+    :root {
+      --bg: #0f1115;
+      --panel: #171a21;
+      --border: #2a2f3a;
+      --text: #e8eaf0;
+      --muted: #a3a9b8;
+      --accent: #4f7cff;
+      --error: #ff5d5d;
+      --ok: #32d296;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+    .container { max-width: 860px; margin: 0 auto; padding: 16px; }
+    .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .toolbar input[type=text] { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; flex: 1 1 280px; }
+    .toolbar button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+    .toolbar button:hover { border-color: var(--accent); }
+    .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
+    .dot.ok { background: var(--ok); }
+    .dot.bad { background: var(--error); }
+    #messages { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; height: 360px; overflow-y: auto; margin-bottom: 12px; }
+    .msg { margin: 8px 0; white-space: pre-wrap; line-height: 1.5; }
+    .msg .role { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: block; }
+    .msg.user { color: #9cc9ff; }
+    .msg.assistant { color: #b8e994; }
+    form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; }
+    textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
+    .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+    .btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+    .muted { color: var(--muted); font-size: 12px; }
   </style>
 </head>
 <body>
-  <div id="messages"></div>
-  <form id="chat-form">
-    <input type="text" id="question" placeholder="Ask a question" autocomplete="off" />
-    <button type="submit">Send</button>
-  </form>
+  <div class="container">
+    <div class="toolbar">
+      <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" />
+      <button id="saveCfg" class="btn secondary">Save</button>
+      <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText">unknown</span></span>
+    </div>
+
+    <div id="messages"></div>
+    <form id="chat-form">
+      <textarea id="question" placeholder="Ask a question (Shift+Enter = newline)" autocomplete="off"></textarea>
+      <button type="button" id="stop" class="btn secondary">Stop</button>
+      <button type="submit" class="btn">Send</button>
+      <div class="muted">Enter to send • Shift+Enter for newline • <a href="#" id="clear">Clear</a></div>
+    </form>
+  </div>
 <script>
 const form = document.getElementById('chat-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
+const stopBtn = document.getElementById('stop');
+const clearLink = document.getElementById('clear');
+const baseUrlInput = document.getElementById('baseUrl');
+const saveCfgBtn = document.getElementById('saveCfg');
+const healthDot = document.getElementById('healthDot');
+const healthText = document.getElementById('healthText');
+
+let currentES = null;
+
+// Load saved base URL
+baseUrlInput.value = localStorage.getItem('chat_base_url') || '';
+
+function apiBase() {
+  const v = baseUrlInput.value.trim();
+  return v ? v.replace(/\/$/, '') : '';
+}
+
+async function probeHealth() {
+  const url = apiBase() + '/healthz';
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    const ok = r.ok;
+    healthDot.className = 'dot ' + (ok ? 'ok' : 'bad');
+    healthText.textContent = ok ? 'healthy' : 'unhealthy';
+  } catch {
+    healthDot.className = 'dot bad';
+    healthText.textContent = 'unreachable';
+  }
+}
+
+saveCfgBtn.addEventListener('click', () => {
+  localStorage.setItem('chat_base_url', apiBase());
+  probeHealth();
+});
+
+clearLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  messages.innerHTML = '';
+});
+
+function addMsg(role, text) {
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + role;
+  const r = document.createElement('span');
+  r.className = 'role';
+  r.textContent = role.toUpperCase();
+  const body = document.createElement('div');
+  body.textContent = text;
+  wrap.appendChild(r);
+  wrap.appendChild(body);
+  messages.appendChild(wrap);
+  messages.scrollTop = messages.scrollHeight;
+  return body;
+}
+
+function stopStream() {
+  if (currentES) { currentES.close(); currentES = null; }
+}
+
+stopBtn.addEventListener('click', stopStream);
 
 form.addEventListener('submit', function(e) {
   e.preventDefault();
   const question = input.value.trim();
   if (!question) return;
-  const userDiv = document.createElement('div');
-  userDiv.className = 'user';
-  userDiv.textContent = question;
-  messages.appendChild(userDiv);
+
+  addMsg('user', question);
   input.value = '';
 
-  const answerDiv = document.createElement('div');
-  answerDiv.className = 'assistant';
-  messages.appendChild(answerDiv);
+  const ansBody = addMsg('assistant', '');
 
-  const es = new EventSource(`/api/v1/llm/chat?question=${encodeURIComponent(question)}`);
+  stopStream();
+  const url = apiBase() + `/api/v1/llm/chat?question=${encodeURIComponent(question)}`;
+  const es = new EventSource(url);
+  currentES = es;
   es.onmessage = (event) => {
-    answerDiv.textContent += event.data;
+    ansBody.textContent += event.data;
     messages.scrollTop = messages.scrollHeight;
   };
-  es.onerror = () => {
-    es.close();
-  };
+  es.onerror = () => { stopStream(); };
 });
+
+// UX: Enter to send, Shift+Enter for newline
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    form.requestSubmit();
+  }
+});
+
+probeHealth();
 </script>
 </body>
 </html>
