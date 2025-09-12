@@ -183,34 +183,6 @@ services:
         - >
           pgrep -af "python.*tg_bot\.run" >/dev/null || exit 1
 
-  model:
-    # Standalone LLM inference microservice
-    build:
-      context: ./
-      dockerfile: Dockerfile
-      args:
-        APT_CACHE_ID: apt-cache
-        UV_CACHE_ID: uv-cache
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      PYTHONPATH: /app
-      APP_PORT: "9000"
-    command: [
-      "uvicorn", "backend.model_service:app",
-      "--host", "0.0.0.0",
-      "--port", "9000",
-      "--workers", "1",
-      "--timeout-keep-alive", "30"
-    ]
-    ports:
-      - "${HOST_MODEL_PORT:-18001}:9000"
-    volumes:
-      - ./data/hf:/root/.cache/huggingface
-    healthcheck:
-      <<: *health_defaults
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/healthz >/dev/null || exit 1"]
-
 volumes:
   mongo_data:
   qdrant_data:

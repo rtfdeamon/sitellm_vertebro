@@ -41,15 +41,12 @@ open_firewall_ports() {
     [ -z "${OPEN_HTTPS:-}" ] && open_https=1
   fi
 
-  # Resolve external app/model ports from .env (fallbacks), tolerate missing file
+  # Resolve external app port from .env (fallbacks), tolerate missing file
   local app_port="18000"
-  local model_port="18001"
   if [ -f .env ]; then
     local v
     v=$(awk -F= '/^HOST_APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
     if [ -n "$v" ]; then app_port="$v"; fi
-    v=$(awk -F= '/^HOST_MODEL_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
-    if [ -n "$v" ]; then model_port="$v"; fi
   fi
 
   # UFW
@@ -58,8 +55,6 @@ open_firewall_ports() {
       [ "$open_app_port" = "1" ] && sudo ufw allow "${app_port}/tcp" || true
       [ "$open_http" = "1" ] && sudo ufw allow 80/tcp || true
       [ "$open_https" = "1" ] && sudo ufw allow 443/tcp || true
-      # Also open model service port if defined
-      [ "$open_app_port" = "1" ] && sudo ufw allow "${model_port}/tcp" || true
       return
     fi
   fi
@@ -69,7 +64,6 @@ open_firewall_ports() {
     [ "$open_app_port" = "1" ] && sudo firewall-cmd --permanent --add-port="${app_port}/tcp" || true
     [ "$open_http" = "1" ] && sudo firewall-cmd --permanent --add-service=http || true
     [ "$open_https" = "1" ] && sudo firewall-cmd --permanent --add-service=https || true
-    [ "$open_app_port" = "1" ] && sudo firewall-cmd --permanent --add-port="${model_port}/tcp" || true
     sudo firewall-cmd --reload || true
   fi
 }
@@ -198,7 +192,7 @@ update_env_var HOST_MONGO_PORT "${HOST_MONGO_PORT:-27027}"
 update_env_var HOST_REDIS_PORT "${HOST_REDIS_PORT:-16379}"
 update_env_var HOST_QDRANT_HTTP_PORT "${HOST_QDRANT_HTTP_PORT:-16333}"
 update_env_var HOST_QDRANT_GRPC_PORT "${HOST_QDRANT_GRPC_PORT:-16334}"
-update_env_var HOST_MODEL_PORT "${HOST_MODEL_PORT:-18001}"
+update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
 
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
@@ -306,5 +300,11 @@ else
 fi
 
 printf '[✓] Deployment complete\n'
-echo "API: http://$DOMAIN/api"
-echo "Grafana: http://$DOMAIN/grafana (login: admin, password: $GRAFANA_PASS)"
+# Derive external ports for convenience output
+APP_EXT_PORT=$(awk -F= '/^HOST_APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
+MODEL_EXT_PORT=$(awk -F= '/^HOST_MODEL_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
+: "${APP_EXT_PORT:=18000}"
+: "${MODEL_EXT_PORT:=18001}"
+echo "App UI:    http://$DOMAIN:${APP_EXT_PORT}/widget"
+echo "API base:  http://$DOMAIN:${APP_EXT_PORT}"
+echo "Grafana:   http://$DOMAIN/grafana (login: admin, password: $GRAFANA_PASS)"
