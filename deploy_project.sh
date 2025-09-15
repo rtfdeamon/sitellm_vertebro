@@ -404,11 +404,37 @@ else
 fi
 
 printf '[✓] Deployment complete\n'
-# Derive external ports for convenience output
+
+# ---------- Runtime summary ----------
+resolve_host() {
+  if [ -n "${DOMAIN:-}" ]; then echo "$DOMAIN"; return; fi
+  local ip
+  ip=$(hostname -I 2>/dev/null | awk '{print $1}') || true
+  if [ -z "$ip" ] && command -v ip >/dev/null 2>&1; then
+    ip=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+  fi
+  echo "${ip:-127.0.0.1}"
+}
+
+HOST_NAME=$(resolve_host)
 APP_EXT_PORT=$(awk -F= '/^HOST_APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
-MODEL_EXT_PORT=$(awk -F= '/^HOST_MODEL_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
+MONGO_EXT_PORT=$(awk -F= '/^HOST_MONGO_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
+REDIS_EXT_PORT=$(awk -F= '/^HOST_REDIS_PORT=/{print $2}' .env 2>/dev/null | tail -n1)
 : "${APP_EXT_PORT:=18000}"
-: "${MODEL_EXT_PORT:=18001}"
-echo "App UI:    http://$DOMAIN:${APP_EXT_PORT}/widget"
-echo "API base:  http://$DOMAIN:${APP_EXT_PORT}"
-echo "Grafana:   http://$DOMAIN/grafana (login: admin, password: $GRAFANA_PASS)"
+: "${MONGO_EXT_PORT:=27027}"
+: "${REDIS_EXT_PORT:=16379}"
+
+echo ""
+echo "Service endpoints:"
+echo "- API:        http://${HOST_NAME}:${APP_EXT_PORT}"
+echo "- Widget:     http://${HOST_NAME}:${APP_EXT_PORT}/widget"
+echo "- Admin:      http://${HOST_NAME}:${APP_EXT_PORT}/admin"
+echo "- MongoDB:    ${HOST_NAME}:${MONGO_EXT_PORT} (exposed)"
+echo "- Redis:      ${HOST_NAME}:${REDIS_EXT_PORT} (exposed)"
+echo "- Qdrant:     internal only (http://qdrant:6333 from containers)"
+
+if docker compose ps >/dev/null 2>&1; then
+  echo ""
+  echo "Containers:"
+  docker compose ps --format 'table {{.Name}}\t{{.Service}}\t{{.State}}\t{{.Publishers}}'
+fi
