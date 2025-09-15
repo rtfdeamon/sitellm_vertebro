@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from fastapi.responses import ORJSONResponse
 
-from observability.logging import configure_logging
+from observability.logging import configure_logging, get_recent_logs
 from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
@@ -214,6 +214,23 @@ def healthz() -> dict[str, str]:
 def status() -> dict[str, object]:
     """Return aggregated crawler and database status."""
     return status_dict()
+
+
+@app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
+def admin_logs(limit: int = 200) -> ORJSONResponse:
+    """Return recent application logs for the admin UI.
+
+    Parameters
+    ----------
+    limit:
+        Maximum number of lines to return (default 200).
+    """
+    try:
+        limit = max(1, min(int(limit), 1000))
+    except Exception:
+        limit = 200
+    lines = get_recent_logs(limit)
+    return ORJSONResponse({"lines": lines})
 
 
 @app.get("/", include_in_schema=False)

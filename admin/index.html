@@ -84,6 +84,16 @@
       <div>RSS: <span id="rss">–</span></div>
       <div>Python: <span id="pyver">–</span></div>
     </div>
+    <div class="card" style="grid-column: 1 / -1;">
+      <b>Logs (last 200)</b>
+      <div style="margin:6px 0; display:flex; gap:8px; align-items:center;">
+        <label>Lines: <input type="number" id="logLimit" min="50" max="1000" value="200" style="width:80px;"></label>
+        <button id="copyLogs" type="button">Copy</button>
+        <span class="muted" id="logInfo"></span>
+      </div>
+      <pre id="logs" style="white-space:pre-wrap; background:#0b1021; color:#b8c1ec; padding:10px; border-radius:8px; max-height:320px; overflow:auto;">
+      </pre>
+    </div>
   </div>
 
   <script>
@@ -173,7 +183,22 @@
       } catch {}
     }
 
-    function tick(){ pollStatus(); pollHealth(); pollLLM(); pollSys(); }
+    async function pollLogs(){
+      const lim = Number(document.getElementById('logLimit').value || 200);
+      try{
+        const r = await fetch(`/api/v1/admin/logs?limit=${lim}`);
+        if(!r.ok) return;
+        const j = await r.json();
+        const lines = (j && j.lines) || [];
+        const pre = document.getElementById('logs');
+        pre.textContent = lines.join('\n');
+        document.getElementById('logInfo').textContent = `${lines.length} lines`;
+        // auto-scroll to bottom
+        pre.scrollTop = pre.scrollHeight;
+      }catch(e){}
+    }
+
+    function tick(){ pollStatus(); pollHealth(); pollLLM(); pollSys(); pollLogs(); }
     tick();
     setInterval(tick, 3000);
 
@@ -191,6 +216,12 @@
       const j = await r.json();
       if (!j.enabled) document.getElementById('pingRes').textContent = 'Disabled';
       else document.getElementById('pingRes').textContent = j.reachable ? 'Reachable' : ('Unreachable' + (j.error ? `: ${j.error}` : ''));
+    });
+
+    document.getElementById('copyLogs').addEventListener('click', async () => {
+      const t = document.getElementById('logs').textContent;
+      try{ await navigator.clipboard.writeText(t); document.getElementById('logInfo').textContent = 'Copied'; }
+      catch{ document.getElementById('logInfo').textContent = 'Copy failed'; }
     });
   </script>
   </body>
