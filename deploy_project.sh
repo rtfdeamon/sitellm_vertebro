@@ -438,3 +438,32 @@ if docker compose ps >/dev/null 2>&1; then
   echo "Containers:"
   docker compose ps --format 'table {{.Name}}\t{{.Service}}\t{{.State}}\t{{.Publishers}}'
 fi
+
+# Quick external probes and copy‑paste curl examples
+echo ""
+echo "Quick checks:"
+HURL="http://${HOST_NAME}:${APP_EXT_PORT}"
+if curl -fsS --max-time 5 "${HURL}/healthz" >/dev/null 2>&1 || \
+   curl -fsS --max-time 5 "${HURL}/health"  >/dev/null 2>&1; then
+  echo "- API health: OK (${HURL}/healthz)"
+else
+  echo "- API health: not reachable (try: curl -v ${HURL}/healthz)"
+fi
+if curl -fsS --max-time 5 "${HURL}/widget" >/dev/null 2>&1; then
+  echo "- Widget:     OK (${HURL}/widget)"
+else
+  echo "- Widget:     not reachable (try: curl -v ${HURL}/widget)"
+fi
+# Expect 401 for admin without credentials — that still proves routing works
+ADMIN_CODE=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${HURL}/admin" || echo 000)
+if [ "$ADMIN_CODE" = "401" ] || [ "$ADMIN_CODE" = "200" ]; then
+  echo "- Admin:      reachable (${HURL}/admin, requires Basic auth)"
+else
+  echo "- Admin:      not reachable (code ${ADMIN_CODE})"
+fi
+
+echo ""
+echo "Curl examples:"
+echo "  curl -fsS ${HURL}/healthz"
+echo "  curl -fsS ${HURL}/widget | head -n1"
+echo "  curl -I -u admin:admin ${HURL}/admin   # if default admin creds"
