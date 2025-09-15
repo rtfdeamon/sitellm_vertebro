@@ -1,5 +1,9 @@
 FROM python:3.10-slim
 
+# bump to invalidate stale BuildKit cache if needed
+ARG BOT_BUILD_REV=2
+ENV BOT_BUILD_REV=${BOT_BUILD_REV}
+
 WORKDIR /app
 
 # Копируем зависимости
