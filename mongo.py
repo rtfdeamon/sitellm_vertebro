@@ -49,8 +49,13 @@ class MongoClient:
             Database used for authentication.
         """
         # Build connection URL with or without credentials
-        if username and password:
-            auth_part = f"{quote_plus(username)}:{quote_plus(password)}@"
+        # Be tolerant to non-string env types (e.g., parsed as bool/int/Secret)
+        has_user = username is not None and str(username) != ""
+        has_pass = password is not None and str(password) != ""
+        if has_user and has_pass:
+            u = quote_plus(str(username))
+            p = quote_plus(str(password))
+            auth_part = f"{u}:{p}@"
             auth_db = f"/{auth_database}"
         else:
             auth_part = ""
