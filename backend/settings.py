@@ -56,7 +56,11 @@ class Settings(BaseSettings):
 
     # Optional: use host Ollama runtime
     ollama_base_url: Optional[str] = Field(default=None, env=["OLLAMA_BASE_URL", "ollama.base_url"])  # e.g. http://host.docker.internal:11434
-    ollama_model: Optional[str] = Field(default=None, env=["OLLAMA_MODEL", "ollama.model"])  # defaults to llm_model if not set
+    # Default to a model that is present in the repo's instructions and used in tags
+    ollama_model: Optional[str] = Field(
+        default="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest",
+        env=["OLLAMA_MODEL", "ollama.model"],
+    )  # defaults to this value unless overridden
 
 
 settings = Settings()
