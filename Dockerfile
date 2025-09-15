@@ -29,7 +29,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
     '
 
 WORKDIR /src
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml ./
 
 # Устанавливаем зависимости по lock-файлу (детерминированно и кэшируемо)
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
