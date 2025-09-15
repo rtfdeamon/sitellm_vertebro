@@ -24,7 +24,8 @@ COPY pyproject.toml uv.lock ./
     '
 
 # Задаём переменные окружения для pip и CMake
-ENV PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
+ENV PIP_INDEX_URL=https://download.pytorch.org/whl/cpu/simple \
+    PIP_EXTRA_INDEX_URL=https://abetlen.github.io/llama-cpp-python/whl/cpu \
     FORCE_CMAKE=1 \
     CMAKE_ARGS="-DLLAMA_ARM_DOTPROD=OFF -DLLAMA_ARM_FMA=OFF -DLLAMA_ARM_FP16=OFF" \
     PYTHONPATH=/app

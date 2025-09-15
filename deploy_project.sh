@@ -142,10 +142,6 @@ else
   USE_GPU=false
 fi
 
-if [ "$USE_GPU" = true ]; then
-  ensure_nvidia_toolkit
-fi
-
 # (Firewall ports will be opened later, after .env is created)
 
 REDIS_PASS=$(openssl rand -hex 8)
@@ -194,6 +190,37 @@ update_env_var HOST_QDRANT_HTTP_PORT "${HOST_QDRANT_HTTP_PORT:-16333}"
 update_env_var HOST_QDRANT_GRPC_PORT "${HOST_QDRANT_GRPC_PORT:-16334}"
 update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
 
+# ---------------------------------------------------------------------------
+# Decide whether local LLM (llama-cpp/torch) is needed
+# If an external model backend is configured (MODEL_BASE_URL) or Ollama base
+# is set, disable local LLM and force CPU build to avoid NVIDIA/CUDA drivers.
+# ---------------------------------------------------------------------------
+
+# Read values back from .env (tolerate missing)
+VAL_OLLAMA_BASE=$(awk -F= '/^OLLAMA_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+VAL_MODEL_BASE=$(awk -F= '/^MODEL_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+
+# Treat non-empty as configured
+LOCAL_LLM_ENABLED=true
+if [ -n "${VAL_MODEL_BASE}" ] || [ -n "${VAL_OLLAMA_BASE}" ]; then
+  LOCAL_LLM_ENABLED=false
+fi
+update_env_var LOCAL_LLM_ENABLED "${LOCAL_LLM_ENABLED}"
+
+# If remote LLM is used, always force CPU (no GPU compose / no CUDA wheels)
+if [ "${LOCAL_LLM_ENABLED}" = "false" ]; then
+  if [ "${USE_GPU}" = true ]; then
+    echo "[i] Remote LLM detected (Ollama/model service). Disabling GPU build to avoid NVIDIA drivers."
+  fi
+  USE_GPU=false
+  update_env_var USE_GPU "false"
+fi
+
+# Only now, after finalizing USE_GPU, configure NVIDIA runtime if needed
+if [ "$USE_GPU" = true ]; then
+  ensure_nvidia_toolkit
+fi
+
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
 tar -czf "deploy-backups/${timestamp}.tar.gz" .env compose.yaml
@@ -218,20 +245,32 @@ fi
 
 # Compose command (optionally include GPU overrides)
 COMPOSE_FILES=(-f compose.yaml)
-if [ "$USE_GPU" = true ] && [ -f compose.gpu.yaml ]; then
+# Include GPU overrides only when both GPU requested and local LLM is enabled
+if [ "$USE_GPU" = true ] && [ "${LOCAL_LLM_ENABLED}" = "true" ] && [ -f compose.gpu.yaml ]; then
   COMPOSE_FILES+=(-f compose.gpu.yaml)
 fi
 COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
 
 printf '[+] Building images sequentially...\n'
-for svc in app telegram-bot celery_worker celery_beat; do
+# Build only required services; skip local-LLM services if disabled
+SERVICES=(app telegram-bot)
+if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
+  SERVICES+=(celery_worker celery_beat)
+fi
+for svc in "${SERVICES[@]}"; do
   if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
     printf '[!] Failed to build %s\n' "$svc"
     exit 1
   fi
 done
 
-"${COMPOSE_CMD[@]}" up -d
+# Enable compose profiles only when local LLM is enabled
+PROFILE_ARGS=()
+if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
+  PROFILE_ARGS+=(--profile local-llm)
+fi
+
+"${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
 printf '[✓] Containers running\n'
 
 if [ -d "./knowledge_base" ]; then

@@ -45,8 +45,11 @@ services:
       args:
         APT_CACHE_ID: apt-cache
         UV_CACHE_ID: uv-cache
+        # Force CPU wheels for PyTorch in CPU mode
+        PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
     restart: unless-stopped
     env_file: .env
+    profiles: ["local-llm"]
     environment:
       REDIS_URL: ${REDIS_URL}
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
@@ -78,8 +81,11 @@ services:
       args:
         APT_CACHE_ID: apt-cache
         UV_CACHE_ID: uv-cache
+        # Force CPU wheels for PyTorch in CPU mode
+        PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
     restart: unless-stopped
     env_file: .env
+    profiles: ["local-llm"]
     command: ["celery", "-A", "worker", "beat", "--loglevel=INFO"]
     depends_on:
       redis:
@@ -104,6 +110,8 @@ services:
       args:
         APT_CACHE_ID: apt-cache
         UV_CACHE_ID: uv-cache
+        # Force CPU wheels for PyTorch in CPU mode
+        PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
     restart: unless-stopped
     env_file: .env
     ports:
