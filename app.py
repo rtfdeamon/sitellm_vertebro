@@ -149,28 +149,47 @@ app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 
 
 def _mongo_ok() -> bool:
-    try:
-        mc = SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=500)
-        mc.admin.command("ping")
-        return True
-    except Exception:
-        return False
+    """Best-effort Mongo probe with short retries.
+
+    Containerized Mongo can take a moment to accept connections after it
+    reports healthy. Use incremental timeouts to reduce false negatives.
+    """
+    timeouts = (0.5, 1.5, 3.0)
+    for t in timeouts:
+        try:
+            mc = SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=int(t * 1000))
+            mc.admin.command("ping")
+            mc.close()
+            return True
+        except Exception:
+            continue
+    return False
 
 
 def _redis_ok() -> bool:
-    try:
-        r = redis.from_url(base_settings.redis_url, socket_connect_timeout=0.5)
-        return bool(r.ping())
-    except Exception:
-        return False
+    for t in (0.5, 1.0):
+        try:
+            r = redis.from_url(base_settings.redis_url, socket_connect_timeout=t)
+            ok = bool(r.ping())
+            try:
+                r.close()
+            except Exception:
+                pass
+            return ok
+        except Exception:
+            continue
+    return False
 
 
 def _qdrant_ok() -> bool:
-    try:
-        resp = requests.get(f"{base_settings.qdrant_url}/healthz", timeout=0.8)
-        return resp.ok
-    except Exception:
-        return False
+    for t in (0.8, 1.5):
+        try:
+            resp = requests.get(f"{base_settings.qdrant_url}/healthz", timeout=t)
+            if resp.ok:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 @app.get("/health", include_in_schema=False)
