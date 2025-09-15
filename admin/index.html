@@ -70,8 +70,13 @@
       <div>Backend: <span id="backend">–</span></div>
       <div>Device: <span id="device">–</span></div>
       <div style="margin-top:6px;">
-        <label>Ollama Base: <input type="text" id="ollamaBase" placeholder="http://host.docker.internal:11434" style="width:100%"></label>
-        <div style="margin-top:6px; display:flex; gap:8px;">
+        <label>Ollama Base:
+          <input type="text" id="ollamaBase" placeholder="http://host.docker.internal:11434" style="width:100%">
+        </label>
+        <label style="display:block; margin-top:6px;">Model name:
+          <input type="text" id="ollamaModel" placeholder="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest" style="width:100%">
+        </label>
+        <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
           <button type="button" id="saveLLM">Save</button>
           <button type="button" id="pingLLM">Ping</button>
           <span id="pingRes" class="muted"></span>
@@ -168,6 +173,9 @@
         document.getElementById('backend').textContent = j.backend || '–';
         document.getElementById('device').textContent = j.device || '–';
         document.getElementById('ollamaBase').value = j.ollama_base || '';
+        if (j.model) {
+          document.getElementById('ollamaModel').value = j.model;
+        }
       } catch {}
     }
 
@@ -205,7 +213,8 @@
     // Controls for LLM config
     document.getElementById('saveLLM').addEventListener('click', async () => {
       const base = document.getElementById('ollamaBase').value.trim();
-      const payload = { ollama_base: base || null };
+      const model = document.getElementById('ollamaModel').value.trim();
+      const payload = { ollama_base: base || null, model: model || null };
       const r = await fetch('/api/v1/llm/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
       document.getElementById('pingRes').textContent = r.ok ? 'Saved' : 'Save failed';
       pollLLM();
