@@ -17,6 +17,10 @@ from typing import Any, Dict, Optional
 from pymongo import MongoClient
 from redis import Redis
 from qdrant_client import QdrantClient
+try:  # Newer qdrant-client
+    from qdrant_client.http.exceptions import UnexpectedResponse
+except Exception:  # pragma: no cover - fallback type
+    UnexpectedResponse = Exception  # type: ignore
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -81,12 +85,17 @@ def get_status() -> Status:
     redis_host = os.getenv("REDIS_HOST", "redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
     try:
-        r = Redis(
-            host=redis_host,
-            port=redis_port,
-            decode_responses=True,
-            socket_connect_timeout=1,
-        )
+        url = os.getenv("REDIS_URL")
+        if url:
+            r = Redis.from_url(url, decode_responses=True, socket_connect_timeout=1)
+        else:
+            r = Redis(
+                host=redis_host,
+                port=redis_port,
+                password=os.getenv("REDIS_PASSWORD") or None,
+                decode_responses=True,
+                socket_connect_timeout=1,
+            )
         q = _safe_int(r.get(REDIS_PREFIX + "queued"))
         p = _safe_int(r.get(REDIS_PREFIX + "in_progress"))
         d = _safe_int(r.get(REDIS_PREFIX + "done"))
@@ -145,9 +154,22 @@ def get_status() -> Status:
     # Qdrant
     points = 0
     try:
-        qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=0.2)
+        qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=0.3)
         info = qc.get_collection(QDRANT_COLL)
-        points = info.vectors_count or 0
+        points = getattr(info, "vectors_count", 0) or 0
+    except UnexpectedResponse as exc:
+        # 404 Not Found — коллекция ещё не создана: не шумим в логах
+        if "Not found" in str(exc) or "404" in str(exc):
+            points = 0
+        else:  # реальные ошибки продолжаем логировать
+            logger.warning(
+                "qdrant connection failed",
+                host=QDRANT_HOST,
+                port=QDRANT_PORT,
+                collection=QDRANT_COLL,
+                error=str(exc),
+            )
+            points = 0
     except Exception as exc:
         logger.warning(
             "qdrant connection failed",
