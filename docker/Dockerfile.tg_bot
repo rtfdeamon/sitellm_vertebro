@@ -17,8 +17,8 @@ COPY pyproject.toml uv.lock ./
         apt-get -y -o Dpkg::Use-Pty=0 --no-install-recommends install \
           build-essential git cmake ninja-build pkg-config curl libopenblas-dev python3-dev && break || sleep 3; \
       done; \
-      pip install --no-cache-dir "uv>=0.8"; \
-      uv pip install --system --no-cache --requirements pyproject.toml; \
+      pip install --no-cache-dir -i https://pypi.org/simple "uv>=0.8"; \
+      uv pip install --system --no-cache --frozen -r uv.lock; \
       apt-get purge -y --auto-remove git cmake build-essential python3-dev ninja-build; \
       apt-get clean; rm -rf /var/lib/apt/lists/* \
     '

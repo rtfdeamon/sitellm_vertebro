@@ -31,13 +31,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
 
-# Устанавливаем зависимости из pyproject.toml
+# Устанавливаем зависимости по lock-файлу (детерминированно и кэшируемо)
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
       # Явно используем PyPI для установки uv, чтобы не зависеть от PIP_* переменных
       pip install --no-cache-dir -i https://pypi.org/simple "uv>=0.8"; \
-      # Устанавливаем зависимости из pyproject.toml; для колёс CUDA используется PIP_EXTRA_INDEX_URL
-      uv pip install --system --no-cache --requirements pyproject.toml; \
+      # Устанавливаем зависимости строго из uv.lock; колёса берутся из CPU index если задан PIP_INDEX_URL
+      uv pip install --system --no-cache --frozen -r uv.lock; \
     '
 
 # Остальной исходный код
