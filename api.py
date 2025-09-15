@@ -97,10 +97,21 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
             status_code=400, detail="Last message role cannot be assistant"
         )
 
-    response = await request.state.llm.respond(context, preset)
-    logger.info("llm answered", length=len(response[-1].text))
+    # Build a prompt similar to the HTTPModelClient/YaLLM formatting
+    prompt_parts: list[str] = []
+    for m in preset + context:
+        role = m.get("role", "user")
+        text = m.get("content", "")
+        prompt_parts.append(f"{role}: {text}")
+    prompt = "\n".join(prompt_parts)
 
-    return ORJSONResponse(LLMResponse(text=response[-1].text).model_dump())
+    chunks: list[str] = []
+    async for token in llm_client.generate(prompt):
+        chunks.append(token)
+    text = "".join(chunks)
+    logger.info("llm answered", length=len(text))
+
+    return ORJSONResponse(LLMResponse(text=text).model_dump())
 
 
 @llm_router.get("/chat")
