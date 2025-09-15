@@ -68,6 +68,30 @@ open_firewall_ports() {
   fi
 }
 
+is_port_free() {
+  local p="$1"
+  # try ss first, fallback to lsof
+  if command -v ss >/dev/null 2>&1; then
+    if ss -lnt 2>/dev/null | awk 'NR>1 {print $4}' | sed -E 's/.*:([0-9]+)$/\1/' | grep -qx "$p"; then
+      return 1
+    fi
+  elif command -v lsof >/dev/null 2>&1; then
+    if lsof -iTCP:"$p" -sTCP:LISTEN -P -n >/dev/null 2>&1; then
+      return 1
+    fi
+  fi
+  return 0
+}
+
+pick_free_port() {
+  local start="$1"; local max_scan=100; local p="$start"
+  for _ in $(seq 1 "$max_scan"); do
+    if is_port_free "$p"; then echo "$p"; return; fi
+    p=$((p+1))
+  done
+  echo "$start"
+}
+
 ensure_nvidia_toolkit() {
   if docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q 'nvidia'; then
     echo '[✓] NVIDIA runtime already configured in Docker'
@@ -183,11 +207,16 @@ update_env_var MONGO_PASSWORD "$MONGO_PASSWORD"
 update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017"
 update_env_var USE_GPU "$USE_GPU"
 update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
-update_env_var HOST_APP_PORT "${HOST_APP_PORT:-18000}"
-update_env_var HOST_MONGO_PORT "${HOST_MONGO_PORT:-27027}"
-update_env_var HOST_REDIS_PORT "${HOST_REDIS_PORT:-16379}"
-update_env_var HOST_QDRANT_HTTP_PORT "${HOST_QDRANT_HTTP_PORT:-16333}"
-update_env_var HOST_QDRANT_GRPC_PORT "${HOST_QDRANT_GRPC_PORT:-16334}"
+APP_PORT_HOST=$(pick_free_port "${HOST_APP_PORT:-18000}")
+MONGO_PORT_HOST=$(pick_free_port "${HOST_MONGO_PORT:-27027}")
+REDIS_PORT_HOST=$(pick_free_port "${HOST_REDIS_PORT:-16379}")
+QDRANT_HTTP_HOST=$(pick_free_port "${HOST_QDRANT_HTTP_PORT:-16333}")
+QDRANT_GRPC_HOST=$(pick_free_port "${HOST_QDRANT_GRPC_PORT:-16334}")
+update_env_var HOST_APP_PORT "$APP_PORT_HOST"
+update_env_var HOST_MONGO_PORT "$MONGO_PORT_HOST"
+update_env_var HOST_REDIS_PORT "$REDIS_PORT_HOST"
+update_env_var HOST_QDRANT_HTTP_PORT "$QDRANT_HTTP_HOST"
+update_env_var HOST_QDRANT_GRPC_PORT "$QDRANT_GRPC_HOST"
 update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
 
 # ---------------------------------------------------------------------------
