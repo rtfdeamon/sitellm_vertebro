@@ -1,44 +1,114 @@
 <!--
-  Minimal admin panel to trigger the crawler and watch counters.
-  This page posts to the FastAPI endpoint /api/v1/crawler/run and polls
-  /api/v1/crawler/status every 3 seconds to update the UI.
+  Crawler Control Panel
+  - Start crawler (URL / depth / pages)
+  - Live crawler counters
+  - Services health (Mongo/Redis/Qdrant)
+  - LLM runtime (model, backend, device)
+  - App process metrics (CPU/Mem)
 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Crawler Admin</title>
-</head>
-<body>
-  <form id="crawler-form">
-    <label>URL: <input type="url" id="url" required></label><br>
-    <label>Depth: <input type="number" id="depth" min="1" value="1"></label><br>
-    <label>Pages: <input type="number" id="pages" min="1" value="10"></label><br>
-    <button type="submit">Запустить</button>
-  </form>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 16px; }
+    h1 { font-size: 20px; margin: 0 0 12px; }
+    fieldset { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin-bottom: 14px; }
+    legend { padding: 0 6px; color: #555; }
+    label { display: inline-block; margin: 6px 8px 6px 0; }
+    input { padding: 6px 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+    .card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; }
+    .ok { color: #2e7d32; }
+    .bad { color: #d32f2f; }
+    .muted { color: #777; font-size: 12px; }
+    button { padding: 8px 12px; }
+    code { background: #f6f7fb; padding: 2px 4px; border-radius: 4px; }
+  </style>
+  </head>
+  <body>
+  <h1>Crawler Control Panel</h1>
 
-  <h2>Status</h2>
-  <ul>
-    <li>Queued: <span id="queued">0</span></li>
-    <li>In progress: <span id="in_progress">0</span></li>
-    <li>Done: <span id="done">0</span></li>
-    <li>Failed: <span id="failed">0</span></li>
-  </ul>
+  <fieldset>
+    <legend>Start Crawl</legend>
+    <form id="crawler-form">
+      <label>Start URL: <input type="url" id="url" placeholder="https://example.com" required></label>
+      <label>Depth: <input type="number" id="depth" min="1" value="2"></label>
+      <label>Pages: <input type="number" id="pages" min="1" value="100"></label>
+      <button type="submit">Запустить</button>
+      <button type="button" id="stopBtn">Остановить</button>
+      <span id="launchMsg" class="muted"></span>
+    </form>
+  </fieldset>
+
+  <div class="grid">
+    <div class="card">
+      <b>Crawler</b>
+      <div>Queued: <span id="queued">0</span></div>
+      <div>In progress: <span id="in_progress">0</span></div>
+      <div>Done: <span id="done">0</span></div>
+      <div>Failed: <span id="failed">0</span></div>
+      <div class="muted" id="last_crawl">Last: –</div>
+      <div>
+        <details>
+          <summary>Последние URL</summary>
+          <ol id="recent_urls" style="margin-top:6px;"></ol>
+        </details>
+      </div>
+    </div>
+    <div class="card">
+      <b>Services</b>
+      <div>Mongo: <span id="mongo" class="bad">down</span></div>
+      <div>Redis: <span id="redis" class="bad">down</span></div>
+      <div>Qdrant: <span id="qdrant" class="bad">down</span></div>
+      <div>Status: <span id="overall">degraded</span></div>
+    </div>
+    <div class="card">
+      <b>LLM</b>
+      <div>Model: <code id="model">–</code></div>
+      <div>Backend: <span id="backend">–</span></div>
+      <div>Device: <span id="device">–</span></div>
+      <div style="margin-top:6px;">
+        <label>Ollama Base: <input type="text" id="ollamaBase" placeholder="http://host.docker.internal:11434" style="width:100%"></label>
+        <div style="margin-top:6px; display:flex; gap:8px;">
+          <button type="button" id="saveLLM">Save</button>
+          <button type="button" id="pingLLM">Ping</button>
+          <span id="pingRes" class="muted"></span>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <b>App</b>
+      <div>CPU: <span id="cpu">–</span></div>
+      <div>RSS: <span id="rss">–</span></div>
+      <div>Python: <span id="pyver">–</span></div>
+    </div>
+  </div>
 
   <script>
     const form = document.getElementById('crawler-form');
+    const stopBtn = document.getElementById('stopBtn');
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
-        url: document.getElementById('url').value,
-        depth: Number(document.getElementById('depth').value),
-        pages: Number(document.getElementById('pages').value),
+        start_url: document.getElementById('url').value,
+        max_depth: Number(document.getElementById('depth').value),
+        max_pages: Number(document.getElementById('pages').value),
       };
-      await fetch('/api/v1/crawler/run', {
+      const res = await fetch('/api/v1/crawler/run', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload),
       });
+      document.getElementById('launchMsg').textContent = res.ok ? 'Запущено' : 'Не удалось запустить';
+    });
+
+    stopBtn.addEventListener('click', async () => {
+      try {
+        const r = await fetch('/api/v1/crawler/stop', { method: 'POST' });
+        document.getElementById('launchMsg').textContent = r.ok ? 'Останавливаем…' : 'Не удалось остановить';
+      } catch {}
     });
 
     async function pollStatus() {
@@ -46,17 +116,82 @@
         const resp = await fetch('/api/v1/crawler/status');
         if (resp.ok) {
           const data = await resp.json();
-          document.getElementById('queued').textContent = data.queued;
-          document.getElementById('in_progress').textContent = data.in_progress;
-          document.getElementById('done').textContent = data.done;
-          document.getElementById('failed').textContent = data.failed;
+          document.getElementById('queued').textContent = data.queued ?? 0;
+          document.getElementById('in_progress').textContent = data.in_progress ?? 0;
+          document.getElementById('done').textContent = data.done ?? 0;
+          document.getElementById('failed').textContent = data.failed ?? 0;
+          const iso = data.last_crawl_iso || '–';
+          document.getElementById('last_crawl').textContent = 'Last: ' + iso;
+          const list = document.getElementById('recent_urls');
+          list.innerHTML = '';
+          const arr = (data.crawler && data.crawler.recent_urls) || data.recent_urls || [];
+          for (const u of arr) {
+            const li = document.createElement('li');
+            const a = document.createElement('a'); a.href = u; a.textContent = u; a.target = '_blank';
+            li.appendChild(a); list.appendChild(li);
+          }
         }
-      } catch (err) {
-        console.error(err);
-      }
+      } catch (err) { console.error(err); }
     }
-    setInterval(pollStatus, 3000);
-    pollStatus();
+
+    async function pollHealth() {
+      try {
+        const r = await fetch('/health');
+        if (!r.ok) return;
+        const h = await r.json();
+        const set = (id, ok) => {
+          const el = document.getElementById(id); el.textContent = ok ? 'up' : 'down'; el.className = ok ? 'ok' : 'bad';
+        };
+        set('mongo', !!h.mongo);
+        set('redis', !!h.redis);
+        set('qdrant', !!h.qdrant);
+        document.getElementById('overall').textContent = h.status || 'unknown';
+      } catch {}
+    }
+
+    async function pollLLM() {
+      try {
+        const r = await fetch('/api/v1/llm/info');
+        if (!r.ok) return;
+        const j = await r.json();
+        document.getElementById('model').textContent = j.model || '–';
+        document.getElementById('backend').textContent = j.backend || '–';
+        document.getElementById('device').textContent = j.device || '–';
+        document.getElementById('ollamaBase').value = j.ollama_base || '';
+      } catch {}
+    }
+
+    function formatBytes(n){ if(!n && n!==0) return '–'; const u=['B','KB','MB','GB','TB']; let i=0; while(n>=1024 && i<u.length-1){ n/=1024; i++; } return n.toFixed(1)+' '+u[i]; }
+    async function pollSys() {
+      try {
+        const r = await fetch('/sysinfo');
+        if (!r.ok) return;
+        const j = await r.json();
+        document.getElementById('cpu').textContent = (j.cpu_percent ?? '–') + '%';
+        document.getElementById('rss').textContent = formatBytes(j.rss_bytes);
+        document.getElementById('pyver').textContent = j.python || '';
+      } catch {}
+    }
+
+    function tick(){ pollStatus(); pollHealth(); pollLLM(); pollSys(); }
+    tick();
+    setInterval(tick, 3000);
+
+    // Controls for LLM config
+    document.getElementById('saveLLM').addEventListener('click', async () => {
+      const base = document.getElementById('ollamaBase').value.trim();
+      const payload = { ollama_base: base || null };
+      const r = await fetch('/api/v1/llm/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      document.getElementById('pingRes').textContent = r.ok ? 'Saved' : 'Save failed';
+      pollLLM();
+    });
+    document.getElementById('pingLLM').addEventListener('click', async () => {
+      const r = await fetch('/api/v1/llm/ping');
+      if (!r.ok) { document.getElementById('pingRes').textContent = 'Ping failed'; return; }
+      const j = await r.json();
+      if (!j.enabled) document.getElementById('pingRes').textContent = 'Disabled';
+      else document.getElementById('pingRes').textContent = j.reachable ? 'Reachable' : ('Unreachable' + (j.error ? `: ${j.error}` : ''));
+    });
   </script>
-</body>
-</html>
+  </body>
+  </html>

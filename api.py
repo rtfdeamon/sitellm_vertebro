@@ -3,8 +3,11 @@
 from pathlib import Path
 import subprocess
 import sys
+import os
+import signal
 
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException
+from typing import Any
 from fastapi.responses import ORJSONResponse, StreamingResponse
 import asyncio
 
@@ -113,8 +116,15 @@ async def chat(question: str) -> StreamingResponse:
     logger.info("chat", question=question)
 
     async def event_stream():
-        async for token in llm_client.generate(question):
-            yield f"data: {token}\n\n"
+        try:
+            async for token in llm_client.generate(question):
+                yield f"data: {token}\n\n"
+        except Exception as exc:  # keep connection graceful for the widget
+            logger.warning("sse_generate_failed", error=str(exc))
+            yield "event: llm_error\ndata: generation_failed\n\n"
+        finally:
+            # Signal the client that stream has completed
+            yield "event: end\ndata: [DONE]\n\n"
 
     headers = {"X-Model-Name": "vikhr-gpt-8b-it"}
     response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
@@ -142,11 +152,15 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
         "--max-depth",
         str(max_depth),
     ]
-    subprocess.Popen(cmd)
+    proc = subprocess.Popen(cmd)
+    try:
+        (Path("/tmp") / "crawler.pid").write_text(str(proc.pid), encoding="utf-8")
+    except Exception:
+        pass
 
 
 @crawler_router.post("/run", status_code=202)
-async def run_crawler(req: CrawlRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+async def run_crawler(req: CrawlRequest, background_tasks: Any) -> dict[str, str]:
     """Start the crawler in a background task."""
 
     background_tasks.add_task(
@@ -160,3 +174,74 @@ async def crawler_status() -> dict[str, object]:
     """Return current crawler and database status."""
 
     return status_dict()
+
+
+@crawler_router.post("/stop", status_code=202)
+async def stop_crawler() -> dict[str, str]:
+    """Attempt to stop the last started crawler process by PID file."""
+    pid_path = Path("/tmp") / "crawler.pid"
+    try:
+        pid = int(pid_path.read_text(encoding="utf-8").strip())
+    except Exception:
+        return {"status": "unknown"}
+    try:
+        os.kill(pid, signal.SIGTERM)
+        return {"status": "stopping", "pid": pid}
+    except ProcessLookupError:
+        return {"status": "not_running"}
+    except Exception:
+        return {"status": "error"}
+
+
+@llm_router.get("/info")
+def llm_info() -> dict[str, object]:
+    """Expose basic LLM runtime details for the admin panel."""
+    device = getattr(llm_client, "DEVICE", "unknown")
+    model = getattr(llm_client, "MODEL_NAME", None)
+    ollama = getattr(llm_client, "OLLAMA_BASE", None)
+    backend = "ollama" if ollama else (device or "local")
+    return {
+        "model": model,
+        "device": device,
+        "backend": backend,
+        "ollama_base": ollama,
+    }
+
+
+class LLMConfig(BaseModel):
+    ollama_base: str | None = None
+    model: str | None = None
+
+
+@llm_router.post("/config", response_class=ORJSONResponse)
+def llm_set_config(cfg: LLMConfig) -> ORJSONResponse:
+    """Update LLM runtime parameters at runtime.
+
+    This does not persist across process restarts; intended for quick ops.
+    """
+    if cfg.ollama_base is not None:
+        llm_client.OLLAMA_BASE = cfg.ollama_base or None
+    if cfg.model:
+        llm_client.MODEL_NAME = cfg.model
+    return ORJSONResponse(llm_info())
+
+
+@llm_router.get("/ping")
+async def llm_ping() -> dict[str, object]:
+    """Ping the configured LLM backend.
+
+    - If Ollama base is set, checks ``/api/tags``.
+    - Otherwise returns enabled=False.
+    """
+    base = getattr(llm_client, "OLLAMA_BASE", None)
+    if not base:
+        return {"enabled": False, "reachable": None}
+    import httpx
+    url = f"{base.rstrip('/')}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            resp = await client.get(url)
+            ok = bool(resp.status_code == 200)
+            return {"enabled": True, "reachable": ok, "status": resp.status_code}
+    except Exception as exc:
+        return {"enabled": True, "reachable": False, "error": str(exc)}

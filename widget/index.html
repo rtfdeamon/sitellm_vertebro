@@ -6,7 +6,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>LLM Chat</title>
+  <title>LLM Chat Widget</title>
   <style>
     :root {
       --bg: #0f1115;
@@ -18,10 +18,21 @@
       --error: #ff5d5d;
       --ok: #32d296;
     }
+    [data-theme='light'] {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --border: #dfe3eb;
+      --text: #0f1115;
+      --muted: #5a6473;
+      --accent: #2f6bff;
+      --error: #d32f2f;
+      --ok: #2e7d32;
+    }
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
     .container { max-width: 860px; margin: 0 auto; padding: 16px; }
     .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+    .toolbar .spacer { flex: 1 1 auto; }
     .toolbar input[type=text] { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; flex: 1 1 280px; }
     .toolbar button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
     .toolbar button:hover { border-color: var(--accent); }
@@ -31,7 +42,8 @@
     .dot.bad { background: var(--error); }
     #messages { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; height: 360px; overflow-y: auto; margin-bottom: 12px; }
     .msg { margin: 8px 0; white-space: pre-wrap; line-height: 1.5; }
-    .msg .role { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: block; }
+    .msg .role { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+    .msg .time { opacity: 0.85; font-variant-numeric: tabular-nums; }
     .msg.user { color: #9cc9ff; }
     .msg.assistant { color: #b8e994; }
     form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; }
@@ -44,16 +56,24 @@
 <body>
   <div class="container">
     <div class="toolbar">
+      <strong>LLM Chat Widget</strong>
+      <span class="spacer"></span>
       <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" />
       <button id="saveCfg" class="btn secondary">Save</button>
+      <button id="themeToggle" class="btn secondary" title="Toggle theme">Theme</button>
       <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText">unknown</span></span>
+    </div>
+
+    <div id="banner" style="display:none; border:1px solid var(--error); color:#fff; background:#3a1f1f; padding:8px 10px; border-radius:6px; margin:10px 0;">
+      <span id="bannerText">Connection error</span>
+      <button id="bannerClose" class="btn secondary" style="float:right;">Dismiss</button>
     </div>
 
     <div id="messages"></div>
     <form id="chat-form">
       <textarea id="question" placeholder="Ask a question (Shift+Enter = newline)" autocomplete="off"></textarea>
-      <button type="button" id="stop" class="btn secondary">Stop</button>
-      <button type="submit" class="btn">Send</button>
+      <button type="button" id="stop" class="btn secondary" disabled>Stop</button>
+      <button type="submit" id="sendBtn" class="btn">Send</button>
       <div class="muted">Enter to send • Shift+Enter for newline • <a href="#" id="clear">Clear</a></div>
     </form>
   </div>
@@ -67,8 +87,15 @@ const baseUrlInput = document.getElementById('baseUrl');
 const saveCfgBtn = document.getElementById('saveCfg');
 const healthDot = document.getElementById('healthDot');
 const healthText = document.getElementById('healthText');
+const sendBtn = document.getElementById('sendBtn');
+const banner = document.getElementById('banner');
+const bannerText = document.getElementById('bannerText');
+const bannerClose = document.getElementById('bannerClose');
+const themeToggle = document.getElementById('themeToggle');
 
 let currentES = null;
+let streaming = false;
+let tokenChars = 0;
 
 // Load saved base URL
 baseUrlInput.value = localStorage.getItem('chat_base_url') || '';
@@ -96,28 +123,50 @@ saveCfgBtn.addEventListener('click', () => {
   probeHealth();
 });
 
-clearLink.addEventListener('click', (e) => {
-  e.preventDefault();
-  messages.innerHTML = '';
-});
+// (clearing with confirmation is implemented later below)
 
-function addMsg(role, text) {
+function fmtTime(d) {
+  try { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+}
+
+function addMsg(role, text, ts) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   const r = document.createElement('span');
   r.className = 'role';
-  r.textContent = role.toUpperCase();
+  const roleSpan = document.createElement('span');
+  roleSpan.textContent = role.toUpperCase();
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'time';
+  const when = ts ? new Date(ts) : new Date();
+  timeSpan.textContent = fmtTime(when);
+  r.appendChild(roleSpan);
+  r.appendChild(timeSpan);
   const body = document.createElement('div');
   body.textContent = text;
   wrap.appendChild(r);
   wrap.appendChild(body);
+  wrap.dataset.ts = when.toISOString();
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
+  persistHistory();
+  // Copy on click for assistant
+  if (role === 'assistant') {
+    body.title = 'Click to copy';
+    body.style.cursor = 'pointer';
+    body.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(body.textContent || ''); } catch {}
+    });
+  }
   return body;
 }
 
 function stopStream() {
   if (currentES) { currentES.close(); currentES = null; }
+  streaming = false;
+  stopBtn.disabled = true;
+  sendBtn.disabled = false;
+  updateStatus();
 }
 
 stopBtn.addEventListener('click', stopStream);
@@ -136,11 +185,36 @@ form.addEventListener('submit', function(e) {
   const url = apiBase() + `/api/v1/llm/chat?question=${encodeURIComponent(question)}`;
   const es = new EventSource(url);
   currentES = es;
+  streaming = true;
+  tokenChars = 0;
+  stopBtn.disabled = false;
+  sendBtn.disabled = true;
+  hideBanner();
+  updateStatus();
   es.onmessage = (event) => {
-    ansBody.textContent += event.data;
+    const chunk = event.data || '';
+    ansBody.textContent += chunk;
+    tokenChars += chunk.length;
     messages.scrollTop = messages.scrollHeight;
+    persistHistory();
   };
-  es.onerror = () => { stopStream(); };
+  es.addEventListener('end', () => {
+    // Server signaled normal end of stream
+    stopStream();
+  });
+  es.addEventListener('llm_error', () => {
+    if (tokenChars === 0) {
+      ansBody.textContent = 'Model unavailable. Please try again later.';
+      showBanner('Model unavailable or busy. Try again later.');
+    }
+  });
+  es.onerror = () => {
+    // Treat as error only if no tokens were received
+    if (tokenChars === 0) {
+      showBanner('Connection lost. Please try again.');
+    }
+    stopStream();
+  };
 });
 
 // UX: Enter to send, Shift+Enter for newline
@@ -152,6 +226,63 @@ input.addEventListener('keydown', (e) => {
 });
 
 probeHealth();
+
+// History persistence (localStorage)
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem('chat_history');
+    if (!raw) return;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return;
+    messages.innerHTML = '';
+    for (const m of arr) { addMsg(m.role, m.text, m.ts); }
+  } catch {}
+}
+
+function persistHistory() {
+  try {
+    const arr = Array.from(messages.querySelectorAll('.msg')).map(node => ({
+      role: node.classList.contains('user') ? 'user' : 'assistant',
+      text: node.querySelector('div').textContent || '',
+      ts: node.dataset.ts
+    }));
+    localStorage.setItem('chat_history', JSON.stringify(arr));
+  } catch {}
+}
+
+clearLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!confirm('Clear chat history?')) return;
+  messages.innerHTML = '';
+  persistHistory();
+});
+
+function showBanner(text) {
+  bannerText.textContent = text;
+  banner.style.display = '';
+}
+function hideBanner() { banner.style.display = 'none'; }
+bannerClose.addEventListener('click', hideBanner);
+
+function updateStatus() {
+  const suffix = streaming ? ` • streaming (${tokenChars})` : '';
+  healthText.textContent = (healthText.textContent.split(' ')[0] || 'unknown') + suffix;
+}
+
+loadHistory();
+
+// Theme toggle
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('chat_theme', theme);
+  themeToggle.textContent = theme === 'light' ? 'Dark' : 'Light';
+}
+const initialTheme = localStorage.getItem('chat_theme') || 'dark';
+setTheme(initialTheme);
+themeToggle.addEventListener('click', () => {
+  const next = (localStorage.getItem('chat_theme') || 'dark') === 'dark' ? 'light' : 'dark';
+  setTheme(next);
+});
 </script>
 </body>
 </html>

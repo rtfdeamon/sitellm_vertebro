@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import Response, RedirectResponse
+from fastapi.responses import ORJSONResponse
 
 from observability.logging import configure_logging
 from observability.metrics import MetricsMiddleware, metrics_app
@@ -215,3 +216,42 @@ def healthz() -> dict[str, str]:
 def status() -> dict[str, object]:
     """Return aggregated crawler and database status."""
     return status_dict()
+
+
+@app.get("/", include_in_schema=False)
+def root() -> RedirectResponse:
+    """Redirect the root URL to the web chat widget.
+
+    Opening http://localhost:8000 now lands at ``/widget/`` instead of 404.
+    """
+    return RedirectResponse(url="/widget/")
+
+
+@app.get("/sysinfo", include_in_schema=False)
+def sysinfo() -> dict[str, object]:
+    """Return basic process/system metrics for the dashboard.
+
+    Includes process RSS memory, CPU percent (best-effort), and Python version.
+    Uses ``psutil`` when available, falls back to minimal data otherwise.
+    """
+    import os
+    import platform
+    info: dict[str, object] = {
+        "python": platform.python_version(),
+    }
+    try:
+        import psutil  # type: ignore
+
+        p = psutil.Process(os.getpid())
+        mem = p.memory_info().rss
+        try:
+            cpu = p.cpu_percent(interval=0.0)
+        except Exception:
+            cpu = None
+        info.update({
+            "rss_bytes": int(mem),
+            "cpu_percent": cpu,
+        })
+    except Exception:
+        pass
+    return info

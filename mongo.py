@@ -23,13 +23,17 @@ class NotFound(Exception):
 
 
 class MongoClient:
-    """Wrapper around the asynchronous MongoDB client."""
+    """Wrapper around the asynchronous MongoDB client.
+
+    Accepts optional ``username``/``password`` and builds a proper MongoDB URI
+    whether authentication is configured or not.
+    """
     def __init__(
         self,
         host: str,
         port: int,
-        username: str,
-        password: str,
+        username: str | None,
+        password: str | None,
         database: str,
         auth_database: str,
     ):
@@ -44,10 +48,15 @@ class MongoClient:
         auth_database:
             Database used for authentication.
         """
+        # Build connection URL with or without credentials
+        if username and password:
+            auth_part = f"{quote_plus(username)}:{quote_plus(password)}@"
+            auth_db = f"/{auth_database}"
+        else:
+            auth_part = ""
+            auth_db = ""
 
-        self.url = (
-            f"mongodb://{quote_plus(username)}:{quote_plus(password)}@{host}:{port}/{auth_database}"
-        )
+        self.url = f"mongodb://{auth_part}{host}:{port}{auth_db}"
         self.client = AsyncMongoClient(self.url)
         self.database_name = database
         self.db = self.client[database]

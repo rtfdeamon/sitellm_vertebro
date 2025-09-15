@@ -4,6 +4,8 @@ import asyncio
 import types
 import sys
 import pytest
+import importlib
+_REAL_HTTPX = importlib.import_module("httpx")
 
 # Provide a minimal ``structlog`` stub for modules that expect it.
 fake_structlog = types.ModuleType("structlog")
@@ -83,3 +85,32 @@ def pytest_pyfunc_call(pyfuncitem):
             loop.close()
             asyncio.set_event_loop(None)
         return True
+
+
+# Ensure compatibility when other tests stub fastapi.responses without Response
+def pytest_runtest_setup(item):  # noqa: D401
+    """Lightly patch stubs to avoid cross-test import clashes."""
+    # Ensure the real httpx is available only where the real TestClient is used
+    mod = sys.modules.get("fastapi.responses")
+    if mod is not None and not hasattr(mod, "Response"):
+        class _Resp:  # minimal placeholder
+            def __init__(self, *a, **k):
+                pass
+        setattr(mod, "Response", _Resp)
+    # Ensure starlette.testclient can import even if httpx is faked by other tests
+    if "test_basic_auth.py" in item.nodeid:
+        sys.modules["httpx"] = _REAL_HTTPX
+    h = sys.modules.get("httpx")
+    if h is not None:
+        if not hasattr(h, "Response"):
+            class _HTTPXResp:  # minimal placeholder for subclassing
+                pass
+            setattr(h, "Response", _HTTPXResp)
+        if not hasattr(h, "BaseTransport"):
+            class _HTTPXBaseTransport:  # minimal placeholder for subclassing
+                pass
+            setattr(h, "BaseTransport", _HTTPXBaseTransport)
+
+
+def pytest_runtest_teardown(item):
+    """No-op: kept for symmetry if future isolation is added."""

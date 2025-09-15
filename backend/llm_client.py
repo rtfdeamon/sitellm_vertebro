@@ -27,10 +27,11 @@ logger = structlog.get_logger(__name__)
 _tokenizer: AutoTokenizer | None = None
 _model: AutoModelForCausalLM | None = None
 
-USE_GPU = settings.use_gpu
+USE_GPU = getattr(settings, "use_gpu", False)
 DEVICE = "cuda" if USE_GPU and torch and torch.cuda.is_available() else "cpu"
-MODEL_NAME = settings.ollama_model or settings.llm_model
-OLLAMA_BASE = settings.ollama_base_url
+# Optional fields may be missing in lightweight test stubs
+MODEL_NAME = getattr(settings, "ollama_model", None) or getattr(settings, "llm_model", None)
+OLLAMA_BASE = getattr(settings, "ollama_base_url", None)
 
 
 def _load() -> None:

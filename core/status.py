@@ -39,6 +39,7 @@ class CrawlerStats:
     failed: int = 0
     last_url: Optional[str] = None
     started_at: Optional[float] = None
+    recent_urls: Optional[list[str]] = None
 
 
 @dataclass
@@ -91,6 +92,10 @@ def get_status() -> Status:
         d = _safe_int(r.get(REDIS_PREFIX + "done"))
         f = _safe_int(r.get(REDIS_PREFIX + "failed"))
         last_url = r.get(REDIS_PREFIX + "last_url")
+        try:
+            recent_urls = list(r.lrange(REDIS_PREFIX + "recent_urls", 0, 19))
+        except Exception:
+            recent_urls = None
         started_at = float(r.get(REDIS_PREFIX + "started_at") or 0)
     except Exception as exc:
         logger.warning(
@@ -101,6 +106,7 @@ def get_status() -> Status:
         )
         q = p = d = f = 0
         last_url = None
+        recent_urls = None
         started_at = 0
 
     # Mongo
@@ -165,7 +171,7 @@ def get_status() -> Status:
     return Status(
         ok=ok,
         ts=time.time(),
-        crawler=CrawlerStats(q, p, d, f, last_url, started_at if started_at > 0 else None),
+        crawler=CrawlerStats(q, p, d, f, last_url, started_at if started_at > 0 else None, recent_urls),
         db=DbStats(mongo_docs, points, target, fill_percent),
         last_crawl_ts=last_crawl_ts,
         last_crawl_iso=last_crawl_iso,

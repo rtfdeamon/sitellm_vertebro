@@ -5,3 +5,10 @@ __pycache__
 .vscode
 deploy-backups
 .venv
+tests
+docs
+.github
+*.log
+.env
+.env.*
+data/hf
