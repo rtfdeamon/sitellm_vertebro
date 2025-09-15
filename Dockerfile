@@ -36,8 +36,8 @@ RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked,id=${UV_CACHE_ID} \
     bash -euxo pipefail -c '\
       # Явно используем PyPI для установки uv, чтобы не зависеть от PIP_* переменных
       pip install --no-cache-dir -i https://pypi.org/simple "uv>=0.8"; \
-      # Устанавливаем зависимости строго из uv.lock; колёса берутся из CPU index если задан PIP_INDEX_URL
-      uv pip install --system --no-cache --frozen -r uv.lock; \
+      # Устанавливаем зависимости из pyproject.toml; uv будет кэшировать резолв
+      uv pip install --system --no-cache --requirements pyproject.toml; \
     '
 
 # Остальной исходный код
