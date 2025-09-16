@@ -6,7 +6,7 @@ import sys
 import os
 import signal
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
 from typing import Any
 from fastapi.responses import ORJSONResponse, StreamingResponse
 import asyncio
@@ -171,7 +171,7 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
 
 
 @crawler_router.post("/run", status_code=202)
-async def run_crawler(req: CrawlRequest, background_tasks: Any) -> dict[str, str]:
+async def run_crawler(req: CrawlRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
     """Start the crawler in a background task."""
 
     background_tasks.add_task(
