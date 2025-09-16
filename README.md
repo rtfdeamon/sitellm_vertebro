@@ -45,6 +45,7 @@ For a minimal local run with the bundled values:
 ```bash
 cp .env.example .env
 docker compose up -d --build
+# autodetects host architecture and adjusts Qdrant platform (amd64/arm64)
 # optional: immediately collect text pages for the knowledge base
 docker compose exec app python crawler/run_crawl.py \\
   --url "https://mmvs.ru" \\
