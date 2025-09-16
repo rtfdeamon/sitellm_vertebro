@@ -25,6 +25,10 @@
     .muted { color: #777; font-size: 12px; }
     button { padding: 8px 12px; }
     code { background: #f6f7fb; padding: 2px 4px; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 6px 8px; border-bottom: 1px solid #e0e0e0; text-align: left; vertical-align: top; }
+    tbody tr:hover { background: #f6f7fb; }
+    .nowrap { white-space: nowrap; }
   </style>
   </head>
   <body>
@@ -88,6 +92,28 @@
       <div>CPU: <span id="cpu">–</span></div>
       <div>RSS: <span id="rss">–</span></div>
       <div>Python: <span id="pyver">–</span></div>
+    </div>
+    <div class="card" style="grid-column: 1 / -1;">
+      <b>Knowledge Base</b>
+      <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+        <label style="flex:1 1 260px;">Поиск
+          <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
+        </label>
+        <label>Limit
+          <input type="number" id="kbLimit" min="10" max="200" value="50" style="width:80px;">
+        </label>
+        <button type="submit">Обновить</button>
+        <button type="button" id="kbClear">Очистить</button>
+        <span class="muted" id="kbInfo"></span>
+      </form>
+      <div style="max-height:240px; overflow:auto; border:1px solid #e0e0e0; border-radius:6px;">
+        <table>
+          <thead>
+            <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Файл</th></tr>
+          </thead>
+          <tbody id="kbTable"></tbody>
+        </table>
+      </div>
     </div>
     <div class="card" style="grid-column: 1 / -1;">
       <b>Logs (last 200)</b>
@@ -209,6 +235,60 @@
     function tick(){ pollStatus(); pollHealth(); pollLLM(); pollSys(); pollLogs(); }
     tick();
     setInterval(tick, 3000);
+
+    async function loadKnowledge(){
+      const limitField = document.getElementById('kbLimit');
+      const qField = document.getElementById('kbSearch');
+      const params = new URLSearchParams();
+      const limit = Number(limitField.value || 50);
+      if (Number.isFinite(limit)) params.set('limit', Math.min(Math.max(limit, 10), 200));
+      const query = qField.value.trim();
+      if (query) params.set('q', query);
+      try {
+        const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
+        if (!resp.ok) throw new Error('knowledge request failed');
+        const data = await resp.json();
+        const tbody = document.getElementById('kbTable');
+        tbody.innerHTML = '';
+        const docs = data.documents || [];
+        if (!docs.length) {
+          const row = document.createElement('tr');
+          const cell = document.createElement('td');
+          cell.colSpan = 3;
+          cell.textContent = query ? 'Ничего не найдено' : 'Документов нет';
+          row.appendChild(cell);
+          tbody.appendChild(row);
+        } else {
+          for (const doc of docs) {
+            const tr = document.createElement('tr');
+            const nameTd = document.createElement('td');
+            nameTd.textContent = doc.name || '–';
+            const descTd = document.createElement('td');
+            descTd.textContent = doc.description || '–';
+            const linkTd = document.createElement('td');
+            const a = document.createElement('a');
+            a.textContent = 'Скачать';
+            a.href = `/api/v1/admin/knowledge/documents/${encodeURIComponent(doc.fileId)}`;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            linkTd.appendChild(a);
+            tr.append(nameTd, descTd, linkTd);
+            tbody.appendChild(tr);
+          }
+        }
+        const matched = data.matched ?? docs.length;
+        const total = data.total ?? matched;
+        const infoText = `Показано ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}`;
+        document.getElementById('kbInfo').textContent = infoText;
+      } catch (error) {
+        document.getElementById('kbInfo').textContent = 'Ошибка загрузки базы знаний';
+        console.error(error);
+      }
+    }
+
+    document.getElementById('kbForm').addEventListener('submit', (e)=>{ e.preventDefault(); loadKnowledge(); });
+    document.getElementById('kbClear').addEventListener('click', ()=>{ document.getElementById('kbSearch').value=''; loadKnowledge(); });
+    loadKnowledge();
 
     // Controls for LLM config
     document.getElementById('saveLLM').addEventListener('click', async () => {

@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import os
+import re
 import sys
 import time
 import urllib.parse as urlparse
@@ -25,11 +27,14 @@ import httpx
 import requests
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
+from gridfs import GridFS
 from pymongo import MongoClient, UpdateOne
+from pymongo.errors import ConfigurationError
 from redis import Redis
 import structlog
 from urllib import robotparser
 import xml.etree.ElementTree as ET
+from bson import ObjectId
 
 from observability.logging import configure_logging
 
@@ -152,6 +157,35 @@ def extract_links(html: str, base_url: str) -> List[str]:
     return links
 
 
+def html_to_text(html: str) -> str:
+    """Extract readable text from ``html`` removing scripts/styles."""
+
+    soup = BeautifulSoup(html, "html.parser")
+    for element in soup(["script", "style", "noscript", "template"]):
+        element.decompose()
+
+    text = soup.get_text("\n")
+    lines = [line.strip() for line in text.splitlines()]
+    # Collapse multiple blank lines and remove empties
+    cleaned = "\n".join(line for line in lines if line)
+    return cleaned.strip()
+
+
+def _filename_from_url(url: str) -> str:
+    """Return a filesystem-friendly name for ``url`` with ``.txt`` extension."""
+
+    parsed = urlparse.urlsplit(url)
+    base = f"{parsed.netloc}{parsed.path}".strip("/") or parsed.netloc or "document"
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
+    if parsed.query:
+        suffix = hashlib.sha1(parsed.query.encode("utf-8")).hexdigest()[:10]
+        base = f"{base}_{suffix}"
+    base = base[:80]
+    if not base.endswith(".txt"):
+        base = f"{base}.txt"
+    return base
+
+
 async def crawl(
     start_url: str,
     *,
@@ -243,6 +277,107 @@ async def crawl(
             for w in workers:
                 w.cancel()
             await asyncio.gather(*workers, return_exceptions=True)
+
+
+def run(
+    start_url: str,
+    *,
+    max_pages: int = DEFAULT_MAX_PAGES,
+    max_depth: int = DEFAULT_MAX_DEPTH,
+    domain: str | None = None,
+    mongo_uri: str = DEFAULT_MONGO_URI,
+    progress_callback: Callable[[str], None] | None = None,
+) -> None:
+    """Synchronous entry point that stores crawled pages as plain text."""
+
+    parsed = urlparse.urlsplit(start_url)
+    allowed_domain = domain or parsed.netloc or None
+
+    logger.info(
+        "run crawler",
+        start_url=start_url,
+        max_pages=max_pages,
+        max_depth=max_depth,
+        allowed_domain=allowed_domain,
+    )
+
+    client = MongoClient(mongo_uri)
+    try:
+        try:
+            db = client.get_default_database()
+        except ConfigurationError:
+            db_name = os.getenv("MONGO_DATABASE", "smarthelperdb")
+            db = client[db_name]
+
+        documents_collection = db[os.getenv("MONGO_DOCUMENTS", "documents")]
+        gridfs = GridFS(db)
+        try:
+            documents_collection.create_index("url", unique=True)
+        except Exception:
+            pass
+
+        operations: list[UpdateOne] = []
+
+        async def _store() -> None:
+            async for page_url, html, _ctype in crawl(
+                start_url,
+                max_pages=max_pages,
+                max_depth=max_depth,
+                allowed_domain=allowed_domain,
+            ):
+                text = html_to_text(html)
+                if not text:
+                    logger.info("empty_page", url=page_url)
+                    if progress_callback:
+                        progress_callback(page_url)
+                    continue
+
+                filename = _filename_from_url(page_url)
+                description = text.replace("\n", " ").strip()[:200]
+                payload = text.encode("utf-8")
+
+                existing = documents_collection.find_one({"url": page_url}, {"fileId": 1})
+                if existing and existing.get("fileId"):
+                    try:
+                        gridfs.delete(ObjectId(existing["fileId"]))
+                    except Exception:
+                        logger.warning("gridfs_delete_failed", file_id=existing["fileId"])
+
+                file_id = gridfs.put(
+                    payload,
+                    filename=filename,
+                    content_type="text/plain",
+                    encoding="utf-8",
+                )
+
+                doc = {
+                    "name": filename,
+                    "description": description,
+                    "fileId": str(file_id),
+                    "url": page_url,
+                    "ts": time.time(),
+                    "content_type": "text/plain",
+                }
+
+                operations.append(
+                    UpdateOne({"url": page_url}, {"$set": doc}, upsert=True)
+                )
+
+                if progress_callback:
+                    progress_callback(page_url)
+
+                if len(operations) >= BATCH_SIZE:
+                    documents_collection.bulk_write(operations, ordered=False)
+                    operations.clear()
+
+        asyncio.run(_store())
+
+        if operations:
+            documents_collection.bulk_write(operations, ordered=False)
+
+        logger.info("crawler finished")
+    finally:
+        client.close()
 
 # ------------------------------ main --------------------------------- #
 

@@ -8,7 +8,8 @@ import hashlib
 import hmac
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -21,11 +22,14 @@ from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
 from mongo import MongoClient
-from settings import Settings
+from models import Document
+from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
+from gridfs import GridFS
+from bson import ObjectId
 from retrieval import search as retrieval_search
 import redis
 import requests
@@ -105,16 +109,18 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
     qdrant_client = QdrantClient(url=base_settings.qdrant_url)
     retrieval_search.qdrant = qdrant_client
 
+    mongo_cfg = MongoSettings()
     mongo_client = MongoClient(
-        settings.mongo.host,
-        settings.mongo.port,
-        settings.mongo.username,
-        settings.mongo.password,
-        settings.mongo.database,
-        settings.mongo.auth,
+        mongo_cfg.host,
+        mongo_cfg.port,
+        mongo_cfg.username,
+        mongo_cfg.password,
+        mongo_cfg.database,
+        mongo_cfg.auth,
     )
-    contexts_collection = settings.mongo.contexts
-    context_presets_collection = settings.mongo.presets
+    contexts_collection = mongo_cfg.contexts
+    context_presets_collection = mongo_cfg.presets
+    documents_collection = mongo_cfg.documents
 
     vector_store = None
 
@@ -123,6 +129,7 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
         "mongo": mongo_client,
         "contexts_collection": contexts_collection,
         "context_presets_collection": context_presets_collection,
+        "documents_collection": documents_collection,
         "vector_store": vector_store,
     }
 
@@ -231,6 +238,79 @@ def admin_logs(limit: int = 200) -> ORJSONResponse:
         limit = 200
     lines = get_recent_logs(limit)
     return ORJSONResponse({"lines": lines})
+
+
+@app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
+async def admin_knowledge(request: Request, q: str | None = None, limit: int = 50) -> ORJSONResponse:
+    """Return knowledge base documents for the admin UI."""
+
+    try:
+        limit = max(1, min(int(limit), 200))
+    except Exception:  # noqa: BLE001
+        limit = 50
+
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    def fetch_documents() -> tuple[list[dict[str, Any]], int]:
+        with SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=2000) as sync_client:
+            db = sync_client[mongo_cfg.database]
+            coll = db[collection]
+            if q:
+                regex = {"$regex": q, "$options": "i"}
+                query = {"$or": [{"name": regex}, {"description": regex}]}
+            else:
+                query = {}
+            total_count = coll.count_documents(query)
+            cursor = coll.find(query, {"_id": False}).sort("name", 1).limit(limit)
+            docs = [Document(**doc).model_dump() for doc in cursor]
+            return docs, total_count
+
+    try:
+        documents, total = await run_in_threadpool(fetch_documents)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail=f"MongoDB query failed: {exc}") from exc
+
+    matched = total
+    has_more = total > len(documents)
+
+    return ORJSONResponse(
+        {
+            "documents": documents,
+            "query": q or None,
+            "limit": limit,
+            "matched": matched,
+            "total": total,
+            "has_more": has_more,
+        }
+    )
+
+
+@app.get("/api/v1/admin/knowledge/documents/{file_id}")
+async def admin_download_document(request: Request, file_id: str) -> Response:
+    """Return the raw contents of a document from GridFS."""
+
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    def fetch_file() -> tuple[dict[str, Any], bytes]:
+        with SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=2000) as sync_client:
+            db = sync_client[mongo_cfg.database]
+            coll = db[collection]
+            doc = coll.find_one({"fileId": file_id}, {"_id": False})
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document metadata not found")
+            fs = GridFS(db)
+            try:
+                data = fs.get(ObjectId(file_id)).read()
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=404, detail="Failed to read document") from exc
+            return doc, data
+
+    doc_meta, payload = await run_in_threadpool(fetch_file)
+    filename = doc_meta.get("name") or f"{file_id}.bin"
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return Response(content=payload, media_type="application/octet-stream", headers=headers)
 
 
 @app.get("/", include_in_schema=False)

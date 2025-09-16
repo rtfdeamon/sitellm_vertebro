@@ -93,6 +93,9 @@ class Document(BaseModel):
     name: str
     description: str
     fileId: str
+    url: str | None = None
+    ts: float | None = None
+    content_type: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -100,6 +103,9 @@ class Document(BaseModel):
                 "name": "document.pdf",
                 "description": "The document description.",
                 "fileId": "686e3550df26ab9c2015d727",
+                "url": "https://example.com/file",
+                "ts": 1_700_000_000.0,
+                "content_type": "text/plain",
             }
         }
     )
