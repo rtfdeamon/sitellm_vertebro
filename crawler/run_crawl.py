@@ -51,6 +51,31 @@ DEFAULT_MONGO_URI: str = os.getenv(
 )
 DEFAULT_SITEMAP_URL: str | None = os.getenv("CRAWL_SITEMAP_URL")
 DEFAULT_IGNORE_ROBOTS: bool = os.getenv("CRAWL_IGNORE_ROBOTS", "0") == "1"
+BINARY_EXTENSIONS = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".svg",
+    ".bmp",
+    ".ico",
+    ".tiff",
+    ".mp3",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".zip",
+    ".rar",
+    ".7z",
+    ".doc",
+    ".docx",
+    ".ppt",
+    ".pptx",
+    ".xls",
+    ".xlsx",
+}
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 _redis_url = os.getenv("REDIS_URL")
 if _redis_url:
@@ -152,8 +177,13 @@ def extract_links(html: str, base_url: str) -> List[str]:
         abs_url: str = urlparse.urljoin(base_url, href)
         # убираем якоря, query‑параметры можно оставить
         abs_url = abs_url.split("#")[0]
-        if abs_url.startswith("http"):
-            links.append(abs_url)
+        if not abs_url.startswith("http"):
+            continue
+        parsed = urlparse.urlsplit(abs_url)
+        path = parsed.path.lower()
+        if any(path.endswith(ext) for ext in BINARY_EXTENSIONS):
+            continue
+        links.append(abs_url)
     return links
 
 
@@ -386,18 +416,19 @@ def main() -> None:  # pragma: no cover - convenience CLI
     parser.add_argument("--url", default=DEFAULT_START_URL, help="Start URL to crawl")
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     parser.add_argument("--max-depth", type=int, default=DEFAULT_MAX_DEPTH)
+    parser.add_argument("--mongo-uri", default=DEFAULT_MONGO_URI, help="MongoDB connection URI")
     args = parser.parse_args()
 
     if not args.url:
         sys.exit("❌ Need --url or set CRAWL_START_URL")
 
-    async def _run() -> None:
-        count = 0
-        async for _ in crawl(args.url, max_pages=args.max_pages, max_depth=args.max_depth):
-            count += 1
-        logger.info("crawl complete", pages=count)
-
-    asyncio.run(_run())
+    run(
+        args.url,
+        max_pages=args.max_pages,
+        max_depth=args.max_depth,
+        domain=urlparse.urlsplit(args.url).netloc,
+        mongo_uri=args.mongo_uri,
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
