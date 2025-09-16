@@ -147,16 +147,14 @@ printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
 read -r LLM_MODEL
 LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
 
-printf '[+] Mongo root username [root]: '
-read -r MONGO_USERNAME
-MONGO_USERNAME=${MONGO_USERNAME:-root}
-export MONGO_USERNAME
-
-printf '[+] Mongo root password [auto-generate if empty]: '
-read -r MONGO_PASSWORD
-if [ -z "$MONGO_PASSWORD" ]; then
+# Autogenerate Mongo root credentials if not provided via environment
+if [ -z "${MONGO_USERNAME:-}" ]; then
+  MONGO_USERNAME="mongo$(openssl rand -hex 4)"
+fi
+if [ -z "${MONGO_PASSWORD:-}" ]; then
   MONGO_PASSWORD=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | head -c16)
 fi
+export MONGO_USERNAME
 export MONGO_PASSWORD
 
 # GPU flag to boolean
@@ -204,6 +202,8 @@ update_env_var MONGO_HOST "mongo"
 update_env_var MONGO_PORT "27017"
 update_env_var MONGO_USERNAME "$MONGO_USERNAME"
 update_env_var MONGO_PASSWORD "$MONGO_PASSWORD"
+update_env_var MONGO_ROOT_USERNAME "$MONGO_USERNAME"
+update_env_var MONGO_ROOT_PASSWORD "$MONGO_PASSWORD"
 update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017"
 update_env_var USE_GPU "$USE_GPU"
 update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
