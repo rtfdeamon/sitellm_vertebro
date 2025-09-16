@@ -7,7 +7,6 @@ import os
 import signal
 
 from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
-from typing import Any
 from fastapi.responses import ORJSONResponse, StreamingResponse
 import asyncio
 
