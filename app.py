@@ -161,10 +161,11 @@ def _mongo_ok() -> bool:
     Containerized Mongo can take a moment to accept connections after it
     reports healthy. Use incremental timeouts to reduce false negatives.
     """
-    timeouts = (0.5, 1.5, 3.0)
-    for t in timeouts:
+    cfg = MongoSettings()
+    uri = f"mongodb://{cfg.username}:{cfg.password}@{cfg.host}:{cfg.port}/{cfg.auth}"
+    for timeout in (0.5, 1.5, 3.0):
         try:
-            mc = SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=int(t * 1000))
+            mc = SyncMongoClient(uri, serverSelectionTimeoutMS=int(timeout * 1000))
             mc.admin.command("ping")
             mc.close()
             return True
