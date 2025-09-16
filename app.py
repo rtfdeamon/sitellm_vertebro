@@ -155,61 +155,75 @@ app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 
 
-def _mongo_ok() -> bool:
-    """Best-effort Mongo probe with short retries.
+def _mongo_check() -> tuple[bool, str | None]:
+    """Best-effort Mongo probe with short retries."""
 
-    Containerized Mongo can take a moment to accept connections after it
-    reports healthy. Use incremental timeouts to reduce false negatives.
-    """
     cfg = MongoSettings()
     uri = f"mongodb://{cfg.username}:{cfg.password}@{cfg.host}:{cfg.port}/{cfg.auth}"
+    error: str | None = None
     for timeout in (0.5, 1.5, 3.0):
         try:
             mc = SyncMongoClient(uri, serverSelectionTimeoutMS=int(timeout * 1000))
             mc.admin.command("ping")
             mc.close()
-            return True
-        except Exception:
+            return True, None
+        except Exception as exc:
+            error = str(exc)
             continue
-    return False
+    return False, error
 
 
-def _redis_ok() -> bool:
-    for t in (0.5, 1.0):
+def _redis_check() -> tuple[bool, str | None]:
+    error: str | None = None
+    for timeout in (0.5, 1.0):
         try:
-            r = redis.from_url(base_settings.redis_url, socket_connect_timeout=t)
+            r = redis.from_url(base_settings.redis_url, socket_connect_timeout=timeout)
             ok = bool(r.ping())
             try:
                 r.close()
             except Exception:
                 pass
-            return ok
-        except Exception:
+            return ok, None if ok else "Ping failed"
+        except Exception as exc:
+            error = str(exc)
             continue
-    return False
+    return False, error
 
 
-def _qdrant_ok() -> bool:
-    for t in (0.8, 1.5):
+def _qdrant_check() -> tuple[bool, str | None]:
+    error: str | None = None
+    for timeout in (0.8, 1.5):
         try:
-            resp = requests.get(f"{base_settings.qdrant_url}/healthz", timeout=t)
+            resp = requests.get(f"{base_settings.qdrant_url}/healthz", timeout=timeout)
             if resp.ok:
-                return True
-        except Exception:
+                return True, None
+            error = f"HTTP {resp.status_code}"
+        except Exception as exc:
+            error = str(exc)
             continue
-    return False
+    return False, error
 
 
 @app.get("/health", include_in_schema=False)
 def health() -> dict[str, object]:
     """Health check with external service probes."""
+    mongo_ok, mongo_err = _mongo_check()
+    redis_ok, redis_err = _redis_check()
+    qdrant_ok, qdrant_err = _qdrant_check()
+
     checks = {
-        "mongo": _mongo_ok(),
-        "redis": _redis_ok(),
-        "qdrant": _qdrant_ok(),
+        "mongo": {"ok": mongo_ok, "error": mongo_err},
+        "redis": {"ok": redis_ok, "error": redis_err},
+        "qdrant": {"ok": qdrant_ok, "error": qdrant_err},
     }
-    status = "ok" if all(checks.values()) else "degraded"
-    return {"status": status, **checks}
+    status = "ok" if all(item["ok"] for item in checks.values()) else "degraded"
+    return {
+        "status": status,
+        "mongo": mongo_ok,
+        "redis": redis_ok,
+        "qdrant": qdrant_ok,
+        "details": checks,
+    }
 
 
 @app.get("/healthz", include_in_schema=False)
