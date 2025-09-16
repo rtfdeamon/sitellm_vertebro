@@ -47,11 +47,16 @@ DEFAULT_MONGO_URI: str = os.getenv(
 DEFAULT_SITEMAP_URL: str | None = os.getenv("CRAWL_SITEMAP_URL")
 DEFAULT_IGNORE_ROBOTS: bool = os.getenv("CRAWL_IGNORE_ROBOTS", "0") == "1"
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
-r = Redis(
-    host=os.getenv("REDIS_HOST", "redis"),
-    port=int(os.getenv("REDIS_PORT", "6379")),
-    decode_responses=True,
-)
+_redis_url = os.getenv("REDIS_URL")
+if _redis_url:
+    r = Redis.from_url(_redis_url, decode_responses=True)
+else:
+    r = Redis(
+        host=os.getenv("REDIS_HOST", "redis"),
+        port=int(os.getenv("REDIS_PORT", "6379")),
+        password=os.getenv("REDIS_PASSWORD") or None,
+        decode_responses=True,
+    )
 
 def _incr(key: str, delta: int = 1):
     try:
@@ -75,6 +80,17 @@ def _push_recent(url: str, limit: int = 20) -> None:
 
 def on_crawler_start():
     _set("started_at", time.time())
+
+
+def reset_counters() -> None:
+    """Reset queue counters before a new crawl run starts."""
+
+    for key in ("queued", "in_progress", "done", "failed"):
+        _set(key, 0)
+    try:
+        r.delete(REDIS_PREFIX + "recent_urls")
+    except Exception:
+        pass
 
 @contextmanager
 def mark_url(url: str):
@@ -157,6 +173,9 @@ async def crawl(
     result_queue: asyncio.Queue[Tuple[str, str, str]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
 
+    reset_counters()
+    on_crawler_start()
+
     await url_queue.put((start_url, 0))
     _incr("queued", 1)
 
@@ -185,6 +204,7 @@ async def crawl(
             with mark_url(url):
                 html, ctype = await _fetch_async(client, url)
             if html:
+                logger.info("page fetched", url=url, depth=depth, content_length=len(html))
                 await result_queue.put((url, html, ctype))
                 if not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain:
                     for link in extract_links(html, url):
@@ -192,6 +212,8 @@ async def crawl(
                             if link not in visited:
                                 await url_queue.put((link, depth + 1))
                                 _incr("queued", 1)
+            else:
+                logger.info("page skipped", url=url, reason="non_html_or_error")
             url_queue.task_done()
 
     # Create client
