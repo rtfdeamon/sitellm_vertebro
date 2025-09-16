@@ -40,6 +40,21 @@ Alternatively you can start the whole stack using Docker Compose:
 docker compose up --build
 ```
 
+For a minimal local run with the bundled values:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+# optional: immediately collect text pages for the knowledge base
+docker compose exec app python crawler/run_crawl.py \\
+  --url "https://mmvs.ru" \\
+  --mongo-uri "$MONGO_URI"
+```
+
+The crawler stores only plain text extracted from HTML. Binary links (PDF,
+images, archives, etc.) are skipped automatically so the knowledge base stays
+focused on textual content.
+
 ## One-shot deployment
 
 For an automated setup on Linux or macOS the repository ships a helper
