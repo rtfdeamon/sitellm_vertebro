@@ -37,6 +37,7 @@ import xml.etree.ElementTree as ET
 from bson import ObjectId
 
 from observability.logging import configure_logging
+from settings import MongoSettings
 
 
 configure_logging()
@@ -331,13 +332,43 @@ def run(
         allowed_domain=allowed_domain,
     )
 
-    client = MongoClient(mongo_uri)
+    mongo_cfg = MongoSettings()
+    uri_candidates: list[str] = []
+    if mongo_uri:
+        uri_candidates.append(mongo_uri)
+    cfg_uri = (
+        f"mongodb://{mongo_cfg.username}:{mongo_cfg.password}@"
+        f"{mongo_cfg.host}:{mongo_cfg.port}/{mongo_cfg.database}?authSource={mongo_cfg.auth}"
+    )
+    if cfg_uri not in uri_candidates:
+        uri_candidates.append(cfg_uri)
+
+    client: MongoClient | None = None
+    last_error: Exception | None = None
+    for uri in uri_candidates:
+        candidate: MongoClient | None = None
+        try:
+            candidate = MongoClient(uri)
+            candidate.admin.command("ping")
+            client = candidate
+            break
+        except Exception as exc:  # pragma: no cover - fallback path
+            last_error = exc
+            if candidate is not None:
+                try:
+                    candidate.close()
+                except Exception:
+                    pass
+            continue
+
+    if client is None:
+        raise RuntimeError("Cannot connect to MongoDB") from last_error
+
     try:
         try:
             db = client.get_default_database()
         except ConfigurationError:
-            db_name = os.getenv("MONGO_DATABASE", "smarthelperdb")
-            db = client[db_name]
+            db = client[mongo_cfg.database]
 
         documents_collection = db[os.getenv("MONGO_DOCUMENTS", "documents")]
         gridfs = GridFS(db)
