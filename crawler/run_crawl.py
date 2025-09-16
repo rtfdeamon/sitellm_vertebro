@@ -336,9 +336,21 @@ def run(
     uri_candidates: list[str] = []
     if mongo_uri:
         uri_candidates.append(mongo_uri)
-    cfg_uri = (
-        f"mongodb://{mongo_cfg.username}:{mongo_cfg.password}@"
-        f"{mongo_cfg.host}:{mongo_cfg.port}/{mongo_cfg.database}?authSource={mongo_cfg.auth}"
+    from urllib.parse import quote_plus
+
+    def build_uri(user: str | None, pwd: str | None, host: str, port: int, db: str, auth_db: str) -> str:
+        auth = ""
+        if user and pwd:
+            auth = f"{quote_plus(str(user))}:{quote_plus(str(pwd))}@"
+        return f"mongodb://{auth}{host}:{port}/{db}?authSource={auth_db}"
+
+    cfg_uri = build_uri(
+        mongo_cfg.username,
+        mongo_cfg.password,
+        mongo_cfg.host,
+        mongo_cfg.port,
+        mongo_cfg.database,
+        mongo_cfg.auth,
     )
     if cfg_uri not in uri_candidates:
         uri_candidates.append(cfg_uri)
@@ -348,7 +360,7 @@ def run(
     for uri in uri_candidates:
         candidate: MongoClient | None = None
         try:
-            candidate = MongoClient(uri)
+            candidate = MongoClient(uri, serverSelectionTimeoutMS=2000)
             candidate.admin.command("ping")
             client = candidate
             break
@@ -365,6 +377,12 @@ def run(
         raise RuntimeError("Cannot connect to MongoDB") from last_error
 
     try:
+        logger.info(
+            "mongo resolved",
+            uri=client.address,
+            db=mongo_cfg.database,
+            auth_db=mongo_cfg.auth,
+        )
         try:
             db = client.get_default_database()
         except ConfigurationError:
