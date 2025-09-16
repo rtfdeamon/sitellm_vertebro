@@ -147,12 +147,18 @@ printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
 read -r LLM_MODEL
 LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
 
-# Autogenerate Mongo root credentials if not provided via environment
+# Reuse existing Mongo credentials if present, otherwise apply deterministic defaults
+get_env_var() {
+  grep -E "^$1=" .env 2>/dev/null | tail -n1 | cut -d= -f2-
+}
+
 if [ -z "${MONGO_USERNAME:-}" ]; then
-  MONGO_USERNAME="mongo$(openssl rand -hex 4)"
+  MONGO_USERNAME=$(get_env_var MONGO_USERNAME)
+  MONGO_USERNAME=${MONGO_USERNAME:-root}
 fi
 if [ -z "${MONGO_PASSWORD:-}" ]; then
-  MONGO_PASSWORD=$(openssl rand -base64 12 | tr -dc 'A-Za-z0-9' | head -c16)
+  MONGO_PASSWORD=$(get_env_var MONGO_PASSWORD)
+  MONGO_PASSWORD=${MONGO_PASSWORD:-f76DlgezffdHetX}
 fi
 export MONGO_USERNAME
 export MONGO_PASSWORD

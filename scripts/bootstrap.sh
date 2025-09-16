@@ -117,8 +117,16 @@ prepare_env() {
     fi
   fi
   # Generate secrets if missing
-  : "${MONGO_USERNAME:=root}"
-  : "${MONGO_PASSWORD:=$(openssl rand -hex 8)}"
+  if grep -q '^MONGO_USERNAME=' .env 2>/dev/null; then
+    : "${MONGO_USERNAME:=$(grep -E '^MONGO_USERNAME=' .env | tail -n1 | cut -d= -f2-)}"
+  else
+    : "${MONGO_USERNAME:=root}"
+  fi
+  if grep -q '^MONGO_PASSWORD=' .env 2>/dev/null; then
+    : "${MONGO_PASSWORD:=$(grep -E '^MONGO_PASSWORD=' .env | tail -n1 | cut -d= -f2-)}"
+  else
+    : "${MONGO_PASSWORD:=f76DlgezffdHetX}"
+  fi
   : "${REDIS_PASSWORD:=$(openssl rand -hex 8)}"
   : "${GRAFANA_PASSWORD:=$(openssl rand -hex 8)}"
   : "${CRAWL_START_URL:=https://mmvs.ru}"
@@ -128,6 +136,8 @@ prepare_env() {
 
   update_env_var MONGO_USERNAME "${MONGO_USERNAME}"
   update_env_var MONGO_PASSWORD "${MONGO_PASSWORD}"
+  update_env_var MONGO_ROOT_USERNAME "${MONGO_USERNAME}"
+  update_env_var MONGO_ROOT_PASSWORD "${MONGO_PASSWORD}"
   update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017"
 
   update_env_var REDIS_PASSWORD "${REDIS_PASSWORD}"
