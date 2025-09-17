@@ -441,8 +441,15 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         raise HTTPException(status_code=400, detail="name is required")
 
     existing = await request.state.mongo.get_project(name)
-    title_value = payload.title.strip() if isinstance(payload.title, str) else (existing.title if existing else None)
-    domain_value = payload.domain.strip() if isinstance(payload.domain, str) else (existing.domain if existing else None)
+    if isinstance(payload.title, str):
+        title_value = payload.title.strip() or None
+    else:
+        title_value = existing.title if existing else None
+
+    if isinstance(payload.domain, str):
+        domain_value = payload.domain.strip() or None
+    else:
+        domain_value = existing.domain if existing else None
     model_value = payload.llm_model.strip() if isinstance(payload.llm_model, str) and payload.llm_model.strip() else (existing.llm_model if existing and existing.llm_model else None)
     prompt_value = payload.llm_prompt.strip() if isinstance(payload.llm_prompt, str) and payload.llm_prompt.strip() else (existing.llm_prompt if existing and existing.llm_prompt else None)
 

@@ -80,7 +80,7 @@
           <input type="text" id="projectDomain" placeholder="https://example.com">
         </label>
         <label style="flex:1 1 200px;">LLM модель
-          <input type="text" id="projectModel" placeholder="Vikhrmodels/...">
+          <select id="projectModel" style="width:100%;"></select>
         </label>
         <label style="flex:1 1 100%;">Стартовый промпт
           <textarea id="projectPrompt" rows="3" placeholder="Укажите инструкцию для модели" style="width:100%; resize:vertical;"></textarea>
@@ -227,7 +227,60 @@
     const projectPromptInput = document.getElementById('projectPrompt');
     const projectTestBtn = document.getElementById('projectTest');
     let projectsCache = {};
-    
+    let projectStatusTimer = null;
+    let projectStatusLocked = false;
+    let lastProjectCount = 0;
+
+    const LLM_MODEL_OPTIONS = [
+      { value: 'Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it', label: 'Vikhrmodels/YandexGPT-5-Lite-8B-it' },
+      { value: 'yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest', label: 'Yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest' },
+      { value: 'llama3.1:70b', label: 'LLaMA 3.1 70B (Ollama)' },
+      { value: 'qwen2.5:14b', label: 'Qwen2.5 14B (Ollama)' },
+    ];
+
+    function updateProjectSummary() {
+      if (projectStatusLocked || projectStatusTimer) return;
+      if (lastProjectCount > 0) {
+        projectStatus.textContent = `${lastProjectCount} проект(ов)`;
+      } else {
+        projectStatus.textContent = 'Добавьте проект ниже';
+      }
+    }
+
+    function setProjectStatus(message, timeoutMs) {
+      if (projectStatusTimer) {
+        clearTimeout(projectStatusTimer);
+        projectStatusTimer = null;
+      }
+      projectStatusLocked = !timeoutMs;
+      projectStatus.textContent = message;
+      if (timeoutMs) {
+        projectStatusTimer = setTimeout(() => {
+          projectStatusTimer = null;
+          projectStatusLocked = false;
+          updateProjectSummary();
+        }, timeoutMs);
+      }
+    }
+
+    function populateModelOptions(selectedValue) {
+      const value = (selectedValue || '').trim();
+      projectModelInput.innerHTML = '';
+      projectModelInput.appendChild(new Option('— выбрать модель —', '', !value, !value));
+      LLM_MODEL_OPTIONS.forEach(({ value: optValue, label }) => {
+        const option = new Option(label, optValue, false, optValue === value);
+        projectModelInput.appendChild(option);
+      });
+      if (value && !LLM_MODEL_OPTIONS.some((opt) => opt.value === value)) {
+        projectModelInput.appendChild(new Option(value, value, true, true));
+      }
+      if (!value) {
+        projectModelInput.value = '';
+      }
+    }
+
+    populateModelOptions('');
+
     function updateProjectInputs(){
       const projectField = document.getElementById('kbProject');
       const project = projectsCache[currentProject] || null;
@@ -346,9 +399,8 @@
       const query = qField.value.trim();
       if (query) params.set('q', query);
       if (currentProject) {
-        const projectId = currentProject.trim();
+        const projectId = currentProject.trim().toLowerCase();
         params.set('project', projectId);
-        currentProject = projectId;
       }
       try {
         const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
@@ -403,15 +455,17 @@
         list.innerHTML = '';
         const names = data.projects || [];
         names.forEach((name) => {
+          const normalized = (name || '').toLowerCase();
           const option = document.createElement('option');
-          option.value = name;
+          option.value = normalized;
           list.appendChild(option);
         });
         document.getElementById('kbProjectsSummary').textContent = names.length ? `${names.length} проект(ов)` : '—';
         if (!currentProject && names.length) {
-          currentProject = names[0];
-          projectSelect.value = currentProject;
-          updateProjectInputs();
+          currentProject = (names[0] || '').toLowerCase();
+          populateProjectForm(currentProject);
+          loadKnowledge();
+          pollStatus();
         }
       } catch (error) {
         console.error(error);
@@ -420,7 +474,7 @@
 
     async function saveKnowledge(e){
       e.preventDefault();
-      const projectName = currentProject.trim();
+      const projectName = currentProject.trim().toLowerCase();
       if (!projectName) {
         document.getElementById('kbAddStatus').textContent = 'Выберите проект';
         return;
@@ -478,7 +532,7 @@
       projectNameInput.value = project ? project.name : normalized;
       projectTitleInput.value = project?.title || '';
       projectDomainInput.value = project?.domain || '';
-      projectModelInput.value = project?.llm_model || '';
+      populateModelOptions(project?.llm_model || '');
       projectPromptInput.value = project?.llm_prompt || '';
       currentProject = normalized;
       projectSelect.value = currentProject;
@@ -493,32 +547,49 @@
         const projects = data.projects || [];
         projectSelect.innerHTML = '';
         projectsCache = {};
+        lastProjectCount = projects.length;
+
         if (!projects.length) {
           projectSelect.appendChild(new Option('— нет проектов —', '', true, true));
+          projectSelect.disabled = true;
           currentProject = '';
-          projectStatus.textContent = 'Добавьте проект ниже';
-          updateProjectInputs();
+          populateProjectForm('');
+          updateProjectSummary();
           return;
         }
+
+        projectSelect.disabled = false;
+        projectSelect.appendChild(new Option('— выберите проект —', '', false, !currentProject));
+
+        let selectedKey = currentProject && projects.some(p => (p.name || '').toLowerCase() === currentProject)
+          ? currentProject
+          : '';
+
         projects.forEach((p, idx) => {
           const key = (p.name || '').toLowerCase();
-          projectsCache[key] = p;
-          const opt = new Option(p.title || p.name, key, false, key === currentProject || (idx === 0 && !currentProject));
-          projectSelect.appendChild(opt);
+          projectsCache[key] = {
+            ...p,
+            name: key,
+            llm_model: typeof p.llm_model === 'string' ? p.llm_model.trim() : p.llm_model,
+          };
+          const shouldSelect = key === selectedKey || (!selectedKey && idx === 0);
+          const option = new Option(p.title || p.name || key, key, false, shouldSelect);
+          projectSelect.appendChild(option);
+          if (shouldSelect) {
+            selectedKey = key;
+          }
         });
-        if (!currentProject || !projectsCache[currentProject]) {
-          currentProject = (projects[0].name || '').toLowerCase();
-        }
-        projectSelect.value = currentProject;
-        projectStatus.textContent = `${projects.length} проект(ов)`;
+
+        currentProject = selectedKey;
         populateProjectForm(currentProject);
+        updateProjectSummary();
       } catch (error) {
         console.error(error);
       }
     }
 
     projectSelect.addEventListener('change', () => {
-      currentProject = projectSelect.value.trim();
+      currentProject = projectSelect.value.trim().toLowerCase();
       populateProjectForm(currentProject);
       loadKnowledge();
       pollStatus();
@@ -528,17 +599,17 @@
       e.preventDefault();
       const name = projectNameInput.value.trim().toLowerCase();
       if (!name) {
-        projectStatus.textContent = 'Укажите идентификатор';
+        setProjectStatus('Укажите идентификатор', 3000);
         return;
       }
       const payload = {
         name,
         title: projectTitleInput.value.trim() || null,
         domain: projectDomainInput.value.trim() || null,
-        llm_model: projectModelInput.value.trim() || null,
+        llm_model: projectModelInput.value || null,
         llm_prompt: projectPromptInput.value.trim() || null,
       };
-      projectStatus.textContent = 'Сохраняем проект...';
+      setProjectStatus('Сохраняем проект...');
       try {
         const resp = await fetch('/api/v1/admin/projects', {
           method: 'POST',
@@ -546,7 +617,7 @@
           body: JSON.stringify(payload),
         });
         if (!resp.ok) {
-          projectStatus.textContent = 'Не удалось сохранить проект';
+          setProjectStatus('Не удалось сохранить проект', 4000);
           return;
         }
         currentProject = name;
@@ -554,11 +625,11 @@
         await loadProjectsList();
         await loadKnowledge();
         pollStatus();
-        projectStatus.textContent = 'Сохранено';
+        setProjectStatus('Сохранено', 2000);
         populateProjectForm(currentProject);
       } catch (error) {
         console.error(error);
-        projectStatus.textContent = 'Ошибка';
+        setProjectStatus('Ошибка сохранения', 4000);
       }
     });
 
@@ -569,7 +640,7 @@
       try {
         const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(toDelete)}`, { method: 'DELETE' });
         if (!resp.ok) {
-          projectStatus.textContent = 'Не удалось удалить';
+          setProjectStatus('Не удалось удалить', 4000);
           return;
         }
         delete projectsCache[toDelete];
@@ -578,23 +649,23 @@
         await loadProjectsList();
         document.getElementById('kbTable').innerHTML = '';
         document.getElementById('kbInfo').textContent = '';
-        projectStatus.textContent = 'Удалено';
+        setProjectStatus('Удалено', 2000);
       } catch (error) {
         console.error(error);
-        projectStatus.textContent = 'Ошибка удаления';
+        setProjectStatus('Ошибка удаления', 4000);
       }
     });
 
     projectTestBtn.addEventListener('click', async () => {
       if (!currentProject) {
-        projectStatus.textContent = 'Выберите проект';
+        setProjectStatus('Выберите проект', 3000);
         return;
       }
-      projectStatus.textContent = 'Тестируем сервисы...';
+      setProjectStatus('Тестируем сервисы...');
       try {
         const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/test`);
         if (!resp.ok) {
-          projectStatus.textContent = 'Ошибка теста';
+          setProjectStatus('Ошибка теста', 4000);
           return;
         }
         const data = await resp.json();
@@ -602,10 +673,10 @@
           const result = data[key];
           return `${key}: ${result.ok ? 'ok' : 'fail'}${result.error ? ` (${result.error})` : ''}`;
         });
-        projectStatus.textContent = parts.join(' · ');
+        setProjectStatus(parts.join(' · '), 4000);
       } catch (error) {
         console.error(error);
-        projectStatus.textContent = 'Ошибка теста';
+        setProjectStatus('Ошибка теста', 4000);
       }
     });
 
