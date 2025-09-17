@@ -242,9 +242,6 @@ export PROJECT_NAME
 printf '[+] Enable GPU? [y/N]: '
 read -r ENABLE_GPU
 ENABLE_GPU=${ENABLE_GPU:-N}
-printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
-read -r LLM_MODEL
-LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
 
 # Reuse existing Mongo credentials if present, otherwise apply deterministic defaults
 
@@ -329,7 +326,6 @@ update_env_var() {
 update_env_var DOMAIN "$DOMAIN"
 update_env_var CRAWL_START_URL "$CRAWL_START_URL"
 update_env_var PROJECT_NAME "$PROJECT_NAME"
-update_env_var LLM_MODEL "$LLM_MODEL"
 update_env_var REDIS_PASSWORD "$REDIS_PASS"
 update_env_var REDIS_URL "$REDIS_URL"
 update_env_var CELERY_BROKER "$REDIS_URL"
