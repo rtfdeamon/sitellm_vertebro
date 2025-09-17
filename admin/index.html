@@ -96,7 +96,12 @@
     <div class="card" style="grid-column: 1 / -1;">
       <b>Knowledge Base</b>
       <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
-        <label style="flex:1 1 260px;">Поиск
+        <label style="flex:1 1 200px;">Домен
+          <input type="text" list="kbDomainList" id="kbDomain" placeholder="example.com" style="width:100%;">
+          <datalist id="kbDomainList"></datalist>
+        </label>
+        <button type="button" id="kbReloadDomains" title="Обновить список доменов">↻</button>
+        <label style="flex:1 1 240px;">Поиск
           <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
         </label>
         <label>Limit
@@ -105,11 +110,31 @@
         <button type="submit">Обновить</button>
         <button type="button" id="kbClear">Очистить</button>
         <span class="muted" id="kbInfo"></span>
+        <span class="muted" id="kbDomainsSummary"></span>
+      </form>
+      <form id="kbAddForm" style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px;">
+        <label style="flex:1 1 220px;">Имя
+          <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
+        </label>
+        <label style="flex:1 1 220px;">URL
+          <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
+        </label>
+        <label style="flex:1 1 220px;">Описание
+          <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
+        </label>
+        <label style="flex:1 1 100%;">Текст
+          <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
+        </label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="submit">Сохранить</button>
+          <button type="button" id="kbResetForm">Сбросить</button>
+          <span class="muted" id="kbAddStatus"></span>
+        </div>
       </form>
       <div style="max-height:240px; overflow:auto; border:1px solid #e0e0e0; border-radius:6px;">
         <table>
           <thead>
-            <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Файл</th></tr>
+            <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Домен</th><th class="nowrap">Файл</th></tr>
           </thead>
           <tbody id="kbTable"></tbody>
         </table>
@@ -152,6 +177,7 @@
       } catch {}
     });
 
+    let currentDomain = '';
     async function pollStatus() {
       try {
         const resp = await fetch('/api/v1/crawler/status');
@@ -244,11 +270,19 @@
     async function loadKnowledge(){
       const limitField = document.getElementById('kbLimit');
       const qField = document.getElementById('kbSearch');
+      const domainField = document.getElementById('kbDomain');
       const params = new URLSearchParams();
       const limit = Number(limitField.value || 50);
       if (Number.isFinite(limit)) params.set('limit', Math.min(Math.max(limit, 10), 200));
       const query = qField.value.trim();
       if (query) params.set('q', query);
+      const domain = (domainField.value || '').trim();
+      if (domain) {
+        params.set('domain', domain);
+        currentDomain = domain;
+      } else {
+        currentDomain = '';
+      }
       try {
         const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
         if (!resp.ok) throw new Error('knowledge request failed');
@@ -259,7 +293,7 @@
         if (!docs.length) {
           const row = document.createElement('tr');
           const cell = document.createElement('td');
-          cell.colSpan = 3;
+          cell.colSpan = 4;
           cell.textContent = query ? 'Ничего не найдено' : 'Документов нет';
           row.appendChild(cell);
           tbody.appendChild(row);
@@ -270,6 +304,8 @@
             nameTd.textContent = doc.name || '–';
             const descTd = document.createElement('td');
             descTd.textContent = doc.description || '–';
+            const domainTd = document.createElement('td');
+            domainTd.textContent = doc.domain || '–';
             const linkTd = document.createElement('td');
             const a = document.createElement('a');
             a.textContent = 'Скачать';
@@ -277,13 +313,13 @@
             a.target = '_blank';
             a.rel = 'noopener';
             linkTd.appendChild(a);
-            tr.append(nameTd, descTd, linkTd);
+            tr.append(nameTd, descTd, domainTd, linkTd);
             tbody.appendChild(tr);
           }
         }
         const matched = data.matched ?? docs.length;
         const total = data.total ?? matched;
-        const infoText = `Показано ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}`;
+        const infoText = `Показано ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}${currentDomain ? ` · ${currentDomain}` : ''}`;
         document.getElementById('kbInfo').textContent = infoText;
       } catch (error) {
         document.getElementById('kbInfo').textContent = 'Ошибка загрузки базы знаний';
@@ -291,9 +327,82 @@
       }
     }
 
+    async function loadDomains(){
+      try {
+        const resp = await fetch('/api/v1/admin/domains');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const list = document.getElementById('kbDomainList');
+        list.innerHTML = '';
+        const domains = data.domains || [];
+        domains.forEach((d) => {
+          const option = document.createElement('option');
+          option.value = d;
+          list.appendChild(option);
+        });
+        document.getElementById('kbDomainsSummary').textContent = domains.length ? `${domains.length} домен(ов)` : '—';
+        const domainField = document.getElementById('kbDomain');
+        if (!domainField.value && domains.length) {
+          domainField.value = domains[0];
+          currentDomain = domains[0];
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function saveKnowledge(e){
+      e.preventDefault();
+      const domain = (document.getElementById('kbDomain').value || '').trim();
+      const name = document.getElementById('kbNewName').value.trim();
+      const url = document.getElementById('kbNewUrl').value.trim();
+      const description = document.getElementById('kbNewDescription').value.trim();
+      const content = document.getElementById('kbNewContent').value;
+      const statusLabel = document.getElementById('kbAddStatus');
+      statusLabel.textContent = 'Сохраняем...';
+      try {
+        const resp = await fetch('/api/v1/admin/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name || null,
+            content,
+            domain: domain || null,
+            description: description || null,
+            url: url || null,
+          }),
+        });
+        if (!resp.ok) {
+          statusLabel.textContent = 'Ошибка сохранения';
+          return;
+        }
+        statusLabel.textContent = 'Сохранено';
+        document.getElementById('kbNewName').value = '';
+        document.getElementById('kbNewUrl').value = '';
+        document.getElementById('kbNewDescription').value = '';
+        document.getElementById('kbNewContent').value = '';
+        await loadKnowledge();
+        await loadDomains();
+      } catch (error) {
+        console.error(error);
+        statusLabel.textContent = 'Ошибка сохранения';
+      }
+    }
+
     document.getElementById('kbForm').addEventListener('submit', (e)=>{ e.preventDefault(); loadKnowledge(); });
     document.getElementById('kbClear').addEventListener('click', ()=>{ document.getElementById('kbSearch').value=''; loadKnowledge(); });
-    loadKnowledge();
+    document.getElementById('kbDomain').addEventListener('change', ()=>{ loadKnowledge(); });
+    document.getElementById('kbReloadDomains').addEventListener('click', async ()=>{ await loadDomains(); loadKnowledge(); });
+    document.getElementById('kbAddForm').addEventListener('submit', saveKnowledge);
+    document.getElementById('kbResetForm').addEventListener('click', () => {
+      document.getElementById('kbNewName').value = '';
+      document.getElementById('kbNewUrl').value = '';
+      document.getElementById('kbNewDescription').value = '';
+      document.getElementById('kbNewContent').value = '';
+      document.getElementById('kbAddStatus').textContent = '';
+    });
+
+    loadDomains().then(loadKnowledge);
 
     // Controls for LLM config
     document.getElementById('saveLLM').addEventListener('click', async () => {

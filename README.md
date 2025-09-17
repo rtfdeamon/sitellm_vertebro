@@ -56,6 +56,16 @@ The crawler stores only plain text extracted from HTML. Binary links (PDF,
 images, archives, etc.) are skipped automatically so the knowledge base stays
 focused on textual content.
 
+### Multi-domain knowledge bases
+
+The admin UI now allows managing several projects (domains) inside one
+deployment. Specify the desired domain in the “Knowledge Base” card when
+searching or adding documents; entries are stored with this domain marker in
+MongoDB(GridFS) and reused after container restarts. The crawler automatically
+assigns documents to the domain derived from the start URL host, so each
+domain keeps its own knowledge set while continuing to use the same Ollama
+language model.
+
 ## One-shot deployment
 
 For an automated setup on Linux or macOS the repository ships a helper

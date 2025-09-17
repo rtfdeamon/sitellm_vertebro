@@ -74,7 +74,7 @@ def _safe_int(x) -> int:
         return 0
 
 
-def get_status() -> Status:
+def get_status(domain: str | None = None) -> Status:
     """Collect and return the current :class:`Status`.
 
     Connects to Redis, MongoDB and Qdrant using environment variables for
@@ -128,19 +128,25 @@ def get_status() -> Status:
             names = mdb.list_collection_names()
         except Exception:
             names = []
+        doc_filter = {"domain": domain} if domain else {}
         if "documents" in names:
             try:
-                doc = mdb["documents"].find_one(sort=[("ts", -1)])
+                doc = mdb["documents"].find_one(
+                    doc_filter or {},
+                    sort=[("ts", -1)],
+                )
                 if doc and doc.get("ts"):
                     last_crawl_ts = float(doc["ts"])
             except Exception:
                 pass
-        for col in ("documents", "pages", "chunks"):
-            if col in names:
-                try:
-                    mongo_docs += mdb[col].estimated_document_count()
-                except Exception:
-                    pass
+        if "documents" in names:
+            try:
+                if doc_filter:
+                    mongo_docs += mdb["documents"].count_documents(doc_filter)
+                else:
+                    mongo_docs += mdb["documents"].estimated_document_count()
+            except Exception:
+                pass
     except Exception as exc:
         logger.warning(
             "mongo connection failed",
@@ -201,9 +207,9 @@ def get_status() -> Status:
     )
 
 
-def status_dict() -> Dict[str, Any]:
+def status_dict(domain: str | None = None) -> Dict[str, Any]:
     """Return the status as a plain dictionary with convenience fields."""
-    s = get_status()
+    s = get_status(domain)
     out = asdict(s)
     out["fill_percent"] = out["db"]["fill_percent"]
     if out.get("last_crawl_ts"):

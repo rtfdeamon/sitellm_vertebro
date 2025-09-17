@@ -323,6 +323,7 @@ def run(
 
     parsed = urlparse.urlsplit(start_url)
     allowed_domain = domain or parsed.netloc or None
+    document_domain = allowed_domain or MongoSettings().host
 
     logger.info(
         "run crawler",
@@ -391,7 +392,9 @@ def run(
         documents_collection = db[os.getenv("MONGO_DOCUMENTS", "documents")]
         gridfs = GridFS(db)
         try:
-            documents_collection.create_index("url", unique=True)
+            documents_collection.create_index(
+                [("domain", 1), ("url", 1)], unique=True, name="domain_url_unique"
+            )
         except Exception:
             pass
 
@@ -415,7 +418,10 @@ def run(
                 description = text.replace("\n", " ").strip()[:200]
                 payload = text.encode("utf-8")
 
-                existing = documents_collection.find_one({"url": page_url}, {"fileId": 1})
+                existing = documents_collection.find_one(
+                    {"url": page_url, "domain": document_domain},
+                    {"fileId": 1},
+                )
                 if existing and existing.get("fileId"):
                     try:
                         gridfs.delete(ObjectId(existing["fileId"]))
@@ -436,6 +442,7 @@ def run(
                     "url": page_url,
                     "ts": time.time(),
                     "content_type": "text/plain",
+                    "domain": document_domain,
                 }
 
                 operations.append(

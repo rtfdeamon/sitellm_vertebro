@@ -33,6 +33,8 @@ from bson import ObjectId
 from retrieval import search as retrieval_search
 import redis
 import requests
+from pydantic import BaseModel
+from uuid import uuid4
 
 
 configure_logging()
@@ -44,6 +46,14 @@ ADMIN_PASSWORD_HASH = os.getenv(
     "ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest()
 )
 ADMIN_PASSWORD_DIGEST = bytes.fromhex(ADMIN_PASSWORD_HASH)
+
+
+def _normalize_domain(value: str | None) -> str | None:
+    domain = (value or "").strip()
+    if not domain:
+        default = settings.domain or os.getenv("DOMAIN", "")
+        domain = default.strip() if default else ""
+    return domain.lower() or None
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -233,9 +243,9 @@ def healthz() -> dict[str, str]:
 
 
 @app.get("/status")
-def status() -> dict[str, object]:
+def status(domain: str | None = None) -> dict[str, object]:
     """Return aggregated crawler and database status."""
-    return status_dict()
+    return status_dict(_normalize_domain(domain))
 
 
 @app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
@@ -255,8 +265,21 @@ def admin_logs(limit: int = 200) -> ORJSONResponse:
     return ORJSONResponse({"lines": lines})
 
 
+class KnowledgeCreate(BaseModel):
+    name: str | None = None
+    content: str
+    domain: str | None = None
+    description: str | None = None
+    url: str | None = None
+
+
 @app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
-async def admin_knowledge(request: Request, q: str | None = None, limit: int = 50) -> ORJSONResponse:
+async def admin_knowledge(
+    request: Request,
+    q: str | None = None,
+    limit: int = 50,
+    domain: str | None = None,
+) -> ORJSONResponse:
     """Return knowledge base documents for the admin UI."""
 
     try:
@@ -264,30 +287,36 @@ async def admin_knowledge(request: Request, q: str | None = None, limit: int = 5
     except Exception:  # noqa: BLE001
         limit = 50
 
+    domain_value = _normalize_domain(domain)
+
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-
-    def fetch_documents() -> tuple[list[dict[str, Any]], int]:
-        with SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=2000) as sync_client:
-            db = sync_client[mongo_cfg.database]
-            coll = db[collection]
-            if q:
-                regex = {"$regex": q, "$options": "i"}
-                query = {"$or": [{"name": regex}, {"description": regex}]}
-            else:
-                query = {}
-            total_count = coll.count_documents(query)
-            cursor = coll.find(query, {"_id": False}).sort("name", 1).limit(limit)
-            docs = [Document(**doc).model_dump() for doc in cursor]
-            return docs, total_count
+    filter_query = {"domain": domain_value} if domain_value else {}
 
     try:
-        documents, total = await run_in_threadpool(fetch_documents)
+        if q:
+            docs_models = await request.state.mongo.search_documents(
+                collection, q, domain=domain_value
+            )
+        else:
+            cursor = (
+                request.state.mongo.db[collection]
+                .find(filter_query, {"_id": False})
+                .sort("name", 1)
+                .limit(limit)
+            )
+            docs_models = [Document(**doc) async for doc in cursor]
+
+        documents = [doc.model_dump() if isinstance(doc, Document) else doc for doc in docs_models]
+        total = await request.state.mongo.db[collection].count_documents(filter_query or {})
+        if q:
+            matched = len(documents)
+            has_more = len(documents) >= limit
+        else:
+            matched = total
+            has_more = len(documents) < total
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"MongoDB query failed: {exc}") from exc
-
-    matched = total
-    has_more = total > len(documents)
 
     return ORJSONResponse(
         {
@@ -297,8 +326,54 @@ async def admin_knowledge(request: Request, q: str | None = None, limit: int = 5
             "matched": matched,
             "total": total,
             "has_more": has_more,
+            "domain": domain_value,
         }
     )
+
+
+@app.post("/api/v1/admin/knowledge", response_class=ORJSONResponse, status_code=201)
+async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> ORJSONResponse:
+    """Create or update a text document in the knowledge base."""
+
+    if not payload.content.strip():
+        raise HTTPException(status_code=400, detail="Content is empty")
+
+    name = (payload.name or "").strip()
+    if not name:
+        name = f"doc-{uuid4().hex[:8]}"
+
+    domain_value = _normalize_domain(payload.domain)
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    try:
+        file_id = await request.state.mongo.upsert_text_document(
+            name=name,
+            content=payload.content,
+            documents_collection=collection,
+            description=payload.description,
+            domain=domain_value,
+            url=payload.url,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return ORJSONResponse({"file_id": file_id, "name": name, "domain": domain_value})
+
+
+@app.get("/api/v1/admin/domains", response_class=ORJSONResponse)
+async def admin_domains(request: Request, limit: int = 100) -> ORJSONResponse:
+    """Return a list of known knowledge base domains."""
+
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    domains = await request.state.mongo.list_domains(collection, limit=limit)
+    default_domain = _normalize_domain(None)
+    if default_domain and default_domain not in domains:
+        domains.insert(0, default_domain)
+    return ORJSONResponse({"domains": domains})
 
 
 @app.get("/api/v1/admin/knowledge/documents/{file_id}")

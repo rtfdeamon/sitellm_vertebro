@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from urllib.parse import quote_plus
 import hashlib
 import json
+import time
 
 import structlog
 from bson import ObjectId
@@ -133,11 +134,16 @@ class MongoClient:
         async for message in cursor:
             yield Document(**message)
 
-    async def search_documents(self, collection: str, query: str) -> list[Document]:
+    async def search_documents(
+        self, collection: str, query: str, domain: str | None = None
+    ) -> list[Document]:
         """Return documents from ``collection`` whose fields match ``query`` (cached)."""
         # Use a text index on 'name' or 'description' for keyword search
-        search_query = {"$text": {"$search": query}}
-        key = "prefilter:" + hashlib.sha1(query.lower().encode()).hexdigest()
+        search_query: dict = {"$text": {"$search": query}}
+        if domain:
+            search_query["domain"] = domain
+        key_parts = ["prefilter", domain or "__global__", hashlib.sha1(query.lower().encode()).hexdigest()]
+        key = ":".join(key_parts)
         redis = _get_redis()
         cached = await redis.get(key)
         if cached:
@@ -161,7 +167,15 @@ class MongoClient:
         return await file.read()
 
     async def upload_document(
-        self, file_name: str, file: bytes, documents_collection: str
+        self,
+        file_name: str,
+        file: bytes,
+        documents_collection: str,
+        *,
+        description: str | None = None,
+        url: str | None = None,
+        content_type: str | None = None,
+        domain: str | None = None,
     ) -> str:
         """Upload ``file`` to GridFS and store metadata in ``documents_collection``.
 
@@ -171,7 +185,80 @@ class MongoClient:
             The generated GridFS ``file_id``.
         """
         f_id = await self.gridfs.put(file)
-        document = Document(name=file_name, description="", fileId=str(f_id))
+        document = Document(
+            name=file_name,
+            description=description or "",
+            fileId=str(f_id),
+            url=url,
+            ts=time.time(),
+            content_type=content_type,
+            domain=domain,
+        )
         await self.db[documents_collection].insert_one(document.model_dump())
 
         return str(f_id)
+
+    async def upsert_text_document(
+        self,
+        *,
+        name: str,
+        content: str,
+        documents_collection: str,
+        description: str | None = None,
+        domain: str | None = None,
+        url: str | None = None,
+    ) -> str:
+        """Upsert a plain-text document under ``domain``."""
+
+        payload = content.encode("utf-8")
+        description = description or content.replace("\n", " ").strip()[:200]
+        existing = await self.db[documents_collection].find_one(
+            {"name": name, "domain": domain},
+            {"fileId": 1},
+        )
+        if existing and existing.get("fileId"):
+            try:
+                await self.gridfs.delete(ObjectId(existing["fileId"]))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("gridfs_delete_failed", file_id=existing["fileId"], error=str(exc))
+
+        file_id = await self.gridfs.put(
+            payload,
+            filename=name,
+            content_type="text/plain",
+            encoding="utf-8",
+        )
+
+        doc = Document(
+            name=name,
+            description=description,
+            fileId=str(file_id),
+            url=url,
+            ts=time.time(),
+            content_type="text/plain",
+            domain=domain,
+        ).model_dump()
+
+        await self.db[documents_collection].update_one(
+            {"name": name, "domain": domain},
+            {"$set": doc},
+            upsert=True,
+        )
+
+        return str(file_id)
+
+    async def list_domains(self, documents_collection: str, limit: int = 100) -> list[str]:
+        """Return a list of distinct domains stored in ``documents_collection``."""
+
+        cursor = self.db[documents_collection].aggregate(
+            [
+                {"$match": {"domain": {"$ne": None}}},
+                {"$group": {"_id": "$domain"}},
+                {"$limit": limit},
+            ]
+        )
+        domains: list[str] = []
+        async for item in cursor:
+            if item.get("_id"):
+                domains.append(item["_id"])
+        return sorted(domains)

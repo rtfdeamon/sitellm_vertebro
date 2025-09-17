@@ -180,10 +180,10 @@ async def run_crawler(req: CrawlRequest, background_tasks: BackgroundTasks) -> d
 
 
 @crawler_router.get("/status")
-async def crawler_status() -> dict[str, object]:
+async def crawler_status(domain: str | None = None) -> dict[str, object]:
     """Return current crawler and database status."""
 
-    return status_dict()
+    return status_dict(domain)
 
 
 @crawler_router.post("/stop", status_code=202)

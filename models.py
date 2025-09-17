@@ -96,6 +96,7 @@ class Document(BaseModel):
     url: str | None = None
     ts: float | None = None
     content_type: str | None = None
+    domain: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -106,6 +107,7 @@ class Document(BaseModel):
                 "url": "https://example.com/file",
                 "ts": 1_700_000_000.0,
                 "content_type": "text/plain",
+                "domain": "example.com",
             }
         }
     )
