@@ -80,6 +80,43 @@ is_port_free() {
       return 1
     fi
   fi
+
+  # Fall back to an actual bind test so we do not pick a port that is busy but
+  # hidden from ss/lsof (e.g. docker-proxy without root or missing tools).
+  local py_cmd=""
+  if command -v python3 >/dev/null 2>&1; then
+    py_cmd="python3"
+  elif command -v python >/dev/null 2>&1; then
+    py_cmd="python"
+  fi
+
+  if [ -n "$py_cmd" ]; then
+    if ! "$py_cmd" - "$p" <<'PY' >/dev/null 2>&1; then
+import socket
+import sys
+
+port = int(sys.argv[1])
+
+def can_bind(sock_family, address):
+    sock = socket.socket(sock_family, socket.SOCK_STREAM)
+    try:
+        sock.bind(address)
+    except OSError:
+        return False
+    finally:
+        sock.close()
+    return True
+
+if not can_bind(socket.AF_INET, ("0.0.0.0", port)):
+    sys.exit(1)
+
+if socket.has_ipv6:
+    if not can_bind(socket.AF_INET6, ("::", port)):
+        sys.exit(1)
+PY
+      return 1
+    fi
+  fi
   return 0
 }
 
