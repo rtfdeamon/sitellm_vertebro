@@ -182,6 +182,17 @@ cleanup_previous_stack() {
   fi
 }
 
+verify_mongo_connection() {
+  local attempts="${1:-10}"
+  for i in $(seq 1 "$attempts"); do
+    if "${COMPOSE_CMD[@]}" exec -T mongo mongosh "${MONGO_URI}" --quiet --eval 'db.runCommand({ping: 1})' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 AUTO_YES=0
 if [ "${1-}" = "--yes" ]; then
   AUTO_YES=1
@@ -318,7 +329,9 @@ update_env_var MONGO_ROOT_USERNAME "$MONGO_USERNAME"
 update_env_var MONGO_ROOT_PASSWORD "$MONGO_PASSWORD"
 update_env_var MONGO_DATABASE "$MONGO_DATABASE"
 update_env_var MONGO_AUTH "$MONGO_AUTH"
-update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DATABASE}?authSource=${MONGO_AUTH}"
+MONGO_URI="mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DATABASE}?authSource=${MONGO_AUTH}"
+export MONGO_URI
+update_env_var MONGO_URI "$MONGO_URI"
 update_env_var USE_GPU "$USE_GPU"
 update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
 APP_PORT_HOST=$(pick_free_port "${HOST_APP_PORT:-18000}")
@@ -417,6 +430,25 @@ fi
 
 "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
 printf '[✓] Containers running\n'
+
+printf '[+] Verifying Mongo connectivity...\n'
+if verify_mongo_connection 10; then
+  echo '[✓] Mongo reachable'
+else
+  echo '[!] Mongo authentication failed; resetting mongo_data volume'
+  "${COMPOSE_CMD[@]}" down --remove-orphans >/dev/null 2>&1 || true
+  if docker volume inspect sitellm_vertebro_mongo_data >/dev/null 2>&1; then
+    docker volume rm sitellm_vertebro_mongo_data >/dev/null 2>&1 || true
+  fi
+  "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
+  printf '[+] Retrying Mongo connectivity...\n'
+  if verify_mongo_connection 15; then
+    echo '[✓] Mongo reachable after volume reset'
+  else
+    echo '[!] Mongo remains unreachable; aborting deploy'
+    exit 1
+  fi
+fi
 
 if [ -d "./knowledge_base" ]; then
   printf '[+] Uploading knowledge base...\n'
