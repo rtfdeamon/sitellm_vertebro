@@ -198,25 +198,6 @@ if [ "${1-}" = "--yes" ]; then
   AUTO_YES=1
 fi
 
-if [ "$AUTO_YES" -eq 1 ]; then
-  DOMAIN="${DOMAIN?DOMAIN env variable required with --yes}"
-else
-  printf '[+] Domain: '
-  read -r DOMAIN
-fi
-
-# Autodetect crawl start URL from DOMAIN if not provided
-: "${CRAWL_START_URL:=https://${DOMAIN}}"
-export CRAWL_START_URL
-
-printf '[+] Enable GPU? [y/N]: '
-read -r ENABLE_GPU
-ENABLE_GPU=${ENABLE_GPU:-N}
-printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
-read -r LLM_MODEL
-LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
-
-# Reuse existing Mongo credentials if present, otherwise apply deterministic defaults
 get_env_var() {
   # Temporarily disable -e because missing keys are expected.
   set +e
@@ -229,6 +210,43 @@ get_env_var() {
   fi
   printf '%s' "$value"
 }
+
+if [ -z "${DOMAIN:-}" ]; then
+  DOMAIN=$(get_env_var DOMAIN)
+fi
+
+if [ -z "${CRAWL_START_URL:-}" ]; then
+  CRAWL_START_URL=$(get_env_var CRAWL_START_URL)
+fi
+if [ -z "${CRAWL_START_URL:-}" ] && [ -n "${DOMAIN}" ]; then
+  CRAWL_START_URL="https://${DOMAIN}"
+fi
+export CRAWL_START_URL
+
+slugify_project() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//; s/-$//'
+}
+
+if [ -z "${PROJECT_NAME:-}" ]; then
+  PROJECT_NAME=$(get_env_var PROJECT_NAME)
+fi
+if [ -z "${PROJECT_NAME:-}" ]; then
+  if [ -n "${DOMAIN}" ]; then
+    PROJECT_NAME=$(slugify_project "${DOMAIN}")
+  fi
+fi
+: "${PROJECT_NAME:=default}"
+PROJECT_NAME=$(slugify_project "${PROJECT_NAME}")
+export PROJECT_NAME
+
+printf '[+] Enable GPU? [y/N]: '
+read -r ENABLE_GPU
+ENABLE_GPU=${ENABLE_GPU:-N}
+printf '[+] LLM model to use [Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it]: '
+read -r LLM_MODEL
+LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
+
+# Reuse existing Mongo credentials if present, otherwise apply deterministic defaults
 
 if [ -z "${MONGO_HOST:-}" ]; then
   MONGO_HOST=$(get_env_var MONGO_HOST)
@@ -310,6 +328,7 @@ update_env_var() {
 
 update_env_var DOMAIN "$DOMAIN"
 update_env_var CRAWL_START_URL "$CRAWL_START_URL"
+update_env_var PROJECT_NAME "$PROJECT_NAME"
 update_env_var LLM_MODEL "$LLM_MODEL"
 update_env_var REDIS_PASSWORD "$REDIS_PASS"
 update_env_var REDIS_URL "$REDIS_URL"
@@ -511,11 +530,23 @@ for i in $(seq 1 "$attempts"); do
 done
 [ -n "$ok" ] || { echo "[!] API health check failed"; "${COMPOSE_CMD[@]}" logs --no-color --tail=200 app || true; exit 1; }
 
-printf '[+] Initial crawl...\n'
-"${COMPOSE_CMD[@]}" run --rm \
-  -e CRAWL_START_URL="${CRAWL_START_URL}" \
-  app python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500 || true
-echo "[✓] Done"
+if [ -n "${CRAWL_START_URL}" ]; then
+  printf '[+] Initial crawl...\n'
+  crawl_args=(python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500)
+  if [ -n "${PROJECT_NAME}" ]; then
+    crawl_args+=(--project "${PROJECT_NAME}")
+  fi
+  if [ -n "${DOMAIN}" ]; then
+    crawl_args+=(--domain "${DOMAIN}")
+  fi
+  "${COMPOSE_CMD[@]}" run --rm \
+    -e CRAWL_START_URL="${CRAWL_START_URL}" \
+    -e CRAWL_PROJECT="${PROJECT_NAME}" \
+    app "${crawl_args[@]}" || true
+  echo "[✓] Done"
+else
+  echo '[i] Skipping initial crawl; CRAWL_START_URL not set'
+fi
 
 # Configure systemd timer only on Linux with systemd
 if [ -d /run/systemd/system ]; then
@@ -574,6 +605,7 @@ REDIS_EXT_PORT=$(awk -F= '/^HOST_REDIS_PORT=/{print $2}' .env 2>/dev/null | tail
 
 echo ""
 echo "Service endpoints:"
+echo "- Project:    ${PROJECT_NAME}"
 echo "- API:        http://${HOST_NAME}:${APP_EXT_PORT}"
 echo "- Widget:     http://${HOST_NAME}:${APP_EXT_PORT}/widget"
 echo "- Admin:      http://${HOST_NAME}:${APP_EXT_PORT}/admin"

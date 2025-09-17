@@ -17,6 +17,7 @@ def start_crawl(
     max_pages: int = DEFAULT_MAX_PAGES,
     max_depth: int = DEFAULT_MAX_DEPTH,
     domain: str | None = None,
+    project: str | None = None,
     mongo_uri: str = DEFAULT_MONGO_URI,
     job_id: Optional[str] = None,
 ) -> str:
@@ -36,6 +37,7 @@ def start_crawl(
         max_pages=max_pages,
         max_depth=max_depth,
         domain=domain,
+        project_name=project,
         mongo_uri=mongo_uri,
         progress_callback=on_progress,
     )

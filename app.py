@@ -48,34 +48,22 @@ ADMIN_PASSWORD_HASH = os.getenv(
 ADMIN_PASSWORD_DIGEST = bytes.fromhex(ADMIN_PASSWORD_HASH)
 
 
-def _normalize_domain(value: str | None) -> str | None:
-    domain = (value or "").strip()
-    if not domain:
-        default = settings.domain or os.getenv("DOMAIN", "")
-        domain = default.strip() if default else ""
-    return domain.lower() or None
+def _normalize_project(value: str | None) -> str | None:
+    """Return a normalized project identifier."""
+
+    candidate = (value or "").strip()
+    if not candidate:
+        default = getattr(settings, "project_name", None) or settings.domain or os.getenv("PROJECT_NAME") or os.getenv("DOMAIN", "")
+        candidate = default.strip() if default else ""
+    return candidate.lower() or None
 
 
-async def _get_mongo_for_domain(request: Request, domain: str | None):
-    domain_value = _normalize_domain(domain)
+async def _get_project_context(request: Request, project_name: str | None):
+    normalized = _normalize_project(project_name)
     project: Project | None = None
-    if domain_value:
-        project = await request.state.mongo.get_project(domain_value)
-
-    client = request.state.mongo
-    owns_client = False
-    if project and project.mongo_uri:
-        client = MongoClient(
-            settings.mongo.host,
-            settings.mongo.port,
-            settings.mongo.username,
-            settings.mongo.password,
-            settings.mongo.database,
-            settings.mongo.auth,
-            uri=project.mongo_uri,
-        )
-        owns_client = True
-    return domain_value, project, client, owns_client
+    if normalized:
+        project = await request.state.mongo.get_project(normalized)
+    return normalized, project, request.state.mongo, False
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -267,9 +255,10 @@ def healthz() -> dict[str, str]:
 
 
 @app.get("/status")
-def status(domain: str | None = None) -> dict[str, object]:
+def status(domain: str | None = None, project: str | None = None) -> dict[str, object]:
     """Return aggregated crawler and database status."""
-    return status_dict(_normalize_domain(domain))
+    chosen = project or domain
+    return status_dict(_normalize_project(chosen))
 
 
 @app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
@@ -293,16 +282,17 @@ class KnowledgeCreate(BaseModel):
     name: str | None = None
     content: str
     domain: str | None = None
+    project: str | None = None
     description: str | None = None
     url: str | None = None
 
 
 class ProjectCreate(BaseModel):
-    domain: str
+    name: str
     title: str | None = None
-    mongo_uri: str | None = None
-    redis_url: str | None = None
-    qdrant_url: str | None = None
+    domain: str | None = None
+    llm_model: str | None = None
+    llm_prompt: str | None = None
 
 
 @app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
@@ -319,18 +309,18 @@ async def admin_knowledge(
     except Exception:  # noqa: BLE001
         limit = 50
 
-    domain_value, project, mongo_client, owns_client = await _get_mongo_for_domain(
+    project_name, project, mongo_client, owns_client = await _get_project_context(
         request, domain
     )
 
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    filter_query = {"domain": domain_value} if domain_value else {}
+    filter_query = {"project": project_name} if project_name else {}
 
     try:
         if q:
             docs_models = await mongo_client.search_documents(
-                collection, q, domain=domain_value
+                collection, q, project=project_name
             )
         else:
             cursor = (
@@ -363,7 +353,7 @@ async def admin_knowledge(
             "matched": matched,
             "total": total,
             "has_more": has_more,
-            "domain": domain_value,
+            "project": project_name,
         }
     )
 
@@ -379,28 +369,30 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
     if not name:
         name = f"doc-{uuid4().hex[:8]}"
 
-    domain_value, project, mongo_client, owns_client = await _get_mongo_for_domain(
-        request, payload.domain
+    project_name, project, mongo_client, owns_client = await _get_project_context(
+        request, payload.project or payload.domain
     )
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
     try:
+        domain_value = payload.domain or (project.domain if project else None)
         file_id = await mongo_client.upsert_text_document(
             name=name,
             content=payload.content,
             documents_collection=collection,
             description=payload.description,
+            project=project_name,
             domain=domain_value,
             url=payload.url,
         )
-        if domain_value:
+        if project_name:
             project_payload = Project(
-                domain=domain_value,
+                name=project.name if project else project_name,
                 title=project.title if project else None,
-                mongo_uri=project.mongo_uri if project else None,
-                redis_url=project.redis_url if project else None,
-                qdrant_url=project.qdrant_url if project else None,
+                domain=domain_value,
+                llm_model=project.llm_model if project else None,
+                llm_prompt=project.llm_prompt if project else None,
             )
             await request.state.mongo.upsert_project(project_payload)
     except HTTPException:
@@ -411,25 +403,30 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
         if owns_client:
             await mongo_client.close()
 
-    return ORJSONResponse({"file_id": file_id, "name": name, "domain": domain_value})
+    return ORJSONResponse({
+        "file_id": file_id,
+        "name": name,
+        "project": project_name,
+        "domain": domain_value,
+    })
 
 
-@app.get("/api/v1/admin/domains", response_class=ORJSONResponse)
-async def admin_domains(request: Request, limit: int = 100) -> ORJSONResponse:
-    """Return a list of known knowledge base domains."""
+@app.get("/api/v1/admin/projects/names", response_class=ORJSONResponse)
+async def admin_project_names(request: Request, limit: int = 100) -> ORJSONResponse:
+    """Return a list of known project identifiers."""
 
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    domains = await request.state.mongo.list_domains(collection, limit=limit)
-    default_domain = _normalize_domain(None)
-    if default_domain and default_domain not in domains:
-        domains.insert(0, default_domain)
-    return ORJSONResponse({"domains": domains})
+    names = await request.state.mongo.list_project_names(collection, limit=limit)
+    default_name = _normalize_project(None)
+    if default_name and default_name not in names:
+        names.insert(0, default_name)
+    return ORJSONResponse({"projects": names})
 
 
 @app.get("/api/v1/admin/projects", response_class=ORJSONResponse)
 async def admin_projects(request: Request) -> ORJSONResponse:
-    """Return configured projects (domains)."""
+    """Return configured projects."""
 
     projects = await request.state.mongo.list_projects()
     return ORJSONResponse({"projects": [p.model_dump() for p in projects]})
@@ -439,17 +436,22 @@ async def admin_projects(request: Request) -> ORJSONResponse:
 async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJSONResponse:
     """Create or update a project (domain)."""
 
-    domain = _normalize_domain(payload.domain)
-    if not domain:
-        raise HTTPException(status_code=400, detail="domain is required")
+    name = _normalize_project(payload.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
 
-    existing = await request.state.mongo.get_project(domain)
+    existing = await request.state.mongo.get_project(name)
+    title_value = payload.title.strip() if isinstance(payload.title, str) else (existing.title if existing else None)
+    domain_value = payload.domain.strip() if isinstance(payload.domain, str) else (existing.domain if existing else None)
+    model_value = payload.llm_model.strip() if isinstance(payload.llm_model, str) and payload.llm_model.strip() else (existing.llm_model if existing and existing.llm_model else None)
+    prompt_value = payload.llm_prompt.strip() if isinstance(payload.llm_prompt, str) and payload.llm_prompt.strip() else (existing.llm_prompt if existing and existing.llm_prompt else None)
+
     project = Project(
-        domain=domain,
-        title=payload.title if payload.title is not None else (existing.title if existing else None),
-        mongo_uri=payload.mongo_uri if payload.mongo_uri is not None else (existing.mongo_uri if existing else None),
-        redis_url=payload.redis_url if payload.redis_url is not None else (existing.redis_url if existing else None),
-        qdrant_url=payload.qdrant_url if payload.qdrant_url is not None else (existing.qdrant_url if existing else None),
+        name=name,
+        title=title_value,
+        domain=domain_value,
+        llm_model=model_value,
+        llm_prompt=prompt_value,
     )
     project = await request.state.mongo.upsert_project(project)
     return ORJSONResponse(project.model_dump())
@@ -457,18 +459,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
 
 @app.delete("/api/v1/admin/projects/{domain}", status_code=204)
 async def admin_delete_project(request: Request, domain: str) -> Response:
-    domain_value = _normalize_domain(domain)
+    domain_value = _normalize_project(domain)
     if not domain_value:
-        raise HTTPException(status_code=400, detail="domain is required")
+        raise HTTPException(status_code=400, detail="name is required")
     await request.state.mongo.delete_project(domain_value)
     return Response(status_code=204)
 
 
 @app.get("/api/v1/admin/projects/{domain}/test", response_class=ORJSONResponse)
 async def admin_test_project(domain: str, request: Request) -> ORJSONResponse:
-    domain_value = _normalize_domain(domain)
+    domain_value = _normalize_project(domain)
     if not domain_value:
-        raise HTTPException(status_code=400, detail="domain is required")
+        raise HTTPException(status_code=400, detail="name is required")
 
     mongo_ok, mongo_err = _mongo_check()
     redis_ok, redis_err = _redis_check()
@@ -476,17 +478,9 @@ async def admin_test_project(domain: str, request: Request) -> ORJSONResponse:
 
     project = await request.state.mongo.get_project(domain_value)
 
-    if project:
-        if project.mongo_uri:
-            mongo_ok, mongo_err = _mongo_check(project.mongo_uri)
-        if project.redis_url:
-            redis_ok, redis_err = _redis_check(project.redis_url)
-        if project.qdrant_url:
-            qdrant_ok, qdrant_err = _qdrant_check(project.qdrant_url)
-
     return ORJSONResponse(
         {
-            "domain": domain_value,
+            "name": domain_value,
             "mongo": {"ok": mongo_ok, "error": mongo_err},
             "redis": {"ok": redis_ok, "error": redis_err},
             "qdrant": {"ok": qdrant_ok, "error": qdrant_err},

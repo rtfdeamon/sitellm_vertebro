@@ -29,7 +29,7 @@ def _http_client_factory(**kwargs):
     return httpx.AsyncClient(**kwargs)
 
 
-async def generate(prompt: str) -> AsyncIterator[str]:
+async def generate(prompt: str, *, model: str | None = None) -> AsyncIterator[str]:
     """Yield tokens from the configured LLM backend.
 
     - If ``OLLAMA_BASE_URL`` is set, stream from Ollama ``/api/generate``.
@@ -40,8 +40,9 @@ async def generate(prompt: str) -> AsyncIterator[str]:
         raise RuntimeError("OLLAMA_BASE_URL is not configured")
 
     url = f"{OLLAMA_BASE.rstrip('/')}/api/generate"
-    payload = {"model": MODEL_NAME, "prompt": prompt, "stream": True}
-    logger.info("ollama_generate", url=url, model=MODEL_NAME)
+    model_name = model or MODEL_NAME
+    payload = {"model": model_name, "prompt": prompt, "stream": True}
+    logger.info("ollama_generate", url=url, model=model_name)
     last_exc: Exception | None = None
     for attempt in range(RETRY_ATTEMPTS):
         try:

@@ -61,12 +61,13 @@ async def test_upload_document_returns_str() -> None:
     mc.db = _FakeDB(collection)
 
     result = await MongoClient.upload_document(
-        mc, "file.txt", b"data", "documents"
+        mc, "file.txt", b"data", "documents", project="demo"
     )
 
     assert isinstance(result, str)
     assert result == str(f_id)
     assert collection.inserted["fileId"] == str(f_id)
+    assert collection.inserted["project"] == "demo"
 
 
 @pytest.mark.asyncio
@@ -84,6 +85,7 @@ async def test_upsert_text_document_sets_domain_and_description() -> None:
         content="hello world",
         documents_collection="documents",
         description="test",
+        project="demo",
         domain="example.com",
         url="https://example.com/doc",
     )
@@ -91,10 +93,11 @@ async def test_upsert_text_document_sets_domain_and_description() -> None:
     assert file_id == str(f_id)
     assert collection.updated is not None
     filter_doc, update_doc, upsert_flag = collection.updated
-    assert filter_doc == {"name": "note.txt", "domain": "example.com"}
+    assert filter_doc == {"name": "note.txt", "project": "demo"}
     assert upsert_flag is True
     stored = update_doc["$set"]
     assert stored["domain"] == "example.com"
+    assert stored["project"] == "demo"
     assert stored["description"] == "test"
     assert stored["content_type"] == "text/plain"
     assert stored["url"] == "https://example.com/doc"
@@ -111,7 +114,7 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
     class _FakeProjects:
         def __init__(self):
             self.updated = None
-            self.stored = {"domain": "example.com", "title": "Old"}
+            self.stored = {"name": "demo", "domain": "example.com", "title": "Old"}
 
         async def update_one(self, filter, update, upsert=False):
             self.updated = (filter, update, upsert)
@@ -129,11 +132,11 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
 
     mc.db = _FakeDB()
 
-    project = Project(domain="example.com", title="New", mongo_uri="mongodb://uri")
+    project = Project(name="demo", domain="example.com", title="New")
     result = await MongoClient.upsert_project(mc, project)
 
-    assert result.domain == "example.com"
+    assert result.name == "demo"
     assert projects.updated is not None
     filter_doc, update_doc, upsert_flag = projects.updated
-    assert filter_doc == {"domain": "example.com"}
+    assert filter_doc == {"name": "demo"}
     assert upsert_flag is True

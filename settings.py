@@ -1,7 +1,7 @@
 """Application settings models."""
 
 from functools import lru_cache
-from pydantic import AnyUrl, ConfigDict
+from pydantic import AnyUrl, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     """
 
     debug: bool = False
+    project_name: str | None = Field(default=None, alias="PROJECT_NAME")
     llm_url: str = "http://localhost:8000"
     emb_model_name: str = "sentence-transformers/sbert_large_nlu_ru"
     rerank_model_name: str = "sbert_cross_ru"

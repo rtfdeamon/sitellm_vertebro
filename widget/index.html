@@ -59,6 +59,7 @@
       <strong>LLM Chat Widget</strong>
       <span class="spacer"></span>
       <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" />
+      <input type="text" id="projectName" placeholder="project" style="max-width:140px;" />
       <button id="saveCfg" class="btn secondary">Save</button>
       <button id="themeToggle" class="btn secondary" title="Toggle theme">Theme</button>
       <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText">unknown</span></span>
@@ -84,6 +85,7 @@ const messages = document.getElementById('messages');
 const stopBtn = document.getElementById('stop');
 const clearLink = document.getElementById('clear');
 const baseUrlInput = document.getElementById('baseUrl');
+const projectInput = document.getElementById('projectName');
 const saveCfgBtn = document.getElementById('saveCfg');
 const healthDot = document.getElementById('healthDot');
 const healthText = document.getElementById('healthText');
@@ -99,6 +101,7 @@ let tokenChars = 0;
 
 // Load saved base URL
 baseUrlInput.value = localStorage.getItem('chat_base_url') || '';
+projectInput.value = localStorage.getItem('chat_project') || '';
 
 function apiBase() {
   const v = baseUrlInput.value.trim();
@@ -120,6 +123,7 @@ async function probeHealth() {
 
 saveCfgBtn.addEventListener('click', () => {
   localStorage.setItem('chat_base_url', apiBase());
+  localStorage.setItem('chat_project', projectInput.value.trim());
   probeHealth();
 });
 
@@ -183,7 +187,9 @@ form.addEventListener('submit', function(e) {
 
   stopStream();
   const url = apiBase() + `/api/v1/llm/chat?question=${encodeURIComponent(question)}`;
-  const es = new EventSource(url);
+  const project = projectInput.value.trim();
+  const fullUrl = project ? `${url}&project=${encodeURIComponent(project)}` : url;
+  const es = new EventSource(fullUrl);
   currentES = es;
   streaming = true;
   tokenChars = 0;

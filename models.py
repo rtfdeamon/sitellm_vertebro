@@ -18,11 +18,13 @@ class LLMRequest(BaseModel):
     """Model for a request to the language model."""
 
     session_id: UUID = Field(alias="sessionId")
+    project: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "sessionId": "6c94282b-708e-40f2-ac9c-6f5fc8fe0b7e",
+                "project": "mmvs",
             }
         },
     )
@@ -97,6 +99,7 @@ class Document(BaseModel):
     ts: float | None = None
     content_type: str | None = None
     domain: str | None = None
+    project: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -108,26 +111,29 @@ class Document(BaseModel):
                 "ts": 1_700_000_000.0,
                 "content_type": "text/plain",
                 "domain": "example.com",
+                "project": "mmvs",
             }
         }
     )
 
 
 class Project(BaseModel):
-    domain: str
+    """Configuration of a logical project within the deployment."""
+
+    name: str
     title: str | None = None
-    mongo_uri: str | None = None
-    redis_url: str | None = None
-    qdrant_url: str | None = None
+    domain: str | None = None
+    llm_model: str | None = None
+    llm_prompt: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
+                "name": "mmvs",
                 "domain": "mmvs.ru",
                 "title": "Проект MMVS",
-                "mongo_uri": "mongodb://user:pass@mongo:27017/db?authSource=admin",
-                "redis_url": "redis://:password@redis:6379/0",
-                "qdrant_url": "http://qdrant:6333",
+                "llm_model": "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
+                "llm_prompt": "You are helpful and concise.",
             }
         }
     )

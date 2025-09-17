@@ -17,6 +17,7 @@ class CrawlRequest(BaseModel):
     max_pages: int | None = None
     max_depth: int | None = None
     domain: str | None = None
+    project: str | None = None
     mongo_uri: str | None = None
 
 
@@ -32,6 +33,7 @@ def run_crawler(request: CrawlRequest) -> CrawlResponse:
         max_pages=request.max_pages or DEFAULT_MAX_PAGES,
         max_depth=request.max_depth or DEFAULT_MAX_DEPTH,
         domain=request.domain,
+        project=request.project,
         mongo_uri=request.mongo_uri or DEFAULT_MONGO_URI,
         job_id=job_id,
     )

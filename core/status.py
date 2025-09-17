@@ -128,13 +128,13 @@ def get_status(domain: str | None = None) -> Status:
             names = mdb.list_collection_names()
         except Exception:
             names = []
-        doc_filter = {"domain": domain} if domain else {}
+        doc_filter = {}
+        if domain:
+            doc_filter = {"$or": [{"project": domain}, {"domain": domain}]}
         if "documents" in names:
             try:
-                doc = mdb["documents"].find_one(
-                    doc_filter or {},
-                    sort=[("ts", -1)],
-                )
+                query = doc_filter or {}
+                doc = mdb["documents"].find_one(query, sort=[("ts", -1)])
                 if doc and doc.get("ts"):
                     last_crawl_ts = float(doc["ts"])
             except Exception:

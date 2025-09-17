@@ -37,7 +37,10 @@ async def main():
     for file in base.iterdir():
         with file.open("rb") as f:
             await mongo_client.upload_document(
-                file.name, f.read(), settings.mongo.documents
+                file.name,
+                f.read(),
+                settings.mongo.documents,
+                project=(settings.project_name or settings.domain or "default"),
             )
 
 

@@ -318,12 +318,21 @@ def run(
     domain: str | None = None,
     mongo_uri: str = DEFAULT_MONGO_URI,
     progress_callback: Callable[[str], None] | None = None,
+    project_name: str | None = None,
 ) -> None:
-    """Synchronous entry point that stores crawled pages as plain text."""
+    """Synchronous entry point that stores crawled pages as plain text.
+
+    Parameters
+    ----------
+    project_name:
+        Logical project identifier used to label stored documents. Falls back
+        to the allowed domain when not provided.
+    """
 
     parsed = urlparse.urlsplit(start_url)
     allowed_domain = domain or parsed.netloc or None
-    document_domain = allowed_domain or MongoSettings().host
+    document_project = (project_name or allowed_domain or MongoSettings().host or "default").lower()
+    document_domain = allowed_domain or None
 
     logger.info(
         "run crawler",
@@ -331,6 +340,7 @@ def run(
         max_pages=max_pages,
         max_depth=max_depth,
         allowed_domain=allowed_domain,
+        project=document_project,
     )
 
     mongo_cfg = MongoSettings()
@@ -400,12 +410,17 @@ def run(
 
         try:
             db[os.getenv("MONGO_PROJECTS", "projects")].update_one(
-                {"domain": document_domain},
-                {"$setOnInsert": {"domain": document_domain}},
+                {"name": document_project},
+                {
+                    "$setOnInsert": {
+                        "name": document_project,
+                        "domain": document_domain,
+                    }
+                },
                 upsert=True,
             )
         except Exception:
-            logger.warning("project_upsert_failed", domain=document_domain)
+            logger.warning("project_upsert_failed", project=document_project)
 
         operations: list[UpdateOne] = []
 
@@ -428,7 +443,7 @@ def run(
                 payload = text.encode("utf-8")
 
                 existing = documents_collection.find_one(
-                    {"url": page_url, "domain": document_domain},
+                    {"url": page_url, "project": document_project},
                     {"fileId": 1},
                 )
                 if existing and existing.get("fileId"):
@@ -452,10 +467,15 @@ def run(
                     "ts": time.time(),
                     "content_type": "text/plain",
                     "domain": document_domain,
+                    "project": document_project,
                 }
 
                 operations.append(
-                    UpdateOne({"url": page_url}, {"$set": doc}, upsert=True)
+                    UpdateOne(
+                        {"url": page_url, "project": document_project},
+                        {"$set": doc},
+                        upsert=True,
+                    )
                 )
 
                 if progress_callback:
@@ -482,6 +502,7 @@ def main() -> None:  # pragma: no cover - convenience CLI
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     parser.add_argument("--max-depth", type=int, default=DEFAULT_MAX_DEPTH)
     parser.add_argument("--domain", help="Domain label to store documents under", default=None)
+    parser.add_argument("--project", help="Project identifier (lowercase, ASCII)", default=None)
     parser.add_argument("--mongo-uri", default=DEFAULT_MONGO_URI, help="MongoDB connection URI")
     args = parser.parse_args()
 
@@ -494,6 +515,7 @@ def main() -> None:  # pragma: no cover - convenience CLI
         max_depth=args.max_depth,
         domain=args.domain or urlparse.urlsplit(args.url).netloc,
         mongo_uri=args.mongo_uri,
+        project_name=args.project,
     )
 
 

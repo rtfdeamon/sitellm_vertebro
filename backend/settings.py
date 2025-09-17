@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     )
 
     domain: Optional[str] = Field(default=None, env=["DOMAIN", "domain"])
+    project_name: Optional[str] = Field(default=None, env=["PROJECT_NAME", "project.name"])
     grafana_password: Optional[str] = Field(default=None, env=["GRAFANA_PASSWORD", "grafana_password"])
     crawl_start_url: Optional[str] = Field(default=None, env=["CRAWL_START_URL", "crawl_start_url"])
     telegram_admin_id: Optional[int] = Field(default=None, env=["TELEGRAM_ADMIN_ID", "telegram_admin_id"])
