@@ -186,7 +186,16 @@ LLM_MODEL=${LLM_MODEL:-Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it}
 
 # Reuse existing Mongo credentials if present, otherwise apply deterministic defaults
 get_env_var() {
-  grep -E "^$1=" .env 2>/dev/null | tail -n1 | cut -d= -f2-
+  # Temporarily disable -e because missing keys are expected.
+  set +e
+  local value
+  value=$(grep -E "^$1=" .env 2>/dev/null | tail -n1 | cut -d= -f2-)
+  local status=$?
+  set -e
+  if [ $status -ne 0 ]; then
+    return 0
+  fi
+  printf '%s' "$value"
 }
 
 if [ -z "${MONGO_HOST:-}" ]; then
