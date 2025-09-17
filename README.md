@@ -107,6 +107,9 @@ Key settings are loaded from environment variables or ``.env``:
 | ``EMB_MODEL_NAME`` | ``sentence-transformers/sbert_large_nlu_ru`` | Embedding model name for the vector store |
 | ``RERANK_MODEL_NAME`` | ``sbert_cross_ru`` | Cross-encoder used for reranking search results |
 | ``REDIS_URL`` | ``redis://localhost:6379/0`` | Redis instance storing cached responses and vectors |
+| ``QDRANT_HTTP_PORT`` | ``6333`` | Qdrant HTTP port exposed by the container |
+| ``QDRANT_GRPC_PORT`` | ``6334`` | Qdrant gRPC port exposed by the container |
+| ``QDRANT_LOG_LEVEL`` | ``INFO`` | Logging level passed to the Qdrant service |
 
 MongoDB and Redis specific variables also use prefixes ``MONGO_`` and
 ``REDIS_`` as documented in ``settings.py``.

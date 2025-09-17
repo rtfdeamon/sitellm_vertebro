@@ -161,12 +161,17 @@ services:
     platform: linux/amd64
     # Uncomment the next line if you are on Apple Silicon and face issues
     # platform: linux/arm64
+    env_file: .env
     environment:
-      QDRANT__SERVICE__HTTP_PORT: 6333
-      QDRANT__SERVICE__GRPC_PORT: 6334
-      QDRANT__LOG_LEVEL: INFO
+      QDRANT__SERVICE__HTTP_PORT: ${QDRANT_HTTP_PORT:-6333}
+      QDRANT__SERVICE__GRPC_PORT: ${QDRANT_GRPC_PORT:-6334}
+      QDRANT__LOG_LEVEL: ${QDRANT_LOG_LEVEL:-INFO}
+    ports:
+      - "${HOST_QDRANT_HTTP_PORT:-26333}:${QDRANT_HTTP_PORT:-6333}"
+      - "${HOST_QDRANT_GRPC_PORT:-26334}:${QDRANT_GRPC_PORT:-6334}"
     volumes:
       - qdrant_data:/qdrant/storage
+    # TODO(Codex OpenAI): consider exposing optional Qdrant tuning flags via .env when required.
     # Note: healthcheck removed to avoid false negatives on minimal images.
 
 
