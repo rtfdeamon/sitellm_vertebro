@@ -1,12 +1,13 @@
 """FastAPI application setup and lifespan management (Ollama-only)."""
 
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 import base64
 import hashlib
 import hmac
 import os
+import asyncio
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -21,7 +22,7 @@ from observability.logging import configure_logging, get_recent_logs
 from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
-from mongo import MongoClient
+from mongo import MongoClient, NotFound
 from models import Document, Project
 from settings import MongoSettings, Settings
 from core.status import status_dict
@@ -56,6 +57,68 @@ def _normalize_project(value: str | None) -> str | None:
         default = getattr(settings, "project_name", None) or settings.domain or os.getenv("PROJECT_NAME") or os.getenv("DOMAIN", "")
         candidate = default.strip() if default else ""
     return candidate.lower() or None
+
+
+class TelegramController:
+    """Manage lifecycle of the Telegram bot polling task."""
+
+    def __init__(self) -> None:
+        self._task: asyncio.Task | None = None
+        self._token: str | None = None
+
+    @property
+    def token(self) -> str | None:
+        return self._token
+
+    @property
+    def is_running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    async def start(self, token: str) -> None:
+        token = token.strip()
+        if not token:
+            raise ValueError("Bot token is empty")
+        if self.is_running:
+            if token == self._token:
+                return
+            await self.stop()
+        self._token = token
+        loop = asyncio.get_running_loop()
+        self._task = loop.create_task(self._run(token))
+
+    async def stop(self) -> None:
+        if self._task is None:
+            return
+        self._task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._task
+        self._task = None
+        self._token = None
+
+    async def _run(self, token: str) -> None:
+        from tg_bot.bot import setup
+        from aiogram import Bot, Dispatcher
+
+        bot = Bot(token=token)
+        dp = Dispatcher()
+        setup(dp)
+        try:
+            await dp.start_polling(bot)
+        except asyncio.CancelledError:
+            with suppress(Exception):
+                await dp.storage.close()
+            with suppress(Exception):
+                await bot.session.close()
+            raise
+        except Exception:
+            logger.exception("telegram bot polling stopped with error")
+        finally:
+            with suppress(Exception):
+                await dp.storage.close()
+            with suppress(Exception):
+                await bot.session.close()
+            self._task = None
+            self._token = None
 
 
 async def _get_project_context(request: Request, project_name: str | None):
@@ -113,7 +176,7 @@ class OllamaLLM:
 
 
 @asynccontextmanager
-async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     """Initialize and clean up application resources.
 
     Yields
@@ -144,6 +207,17 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
 
     vector_store = None
 
+    telegram_ctrl = TelegramController()
+    app.state.telegram = telegram_ctrl
+
+    # Optionally auto start Telegram bot if stored in settings
+    try:
+        setting = await mongo_client.get_setting("telegram")
+        if setting and setting.get("auto_start") and setting.get("token"):
+            await telegram_ctrl.start(setting["token"])
+    except Exception:
+        logger.warning("telegram auto-start failed", exc_info=True)
+
     yield {
         "llm": llm,
         "mongo": mongo_client,
@@ -154,6 +228,8 @@ async def lifespan(_) -> AsyncGenerator[dict[str, Any], None]:
     }
 
     del llm
+    with suppress(Exception):
+        await telegram_ctrl.stop()
     await mongo_client.client.close()
     qdrant_client.close()
 
@@ -287,12 +363,30 @@ class KnowledgeCreate(BaseModel):
     url: str | None = None
 
 
+class KnowledgeUpdate(BaseModel):
+    name: str | None = None
+    content: str | None = None
+    description: str | None = None
+    url: str | None = None
+    project: str | None = None
+    domain: str | None = None
+
+
 class ProjectCreate(BaseModel):
     name: str
     title: str | None = None
     domain: str | None = None
     llm_model: str | None = None
     llm_prompt: str | None = None
+
+
+class TelegramConfig(BaseModel):
+    token: str | None = None
+    auto_start: bool | None = None
+
+
+class TelegramAction(BaseModel):
+    token: str | None = None
 
 
 @app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
@@ -411,6 +505,107 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
     })
 
 
+@app.get("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
+async def admin_get_document(request: Request, file_id: str) -> ORJSONResponse:
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    try:
+        doc, payload = await request.state.mongo.get_document_with_content(collection, file_id)
+    except NotFound:
+        raise HTTPException(status_code=404, detail="Document not found")
+    content = payload.decode("utf-8", errors="replace")
+    doc["content"] = content
+    return ORJSONResponse(doc)
+
+
+@app.put("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
+async def admin_update_document(request: Request, file_id: str, payload: KnowledgeUpdate) -> ORJSONResponse:
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    try:
+        existing_doc, raw_content = await request.state.mongo.get_document_with_content(collection, file_id)
+    except NotFound:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    current_name = existing_doc.get("name") or "document"
+    current_project = existing_doc.get("project") or existing_doc.get("domain")
+    current_domain = existing_doc.get("domain")
+    current_description = existing_doc.get("description")
+    current_url = existing_doc.get("url")
+    current_content = raw_content.decode("utf-8", errors="replace")
+
+    new_name = (payload.name.strip() if isinstance(payload.name, str) else current_name).strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Document name cannot be empty")
+
+    domain_value = (payload.domain.strip() if isinstance(payload.domain, str) else current_domain) or None
+    project_value = _normalize_project(payload.project or current_project)
+    description_value = (payload.description.strip() if isinstance(payload.description, str) else current_description) or None
+    url_value = (payload.url.strip() if isinstance(payload.url, str) else current_url) or None
+    content_value = payload.content if payload.content is not None else current_content
+
+    if not content_value or not content_value.strip():
+        raise HTTPException(status_code=400, detail="Content is empty")
+
+    name_changed = new_name.lower() != (current_name or "").lower()
+    project_changed = project_value != _normalize_project(current_project)
+
+    if name_changed or project_changed:
+        await request.state.mongo.delete_document(collection, file_id)
+        new_file_id = await request.state.mongo.upsert_text_document(
+            name=new_name,
+            content=content_value,
+            documents_collection=collection,
+            description=description_value,
+            project=project_value,
+            domain=domain_value,
+            url=url_value,
+        )
+    else:
+        new_file_id = await request.state.mongo.upsert_text_document(
+            name=new_name,
+            content=content_value,
+            documents_collection=collection,
+            description=description_value,
+            project=project_value,
+            domain=domain_value,
+            url=url_value,
+        )
+
+    if project_value:
+        existing = await request.state.mongo.get_project(project_value)
+        project_payload = Project(
+            name=project_value,
+            title=existing.title if existing else None,
+            domain=domain_value or (existing.domain if existing else None),
+            llm_model=existing.llm_model if existing else None,
+            llm_prompt=existing.llm_prompt if existing else None,
+        )
+        await request.state.mongo.upsert_project(project_payload)
+
+    return ORJSONResponse(
+        {
+            "file_id": new_file_id,
+            "name": new_name,
+            "project": project_value,
+            "domain": domain_value,
+        }
+    )
+
+
+@app.post("/api/v1/admin/knowledge/reindex", response_class=ORJSONResponse)
+async def admin_reindex_documents() -> ORJSONResponse:
+    loop = asyncio.get_running_loop()
+
+    def _run_update() -> None:
+        from worker import update_vector_store
+
+        update_vector_store()
+
+    loop.run_in_executor(None, _run_update)
+    return ORJSONResponse({"status": "queued"})
+
+
 @app.get("/api/v1/admin/projects/names", response_class=ORJSONResponse)
 async def admin_project_names(request: Request, limit: int = 100) -> ORJSONResponse:
     """Return a list of known project identifiers."""
@@ -422,6 +617,73 @@ async def admin_project_names(request: Request, limit: int = 100) -> ORJSONRespo
     if default_name and default_name not in names:
         names.insert(0, default_name)
     return ORJSONResponse({"projects": names})
+
+
+@app.get("/api/v1/admin/llm/models", response_class=ORJSONResponse)
+def admin_llm_models() -> ORJSONResponse:
+    """Return available LLM model identifiers."""
+
+    models = backend_settings.get_available_llm_models()
+    return ORJSONResponse({"models": models})
+
+
+@app.get("/api/v1/admin/telegram", response_class=ORJSONResponse)
+async def telegram_status(request: Request) -> ORJSONResponse:
+    controller: TelegramController = request.app.state.telegram
+    setting = await request.state.mongo.get_setting("telegram") or {}
+    token = setting.get("token")
+    preview = None
+    if token:
+        preview = f"{token[:4]}…{token[-2:]}" if len(token) > 6 else "***"
+    return ORJSONResponse(
+        {
+            "running": controller.is_running,
+            "token_set": bool(token),
+            "token_preview": preview,
+            "auto_start": bool(setting.get("auto_start")),
+        }
+    )
+
+
+@app.post("/api/v1/admin/telegram/config", response_class=ORJSONResponse)
+async def telegram_config(request: Request, payload: TelegramConfig) -> ORJSONResponse:
+    controller: TelegramController = request.app.state.telegram
+    setting = await request.state.mongo.get_setting("telegram") or {}
+
+    if payload.token is not None:
+        token_value = payload.token.strip()
+        if token_value:
+            setting["token"] = token_value
+        else:
+            setting.pop("token", None)
+        if not token_value and controller.is_running:
+            await controller.stop()
+    if payload.auto_start is not None:
+        setting["auto_start"] = bool(payload.auto_start)
+
+    await request.state.mongo.set_setting("telegram", setting)
+    return ORJSONResponse({"ok": True})
+
+
+@app.post("/api/v1/admin/telegram/start", response_class=ORJSONResponse)
+async def telegram_start(request: Request, payload: TelegramAction) -> ORJSONResponse:
+    controller: TelegramController = request.app.state.telegram
+    setting = await request.state.mongo.get_setting("telegram") or {}
+    token = (payload.token or setting.get("token") or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Telegram token is not configured")
+
+    await controller.start(token)
+    setting["token"] = token
+    await request.state.mongo.set_setting("telegram", setting)
+    return ORJSONResponse({"running": True})
+
+
+@app.post("/api/v1/admin/telegram/stop", response_class=ORJSONResponse)
+async def telegram_stop(request: Request) -> ORJSONResponse:
+    controller: TelegramController = request.app.state.telegram
+    await controller.stop()
+    return ORJSONResponse({"running": False})
 
 
 @app.get("/api/v1/admin/projects", response_class=ORJSONResponse)
@@ -533,29 +795,94 @@ def root() -> RedirectResponse:
 
 @app.get("/sysinfo", include_in_schema=False)
 def sysinfo() -> dict[str, object]:
-    """Return basic process/system metrics for the dashboard.
+    """Return process, system and GPU usage metrics for the dashboard."""
 
-    Includes process RSS memory, CPU percent (best-effort), and Python version.
-    Uses ``psutil`` when available, falls back to minimal data otherwise.
-    """
     import os
     import platform
+    import shutil
+    import subprocess
+    import time
+
     info: dict[str, object] = {
         "python": platform.python_version(),
+        "timestamp": time.time(),
     }
+
     try:
         import psutil  # type: ignore
 
-        p = psutil.Process(os.getpid())
-        mem = p.memory_info().rss
+        proc = psutil.Process(os.getpid())
+        rss = proc.memory_info().rss
         try:
-            cpu = p.cpu_percent(interval=0.0)
+            cpu = proc.cpu_percent(interval=None)
         except Exception:
             cpu = None
-        info.update({
-            "rss_bytes": int(mem),
-            "cpu_percent": cpu,
-        })
+
+        try:
+            system_cpu = psutil.cpu_percent(interval=None)
+        except Exception:
+            system_cpu = None
+
+        try:
+            vm = psutil.virtual_memory()
+            total_mem = int(vm.total)
+            used_mem = int(vm.used)
+            mem_percent = float(vm.percent)
+        except Exception:
+            total_mem = used_mem = None
+            mem_percent = None
+
+        info.update(
+            {
+                "rss_bytes": int(rss),
+                "cpu_percent": cpu,
+                "system_cpu_percent": system_cpu,
+                "memory_total_bytes": total_mem,
+                "memory_used_bytes": used_mem,
+                "memory_percent": mem_percent,
+            }
+        )
     except Exception:
         pass
+
+    # GPU metrics via nvidia-smi when available
+    if shutil.which("nvidia-smi"):
+        try:
+            result = subprocess.check_output(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=name,utilization.gpu,memory.used,memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                text=True,
+                timeout=1,
+            )
+            gpus: list[dict[str, object]] = []
+            for line in result.strip().splitlines():
+                parts = [part.strip() for part in line.split(",")]
+                if len(parts) != 4:
+                    continue
+                name, util, mem_used, mem_total = parts
+                try:
+                    util_val = float(util)
+                except Exception:
+                    util_val = None
+                try:
+                    mem_used_bytes = int(float(mem_used)) * 1024 * 1024
+                    mem_total_bytes = int(float(mem_total)) * 1024 * 1024
+                except Exception:
+                    mem_used_bytes = mem_total_bytes = None
+                gpus.append(
+                    {
+                        "name": name,
+                        "util_percent": util_val,
+                        "memory_used_bytes": mem_used_bytes,
+                        "memory_total_bytes": mem_total_bytes,
+                    }
+                )
+            if gpus:
+                info["gpus"] = gpus
+        except Exception:
+            pass
+
     return info

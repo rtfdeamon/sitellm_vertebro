@@ -24,6 +24,7 @@ class MongoSettings(BaseSettings):
     presets: str = "contextPresets"
     vectors: str = "vectors"
     documents: str = "documents"
+    settings: str = "app_settings"
 
     model_config = ConfigDict(extra="ignore")
 

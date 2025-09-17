@@ -92,6 +92,7 @@ class MongoClient:
             self.db = self.client[database]
         self.gridfs = AsyncGridFS(self.db)
         self.projects_collection = os.getenv("MONGO_PROJECTS", "projects")
+        self.settings_collection = os.getenv("MONGO_SETTINGS", "app_settings")
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
         """Return ``True`` if no documents match ``query`` in ``collection``.
@@ -194,6 +195,26 @@ class MongoClient:
         """Return file contents from GridFS by ``file_id``."""
         file = await self.gridfs.get(ObjectId(file_id))
         return await file.read()
+
+    async def get_document_with_content(
+        self, collection: str, file_id: str
+    ) -> tuple[dict, bytes]:
+        """Return metadata and raw contents for ``file_id``."""
+
+        doc = await self.db[collection].find_one({"fileId": file_id}, {"_id": False})
+        if not doc:
+            raise NotFound
+        payload = await self.get_gridfs_file(file_id)
+        return doc, payload
+
+    async def delete_document(self, collection: str, file_id: str) -> None:
+        """Remove document metadata and GridFS payload."""
+
+        await self.db[collection].delete_one({"fileId": file_id})
+        try:
+            await self.gridfs.delete(ObjectId(file_id))
+        except Exception:
+            pass
 
     async def upload_document(
         self,
@@ -370,6 +391,17 @@ class MongoClient:
                 {"_id": False},
             )
         return self._project_from_doc(doc)
+
+    async def get_setting(self, key: str) -> dict | None:
+        return await self.db[self.settings_collection].find_one({"_id": key}, {"_id": False})
+
+    async def set_setting(self, key: str, value: dict) -> None:
+        value = value.copy()
+        await self.db[self.settings_collection].update_one(
+            {"_id": key},
+            {"$set": value},
+            upsert=True,
+        )
 
     async def close(self) -> None:
         await self.client.close()

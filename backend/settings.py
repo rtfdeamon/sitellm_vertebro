@@ -11,6 +11,7 @@ Use :func:`get_settings` to access a singleton instance.
 from __future__ import annotations
 from typing import Optional
 from pydantic import Field
+import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -62,6 +63,44 @@ class Settings(BaseSettings):
         default="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest",
         env=["OLLAMA_MODEL", "ollama.model"],
     )  # defaults to this value unless overridden
+
+    llm_model_choices: Optional[str] = Field(
+        default=None,
+        env=["LLM_MODEL_CHOICES", "LLM_MODELS", "llm.models"],
+    )
+
+    def get_available_llm_models(self) -> list[str]:
+        """Return a de-duplicated list of available LLM model identifiers."""
+
+        default_models = [
+            "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
+            "yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest",
+            "llama3.1:70b",
+            "qwen2.5:14b",
+        ]
+
+        models: list[str] = []
+        if self.llm_model:
+            models.append(str(self.llm_model).strip())
+
+        raw = self.llm_model_choices
+        if raw:
+            parsed: list[str] = []
+            try:
+                data = json.loads(raw)
+                if isinstance(data, (list, tuple)):
+                    parsed = [str(item).strip() for item in data if str(item).strip()]
+            except json.JSONDecodeError:
+                parsed = [item.strip() for item in raw.split(",") if item.strip()]
+            models.extend(parsed)
+
+        models.extend(default_models)
+
+        unique: list[str] = []
+        for model in models:
+            if model and model not in unique:
+                unique.append(model)
+        return unique
 
 
 settings = Settings()
