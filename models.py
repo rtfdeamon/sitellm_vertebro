@@ -96,6 +96,7 @@ class Document(BaseModel):
     url: str | None = None
     ts: float | None = None
     content_type: str | None = None
+    domain: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -106,6 +107,27 @@ class Document(BaseModel):
                 "url": "https://example.com/file",
                 "ts": 1_700_000_000.0,
                 "content_type": "text/plain",
+                "domain": "example.com",
+            }
+        }
+    )
+
+
+class Project(BaseModel):
+    domain: str
+    title: str | None = None
+    mongo_uri: str | None = None
+    redis_url: str | None = None
+    qdrant_url: str | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "domain": "mmvs.ru",
+                "title": "Проект MMVS",
+                "mongo_uri": "mongodb://user:pass@mongo:27017/db?authSource=admin",
+                "redis_url": "redis://:password@redis:6379/0",
+                "qdrant_url": "http://qdrant:6333",
             }
         }
     )

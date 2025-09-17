@@ -22,7 +22,7 @@ from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
 from mongo import MongoClient
-from models import Document
+from models import Document, Project
 from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
@@ -33,6 +33,8 @@ from bson import ObjectId
 from retrieval import search as retrieval_search
 import redis
 import requests
+from pydantic import BaseModel
+from uuid import uuid4
 
 
 configure_logging()
@@ -44,6 +46,36 @@ ADMIN_PASSWORD_HASH = os.getenv(
     "ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest()
 )
 ADMIN_PASSWORD_DIGEST = bytes.fromhex(ADMIN_PASSWORD_HASH)
+
+
+def _normalize_domain(value: str | None) -> str | None:
+    domain = (value or "").strip()
+    if not domain:
+        default = settings.domain or os.getenv("DOMAIN", "")
+        domain = default.strip() if default else ""
+    return domain.lower() or None
+
+
+async def _get_mongo_for_domain(request: Request, domain: str | None):
+    domain_value = _normalize_domain(domain)
+    project: Project | None = None
+    if domain_value:
+        project = await request.state.mongo.get_project(domain_value)
+
+    client = request.state.mongo
+    owns_client = False
+    if project and project.mongo_uri:
+        client = MongoClient(
+            settings.mongo.host,
+            settings.mongo.port,
+            settings.mongo.username,
+            settings.mongo.password,
+            settings.mongo.database,
+            settings.mongo.auth,
+            uri=project.mongo_uri,
+        )
+        owns_client = True
+    return domain_value, project, client, owns_client
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
@@ -155,11 +187,11 @@ app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 
 
-def _mongo_check() -> tuple[bool, str | None]:
+def _mongo_check(mongo_uri: str | None = None) -> tuple[bool, str | None]:
     """Best-effort Mongo probe with short retries."""
 
     cfg = MongoSettings()
-    uri = f"mongodb://{cfg.username}:{cfg.password}@{cfg.host}:{cfg.port}/{cfg.auth}"
+    uri = mongo_uri or f"mongodb://{cfg.username}:{cfg.password}@{cfg.host}:{cfg.port}/{cfg.auth}"
     error: str | None = None
     for timeout in (0.5, 1.5, 3.0):
         try:
@@ -173,11 +205,12 @@ def _mongo_check() -> tuple[bool, str | None]:
     return False, error
 
 
-def _redis_check() -> tuple[bool, str | None]:
+def _redis_check(redis_url: str | None = None) -> tuple[bool, str | None]:
     error: str | None = None
     for timeout in (0.5, 1.0):
         try:
-            r = redis.from_url(base_settings.redis_url, socket_connect_timeout=timeout)
+            url = redis_url or base_settings.redis_url
+            r = redis.from_url(url, socket_connect_timeout=timeout)
             ok = bool(r.ping())
             try:
                 r.close()
@@ -190,11 +223,12 @@ def _redis_check() -> tuple[bool, str | None]:
     return False, error
 
 
-def _qdrant_check() -> tuple[bool, str | None]:
+def _qdrant_check(qdrant_url: str | None = None) -> tuple[bool, str | None]:
     error: str | None = None
     for timeout in (0.8, 1.5):
         try:
-            resp = requests.get(f"{base_settings.qdrant_url}/healthz", timeout=timeout)
+            base_url = qdrant_url or base_settings.qdrant_url
+            resp = requests.get(f"{base_url}/healthz", timeout=timeout)
             if resp.ok:
                 return True, None
             error = f"HTTP {resp.status_code}"
@@ -233,9 +267,9 @@ def healthz() -> dict[str, str]:
 
 
 @app.get("/status")
-def status() -> dict[str, object]:
+def status(domain: str | None = None) -> dict[str, object]:
     """Return aggregated crawler and database status."""
-    return status_dict()
+    return status_dict(_normalize_domain(domain))
 
 
 @app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
@@ -255,8 +289,29 @@ def admin_logs(limit: int = 200) -> ORJSONResponse:
     return ORJSONResponse({"lines": lines})
 
 
+class KnowledgeCreate(BaseModel):
+    name: str | None = None
+    content: str
+    domain: str | None = None
+    description: str | None = None
+    url: str | None = None
+
+
+class ProjectCreate(BaseModel):
+    domain: str
+    title: str | None = None
+    mongo_uri: str | None = None
+    redis_url: str | None = None
+    qdrant_url: str | None = None
+
+
 @app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
-async def admin_knowledge(request: Request, q: str | None = None, limit: int = 50) -> ORJSONResponse:
+async def admin_knowledge(
+    request: Request,
+    q: str | None = None,
+    limit: int = 50,
+    domain: str | None = None,
+) -> ORJSONResponse:
     """Return knowledge base documents for the admin UI."""
 
     try:
@@ -264,30 +319,41 @@ async def admin_knowledge(request: Request, q: str | None = None, limit: int = 5
     except Exception:  # noqa: BLE001
         limit = 50
 
+    domain_value, project, mongo_client, owns_client = await _get_mongo_for_domain(
+        request, domain
+    )
+
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-
-    def fetch_documents() -> tuple[list[dict[str, Any]], int]:
-        with SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=2000) as sync_client:
-            db = sync_client[mongo_cfg.database]
-            coll = db[collection]
-            if q:
-                regex = {"$regex": q, "$options": "i"}
-                query = {"$or": [{"name": regex}, {"description": regex}]}
-            else:
-                query = {}
-            total_count = coll.count_documents(query)
-            cursor = coll.find(query, {"_id": False}).sort("name", 1).limit(limit)
-            docs = [Document(**doc).model_dump() for doc in cursor]
-            return docs, total_count
+    filter_query = {"domain": domain_value} if domain_value else {}
 
     try:
-        documents, total = await run_in_threadpool(fetch_documents)
+        if q:
+            docs_models = await mongo_client.search_documents(
+                collection, q, domain=domain_value
+            )
+        else:
+            cursor = (
+                mongo_client.db[collection]
+                .find(filter_query, {"_id": False})
+                .sort("name", 1)
+                .limit(limit)
+            )
+            docs_models = [Document(**doc) async for doc in cursor]
+
+        documents = [doc.model_dump() if isinstance(doc, Document) else doc for doc in docs_models]
+        total = await mongo_client.db[collection].count_documents(filter_query or {})
+        if q:
+            matched = len(documents)
+            has_more = len(documents) >= limit
+        else:
+            matched = total
+            has_more = len(documents) < total
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"MongoDB query failed: {exc}") from exc
-
-    matched = total
-    has_more = total > len(documents)
+    finally:
+        if owns_client:
+            await mongo_client.close()
 
     return ORJSONResponse(
         {
@@ -297,6 +363,133 @@ async def admin_knowledge(request: Request, q: str | None = None, limit: int = 5
             "matched": matched,
             "total": total,
             "has_more": has_more,
+            "domain": domain_value,
+        }
+    )
+
+
+@app.post("/api/v1/admin/knowledge", response_class=ORJSONResponse, status_code=201)
+async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> ORJSONResponse:
+    """Create or update a text document in the knowledge base."""
+
+    if not payload.content.strip():
+        raise HTTPException(status_code=400, detail="Content is empty")
+
+    name = (payload.name or "").strip()
+    if not name:
+        name = f"doc-{uuid4().hex[:8]}"
+
+    domain_value, project, mongo_client, owns_client = await _get_mongo_for_domain(
+        request, payload.domain
+    )
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    try:
+        file_id = await mongo_client.upsert_text_document(
+            name=name,
+            content=payload.content,
+            documents_collection=collection,
+            description=payload.description,
+            domain=domain_value,
+            url=payload.url,
+        )
+        if domain_value:
+            project_payload = Project(
+                domain=domain_value,
+                title=project.title if project else None,
+                mongo_uri=project.mongo_uri if project else None,
+                redis_url=project.redis_url if project else None,
+                qdrant_url=project.qdrant_url if project else None,
+            )
+            await request.state.mongo.upsert_project(project_payload)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+    return ORJSONResponse({"file_id": file_id, "name": name, "domain": domain_value})
+
+
+@app.get("/api/v1/admin/domains", response_class=ORJSONResponse)
+async def admin_domains(request: Request, limit: int = 100) -> ORJSONResponse:
+    """Return a list of known knowledge base domains."""
+
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    domains = await request.state.mongo.list_domains(collection, limit=limit)
+    default_domain = _normalize_domain(None)
+    if default_domain and default_domain not in domains:
+        domains.insert(0, default_domain)
+    return ORJSONResponse({"domains": domains})
+
+
+@app.get("/api/v1/admin/projects", response_class=ORJSONResponse)
+async def admin_projects(request: Request) -> ORJSONResponse:
+    """Return configured projects (domains)."""
+
+    projects = await request.state.mongo.list_projects()
+    return ORJSONResponse({"projects": [p.model_dump() for p in projects]})
+
+
+@app.post("/api/v1/admin/projects", response_class=ORJSONResponse, status_code=201)
+async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJSONResponse:
+    """Create or update a project (domain)."""
+
+    domain = _normalize_domain(payload.domain)
+    if not domain:
+        raise HTTPException(status_code=400, detail="domain is required")
+
+    existing = await request.state.mongo.get_project(domain)
+    project = Project(
+        domain=domain,
+        title=payload.title if payload.title is not None else (existing.title if existing else None),
+        mongo_uri=payload.mongo_uri if payload.mongo_uri is not None else (existing.mongo_uri if existing else None),
+        redis_url=payload.redis_url if payload.redis_url is not None else (existing.redis_url if existing else None),
+        qdrant_url=payload.qdrant_url if payload.qdrant_url is not None else (existing.qdrant_url if existing else None),
+    )
+    project = await request.state.mongo.upsert_project(project)
+    return ORJSONResponse(project.model_dump())
+
+
+@app.delete("/api/v1/admin/projects/{domain}", status_code=204)
+async def admin_delete_project(request: Request, domain: str) -> Response:
+    domain_value = _normalize_domain(domain)
+    if not domain_value:
+        raise HTTPException(status_code=400, detail="domain is required")
+    await request.state.mongo.delete_project(domain_value)
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/admin/projects/{domain}/test", response_class=ORJSONResponse)
+async def admin_test_project(domain: str, request: Request) -> ORJSONResponse:
+    domain_value = _normalize_domain(domain)
+    if not domain_value:
+        raise HTTPException(status_code=400, detail="domain is required")
+
+    mongo_ok, mongo_err = _mongo_check()
+    redis_ok, redis_err = _redis_check()
+    qdrant_ok, qdrant_err = _qdrant_check()
+
+    project = await request.state.mongo.get_project(domain_value)
+
+    if project:
+        if project.mongo_uri:
+            mongo_ok, mongo_err = _mongo_check(project.mongo_uri)
+        if project.redis_url:
+            redis_ok, redis_err = _redis_check(project.redis_url)
+        if project.qdrant_url:
+            qdrant_ok, qdrant_err = _qdrant_check(project.qdrant_url)
+
+    return ORJSONResponse(
+        {
+            "domain": domain_value,
+            "mongo": {"ok": mongo_ok, "error": mongo_err},
+            "redis": {"ok": redis_ok, "error": redis_err},
+            "qdrant": {"ok": qdrant_ok, "error": qdrant_err},
         }
     )
 

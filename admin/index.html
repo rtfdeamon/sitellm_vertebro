@@ -62,6 +62,38 @@
       </div>
     </div>
     <div class="card">
+      <b>Project</b>
+      <div style="margin-bottom:8px;">
+        <label>Текущий проект
+          <select id="projectSelect" style="width:100%;">
+          </select>
+        </label>
+        <span class="muted" id="projectStatus"></span>
+      </div>
+      <form id="projectForm" style="display:flex; flex-wrap:wrap; gap:10px;">
+        <label style="flex:1 1 220px;">Домен
+          <input type="text" id="projectDomain" placeholder="example.com" required>
+        </label>
+        <label style="flex:1 1 220px;">Название
+          <input type="text" id="projectTitle" placeholder="Название проекта">
+        </label>
+        <label style="flex:1 1 220px;">Mongo URI
+          <input type="text" id="projectMongoUri" placeholder="mongodb://user:pass@host:27017/db?authSource=admin">
+        </label>
+        <label style="flex:1 1 220px;">Redis URL
+          <input type="text" id="projectRedisUrl" placeholder="redis://:password@host:6379/0">
+        </label>
+        <label style="flex:1 1 220px;">Qdrant URL
+          <input type="text" id="projectQdrantUrl" placeholder="http://qdrant:6333">
+        </label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="submit">Добавить/обновить</button>
+          <button type="button" id="projectDelete">Удалить</button>
+          <button type="button" id="projectTest">Тест</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
       <b>Services</b>
       <div>Mongo: <span id="mongo" class="bad">down</span></div>
       <div>Redis: <span id="redis" class="bad">down</span></div>
@@ -96,7 +128,12 @@
     <div class="card" style="grid-column: 1 / -1;">
       <b>Knowledge Base</b>
       <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
-        <label style="flex:1 1 260px;">Поиск
+        <label style="flex:1 1 200px;">Домен
+          <input type="text" list="kbDomainList" id="kbDomain" placeholder="example.com" style="width:100%;" readonly>
+          <datalist id="kbDomainList"></datalist>
+        </label>
+        <button type="button" id="kbReloadDomains" title="Обновить список доменов">↻</button>
+        <label style="flex:1 1 240px;">Поиск
           <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
         </label>
         <label>Limit
@@ -105,11 +142,31 @@
         <button type="submit">Обновить</button>
         <button type="button" id="kbClear">Очистить</button>
         <span class="muted" id="kbInfo"></span>
+        <span class="muted" id="kbDomainsSummary"></span>
+      </form>
+      <form id="kbAddForm" style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px;">
+        <label style="flex:1 1 220px;">Имя
+          <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
+        </label>
+        <label style="flex:1 1 220px;">URL
+          <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
+        </label>
+        <label style="flex:1 1 220px;">Описание
+          <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
+        </label>
+        <label style="flex:1 1 100%;">Текст
+          <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
+        </label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="submit">Сохранить</button>
+          <button type="button" id="kbResetForm">Сбросить</button>
+          <span class="muted" id="kbAddStatus"></span>
+        </div>
       </form>
       <div style="max-height:240px; overflow:auto; border:1px solid #e0e0e0; border-radius:6px;">
         <table>
           <thead>
-            <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Файл</th></tr>
+            <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Домен</th><th class="nowrap">Файл</th></tr>
           </thead>
           <tbody id="kbTable"></tbody>
         </table>
@@ -137,6 +194,11 @@
         max_depth: Number(document.getElementById('depth').value),
         max_pages: Number(document.getElementById('pages').value),
       };
+      if (!currentDomain) {
+        document.getElementById('launchMsg').textContent = 'Выберите проект';
+        return;
+      }
+      payload.domain = currentDomain;
       const res = await fetch('/api/v1/crawler/run', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -152,9 +214,38 @@
       } catch {}
     });
 
+    let currentDomain = '';
+    const projectSelect = document.getElementById('projectSelect');
+    const projectStatus = document.getElementById('projectStatus');
+    const projectMongoInput = document.getElementById('projectMongoUri');
+    const projectRedisInput = document.getElementById('projectRedisUrl');
+    const projectQdrantInput = document.getElementById('projectQdrantUrl');
+    const projectDomainInput = document.getElementById('projectDomain');
+    const projectTitleInput = document.getElementById('projectTitle');
+    const projectTestBtn = document.getElementById('projectTest');
+    let projectsCache = {};
+
+    function updateDomainInputs(){
+      const domainField = document.getElementById('kbDomain');
+      if (currentDomain) {
+        domainField.value = currentDomain;
+      } else {
+        domainField.value = '';
+      }
+    }
     async function pollStatus() {
+      if (!currentDomain) {
+        document.getElementById('queued').textContent = '0';
+        document.getElementById('in_progress').textContent = '0';
+        document.getElementById('done').textContent = '0';
+        document.getElementById('failed').textContent = '0';
+        document.getElementById('last_crawl').textContent = 'Last: –';
+        document.getElementById('recent_urls').innerHTML = '';
+        return;
+      }
       try {
-        const resp = await fetch('/api/v1/crawler/status');
+        const url = currentDomain ? `/api/v1/crawler/status?domain=${encodeURIComponent(currentDomain)}` : '/api/v1/crawler/status';
+        const resp = await fetch(url);
         if (resp.ok) {
           const data = await resp.json();
           document.getElementById('queued').textContent = data.queued ?? 0;
@@ -242,6 +333,11 @@
     setInterval(tick, 3000);
 
     async function loadKnowledge(){
+      if (!currentDomain) {
+        document.getElementById('kbTable').innerHTML = '';
+        document.getElementById('kbInfo').textContent = 'Выберите проект';
+        return;
+      }
       const limitField = document.getElementById('kbLimit');
       const qField = document.getElementById('kbSearch');
       const params = new URLSearchParams();
@@ -249,6 +345,11 @@
       if (Number.isFinite(limit)) params.set('limit', Math.min(Math.max(limit, 10), 200));
       const query = qField.value.trim();
       if (query) params.set('q', query);
+      if (currentDomain) {
+        const domain = currentDomain.trim();
+        params.set('domain', domain);
+        currentDomain = domain;
+      }
       try {
         const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
         if (!resp.ok) throw new Error('knowledge request failed');
@@ -259,7 +360,7 @@
         if (!docs.length) {
           const row = document.createElement('tr');
           const cell = document.createElement('td');
-          cell.colSpan = 3;
+          cell.colSpan = 4;
           cell.textContent = query ? 'Ничего не найдено' : 'Документов нет';
           row.appendChild(cell);
           tbody.appendChild(row);
@@ -270,6 +371,8 @@
             nameTd.textContent = doc.name || '–';
             const descTd = document.createElement('td');
             descTd.textContent = doc.description || '–';
+            const domainTd = document.createElement('td');
+            domainTd.textContent = doc.domain || '–';
             const linkTd = document.createElement('td');
             const a = document.createElement('a');
             a.textContent = 'Скачать';
@@ -277,13 +380,13 @@
             a.target = '_blank';
             a.rel = 'noopener';
             linkTd.appendChild(a);
-            tr.append(nameTd, descTd, linkTd);
+            tr.append(nameTd, descTd, domainTd, linkTd);
             tbody.appendChild(tr);
           }
         }
         const matched = data.matched ?? docs.length;
         const total = data.total ?? matched;
-        const infoText = `Показано ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}`;
+        const infoText = `Показано ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}${currentDomain ? ` · ${currentDomain}` : ''}`;
         document.getElementById('kbInfo').textContent = infoText;
       } catch (error) {
         document.getElementById('kbInfo').textContent = 'Ошибка загрузки базы знаний';
@@ -291,9 +394,237 @@
       }
     }
 
+    async function loadDomains(){
+      try {
+        const resp = await fetch('/api/v1/admin/domains');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const list = document.getElementById('kbDomainList');
+        list.innerHTML = '';
+        const domains = data.domains || [];
+        domains.forEach((d) => {
+          const option = document.createElement('option');
+          option.value = d;
+          list.appendChild(option);
+        });
+        document.getElementById('kbDomainsSummary').textContent = domains.length ? `${domains.length} домен(ов)` : '—';
+        if (!currentDomain && domains.length) {
+          currentDomain = domains[0];
+          projectSelect.value = currentDomain;
+          updateDomainInputs();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function saveKnowledge(e){
+      e.preventDefault();
+      const domain = currentDomain.trim();
+      if (!domain) {
+        document.getElementById('kbAddStatus').textContent = 'Выберите проект';
+        return;
+      }
+      const name = document.getElementById('kbNewName').value.trim();
+      const url = document.getElementById('kbNewUrl').value.trim();
+      const description = document.getElementById('kbNewDescription').value.trim();
+      const content = document.getElementById('kbNewContent').value;
+      const statusLabel = document.getElementById('kbAddStatus');
+      statusLabel.textContent = 'Сохраняем...';
+      try {
+        const resp = await fetch('/api/v1/admin/knowledge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name || null,
+            content,
+            domain: domain || null,
+            description: description || null,
+            url: url || null,
+          }),
+        });
+        if (!resp.ok) {
+          statusLabel.textContent = 'Ошибка сохранения';
+          return;
+        }
+        statusLabel.textContent = 'Сохранено';
+        document.getElementById('kbNewName').value = '';
+        document.getElementById('kbNewUrl').value = '';
+        document.getElementById('kbNewDescription').value = '';
+        document.getElementById('kbNewContent').value = '';
+        await loadKnowledge();
+        await loadDomains();
+      } catch (error) {
+        console.error(error);
+        statusLabel.textContent = 'Ошибка сохранения';
+      }
+    }
+
     document.getElementById('kbForm').addEventListener('submit', (e)=>{ e.preventDefault(); loadKnowledge(); });
     document.getElementById('kbClear').addEventListener('click', ()=>{ document.getElementById('kbSearch').value=''; loadKnowledge(); });
-    loadKnowledge();
+    document.getElementById('kbReloadDomains').addEventListener('click', async ()=>{ await loadDomains(); await loadProjects(); loadKnowledge(); });
+    document.getElementById('kbAddForm').addEventListener('submit', saveKnowledge);
+    document.getElementById('kbResetForm').addEventListener('click', () => {
+      document.getElementById('kbNewName').value = '';
+      document.getElementById('kbNewUrl').value = '';
+      document.getElementById('kbNewDescription').value = '';
+      document.getElementById('kbNewContent').value = '';
+      document.getElementById('kbAddStatus').textContent = '';
+    });
+
+    function populateProjectForm(domain){
+      const project = projectsCache[domain] || null;
+      if (project) {
+        projectDomainInput.value = project.domain;
+        projectTitleInput.value = project.title || '';
+        projectMongoInput.value = project.mongo_uri || '';
+        projectRedisInput.value = project.redis_url || '';
+        projectQdrantInput.value = project.qdrant_url || '';
+      } else {
+        projectDomainInput.value = domain || '';
+        projectTitleInput.value = '';
+        projectMongoInput.value = '';
+        projectRedisInput.value = '';
+        projectQdrantInput.value = '';
+      }
+      updateDomainInputs();
+    }
+
+    async function loadProjects(){
+      try {
+        const resp = await fetch('/api/v1/admin/projects');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const projects = data.projects || [];
+        projectSelect.innerHTML = '';
+        projectsCache = {};
+        if (!projects.length) {
+          projectSelect.appendChild(new Option('— нет проектов —', '', true, true));
+          currentDomain = '';
+          updateDomainInputs();
+          projectStatus.textContent = 'Добавьте проект ниже';
+        } else {
+          projects.forEach((p, idx) => {
+            projectsCache[p.domain] = p;
+            const opt = new Option(p.title || p.domain, p.domain, false, p.domain === currentDomain || (idx === 0 && !currentDomain));
+            projectSelect.appendChild(opt);
+          });
+          if (!currentDomain || !projectsCache[currentDomain]) {
+            currentDomain = projects[0].domain;
+          }
+          projectSelect.value = currentDomain;
+          projectStatus.textContent = `${projects.length} проект(ов)`;
+          updateDomainInputs();
+          populateProjectForm(currentDomain);
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    projectSelect.addEventListener('change', () => {
+      currentDomain = projectSelect.value.trim();
+      updateDomainInputs();
+      populateProjectForm(currentDomain);
+      loadKnowledge();
+      pollStatus();
+    });
+
+    document.getElementById('projectForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const domain = projectDomainInput.value.trim();
+      const title = projectTitleInput.value.trim();
+      const mongoUri = projectMongoInput.value.trim();
+      const redisUrl = projectRedisInput.value.trim();
+      const qdrantUrl = projectQdrantInput.value.trim();
+      if (!domain) return;
+      projectStatus.textContent = 'Сохраняем проект...';
+      try {
+        const resp = await fetch('/api/v1/admin/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domain,
+            title: title || null,
+            mongo_uri: mongoUri || null,
+            redis_url: redisUrl || null,
+            qdrant_url: qdrantUrl || null,
+          }),
+        });
+        if (!resp.ok) {
+          projectStatus.textContent = 'Не удалось сохранить проект';
+          return;
+        }
+        currentDomain = domain;
+        projectDomainInput.value = '';
+        projectTitleInput.value = '';
+        projectMongoInput.value = '';
+        projectRedisInput.value = '';
+        projectQdrantInput.value = '';
+        await loadProjects();
+        await loadDomains();
+        await loadKnowledge();
+        pollStatus();
+      } catch (error) {
+        console.error(error);
+        projectStatus.textContent = 'Ошибка';
+      }
+    });
+
+    document.getElementById('projectDelete').addEventListener('click', async () => {
+      if (!currentDomain) return;
+      if (!confirm(`Удалить проект ${currentDomain}?`)) return;
+      const domainToDelete = currentDomain;
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(domainToDelete)}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          projectStatus.textContent = 'Не удалось удалить';
+          return;
+        }
+        delete projectsCache[domainToDelete];
+        currentDomain = '';
+        await loadProjects();
+        await loadDomains();
+        document.getElementById('kbTable').innerHTML = '';
+        document.getElementById('kbInfo').textContent = '';
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
+    projectTestBtn.addEventListener('click', async () => {
+      if (!currentDomain) {
+        projectStatus.textContent = 'Выберите проект';
+        return;
+      }
+      projectStatus.textContent = 'Тестируем связи...';
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentDomain)}/test`);
+        if (!resp.ok) {
+          projectStatus.textContent = 'Ошибка теста';
+          return;
+        }
+        const data = await resp.json();
+        const parts = ['mongo', 'redis', 'qdrant'].map((key) => {
+          const result = data[key];
+          return `${key}: ${result.ok ? 'ok' : 'fail'}${result.error ? ` (${result.error})` : ''}`;
+        });
+        projectStatus.textContent = parts.join(' · ');
+      } catch (error) {
+        console.error(error);
+        projectStatus.textContent = 'Ошибка теста';
+      }
+    });
+
+    (async () => {
+      await loadProjects();
+      await loadDomains();
+      if (currentDomain) {
+        populateProjectForm(currentDomain);
+        await loadKnowledge();
+        pollStatus();
+      }
+    })();
 
     // Controls for LLM config
     document.getElementById('saveLLM').addEventListener('click', async () => {

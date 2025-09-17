@@ -37,6 +37,7 @@ import xml.etree.ElementTree as ET
 from bson import ObjectId
 
 from observability.logging import configure_logging
+from settings import MongoSettings
 
 
 configure_logging()
@@ -322,6 +323,7 @@ def run(
 
     parsed = urlparse.urlsplit(start_url)
     allowed_domain = domain or parsed.netloc or None
+    document_domain = allowed_domain or MongoSettings().host
 
     logger.info(
         "run crawler",
@@ -331,20 +333,79 @@ def run(
         allowed_domain=allowed_domain,
     )
 
-    client = MongoClient(mongo_uri)
+    mongo_cfg = MongoSettings()
+    uri_candidates: list[str] = []
+    if mongo_uri:
+        uri_candidates.append(mongo_uri)
+    from urllib.parse import quote_plus
+
+    def build_uri(user: str | None, pwd: str | None, host: str, port: int, db: str, auth_db: str) -> str:
+        auth = ""
+        if user and pwd:
+            auth = f"{quote_plus(str(user))}:{quote_plus(str(pwd))}@"
+        return f"mongodb://{auth}{host}:{port}/{db}?authSource={auth_db}"
+
+    cfg_uri = build_uri(
+        mongo_cfg.username,
+        mongo_cfg.password,
+        mongo_cfg.host,
+        mongo_cfg.port,
+        mongo_cfg.database,
+        mongo_cfg.auth,
+    )
+    if cfg_uri not in uri_candidates:
+        uri_candidates.append(cfg_uri)
+
+    client: MongoClient | None = None
+    last_error: Exception | None = None
+    for uri in uri_candidates:
+        candidate: MongoClient | None = None
+        try:
+            candidate = MongoClient(uri, serverSelectionTimeoutMS=2000)
+            candidate.admin.command("ping")
+            client = candidate
+            break
+        except Exception as exc:  # pragma: no cover - fallback path
+            last_error = exc
+            if candidate is not None:
+                try:
+                    candidate.close()
+                except Exception:
+                    pass
+            continue
+
+    if client is None:
+        raise RuntimeError("Cannot connect to MongoDB") from last_error
+
     try:
+        logger.info(
+            "mongo resolved",
+            uri=client.address,
+            db=mongo_cfg.database,
+            auth_db=mongo_cfg.auth,
+        )
         try:
             db = client.get_default_database()
         except ConfigurationError:
-            db_name = os.getenv("MONGO_DATABASE", "smarthelperdb")
-            db = client[db_name]
+            db = client[mongo_cfg.database]
 
         documents_collection = db[os.getenv("MONGO_DOCUMENTS", "documents")]
         gridfs = GridFS(db)
         try:
-            documents_collection.create_index("url", unique=True)
+            documents_collection.create_index(
+                [("domain", 1), ("url", 1)], unique=True, name="domain_url_unique"
+            )
         except Exception:
             pass
+
+        try:
+            db[os.getenv("MONGO_PROJECTS", "projects")].update_one(
+                {"domain": document_domain},
+                {"$setOnInsert": {"domain": document_domain}},
+                upsert=True,
+            )
+        except Exception:
+            logger.warning("project_upsert_failed", domain=document_domain)
 
         operations: list[UpdateOne] = []
 
@@ -366,7 +427,10 @@ def run(
                 description = text.replace("\n", " ").strip()[:200]
                 payload = text.encode("utf-8")
 
-                existing = documents_collection.find_one({"url": page_url}, {"fileId": 1})
+                existing = documents_collection.find_one(
+                    {"url": page_url, "domain": document_domain},
+                    {"fileId": 1},
+                )
                 if existing and existing.get("fileId"):
                     try:
                         gridfs.delete(ObjectId(existing["fileId"]))
@@ -387,6 +451,7 @@ def run(
                     "url": page_url,
                     "ts": time.time(),
                     "content_type": "text/plain",
+                    "domain": document_domain,
                 }
 
                 operations.append(
@@ -416,6 +481,7 @@ def main() -> None:  # pragma: no cover - convenience CLI
     parser.add_argument("--url", default=DEFAULT_START_URL, help="Start URL to crawl")
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     parser.add_argument("--max-depth", type=int, default=DEFAULT_MAX_DEPTH)
+    parser.add_argument("--domain", help="Domain label to store documents under", default=None)
     parser.add_argument("--mongo-uri", default=DEFAULT_MONGO_URI, help="MongoDB connection URI")
     args = parser.parse_args()
 
@@ -426,7 +492,7 @@ def main() -> None:  # pragma: no cover - convenience CLI
         args.url,
         max_pages=args.max_pages,
         max_depth=args.max_depth,
-        domain=urlparse.urlsplit(args.url).netloc,
+        domain=args.domain or urlparse.urlsplit(args.url).netloc,
         mongo_uri=args.mongo_uri,
     )
 

@@ -6,7 +6,13 @@ import sys
 import os
 import signal
 
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException
+try:
+    from fastapi import BackgroundTasks
+except ImportError:  # pragma: no cover - fallback for test stubs
+    class BackgroundTasks:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
 from fastapi.responses import ORJSONResponse, StreamingResponse
 import asyncio
 
@@ -18,7 +24,7 @@ from backend import llm_client
 from backend.crawler_reporting import Reporter, CHANNEL
 from backend.settings import settings as backend_settings
 
-from models import LLMResponse, LLMRequest, RoleEnum
+from models import LLMResponse, LLMRequest, RoleEnum, Project
 from mongo import NotFound
 from pydantic import BaseModel
 
@@ -145,12 +151,19 @@ class CrawlRequest(BaseModel):
     start_url: str
     max_pages: int = 500
     max_depth: int = 3
+    domain: str | None = None
 
 
 crawler_router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 
-def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
+def _spawn_crawler(
+    start_url: str,
+    max_pages: int,
+    max_depth: int,
+    domain: str | None,
+    mongo_uri: str | None,
+) -> None:
     script = Path(__file__).resolve().parent / "crawler" / "run_crawl.py"
     cmd = [
         sys.executable,
@@ -162,6 +175,10 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
         "--max-depth",
         str(max_depth),
     ]
+    if domain:
+        cmd.extend(["--domain", domain])
+    if mongo_uri:
+        cmd.extend(["--mongo-uri", mongo_uri])
     proc = subprocess.Popen(cmd)
     try:
         (Path("/tmp") / "crawler.pid").write_text(str(proc.pid), encoding="utf-8")
@@ -170,20 +187,36 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
 
 
 @crawler_router.post("/run", status_code=202)
-async def run_crawler(req: CrawlRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+async def run_crawler(
+    req: CrawlRequest, background_tasks: BackgroundTasks, request: Request
+) -> dict[str, str]:
     """Start the crawler in a background task."""
 
+    domain = (req.domain or urlparse.urlsplit(req.start_url).netloc).lower()
+    if not domain:
+        raise HTTPException(status_code=400, detail="domain is required")
+
+    project = await request.state.mongo.get_project(domain)
+    if project is None:
+        project = await request.state.mongo.upsert_project(Project(domain=domain))
+    mongo_uri_override = project.mongo_uri or None
+
     background_tasks.add_task(
-        _spawn_crawler, req.start_url, req.max_pages, req.max_depth
+        _spawn_crawler,
+        req.start_url,
+        req.max_pages,
+        req.max_depth,
+        domain,
+        mongo_uri_override,
     )
-    return {"status": "started"}
+    return {"status": "started", "domain": domain}
 
 
 @crawler_router.get("/status")
-async def crawler_status() -> dict[str, object]:
+async def crawler_status(domain: str | None = None) -> dict[str, object]:
     """Return current crawler and database status."""
 
-    return status_dict()
+    return status_dict(domain)
 
 
 @crawler_router.post("/stop", status_code=202)

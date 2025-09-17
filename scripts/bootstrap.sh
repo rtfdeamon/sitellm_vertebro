@@ -146,6 +146,17 @@ prepare_env() {
   update_env_var CELERY_RESULT "redis://:${REDIS_PASSWORD}@redis:6379/0"
 
   update_env_var QDRANT_URL "http://qdrant:6333"
+  case "$(uname -m)" in
+    arm64|aarch64)
+      update_env_var QDRANT_PLATFORM "linux/arm64"
+      ;;
+    x86_64|amd64)
+      update_env_var QDRANT_PLATFORM "linux/amd64"
+      ;;
+    *)
+      :
+      ;;
+  esac
   update_env_var CRAWL_START_URL "${CRAWL_START_URL}"
   update_env_var LLM_MODEL "${LLM_MODEL}"
   update_env_var GRAFANA_PASSWORD "${GRAFANA_PASSWORD}"

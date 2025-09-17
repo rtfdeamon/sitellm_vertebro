@@ -40,6 +40,14 @@ class Document:
 fake_models.ContextMessage = object
 fake_models.ContextPreset = object
 fake_models.Document = Document
+class Project:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+    def model_dump(self):
+        return self.__dict__.copy()
+
+fake_models.Project = Project
 sys.modules["models"] = fake_models
 
 spec.loader.exec_module(mongo)

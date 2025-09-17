@@ -1,107 +1,96 @@
-"""Unit tests for the async LLM client module."""
+"""Unit tests for the Ollama streaming client."""
 
 import asyncio
 import importlib
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import pytest
 
 
-class DummyStreamer:
-    """Collect tokens emitted by the model for iteration."""
-    def __init__(self):
-        self._queue = []
+class FakeResponse:
+    def __init__(self, lines=None, raise_status=None):
+        self._lines = lines or []
+        self._raise_status = raise_status
 
-    def put(self, token):
-        self._queue.append(token)
+    async def __aenter__(self):
+        return self
 
-    def __iter__(self):
-        while self._queue:
-            yield self._queue.pop(0)
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
 
-    async def __aiter__(self):
-        for token in list(self._queue):
-            yield token
+    def raise_for_status(self):
+        if self._raise_status:
+            raise self._raise_status
 
-
-class DummyModel:
-    """Simple model that optionally fails before yielding tokens."""
-    def __init__(self, tokens, fail_times=0):
-        self.tokens = list(tokens)
-        self.fail_times = fail_times
-        self.calls = 0
-
-    def generate(self, **kwargs):
-        if self.calls < self.fail_times:
-            self.calls += 1
-            raise RuntimeError("fail")
-        streamer = kwargs["streamer"]
-        for t in self.tokens:
-            streamer.put(t)
+    async def aiter_lines(self):
+        for line in self._lines:
+            yield line
 
 
-class DummyTokenizer:
-    """No-op tokenizer used for testing."""
-    class _Inputs(dict):
-        def to(self, device):
-            return self
+class FakeClient:
+    def __init__(self, responses):
+        self._responses = responses
 
-    def __call__(self, text, return_tensors=None):
-        return self._Inputs()
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def stream(self, *args, **kwargs):
+        if not self._responses:
+            raise RuntimeError("no more responses")
+        resp = self._responses.pop(0)
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
 
 
-async def _async_collect(it):
-    """Gather all tokens from an async iterator into a list."""
-    return [token async for token in it]
+def _collect(async_iterable):
+    return asyncio.run(_async_collect(async_iterable))
 
 
-def _collect(it):
-    """Run the async collector in a fresh event loop."""
-    return asyncio.run(_async_collect(it))
+async def _async_collect(async_iterable):
+    return [token async for token in async_iterable]
 
 
-def _setup(monkeypatch, model, fails=0):
-    """Prepare ``llm_client`` module with dummy components for tests."""
+def _setup(monkeypatch, factory):
     from backend import llm_client
+
     importlib.reload(llm_client)
-    monkeypatch.setattr(llm_client, "_tokenizer", DummyTokenizer())
-    monkeypatch.setattr(llm_client, "_model", model)
-    counter = {"n": 0}
-
-    def fake_load():
-        if counter["n"] < fails:
-            counter["n"] += 1
-            raise RuntimeError("fail")
-
-    monkeypatch.setattr(llm_client, "_load", fake_load)
-    monkeypatch.setattr(
-        llm_client, "TextIteratorStreamer", lambda *a, **k: DummyStreamer()
-    )
+    monkeypatch.setattr(llm_client, "_http_client_factory", factory)
     return llm_client
 
 
 def test_generate_success(monkeypatch):
-    """Model tokens should be streamed successfully without retries."""
-    model = DummyModel(["a", "b"])
-    llm_client = _setup(monkeypatch, model)
+    lines = ["{\"response\": \"a\"}", "{\"response\": \"b\", \"done\": true}"]
+
+    def factory(**kwargs):
+        return FakeClient([FakeResponse(lines=lines)])
+
+    llm_client = _setup(monkeypatch, factory)
     tokens = _collect(llm_client.generate("hi"))
     assert tokens == ["a", "b"]
 
 
 def test_generate_retry(monkeypatch):
-    """Temporary load errors should be retried before success."""
-    model = DummyModel(["ok"])
-    llm_client = _setup(monkeypatch, model, fails=1)
+    lines = ["{\"response\": \"ok\", \"done\": true}"]
+    attempts = {"count": 0}
+
+    def factory(**kwargs):
+        if attempts["count"] == 0:
+            attempts["count"] += 1
+            raise RuntimeError("connection failed")
+        return FakeClient([FakeResponse(lines=lines)])
+
+    llm_client = _setup(monkeypatch, factory)
     tokens = _collect(llm_client.generate("hi"))
     assert tokens == ["ok"]
 
 
 def test_generate_failure(monkeypatch):
-    """Exceeding retry count should raise the original exception."""
-    model = DummyModel(["x"], fail_times=4)
-    llm_client = _setup(monkeypatch, model, fails=4)
+    def factory(**kwargs):
+        raise RuntimeError("persistent failure")
+
+    llm_client = _setup(monkeypatch, factory)
     with pytest.raises(RuntimeError):
         _collect(llm_client.generate("hi"))

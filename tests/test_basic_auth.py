@@ -83,6 +83,7 @@ def client(monkeypatch):
             auth = None
             contexts = "ctx"
             presets = "preset"
+            documents = "documents"
 
         class redis:
             vector = ""
@@ -91,7 +92,23 @@ def client(monkeypatch):
             password = ""
             secure = False
 
-    monkeypatch.setitem(sys.modules, "settings", types.SimpleNamespace(Settings=DummySettings))
+    class DummyMongoSettings:
+        host = ""
+        port = 0
+        username = ""
+        password = ""
+        database = ""
+        auth = ""
+        contexts = "ctx"
+        presets = "preset"
+        documents = "documents"
+        vectors = "vectors"
+
+    monkeypatch.setitem(
+        sys.modules,
+        "settings",
+        types.SimpleNamespace(Settings=DummySettings, MongoSettings=DummyMongoSettings),
+    )
     monkeypatch.setitem(sys.modules, "core.status", types.SimpleNamespace(status_dict=lambda: {}))
     monkeypatch.setitem(
         sys.modules,

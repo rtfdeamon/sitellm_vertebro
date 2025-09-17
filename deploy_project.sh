@@ -178,6 +178,22 @@ GRAFANA_PASS=$(openssl rand -hex 8)
 REDIS_URL="redis://:${REDIS_PASS}@redis:6379/0"
 QDRANT_URL="http://qdrant:6333"
 
+detect_arch() {
+  uname -m
+}
+
+case "$(detect_arch)" in
+  arm64|aarch64)
+    QDRANT_PLATFORM="linux/arm64"
+    ;;
+  x86_64|amd64)
+    QDRANT_PLATFORM="linux/amd64"
+    ;;
+  *)
+    QDRANT_PLATFORM=""
+    ;;
+esac
+
 touch .env
 update_env_var() {
   local key="$1" val="$2"
@@ -202,6 +218,9 @@ update_env_var REDIS_URL "$REDIS_URL"
 update_env_var CELERY_BROKER "$REDIS_URL"
 update_env_var CELERY_RESULT "$REDIS_URL"
 update_env_var QDRANT_URL "$QDRANT_URL"
+if [ -n "$QDRANT_PLATFORM" ]; then
+  update_env_var QDRANT_PLATFORM "$QDRANT_PLATFORM"
+fi
 update_env_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
 update_env_var RERANK_MODEL_NAME "sbert_cross_ru"
 update_env_var MONGO_HOST "mongo"

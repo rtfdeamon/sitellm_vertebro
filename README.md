@@ -45,6 +45,7 @@ For a minimal local run with the bundled values:
 ```bash
 cp .env.example .env
 docker compose up -d --build
+# autodetects host architecture and adjusts Qdrant platform (amd64/arm64)
 # optional: immediately collect text pages for the knowledge base
 docker compose exec app python crawler/run_crawl.py \\
   --url "https://mmvs.ru" \\
@@ -54,6 +55,21 @@ docker compose exec app python crawler/run_crawl.py \\
 The crawler stores only plain text extracted from HTML. Binary links (PDF,
 images, archives, etc.) are skipped automatically so the knowledge base stays
 focused on textual content.
+
+### Multi-domain knowledge bases
+
+The admin UI now allows managing several projects (domains) inside one
+deployment. Specify the desired domain in the “Knowledge Base” card when
+searching or adding documents; entries are stored with this domain marker in
+MongoDB(GridFS) and reused after container restarts. The crawler automatically
+assigns documents to the domain derived from the start URL host, so each
+domain keeps its own knowledge set while continuing to use the same Ollama
+language model.
+
+On first launch open `http://localhost:${HOST_APP_PORT:-18080}/admin/`, create
+проект (домен) в блоке “Project” и только после этого запускайте краулер или
+добавляйте знания — все запросы в админке автоматически используют выбранный
+домен.
 
 ## One-shot deployment
 

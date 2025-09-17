@@ -158,7 +158,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     restart: unless-stopped
-    platform: linux/amd64
+    platform: ${QDRANT_PLATFORM:-linux/amd64}
     # Uncomment the next line if you are on Apple Silicon and face issues
     # platform: linux/arm64
     env_file: .env

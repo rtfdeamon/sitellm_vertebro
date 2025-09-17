@@ -115,19 +115,22 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
     assert "freshness" in result
     assert dummy.warnings or dummy.exceptions
 
+    def find_warning(key, value):
+        for _, kwargs in dummy.warnings:
+            if kwargs.get(key) == value:
+                return kwargs
+        return {}
+
     if service == "redis":
-        kwargs = dummy.warnings[0][1]
-        assert kwargs["host"] == "redis-test"
-        assert kwargs["port"] == 1234
+        kwargs = find_warning("host", "redis-test")
+        assert kwargs.get("port") == 1234
     elif service == "mongo":
-        kwargs = dummy.warnings[0][1]
-        assert kwargs["uri"] == "mongodb://mongotest:27017"
-        assert kwargs["db"] == "dbtest"
+        kwargs = find_warning("uri", "mongodb://mongotest:27017")
+        assert kwargs.get("db") == "dbtest"
     else:
-        kwargs = dummy.warnings[0][1]
-        assert kwargs["host"] == "qdranttest"
-        assert kwargs["port"] == 4321
-        assert kwargs["collection"] == "colltest"
+        kwargs = find_warning("host", "qdranttest")
+        assert kwargs.get("port") == 4321
+        assert kwargs.get("collection") == "colltest"
 
 
 def test_status_contains_last_crawl(monkeypatch):
