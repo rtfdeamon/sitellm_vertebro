@@ -171,7 +171,6 @@ services:
       - "${HOST_QDRANT_GRPC_PORT:-26334}:${QDRANT_GRPC_PORT:-6334}"
     volumes:
       - qdrant_data:/qdrant/storage
-    # TODO(Codex OpenAI): consider exposing optional Qdrant tuning flags via .env when required.
     # Note: healthcheck removed to avoid false negatives on minimal images.
 
 
