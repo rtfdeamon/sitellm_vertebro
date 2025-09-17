@@ -151,7 +151,13 @@ class CrawlRequest(BaseModel):
 crawler_router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 
-def _spawn_crawler(start_url: str, max_pages: int, max_depth: int, domain: str | None) -> None:
+def _spawn_crawler(
+    start_url: str,
+    max_pages: int,
+    max_depth: int,
+    domain: str | None,
+    mongo_uri: str | None,
+) -> None:
     script = Path(__file__).resolve().parent / "crawler" / "run_crawl.py"
     cmd = [
         sys.executable,
@@ -165,6 +171,8 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int, domain: str |
     ]
     if domain:
         cmd.extend(["--domain", domain])
+    if mongo_uri:
+        cmd.extend(["--mongo-uri", mongo_uri])
     proc = subprocess.Popen(cmd)
     try:
         (Path("/tmp") / "crawler.pid").write_text(str(proc.pid), encoding="utf-8")
@@ -182,10 +190,18 @@ async def run_crawler(
     if not domain:
         raise HTTPException(status_code=400, detail="domain is required")
 
-    await request.state.mongo.upsert_project(Project(domain=domain))
+    project = await request.state.mongo.get_project(domain)
+    if project is None:
+        project = await request.state.mongo.upsert_project(Project(domain=domain))
+    mongo_uri_override = project.mongo_uri or None
 
     background_tasks.add_task(
-        _spawn_crawler, req.start_url, req.max_pages, req.max_depth, domain
+        _spawn_crawler,
+        req.start_url,
+        req.max_pages,
+        req.max_depth,
+        domain,
+        mongo_uri_override,
     )
     return {"status": "started", "domain": domain}
 

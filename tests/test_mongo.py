@@ -1,6 +1,7 @@
 """Tests for MongoDB helpers."""
 
 import sys
+import types
 import uuid
 import pytest
 from bson import ObjectId
@@ -8,6 +9,7 @@ from bson import ObjectId
 # Ensure any test stubs for ``mongo`` are cleared before importing the real module.
 sys.modules.pop("mongo", None)
 from mongo import MongoClient
+from models import Project
 
 
 class _FakeGridFS:
@@ -93,3 +95,38 @@ async def test_upsert_text_document_sets_domain_and_description() -> None:
     assert upsert_flag is True
     assert update_doc["$set"]["domain"] == "example.com"
     assert update_doc["$set"]["description"] == "test"
+
+
+@pytest.mark.asyncio
+async def test_upsert_project_merges_existing(monkeypatch) -> None:
+    mc = MongoClient.__new__(MongoClient)
+    collection = _FakeCollection()
+
+    mc.projects_collection = "projects"
+
+    class _FakeProjects:
+        def __init__(self):
+            self.updated = None
+            self.stored = {"domain": "example.com", "title": "Old"}
+
+        async def update_one(self, filter, update, upsert=False):
+            self.updated = (filter, update, upsert)
+
+        async def find_one(self, filter, projection=None):
+            return self.stored
+
+    projects = _FakeProjects()
+
+    class _FakeDB:
+        def __getitem__(self, name):
+            if name == "projects":
+                return projects
+            raise KeyError(name)
+
+    mc.db = _FakeDB()
+
+    project = Project(domain="example.com", title="New", mongo_uri="mongodb://uri")
+    result = await MongoClient.upsert_project(mc, project)
+
+    assert result.domain == "example.com"
+    assert projects.updated is not None

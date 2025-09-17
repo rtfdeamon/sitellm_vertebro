@@ -38,6 +38,8 @@ class MongoClient:
         password: str | None,
         database: str,
         auth_database: str,
+        *,
+        uri: str | None = None,
     ):
         """Create asynchronous client and GridFS connection.
 
@@ -52,21 +54,31 @@ class MongoClient:
         """
         # Build connection URL with or without credentials
         # Be tolerant to non-string env types (e.g., parsed as bool/int/Secret)
-        has_user = username is not None and str(username) != ""
-        has_pass = password is not None and str(password) != ""
-        if has_user and has_pass:
-            u = quote_plus(str(username))
-            p = quote_plus(str(password))
-            auth_part = f"{u}:{p}@"
-            auth_db = f"/{auth_database}"
+        if uri:
+            self.url = uri
+            self.client = AsyncMongoClient(uri)
+            try:
+                db = self.client.get_default_database()
+            except ConfigurationError:
+                db = self.client[database]
+            self.database_name = db.name
+            self.db = db
         else:
-            auth_part = ""
-            auth_db = ""
+            has_user = username is not None and str(username) != ""
+            has_pass = password is not None and str(password) != ""
+            if has_user and has_pass:
+                u = quote_plus(str(username))
+                p = quote_plus(str(password))
+                auth_part = f"{u}:{p}@"
+                auth_db = f"/{auth_database}"
+            else:
+                auth_part = ""
+                auth_db = ""
 
-        self.url = f"mongodb://{auth_part}{host}:{port}{auth_db}"
-        self.client = AsyncMongoClient(self.url)
-        self.database_name = database
-        self.db = self.client[database]
+            self.url = f"mongodb://{auth_part}{host}:{port}{auth_db}"
+            self.client = AsyncMongoClient(self.url)
+            self.database_name = database
+            self.db = self.client[database]
         self.gridfs = AsyncGridFS(self.db)
         self.projects_collection = os.getenv("MONGO_PROJECTS", "projects")
 
@@ -282,7 +294,23 @@ class MongoClient:
             {"$set": project.model_dump()},
             upsert=True,
         )
-        return project
+        stored = await self.db[self.projects_collection].find_one(
+            {"domain": project.domain},
+            {"_id": False},
+        )
+        return Project(**stored) if stored else project
 
     async def delete_project(self, domain: str) -> None:
         await self.db[self.projects_collection].delete_one({"domain": domain})
+
+    async def get_project(self, domain: str) -> Project | None:
+        doc = await self.db[self.projects_collection].find_one(
+            {"domain": domain},
+            {"_id": False},
+        )
+        if not doc:
+            return None
+        return Project(**doc)
+
+    async def close(self) -> None:
+        await self.client.close()

@@ -77,9 +77,19 @@
         <label style="flex:1 1 220px;">Название
           <input type="text" id="projectTitle" placeholder="Название проекта">
         </label>
+        <label style="flex:1 1 220px;">Mongo URI
+          <input type="text" id="projectMongoUri" placeholder="mongodb://user:pass@host:27017/db?authSource=admin">
+        </label>
+        <label style="flex:1 1 220px;">Redis URL
+          <input type="text" id="projectRedisUrl" placeholder="redis://:password@host:6379/0">
+        </label>
+        <label style="flex:1 1 220px;">Qdrant URL
+          <input type="text" id="projectQdrantUrl" placeholder="http://qdrant:6333">
+        </label>
         <div style="display:flex; gap:10px; align-items:center;">
           <button type="submit">Добавить/обновить</button>
           <button type="button" id="projectDelete">Удалить</button>
+          <button type="button" id="projectTest">Тест</button>
         </div>
       </form>
     </div>
@@ -207,6 +217,13 @@
     let currentDomain = '';
     const projectSelect = document.getElementById('projectSelect');
     const projectStatus = document.getElementById('projectStatus');
+    const projectMongoInput = document.getElementById('projectMongoUri');
+    const projectRedisInput = document.getElementById('projectRedisUrl');
+    const projectQdrantInput = document.getElementById('projectQdrantUrl');
+    const projectDomainInput = document.getElementById('projectDomain');
+    const projectTitleInput = document.getElementById('projectTitle');
+    const projectTestBtn = document.getElementById('projectTest');
+    let projectsCache = {};
 
     function updateDomainInputs(){
       const domainField = document.getElementById('kbDomain');
@@ -455,6 +472,24 @@
       document.getElementById('kbAddStatus').textContent = '';
     });
 
+    function populateProjectForm(domain){
+      const project = projectsCache[domain] || null;
+      if (project) {
+        projectDomainInput.value = project.domain;
+        projectTitleInput.value = project.title || '';
+        projectMongoInput.value = project.mongo_uri || '';
+        projectRedisInput.value = project.redis_url || '';
+        projectQdrantInput.value = project.qdrant_url || '';
+      } else {
+        projectDomainInput.value = domain || '';
+        projectTitleInput.value = '';
+        projectMongoInput.value = '';
+        projectRedisInput.value = '';
+        projectQdrantInput.value = '';
+      }
+      updateDomainInputs();
+    }
+
     async function loadProjects(){
       try {
         const resp = await fetch('/api/v1/admin/projects');
@@ -462,6 +497,7 @@
         const data = await resp.json();
         const projects = data.projects || [];
         projectSelect.innerHTML = '';
+        projectsCache = {};
         if (!projects.length) {
           projectSelect.appendChild(new Option('— нет проектов —', '', true, true));
           currentDomain = '';
@@ -469,15 +505,17 @@
           projectStatus.textContent = 'Добавьте проект ниже';
         } else {
           projects.forEach((p, idx) => {
-            const opt = new Option(p.title || p.domain, p.domain, false, idx === 0);
+            projectsCache[p.domain] = p;
+            const opt = new Option(p.title || p.domain, p.domain, false, p.domain === currentDomain || (idx === 0 && !currentDomain));
             projectSelect.appendChild(opt);
           });
-          if (!currentDomain) {
+          if (!currentDomain || !projectsCache[currentDomain]) {
             currentDomain = projects[0].domain;
           }
           projectSelect.value = currentDomain;
           projectStatus.textContent = `${projects.length} проект(ов)`;
           updateDomainInputs();
+          populateProjectForm(currentDomain);
         }
       } catch (error) {
         console.error(error);
@@ -487,29 +525,42 @@
     projectSelect.addEventListener('change', () => {
       currentDomain = projectSelect.value.trim();
       updateDomainInputs();
+      populateProjectForm(currentDomain);
       loadKnowledge();
       pollStatus();
     });
 
     document.getElementById('projectForm').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const domain = document.getElementById('projectDomain').value.trim();
-      const title = document.getElementById('projectTitle').value.trim();
+      const domain = projectDomainInput.value.trim();
+      const title = projectTitleInput.value.trim();
+      const mongoUri = projectMongoInput.value.trim();
+      const redisUrl = projectRedisInput.value.trim();
+      const qdrantUrl = projectQdrantInput.value.trim();
       if (!domain) return;
       projectStatus.textContent = 'Сохраняем проект...';
       try {
         const resp = await fetch('/api/v1/admin/projects', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ domain, title: title || null }),
+          body: JSON.stringify({
+            domain,
+            title: title || null,
+            mongo_uri: mongoUri || null,
+            redis_url: redisUrl || null,
+            qdrant_url: qdrantUrl || null,
+          }),
         });
         if (!resp.ok) {
           projectStatus.textContent = 'Не удалось сохранить проект';
           return;
         }
         currentDomain = domain;
-        document.getElementById('projectDomain').value = '';
-        document.getElementById('projectTitle').value = '';
+        projectDomainInput.value = '';
+        projectTitleInput.value = '';
+        projectMongoInput.value = '';
+        projectRedisInput.value = '';
+        projectQdrantInput.value = '';
         await loadProjects();
         await loadDomains();
         await loadKnowledge();
@@ -523,12 +574,14 @@
     document.getElementById('projectDelete').addEventListener('click', async () => {
       if (!currentDomain) return;
       if (!confirm(`Удалить проект ${currentDomain}?`)) return;
+      const domainToDelete = currentDomain;
       try {
-        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentDomain)}`, { method: 'DELETE' });
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(domainToDelete)}`, { method: 'DELETE' });
         if (!resp.ok) {
           projectStatus.textContent = 'Не удалось удалить';
           return;
         }
+        delete projectsCache[domainToDelete];
         currentDomain = '';
         await loadProjects();
         await loadDomains();
@@ -539,15 +592,39 @@
       }
     });
 
-    async function initialize(){
+    projectTestBtn.addEventListener('click', async () => {
+      if (!currentDomain) {
+        projectStatus.textContent = 'Выберите проект';
+        return;
+      }
+      projectStatus.textContent = 'Тестируем связи...';
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentDomain)}/test`);
+        if (!resp.ok) {
+          projectStatus.textContent = 'Ошибка теста';
+          return;
+        }
+        const data = await resp.json();
+        const parts = ['mongo', 'redis', 'qdrant'].map((key) => {
+          const result = data[key];
+          return `${key}: ${result.ok ? 'ok' : 'fail'}${result.error ? ` (${result.error})` : ''}`;
+        });
+        projectStatus.textContent = parts.join(' · ');
+      } catch (error) {
+        console.error(error);
+        projectStatus.textContent = 'Ошибка теста';
+      }
+    });
+
+    (async () => {
       await loadProjects();
       await loadDomains();
-      updateDomainInputs();
-      await loadKnowledge();
-      pollStatus();
-    }
-
-    initialize();
+      if (currentDomain) {
+        populateProjectForm(currentDomain);
+        await loadKnowledge();
+        pollStatus();
+      }
+    })();
 
     // Controls for LLM config
     document.getElementById('saveLLM').addEventListener('click', async () => {
