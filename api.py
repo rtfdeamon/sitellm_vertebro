@@ -18,7 +18,7 @@ from backend import llm_client
 from backend.crawler_reporting import Reporter, CHANNEL
 from backend.settings import settings as backend_settings
 
-from models import LLMResponse, LLMRequest, RoleEnum
+from models import LLMResponse, LLMRequest, RoleEnum, Project
 from mongo import NotFound
 from pydantic import BaseModel
 
@@ -145,12 +145,13 @@ class CrawlRequest(BaseModel):
     start_url: str
     max_pages: int = 500
     max_depth: int = 3
+    domain: str | None = None
 
 
 crawler_router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 
-def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
+def _spawn_crawler(start_url: str, max_pages: int, max_depth: int, domain: str | None) -> None:
     script = Path(__file__).resolve().parent / "crawler" / "run_crawl.py"
     cmd = [
         sys.executable,
@@ -162,6 +163,8 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
         "--max-depth",
         str(max_depth),
     ]
+    if domain:
+        cmd.extend(["--domain", domain])
     proc = subprocess.Popen(cmd)
     try:
         (Path("/tmp") / "crawler.pid").write_text(str(proc.pid), encoding="utf-8")
@@ -170,13 +173,21 @@ def _spawn_crawler(start_url: str, max_pages: int, max_depth: int) -> None:
 
 
 @crawler_router.post("/run", status_code=202)
-async def run_crawler(req: CrawlRequest, background_tasks: BackgroundTasks) -> dict[str, str]:
+async def run_crawler(
+    req: CrawlRequest, background_tasks: BackgroundTasks, request: Request
+) -> dict[str, str]:
     """Start the crawler in a background task."""
 
+    domain = (req.domain or urlparse.urlsplit(req.start_url).netloc).lower()
+    if not domain:
+        raise HTTPException(status_code=400, detail="domain is required")
+
+    await request.state.mongo.upsert_project(Project(domain=domain))
+
     background_tasks.add_task(
-        _spawn_crawler, req.start_url, req.max_pages, req.max_depth
+        _spawn_crawler, req.start_url, req.max_pages, req.max_depth, domain
     )
-    return {"status": "started"}
+    return {"status": "started", "domain": domain}
 
 
 @crawler_router.get("/status")

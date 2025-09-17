@@ -111,3 +111,17 @@ class Document(BaseModel):
             }
         }
     )
+
+
+class Project(BaseModel):
+    domain: str
+    title: str | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "domain": "mmvs.ru",
+                "title": "Проект MMVS",
+            }
+        }
+    )

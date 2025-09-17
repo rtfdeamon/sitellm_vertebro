@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from urllib.parse import quote_plus
 import hashlib
 import json
+import os
 import time
 
 import structlog
@@ -12,7 +13,7 @@ from gridfs import AsyncGridFS
 from pymongo import AsyncMongoClient
 
 from backend.cache import _get_redis
-from models import ContextMessage, ContextPreset, Document
+from models import ContextMessage, ContextPreset, Document, Project
 
 logger = structlog.get_logger(__name__)
 
@@ -67,6 +68,7 @@ class MongoClient:
         self.database_name = database
         self.db = self.client[database]
         self.gridfs = AsyncGridFS(self.db)
+        self.projects_collection = os.getenv("MONGO_PROJECTS", "projects")
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
         """Return ``True`` if no documents match ``query`` in ``collection``.
@@ -250,6 +252,11 @@ class MongoClient:
     async def list_domains(self, documents_collection: str, limit: int = 100) -> list[str]:
         """Return a list of distinct domains stored in ``documents_collection``."""
 
+        domains: set[str] = set()
+        async for item in self.db[self.projects_collection].find({}, {"_id": False, "domain": 1}).limit(limit):
+            if item.get("domain"):
+                domains.add(item["domain"])
+
         cursor = self.db[documents_collection].aggregate(
             [
                 {"$match": {"domain": {"$ne": None}}},
@@ -257,8 +264,25 @@ class MongoClient:
                 {"$limit": limit},
             ]
         )
-        domains: list[str] = []
         async for item in cursor:
             if item.get("_id"):
-                domains.append(item["_id"])
+                domains.add(item["_id"])
         return sorted(domains)
+
+    async def list_projects(self) -> list[Project]:
+        cursor = self.db[self.projects_collection].find({}, {"_id": False})
+        projects: list[Project] = []
+        async for item in cursor:
+            projects.append(Project(**item))
+        return projects
+
+    async def upsert_project(self, project: Project) -> Project:
+        await self.db[self.projects_collection].update_one(
+            {"domain": project.domain},
+            {"$set": project.model_dump()},
+            upsert=True,
+        )
+        return project
+
+    async def delete_project(self, domain: str) -> None:
+        await self.db[self.projects_collection].delete_one({"domain": domain})

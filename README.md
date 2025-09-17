@@ -66,6 +66,11 @@ assigns documents to the domain derived from the start URL host, so each
 domain keeps its own knowledge set while continuing to use the same Ollama
 language model.
 
+On first launch open `http://localhost:${HOST_APP_PORT:-18080}/admin/`, create
+проект (домен) в блоке “Project” и только после этого запускайте краулер или
+добавляйте знания — все запросы в админке автоматически используют выбранный
+домен.
+
 ## One-shot deployment
 
 For an automated setup on Linux or macOS the repository ships a helper

@@ -22,7 +22,7 @@ from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
 from mongo import MongoClient
-from models import Document
+from models import Document, Project
 from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
@@ -273,6 +273,11 @@ class KnowledgeCreate(BaseModel):
     url: str | None = None
 
 
+class ProjectCreate(BaseModel):
+    domain: str
+    title: str | None = None
+
+
 @app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
 async def admin_knowledge(
     request: Request,
@@ -355,6 +360,8 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
             domain=domain_value,
             url=payload.url,
         )
+        if domain_value:
+            await request.state.mongo.upsert_project(Project(domain=domain_value))
     except HTTPException:
         raise
     except Exception as exc:  # noqa: BLE001
@@ -374,6 +381,37 @@ async def admin_domains(request: Request, limit: int = 100) -> ORJSONResponse:
     if default_domain and default_domain not in domains:
         domains.insert(0, default_domain)
     return ORJSONResponse({"domains": domains})
+
+
+@app.get("/api/v1/admin/projects", response_class=ORJSONResponse)
+async def admin_projects(request: Request) -> ORJSONResponse:
+    """Return configured projects (domains)."""
+
+    projects = await request.state.mongo.list_projects()
+    return ORJSONResponse({"projects": [p.model_dump() for p in projects]})
+
+
+@app.post("/api/v1/admin/projects", response_class=ORJSONResponse, status_code=201)
+async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJSONResponse:
+    """Create or update a project (domain)."""
+
+    domain = _normalize_domain(payload.domain)
+    if not domain:
+        raise HTTPException(status_code=400, detail="domain is required")
+
+    project = await request.state.mongo.upsert_project(
+        Project(domain=domain, title=payload.title)
+    )
+    return ORJSONResponse(project.model_dump())
+
+
+@app.delete("/api/v1/admin/projects/{domain}", status_code=204)
+async def admin_delete_project(request: Request, domain: str) -> Response:
+    domain_value = _normalize_domain(domain)
+    if not domain_value:
+        raise HTTPException(status_code=400, detail="domain is required")
+    await request.state.mongo.delete_project(domain_value)
+    return Response(status_code=204)
 
 
 @app.get("/api/v1/admin/knowledge/documents/{file_id}")

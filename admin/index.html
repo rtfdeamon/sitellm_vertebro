@@ -62,6 +62,28 @@
       </div>
     </div>
     <div class="card">
+      <b>Project</b>
+      <div style="margin-bottom:8px;">
+        <label>Текущий проект
+          <select id="projectSelect" style="width:100%;">
+          </select>
+        </label>
+        <span class="muted" id="projectStatus"></span>
+      </div>
+      <form id="projectForm" style="display:flex; flex-wrap:wrap; gap:10px;">
+        <label style="flex:1 1 220px;">Домен
+          <input type="text" id="projectDomain" placeholder="example.com" required>
+        </label>
+        <label style="flex:1 1 220px;">Название
+          <input type="text" id="projectTitle" placeholder="Название проекта">
+        </label>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="submit">Добавить/обновить</button>
+          <button type="button" id="projectDelete">Удалить</button>
+        </div>
+      </form>
+    </div>
+    <div class="card">
       <b>Services</b>
       <div>Mongo: <span id="mongo" class="bad">down</span></div>
       <div>Redis: <span id="redis" class="bad">down</span></div>
@@ -97,7 +119,7 @@
       <b>Knowledge Base</b>
       <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
         <label style="flex:1 1 200px;">Домен
-          <input type="text" list="kbDomainList" id="kbDomain" placeholder="example.com" style="width:100%;">
+          <input type="text" list="kbDomainList" id="kbDomain" placeholder="example.com" style="width:100%;" readonly>
           <datalist id="kbDomainList"></datalist>
         </label>
         <button type="button" id="kbReloadDomains" title="Обновить список доменов">↻</button>
@@ -162,6 +184,11 @@
         max_depth: Number(document.getElementById('depth').value),
         max_pages: Number(document.getElementById('pages').value),
       };
+      if (!currentDomain) {
+        document.getElementById('launchMsg').textContent = 'Выберите проект';
+        return;
+      }
+      payload.domain = currentDomain;
       const res = await fetch('/api/v1/crawler/run', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -178,9 +205,30 @@
     });
 
     let currentDomain = '';
+    const projectSelect = document.getElementById('projectSelect');
+    const projectStatus = document.getElementById('projectStatus');
+
+    function updateDomainInputs(){
+      const domainField = document.getElementById('kbDomain');
+      if (currentDomain) {
+        domainField.value = currentDomain;
+      } else {
+        domainField.value = '';
+      }
+    }
     async function pollStatus() {
+      if (!currentDomain) {
+        document.getElementById('queued').textContent = '0';
+        document.getElementById('in_progress').textContent = '0';
+        document.getElementById('done').textContent = '0';
+        document.getElementById('failed').textContent = '0';
+        document.getElementById('last_crawl').textContent = 'Last: –';
+        document.getElementById('recent_urls').innerHTML = '';
+        return;
+      }
       try {
-        const resp = await fetch('/api/v1/crawler/status');
+        const url = currentDomain ? `/api/v1/crawler/status?domain=${encodeURIComponent(currentDomain)}` : '/api/v1/crawler/status';
+        const resp = await fetch(url);
         if (resp.ok) {
           const data = await resp.json();
           document.getElementById('queued').textContent = data.queued ?? 0;
@@ -268,20 +316,22 @@
     setInterval(tick, 3000);
 
     async function loadKnowledge(){
+      if (!currentDomain) {
+        document.getElementById('kbTable').innerHTML = '';
+        document.getElementById('kbInfo').textContent = 'Выберите проект';
+        return;
+      }
       const limitField = document.getElementById('kbLimit');
       const qField = document.getElementById('kbSearch');
-      const domainField = document.getElementById('kbDomain');
       const params = new URLSearchParams();
       const limit = Number(limitField.value || 50);
       if (Number.isFinite(limit)) params.set('limit', Math.min(Math.max(limit, 10), 200));
       const query = qField.value.trim();
       if (query) params.set('q', query);
-      const domain = (domainField.value || '').trim();
-      if (domain) {
+      if (currentDomain) {
+        const domain = currentDomain.trim();
         params.set('domain', domain);
         currentDomain = domain;
-      } else {
-        currentDomain = '';
       }
       try {
         const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
@@ -341,10 +391,10 @@
           list.appendChild(option);
         });
         document.getElementById('kbDomainsSummary').textContent = domains.length ? `${domains.length} домен(ов)` : '—';
-        const domainField = document.getElementById('kbDomain');
-        if (!domainField.value && domains.length) {
-          domainField.value = domains[0];
+        if (!currentDomain && domains.length) {
           currentDomain = domains[0];
+          projectSelect.value = currentDomain;
+          updateDomainInputs();
         }
       } catch (error) {
         console.error(error);
@@ -353,7 +403,11 @@
 
     async function saveKnowledge(e){
       e.preventDefault();
-      const domain = (document.getElementById('kbDomain').value || '').trim();
+      const domain = currentDomain.trim();
+      if (!domain) {
+        document.getElementById('kbAddStatus').textContent = 'Выберите проект';
+        return;
+      }
       const name = document.getElementById('kbNewName').value.trim();
       const url = document.getElementById('kbNewUrl').value.trim();
       const description = document.getElementById('kbNewDescription').value.trim();
@@ -391,8 +445,7 @@
 
     document.getElementById('kbForm').addEventListener('submit', (e)=>{ e.preventDefault(); loadKnowledge(); });
     document.getElementById('kbClear').addEventListener('click', ()=>{ document.getElementById('kbSearch').value=''; loadKnowledge(); });
-    document.getElementById('kbDomain').addEventListener('change', ()=>{ loadKnowledge(); });
-    document.getElementById('kbReloadDomains').addEventListener('click', async ()=>{ await loadDomains(); loadKnowledge(); });
+    document.getElementById('kbReloadDomains').addEventListener('click', async ()=>{ await loadDomains(); await loadProjects(); loadKnowledge(); });
     document.getElementById('kbAddForm').addEventListener('submit', saveKnowledge);
     document.getElementById('kbResetForm').addEventListener('click', () => {
       document.getElementById('kbNewName').value = '';
@@ -402,7 +455,99 @@
       document.getElementById('kbAddStatus').textContent = '';
     });
 
-    loadDomains().then(loadKnowledge);
+    async function loadProjects(){
+      try {
+        const resp = await fetch('/api/v1/admin/projects');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const projects = data.projects || [];
+        projectSelect.innerHTML = '';
+        if (!projects.length) {
+          projectSelect.appendChild(new Option('— нет проектов —', '', true, true));
+          currentDomain = '';
+          updateDomainInputs();
+          projectStatus.textContent = 'Добавьте проект ниже';
+        } else {
+          projects.forEach((p, idx) => {
+            const opt = new Option(p.title || p.domain, p.domain, false, idx === 0);
+            projectSelect.appendChild(opt);
+          });
+          if (!currentDomain) {
+            currentDomain = projects[0].domain;
+          }
+          projectSelect.value = currentDomain;
+          projectStatus.textContent = `${projects.length} проект(ов)`;
+          updateDomainInputs();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    projectSelect.addEventListener('change', () => {
+      currentDomain = projectSelect.value.trim();
+      updateDomainInputs();
+      loadKnowledge();
+      pollStatus();
+    });
+
+    document.getElementById('projectForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const domain = document.getElementById('projectDomain').value.trim();
+      const title = document.getElementById('projectTitle').value.trim();
+      if (!domain) return;
+      projectStatus.textContent = 'Сохраняем проект...';
+      try {
+        const resp = await fetch('/api/v1/admin/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ domain, title: title || null }),
+        });
+        if (!resp.ok) {
+          projectStatus.textContent = 'Не удалось сохранить проект';
+          return;
+        }
+        currentDomain = domain;
+        document.getElementById('projectDomain').value = '';
+        document.getElementById('projectTitle').value = '';
+        await loadProjects();
+        await loadDomains();
+        await loadKnowledge();
+        pollStatus();
+      } catch (error) {
+        console.error(error);
+        projectStatus.textContent = 'Ошибка';
+      }
+    });
+
+    document.getElementById('projectDelete').addEventListener('click', async () => {
+      if (!currentDomain) return;
+      if (!confirm(`Удалить проект ${currentDomain}?`)) return;
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentDomain)}`, { method: 'DELETE' });
+        if (!resp.ok) {
+          projectStatus.textContent = 'Не удалось удалить';
+          return;
+        }
+        currentDomain = '';
+        await loadProjects();
+        await loadDomains();
+        document.getElementById('kbTable').innerHTML = '';
+        document.getElementById('kbInfo').textContent = '';
+      } catch (error) {
+        console.error(error);
+      }
+    });
+
+    async function initialize(){
+      await loadProjects();
+      await loadDomains();
+      updateDomainInputs();
+      await loadKnowledge();
+      pollStatus();
+    }
+
+    initialize();
 
     // Controls for LLM config
     document.getElementById('saveLLM').addEventListener('click', async () => {

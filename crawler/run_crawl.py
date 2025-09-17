@@ -398,6 +398,15 @@ def run(
         except Exception:
             pass
 
+        try:
+            db[os.getenv("MONGO_PROJECTS", "projects")].update_one(
+                {"domain": document_domain},
+                {"$setOnInsert": {"domain": document_domain}},
+                upsert=True,
+            )
+        except Exception:
+            logger.warning("project_upsert_failed", domain=document_domain)
+
         operations: list[UpdateOne] = []
 
         async def _store() -> None:
@@ -472,6 +481,7 @@ def main() -> None:  # pragma: no cover - convenience CLI
     parser.add_argument("--url", default=DEFAULT_START_URL, help="Start URL to crawl")
     parser.add_argument("--max-pages", type=int, default=DEFAULT_MAX_PAGES)
     parser.add_argument("--max-depth", type=int, default=DEFAULT_MAX_DEPTH)
+    parser.add_argument("--domain", help="Domain label to store documents under", default=None)
     parser.add_argument("--mongo-uri", default=DEFAULT_MONGO_URI, help="MongoDB connection URI")
     args = parser.parse_args()
 
@@ -482,7 +492,7 @@ def main() -> None:  # pragma: no cover - convenience CLI
         args.url,
         max_pages=args.max_pages,
         max_depth=args.max_depth,
-        domain=urlparse.urlsplit(args.url).netloc,
+        domain=args.domain or urlparse.urlsplit(args.url).netloc,
         mongo_uri=args.mongo_uri,
     )
 
