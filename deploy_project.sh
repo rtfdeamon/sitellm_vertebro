@@ -161,6 +161,27 @@ ensure_nvidia_toolkit() {
   esac
 }
 
+cleanup_previous_stack() {
+  local compose_args=(-f compose.yaml)
+  if [ -f compose.gpu.yaml ]; then
+    compose_args+=(-f compose.gpu.yaml)
+  fi
+
+  if docker compose "${compose_args[@]}" ps >/dev/null 2>&1; then
+    echo '[+] Removing previous containers (if any)...'
+    if ! docker compose "${compose_args[@]}" down --remove-orphans >/dev/null 2>&1; then
+      echo '[i] docker compose down reported an error; continuing'
+    fi
+  fi
+
+  if docker network inspect sitellm_vertebro_default >/dev/null 2>&1; then
+    echo '[+] Removing stale network sitellm_vertebro_default'
+    if ! docker network rm sitellm_vertebro_default >/dev/null 2>&1; then
+      echo '[i] Failed to remove network sitellm_vertebro_default; continuing'
+    fi
+  fi
+}
+
 AUTO_YES=0
 if [ "${1-}" = "--yes" ]; then
   AUTO_YES=1
@@ -357,6 +378,8 @@ fi
 
 # Now that .env exists, open firewall ports if applicable
 open_firewall_ports
+
+cleanup_previous_stack
 
 printf '[+] Starting containers...\n'
 if [ "$USE_GPU" = true ]; then
