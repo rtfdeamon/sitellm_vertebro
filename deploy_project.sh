@@ -189,6 +189,14 @@ get_env_var() {
   grep -E "^$1=" .env 2>/dev/null | tail -n1 | cut -d= -f2-
 }
 
+if [ -z "${MONGO_HOST:-}" ]; then
+  MONGO_HOST=$(get_env_var MONGO_HOST)
+  MONGO_HOST=${MONGO_HOST:-mongo}
+fi
+if [ -z "${MONGO_PORT:-}" ]; then
+  MONGO_PORT=$(get_env_var MONGO_PORT)
+  MONGO_PORT=${MONGO_PORT:-27017}
+fi
 if [ -z "${MONGO_USERNAME:-}" ]; then
   MONGO_USERNAME=$(get_env_var MONGO_USERNAME)
   MONGO_USERNAME=${MONGO_USERNAME:-root}
@@ -197,8 +205,20 @@ if [ -z "${MONGO_PASSWORD:-}" ]; then
   MONGO_PASSWORD=$(get_env_var MONGO_PASSWORD)
   MONGO_PASSWORD=${MONGO_PASSWORD:-f76DlgezffdHetX}
 fi
+if [ -z "${MONGO_DATABASE:-}" ]; then
+  MONGO_DATABASE=$(get_env_var MONGO_DATABASE)
+  MONGO_DATABASE=${MONGO_DATABASE:-smarthelperdb}
+fi
+if [ -z "${MONGO_AUTH:-}" ]; then
+  MONGO_AUTH=$(get_env_var MONGO_AUTH)
+  MONGO_AUTH=${MONGO_AUTH:-admin}
+fi
 export MONGO_USERNAME
 export MONGO_PASSWORD
+export MONGO_HOST
+export MONGO_PORT
+export MONGO_DATABASE
+export MONGO_AUTH
 
 # GPU flag to boolean
 if [ "$ENABLE_GPU" = "y" ] || [ "$ENABLE_GPU" = "Y" ]; then
@@ -260,13 +280,15 @@ if [ -n "$QDRANT_PLATFORM" ]; then
 fi
 update_env_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
 update_env_var RERANK_MODEL_NAME "sbert_cross_ru"
-update_env_var MONGO_HOST "mongo"
-update_env_var MONGO_PORT "27017"
+update_env_var MONGO_HOST "$MONGO_HOST"
+update_env_var MONGO_PORT "$MONGO_PORT"
 update_env_var MONGO_USERNAME "$MONGO_USERNAME"
 update_env_var MONGO_PASSWORD "$MONGO_PASSWORD"
 update_env_var MONGO_ROOT_USERNAME "$MONGO_USERNAME"
 update_env_var MONGO_ROOT_PASSWORD "$MONGO_PASSWORD"
-update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017"
+update_env_var MONGO_DATABASE "$MONGO_DATABASE"
+update_env_var MONGO_AUTH "$MONGO_AUTH"
+update_env_var MONGO_URI "mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DATABASE}?authSource=${MONGO_AUTH}"
 update_env_var USE_GPU "$USE_GPU"
 update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
 APP_PORT_HOST=$(pick_free_port "${HOST_APP_PORT:-18000}")
