@@ -93,8 +93,12 @@ async def test_upsert_text_document_sets_domain_and_description() -> None:
     filter_doc, update_doc, upsert_flag = collection.updated
     assert filter_doc == {"name": "note.txt", "domain": "example.com"}
     assert upsert_flag is True
-    assert update_doc["$set"]["domain"] == "example.com"
-    assert update_doc["$set"]["description"] == "test"
+    stored = update_doc["$set"]
+    assert stored["domain"] == "example.com"
+    assert stored["description"] == "test"
+    assert stored["content_type"] == "text/plain"
+    assert stored["url"] == "https://example.com/doc"
+    assert "ts" in stored
 
 
 @pytest.mark.asyncio
@@ -130,3 +134,6 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
 
     assert result.domain == "example.com"
     assert projects.updated is not None
+    filter_doc, update_doc, upsert_flag = projects.updated
+    assert filter_doc == {"domain": "example.com"}
+    assert upsert_flag is True

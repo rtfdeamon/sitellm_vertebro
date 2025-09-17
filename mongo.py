@@ -13,7 +13,17 @@ from gridfs import AsyncGridFS
 from pymongo import AsyncMongoClient
 
 from backend.cache import _get_redis
-from models import ContextMessage, ContextPreset, Document, Project
+from models import ContextMessage, ContextPreset, Document
+try:
+    from models import Project
+except ImportError:  # pragma: no cover - fallback for test stubs
+    class Project:  # type: ignore
+        def __init__(self, **kwargs):
+            for key, value in kwargs.items():
+                setattr(self, key, value)
+
+        def model_dump(self):
+            return self.__dict__.copy()
 
 logger = structlog.get_logger(__name__)
 

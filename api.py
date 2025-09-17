@@ -6,7 +6,13 @@ import sys
 import os
 import signal
 
-from fastapi import APIRouter, Request, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException
+try:
+    from fastapi import BackgroundTasks
+except ImportError:  # pragma: no cover - fallback for test stubs
+    class BackgroundTasks:  # type: ignore
+        def __init__(self, *args, **kwargs):
+            pass
 from fastapi.responses import ORJSONResponse, StreamingResponse
 import asyncio
 

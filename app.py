@@ -379,14 +379,11 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
     if not name:
         name = f"doc-{uuid4().hex[:8]}"
 
-    domain_value = _normalize_domain(payload.domain)
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-
-    try:
     domain_value, project, mongo_client, owns_client = await _get_mongo_for_domain(
         request, payload.domain
     )
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
     try:
         file_id = await mongo_client.upsert_text_document(

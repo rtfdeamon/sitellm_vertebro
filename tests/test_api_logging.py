@@ -58,6 +58,10 @@ async def test_session_id_logged_on_error(monkeypatch):
     fastapi.APIRouter = APIRouter
     fastapi.Request = Request
     fastapi.HTTPException = HTTPException
+    class BackgroundTasks:
+        def add_task(self, *a, **k):
+            pass
+    fastapi.BackgroundTasks = BackgroundTasks
 
     responses = types.ModuleType("fastapi.responses")
 
