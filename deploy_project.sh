@@ -239,10 +239,6 @@ fi
 PROJECT_NAME=$(slugify_project "${PROJECT_NAME}")
 export PROJECT_NAME
 
-printf '[+] Enable GPU? [y/N]: '
-read -r ENABLE_GPU
-ENABLE_GPU=${ENABLE_GPU:-N}
-
 # Reuse existing Mongo credentials if present, otherwise apply deterministic defaults
 
 if [ -z "${MONGO_HOST:-}" ]; then
@@ -276,12 +272,7 @@ export MONGO_PORT
 export MONGO_DATABASE
 export MONGO_AUTH
 
-# GPU flag to boolean
-if [ "$ENABLE_GPU" = "y" ] || [ "$ENABLE_GPU" = "Y" ]; then
-  USE_GPU=true
-else
-  USE_GPU=false
-fi
+USE_GPU=false
 
 # (Firewall ports will be opened later, after .env is created)
 
@@ -377,20 +368,7 @@ if [ -n "${VAL_MODEL_BASE}" ] || [ -n "${VAL_OLLAMA_BASE}" ]; then
   LOCAL_LLM_ENABLED=false
 fi
 update_env_var LOCAL_LLM_ENABLED "${LOCAL_LLM_ENABLED}"
-
-# If remote LLM is used, always force CPU (no GPU compose / no CUDA wheels)
-if [ "${LOCAL_LLM_ENABLED}" = "false" ]; then
-  if [ "${USE_GPU}" = true ]; then
-    echo "[i] Remote LLM detected (Ollama/model service). Disabling GPU build to avoid NVIDIA drivers."
-  fi
-  USE_GPU=false
-  update_env_var USE_GPU "false"
-fi
-
-# Only now, after finalizing USE_GPU, configure NVIDIA runtime if needed
-if [ "$USE_GPU" = true ]; then
-  ensure_nvidia_toolkit
-fi
+USE_GPU=false
 
 timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
@@ -410,18 +388,10 @@ open_firewall_ports
 cleanup_previous_stack
 
 printf '[+] Starting containers...\n'
-if [ "$USE_GPU" = true ]; then
-  echo '[+] Starting project in GPU mode'
-else
-  echo '[+] Starting project in CPU mode'
-fi
+echo '[+] Starting project in CPU mode'
 
-# Compose command (optionally include GPU overrides)
+# Compose command
 COMPOSE_FILES=(-f compose.yaml)
-# Include GPU overrides only when both GPU requested and local LLM is enabled
-if [ "$USE_GPU" = true ] && [ "${LOCAL_LLM_ENABLED}" = "true" ] && [ -f compose.gpu.yaml ]; then
-  COMPOSE_FILES+=(-f compose.gpu.yaml)
-fi
 COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
 
 printf '[+] Building images sequentially...\n'
@@ -443,7 +413,11 @@ if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
   PROFILE_ARGS+=(--profile local-llm)
 fi
 
-"${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
+if [ ${#PROFILE_ARGS[@]} -gt 0 ]; then
+  "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
+else
+  "${COMPOSE_CMD[@]}" up -d
+fi
 printf '[✓] Containers running\n'
 
 printf '[+] Verifying Mongo connectivity...\n'
@@ -455,7 +429,11 @@ else
   if docker volume inspect sitellm_vertebro_mongo_data >/dev/null 2>&1; then
     docker volume rm sitellm_vertebro_mongo_data >/dev/null 2>&1 || true
   fi
-  "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
+  if [ ${#PROFILE_ARGS[@]} -gt 0 ]; then
+    "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
+  else
+    "${COMPOSE_CMD[@]}" up -d
+  fi
   printf '[+] Retrying Mongo connectivity...\n'
   if verify_mongo_connection 15; then
     echo '[✓] Mongo reachable after volume reset'
