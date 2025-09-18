@@ -31,6 +31,7 @@ ENV PYTHONPATH=/app
 COPY safety ./safety
 COPY observability ./observability
 COPY tg_bot ./tg_bot
+RUN python -m compileall -q /app
 
 # Запускаем
 CMD ["python", "-m", "tg_bot.run"]

@@ -1,6 +1,7 @@
 """MongoDB client helpers used by the application."""
 
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 from urllib.parse import quote_plus
 import hashlib
 import json
@@ -9,8 +10,7 @@ import time
 
 import structlog
 from bson import ObjectId
-from gridfs import AsyncGridFS
-from pymongo import AsyncMongoClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pymongo.errors import ConfigurationError
 
 from backend.cache import _get_redis
@@ -38,8 +38,20 @@ class NotFound(Exception):
 class MongoClient:
     """Wrapper around the asynchronous MongoDB client.
 
-    Accepts optional ``username``/``password`` and builds a proper MongoDB URI
-    whether authentication is configured or not.
+    Parameters
+    ----------
+    host, port, username, password, database, auth_database:
+        Connection parameters used when an explicit ``uri`` is not provided.
+    uri:
+        Optional full MongoDB URI. When supplied, connection parameters are
+        derived from it.
+
+    Notes
+    -----
+    The client wraps :class:`motor.motor_asyncio.AsyncIOMotorClient` and exposes convenience
+    helpers tailored to the application (documents, projects, GridFS, etc.).
+    All database operations log exceptions before re-raising so the caller can
+    surface actionable diagnostics to the end user.
     """
     def __init__(
         self,
@@ -65,34 +77,40 @@ class MongoClient:
         """
         # Build connection URL with or without credentials
         # Be tolerant to non-string env types (e.g., parsed as bool/int/Secret)
-        if uri:
-            self.url = uri
-            self.client = AsyncMongoClient(uri)
-            try:
-                db = self.client.get_default_database()
-            except ConfigurationError:
-                db = self.client[database]
-            self.database_name = db.name
-            self.db = db
-        else:
-            has_user = username is not None and str(username) != ""
-            has_pass = password is not None and str(password) != ""
-            if has_user and has_pass:
-                u = quote_plus(str(username))
-                p = quote_plus(str(password))
-                auth_part = f"{u}:{p}@"
-                auth_db = f"/{auth_database}"
+        try:
+            if uri:
+                self.url = uri
+                self.client = AsyncIOMotorClient(uri)
+                try:
+                    db = self.client.get_default_database()
+                except ConfigurationError:
+                    db = self.client[database]
+                self.database_name = db.name
+                self.db = db
             else:
-                auth_part = ""
-                auth_db = ""
+                has_user = username is not None and str(username) != ""
+                has_pass = password is not None and str(password) != ""
+                if has_user and has_pass:
+                    u = quote_plus(str(username))
+                    p = quote_plus(str(password))
+                    auth_part = f"{u}:{p}@"
+                    auth_db = f"/{auth_database}"
+                else:
+                    auth_part = ""
+                    auth_db = ""
 
-            self.url = f"mongodb://{auth_part}{host}:{port}{auth_db}"
-            self.client = AsyncMongoClient(self.url)
-            self.database_name = database
-            self.db = self.client[database]
-        self.gridfs = AsyncGridFS(self.db)
+                self.url = f"mongodb://{auth_part}{host}:{port}{auth_db}"
+                self.client = AsyncIOMotorClient(self.url)
+                self.database_name = database
+                self.db = self.client[database]
+        except Exception as exc:
+            logger.error("mongo_client_init_failed", uri=uri or getattr(self, "url", uri), error=str(exc))
+            raise
+        self.gridfs = AsyncIOMotorGridFSBucket(self.db)
         self.projects_collection = os.getenv("MONGO_PROJECTS", "projects")
         self.settings_collection = os.getenv("MONGO_SETTINGS", "app_settings")
+        self.documents_collection = os.getenv("MONGO_DOCUMENTS", "documents")
+        self._indexes_ready = False
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
         """Return ``True`` if no documents match ``query`` in ``collection``.
@@ -101,7 +119,11 @@ class MongoClient:
         query.
         """
 
-        return await self.db[collection].count_documents(query) == 0
+        try:
+            return await self.db[collection].count_documents(query) == 0
+        except Exception as exc:
+            logger.error("mongo_count_failed", collection=collection, query=query, error=str(exc))
+            raise
 
     async def get_sessions(
         self, collection: str, session_id: str
@@ -115,13 +137,19 @@ class MongoClient:
         """
         query = {"sessionId": session_id}
 
-        if await self.is_query_empty(collection, query):
-            raise NotFound
+        try:
+            if await self.is_query_empty(collection, query):
+                raise NotFound
 
-        cursor = self.db[collection].find(query, {"_id": False})
+            cursor = self.db[collection].find(query, {"_id": False})
 
-        async for message in cursor.sort({"number": 1}):
-            yield ContextMessage(**message)
+            async for message in cursor.sort({"number": 1}):
+                yield ContextMessage(**message)
+        except NotFound:
+            raise
+        except Exception as exc:
+            logger.error("mongo_get_sessions_failed", collection=collection, session_id=session_id, error=str(exc))
+            raise
 
     async def get_context_preset(
         self, collection: str
@@ -135,13 +163,19 @@ class MongoClient:
         """
         query = {}
 
-        if await self.is_query_empty(collection, query):
-            raise NotFound
+        try:
+            if await self.is_query_empty(collection, query):
+                raise NotFound
 
-        cursor = self.db[collection].find(query, {"_id": False})
+            cursor = self.db[collection].find(query, {"_id": False})
 
-        async for message in cursor.sort({"number": 1}):
-            yield ContextPreset(**message)
+            async for message in cursor.sort({"number": 1}):
+                yield ContextPreset(**message)
+        except NotFound:
+            raise
+        except Exception as exc:
+            logger.error("mongo_get_presets_failed", collection=collection, error=str(exc))
+            raise
 
     async def get_documents(self, collection: str) -> AsyncGenerator[Document]:
         """Yield document metadata from ``collection``.
@@ -153,12 +187,18 @@ class MongoClient:
         """
         query = {}
 
-        if await self.is_query_empty(collection, query):
-            raise NotFound
+        try:
+            if await self.is_query_empty(collection, query):
+                raise NotFound
 
-        cursor = self.db[collection].find(query, {"_id": False})
-        async for message in cursor:
-            yield Document(**message)
+            cursor = self.db[collection].find(query, {"_id": False})
+            async for message in cursor:
+                yield Document(**message)
+        except NotFound:
+            raise
+        except Exception as exc:
+            logger.error("mongo_get_documents_failed", collection=collection, error=str(exc))
+            raise
 
     async def search_documents(
         self, collection: str, query: str, project: str | None = None
@@ -175,46 +215,79 @@ class MongoClient:
         ]
         key = ":".join(key_parts)
         redis = _get_redis()
-        cached = await redis.get(key)
-        if cached:
-            logger.info("cache hit", key=key)
-            docs_data = json.loads(cached.decode())
-            return [Document(**d) for d in docs_data]
-        cursor = self.db[collection].find(
-            search_query, {"_id": False, "score": {"$meta": "textScore"}}
-        )
-        cursor = cursor.sort([("score", {"$meta": "textScore"})]).limit(50)
-        documents = [Document(**doc) async for doc in cursor]
-        # Cache the search results as a list of document dicts
-        docs_data = [doc.model_dump() for doc in documents]
-        await redis.setex(key, 86400, json.dumps(docs_data, ensure_ascii=False))
-        logger.info("cache store", key=key)
-        return documents
+        try:
+            cached = await redis.get(key)
+            if cached:
+                logger.info("cache_hit", key=key)
+                docs_data = json.loads(cached.decode())
+                return [Document(**d) for d in docs_data]
+
+            cursor = self.db[collection].find(
+                search_query, {"_id": False, "score": {"$meta": "textScore"}}
+            )
+            cursor = cursor.sort([("score", {"$meta": "textScore"})]).limit(50)
+            documents = [Document(**doc) async for doc in cursor]
+            # Cache the search results as a list of document dicts
+            docs_data = [doc.model_dump() for doc in documents]
+            await redis.setex(key, 86400, json.dumps(docs_data, ensure_ascii=False))
+            logger.info("cache_store", key=key, matched=len(documents))
+            return documents
+        except Exception as exc:
+            logger.error("mongo_search_failed", collection=collection, query=query, project=project, error=str(exc))
+            raise
 
     async def get_gridfs_file(self, file_id: str) -> bytes:
         """Return file contents from GridFS by ``file_id``."""
-        file = await self.gridfs.get(ObjectId(file_id))
-        return await file.read()
+        try:
+            download_stream = await self.gridfs.open_download_stream(ObjectId(file_id))
+            try:
+                return await download_stream.read()
+            finally:
+                with suppress(Exception):
+                    download_stream.close()
+        except Exception as exc:
+            logger.error("gridfs_read_failed", file_id=file_id, error=str(exc))
+            raise
 
     async def get_document_with_content(
         self, collection: str, file_id: str
     ) -> tuple[dict, bytes]:
         """Return metadata and raw contents for ``file_id``."""
 
-        doc = await self.db[collection].find_one({"fileId": file_id}, {"_id": False})
-        if not doc:
-            raise NotFound
-        payload = await self.get_gridfs_file(file_id)
-        return doc, payload
+        try:
+            doc = await self.db[collection].find_one({"fileId": file_id}, {"_id": False})
+            if not doc:
+                raise NotFound
+            payload = await self.get_gridfs_file(file_id)
+            return doc, payload
+        except NotFound:
+            raise
+        except Exception as exc:
+            logger.error("mongo_get_document_with_content_failed", collection=collection, file_id=file_id, error=str(exc))
+            raise
 
     async def delete_document(self, collection: str, file_id: str) -> None:
         """Remove document metadata and GridFS payload."""
 
-        await self.db[collection].delete_one({"fileId": file_id})
         try:
-            await self.gridfs.delete(ObjectId(file_id))
-        except Exception:
-            pass
+            await self.db[collection].delete_one({"fileId": file_id})
+            with suppress(Exception):
+                await self.gridfs.delete(ObjectId(file_id))
+        except Exception as exc:
+            logger.error("mongo_delete_document_failed", collection=collection, file_id=file_id, error=str(exc))
+            raise
+
+    async def update_document_status(
+        self, collection: str, file_id: str, status: str, message: str | None = None
+    ) -> None:
+        """Persist processing status for a document."""
+
+        update = {"status": status, "statusMessage": message, "statusUpdatedAt": time.time()}
+        await self.db[collection].update_one(
+            {"fileId": file_id},
+            {"$set": update},
+            upsert=False,
+        )
 
     async def upload_document(
         self,
@@ -235,21 +308,27 @@ class MongoClient:
         str
             The generated GridFS ``file_id``.
         """
-        f_id = await self.gridfs.put(file)
-        project_key = (project or "default").strip().lower()
-        document = Document(
-            name=file_name,
-            description=description or "",
-            fileId=str(f_id),
-            url=url,
-            ts=time.time(),
-            content_type=content_type,
-            domain=domain or project_key,
-            project=project_key,
-        )
-        await self.db[documents_collection].insert_one(document.model_dump())
-
-        return str(f_id)
+        try:
+            f_id = await self.gridfs.upload_from_stream(
+                file_name or "document",
+                file,
+            )
+            project_key = (project or "default").strip().lower()
+            document = Document(
+                name=file_name,
+                description=description or "",
+                fileId=str(f_id),
+                url=url,
+                ts=time.time(),
+                content_type=content_type,
+                domain=domain or project_key,
+                project=project_key,
+            ).model_dump()
+            await self.db[documents_collection].insert_one(document)
+            return str(f_id)
+        except Exception as exc:
+            logger.error("mongo_upload_document_failed", collection=documents_collection, name=file_name, project=project, error=str(exc))
+            raise
 
     async def upsert_text_document(
         self,
@@ -264,79 +343,87 @@ class MongoClient:
     ) -> str:
         """Upsert a plain-text document under ``domain``."""
 
-        payload = content.encode("utf-8")
-        description = description or content.replace("\n", " ").strip()[:200]
-        project_key = (project or "default").strip().lower()
-        existing = await self.db[documents_collection].find_one(
-            {"name": name, "project": project_key},
-            {"fileId": 1},
-        )
-        if existing and existing.get("fileId"):
-            try:
-                await self.gridfs.delete(ObjectId(existing["fileId"]))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("gridfs_delete_failed", file_id=existing["fileId"], error=str(exc))
+        try:
+            payload = content.encode("utf-8")
+            description = description or content.replace("\n", " ").strip()[:200]
+            project_key = (project or "default").strip().lower()
+            existing = await self.db[documents_collection].find_one(
+                {"name": name, "project": project_key},
+                {"fileId": 1},
+            )
+            if existing and existing.get("fileId"):
+                with suppress(Exception):
+                    await self.gridfs.delete(ObjectId(existing["fileId"]))
 
-        file_id = await self.gridfs.put(
-            payload,
-            filename=name,
-            content_type="text/plain",
-            encoding="utf-8",
-        )
+            file_id = await self.gridfs.upload_from_stream(
+                name or "document",
+                payload,
+                metadata={
+                    "content_type": "text/plain",
+                    "encoding": "utf-8",
+                },
+            )
 
-        doc = Document(
-            name=name,
-            description=description,
-            fileId=str(file_id),
-            url=url,
-            ts=time.time(),
-            content_type="text/plain",
-            domain=domain or project_key,
-            project=project_key,
-        ).model_dump()
+            doc = Document(
+                name=name,
+                description=description,
+                fileId=str(file_id),
+                url=url,
+                ts=time.time(),
+                content_type="text/plain",
+                domain=domain or project_key,
+                project=project_key,
+            ).model_dump()
 
-        await self.db[documents_collection].update_one(
-            {"name": name, "project": project_key},
-            {"$set": doc},
-            upsert=True,
-        )
+            await self.db[documents_collection].update_one(
+                {"name": name, "project": project_key},
+                {"$set": doc},
+                upsert=True,
+            )
 
-        return str(file_id)
+            return str(file_id)
+        except Exception as exc:
+            logger.error("mongo_upsert_text_document_failed", collection=documents_collection, name=name, project=project, error=str(exc))
+            raise
 
     async def list_project_names(self, documents_collection: str, limit: int = 100) -> list[str]:
         """Return a list of known project identifiers."""
 
         names: set[str] = set()
-        async for item in (
-            self.db[self.projects_collection]
-            .find({}, {"_id": False, "name": 1})
-            .limit(limit)
-        ):
-            if item.get("name"):
-                names.add(item["name"])
+        try:
+            async for item in (
+                self.db[self.projects_collection]
+                .find({}, {"_id": False, "name": 1})
+                .limit(limit)
+            ):
+                if item.get("name"):
+                    names.add(item["name"])
 
-        cursor = self.db[documents_collection].aggregate(
-            [
-                {"$match": {"project": {"$ne": None}}},
-                {"$group": {"_id": "$project"}},
-                {"$limit": limit},
-            ]
-        )
-        async for item in cursor:
-            if item.get("_id"):
-                names.add(item["_id"])
-        # Legacy documents keyed by domain only
-        cursor_domain = self.db[documents_collection].aggregate(
-            [
-                {"$match": {"project": {"$exists": False}, "domain": {"$ne": None}}},
-                {"$group": {"_id": "$domain"}},
-                {"$limit": limit},
-            ]
-        )
-        async for item in cursor_domain:
-            if item.get("_id"):
-                names.add(item["_id"])
-        return sorted(names)
+            cursor = self.db[documents_collection].aggregate(
+                [
+                    {"$match": {"project": {"$ne": None}}},
+                    {"$group": {"_id": "$project"}},
+                    {"$limit": limit},
+                ]
+            )
+            async for item in cursor:
+                if item.get("_id"):
+                    names.add(item["_id"])
+            # Legacy documents keyed by domain only
+            cursor_domain = self.db[documents_collection].aggregate(
+                [
+                    {"$match": {"project": {"$exists": False}, "domain": {"$ne": None}}},
+                    {"$group": {"_id": "$domain"}},
+                    {"$limit": limit},
+                ]
+            )
+            async for item in cursor_domain:
+                if item.get("_id"):
+                    names.add(item["_id"])
+            return sorted(names)
+        except Exception as exc:
+            logger.error("mongo_list_project_names_failed", limit=limit, error=str(exc))
+            raise
 
     def _project_from_doc(self, doc: dict | None) -> Project | None:
         if not doc:
@@ -365,43 +452,118 @@ class MongoClient:
         if not data.get("name"):
             raise ValueError("project name is required")
         data["name"] = str(data["name"]).strip().lower()
-        await self.db[self.projects_collection].update_one(
-            {"name": data["name"]},
-            {"$set": data},
-            upsert=True,
-        )
-        stored = await self.db[self.projects_collection].find_one(
-            {"name": data["name"]},
-            {"_id": False},
-        )
-        return self._project_from_doc(stored) or project
-
-    async def delete_project(self, domain: str) -> None:
-        await self.db[self.projects_collection].delete_one({"name": domain})
-        await self.db[self.projects_collection].delete_one({"domain": domain})
-
-    async def get_project(self, domain: str) -> Project | None:
-        doc = await self.db[self.projects_collection].find_one(
-            {"name": domain},
-            {"_id": False},
-        )
-        if not doc:
-            doc = await self.db[self.projects_collection].find_one(
-                {"domain": domain},
+        try:
+            await self.db[self.projects_collection].update_one(
+                {"name": data["name"]},
+                {"$set": data},
+                upsert=True,
+            )
+            stored = await self.db[self.projects_collection].find_one(
+                {"name": data["name"]},
                 {"_id": False},
             )
-        return self._project_from_doc(doc)
+            return self._project_from_doc(stored) or project
+        except Exception as exc:
+            logger.error("mongo_upsert_project_failed", project=data.get("name"), error=str(exc))
+            raise
+
+    async def delete_project(self, domain: str) -> None:
+        try:
+            await self.db[self.projects_collection].delete_one({"name": domain})
+            await self.db[self.projects_collection].delete_one({"domain": domain})
+        except Exception as exc:
+            logger.error("mongo_delete_project_failed", project=domain, error=str(exc))
+            raise
+
+    async def get_project(self, domain: str) -> Project | None:
+        try:
+            doc = await self.db[self.projects_collection].find_one(
+                {"name": domain},
+                {"_id": False},
+            )
+            if not doc:
+                doc = await self.db[self.projects_collection].find_one(
+                    {"domain": domain},
+                    {"_id": False},
+                )
+            return self._project_from_doc(doc)
+        except Exception as exc:
+            logger.error("mongo_get_project_failed", project=domain, error=str(exc))
+            raise
 
     async def get_setting(self, key: str) -> dict | None:
-        return await self.db[self.settings_collection].find_one({"_id": key}, {"_id": False})
+        try:
+            return await self.db[self.settings_collection].find_one({"_id": key}, {"_id": False})
+        except Exception as exc:
+            logger.error("mongo_get_setting_failed", key=key, error=str(exc))
+            raise
 
     async def set_setting(self, key: str, value: dict) -> None:
-        value = value.copy()
-        await self.db[self.settings_collection].update_one(
-            {"_id": key},
-            {"$set": value},
-            upsert=True,
-        )
+        try:
+            value = value.copy()
+            await self.db[self.settings_collection].update_one(
+                {"_id": key},
+                {"$set": value},
+                upsert=True,
+            )
+        except Exception as exc:
+            logger.error("mongo_set_setting_failed", key=key, error=str(exc))
+            raise
 
     async def close(self) -> None:
-        await self.client.close()
+        self.client.close()
+
+    async def ensure_indexes(self) -> None:
+        """Create required Mongo indexes if they are missing."""
+
+        if self._indexes_ready:
+            return
+
+        try:
+            await self.db[self.projects_collection].create_index(
+                "name",
+                name="project_name_unique",
+                unique=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.projects_collection,
+                index="project_name_unique",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.documents_collection].create_index(
+                [("project", 1), ("name", 1)],
+                name="documents_project_name_unique",
+                unique=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.documents_collection,
+                index="documents_project_name_unique",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.documents_collection].create_index(
+                [("name", "text"), ("description", "text")],
+                name="documents_text_search",
+                default_language="russian",
+            )
+            logger.info(
+                "mongo_text_index_ready",
+                collection=self.documents_collection,
+                index="documents_text_search",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.documents_collection,
+                index="documents_text_search",
+                error=str(exc),
+            )
+
+        self._indexes_ready = True

@@ -100,6 +100,7 @@ class Document(BaseModel):
     content_type: str | None = None
     domain: str | None = None
     project: str | None = None
+    source_content_type: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={

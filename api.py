@@ -6,6 +6,7 @@ import sys
 import os
 import signal
 import urllib.parse as urlparse
+from typing import Any
 
 from fastapi import APIRouter, Request, HTTPException
 try:
@@ -23,12 +24,14 @@ import structlog
 
 from backend import llm_client
 from backend.settings import settings as backend_settings
+from retrieval import search as retrieval_search
 
-from models import LLMResponse, LLMRequest, RoleEnum, Project
+from models import Document, LLMResponse, LLMRequest, RoleEnum, Project
 from mongo import NotFound
 from pydantic import BaseModel
 
 from core.status import status_dict
+from settings import MongoSettings
 
 logger = structlog.get_logger(__name__)
 
@@ -41,6 +44,201 @@ def _normalize_project(value: str | None) -> str | None:
     if fallback:
         return fallback.strip().lower() or None
     return None
+
+
+_KNOWLEDGE_SNIPPET_CHARS = 480
+_MAX_DIALOG_TURNS = 10
+
+
+def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    truncated = cleaned[:limit].rsplit(" ", 1)[0].strip()
+    if not truncated:
+        truncated = cleaned[:limit]
+    return truncated.rstrip(". ") + "…"
+
+
+def _extract_payload_text(payload: Any) -> str:
+    if not payload:
+        return ""
+    if isinstance(payload, str):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("text", "content", "body", "chunk"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        meta = payload.get("metadata")
+        if isinstance(meta, dict):
+            return _extract_payload_text(meta)
+    return ""
+
+
+def _extract_payload_name(payload: Any, default: str | None = None) -> str | None:
+    if isinstance(payload, dict):
+        for key in ("title", "name", "source", "document", "file_name"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        url = payload.get("url")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+    return default
+
+
+def _extract_payload_url(payload: Any) -> str | None:
+    if isinstance(payload, dict):
+        url = payload.get("url")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+    return None
+
+
+async def _collect_knowledge_snippets(
+    request: Request,
+    question: str,
+    project: str | None,
+    *,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    question = (question or "").strip()
+    if not question:
+        return []
+
+    snippets: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+
+    try:
+        docs = await asyncio.to_thread(retrieval_search.hybrid_search, question, limit * 2)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("knowledge_hybrid_failed", error=str(exc))
+        docs = []
+
+    for doc in docs:
+        payload = getattr(doc, "payload", None)
+        text = _extract_payload_text(payload)
+        if not text:
+            continue
+        doc_id = str(getattr(doc, "id", "")) or None
+        if doc_id and doc_id in seen_ids:
+            continue
+        snippets.append(
+            {
+                "id": doc_id,
+                "name": _extract_payload_name(payload, default=doc_id),
+                "text": text,
+                "score": getattr(doc, "score", None),
+                "url": _extract_payload_url(payload),
+                "source": "qdrant",
+            }
+        )
+        if doc_id:
+            seen_ids.add(doc_id)
+        if len(snippets) >= limit:
+            break
+
+    if len(snippets) >= limit:
+        return snippets[:limit]
+
+    mongo_client = getattr(request.state, "mongo", None)
+    if not mongo_client or not hasattr(mongo_client, "search_documents"):
+        return snippets[:limit]
+
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    try:
+        candidates = await mongo_client.search_documents(
+            collection, question, project=project
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("knowledge_mongo_search_failed", error=str(exc))
+        candidates = []
+
+    if not candidates:
+        try:
+            query: dict[str, Any] = {}
+            if project:
+                query["project"] = project
+            cursor = (
+                mongo_client.db[collection]
+                .find(query, {"_id": False})
+                .sort("ts", -1)
+                .limit(limit * 2)
+            )
+            candidates = [Document(**doc) async for doc in cursor]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("knowledge_mongo_fallback_failed", error=str(exc))
+            candidates = []
+
+    for doc in candidates:
+        if len(snippets) >= limit:
+            break
+        file_id = getattr(doc, "fileId", None)
+        if file_id and file_id in seen_ids:
+            continue
+        text = ""
+        try:
+            _meta, payload = await mongo_client.get_document_with_content(
+                collection, doc.fileId
+            )
+            text = payload.decode("utf-8", errors="ignore")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("knowledge_content_fetch_failed", file_id=file_id, error=str(exc))
+            text = doc.description or ""
+        if not text.strip():
+            continue
+        snippets.append(
+            {
+                "id": file_id,
+                "name": doc.name,
+                "text": text,
+                "score": getattr(doc, "ts", None),
+                "url": doc.url,
+                "source": "mongo",
+            }
+        )
+        if file_id:
+            seen_ids.add(file_id)
+
+    return snippets[:limit]
+
+
+def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
+    if not snippets:
+        return ""
+    blocks: list[str] = []
+    for idx, item in enumerate(snippets, 1):
+        name = item.get("name") or f"Источник {idx}"
+        snippet_text = _truncate_text(item.get("text", ""))
+        blocks.append(f"Источник {idx} ({name}):\n{snippet_text}")
+    return (
+        "Используй приведённые ниже выдержки из базы знаний при ответе."
+        "\n\n" + "\n\n".join(blocks)
+    )
+
+
+def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_DIALOG_TURNS) -> list[dict[str, Any]]:
+    """Return ``messages`` trimmed to the last ``max_turns`` user requests."""
+
+    if max_turns <= 0 or len(messages) <= 2 * max_turns:
+        return messages
+
+    kept: list[dict[str, Any]] = []
+    user_seen = 0
+
+    for msg in reversed(messages):
+        role = str(msg.get("role", "")).lower()
+        if role == RoleEnum.user.value:
+            user_seen += 1
+        kept.append(msg)
+        if user_seen >= max_turns:
+            break
+
+    return list(reversed(kept))
+
 
 llm_router = APIRouter(
     prefix="/llm",
@@ -67,20 +265,29 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     request:
         Incoming request used to access application state.
     llm_request:
-        Input payload specifying the ``session_id``.
+        Input payload specifying the ``session_id`` and optional project slug.
 
-    Returns
-    -------
-    ORJSONResponse
-        JSON response containing the assistant reply under ``text``.
+    Raises
+    ------
+    HTTPException
+        If the session or preset cannot be found or if generation fails.
     """
-    mongo_client = request.state.mongo
+
+    try:
+        mongo_client = request.state.mongo
+    except Exception as exc:
+        logger.error("mongo_client_missing", error=str(exc))
+        raise HTTPException(status_code=500, detail="Mongo client unavailable") from exc
     project_name = _normalize_project(llm_request.project)
     project: Project | None = None
     if project_name:
-        project = await request.state.mongo.get_project(project_name)
-        if project is None:
-            project = await request.state.mongo.upsert_project(Project(name=project_name))
+        try:
+            project = await request.state.mongo.get_project(project_name)
+            if project is None:
+                project = await request.state.mongo.upsert_project(Project(name=project_name))
+        except Exception as exc:
+            logger.error("project_resolve_failed", project=project_name, error=str(exc))
+            raise HTTPException(status_code=500, detail="Failed to resolve project") from exc
     logger.info("ask", session=str(llm_request.session_id), project=project_name)
     context = []
 
@@ -92,23 +299,27 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
             )
         ]
     except NotFound:
-        logger.warning(
-            "preset not found", session=str(llm_request.session_id)
-        )
+        logger.warning("preset_not_found", session=str(llm_request.session_id))
         raise HTTPException(status_code=404, detail="Preset not found")
+    except Exception as exc:
+        logger.error("preset_load_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to load preset") from exc
     try:
         async for message in mongo_client.get_sessions(
             request.state.contexts_collection, str(llm_request.session_id)
         ):
             context.append({"role": str(message.role), "content": message.text})
     except NotFound:
-        logger.warning(
-            "session not found", session=str(llm_request.session_id)
-        )
+        logger.warning("session_not_found", session=str(llm_request.session_id))
         raise HTTPException(status_code=404, detail="Can't find specified sessionId")
+    except Exception as exc:
+        logger.error("session_load_failed", session=str(llm_request.session_id), error=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to load session history") from exc
 
     if not context:
         raise HTTPException(status_code=400, detail="No conversation history provided")
+
+    context = _limit_dialog_history(context)
 
     if context[-1]["role"] == RoleEnum.assistant:
         logger.error(
@@ -117,6 +328,41 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         raise HTTPException(
             status_code=400, detail="Last message role cannot be assistant"
         )
+
+    knowledge_snippets: list[dict[str, Any]] = []
+    knowledge_message = ""
+    try:
+        question_text = context[-1].get("content", "")
+        knowledge_snippets = await _collect_knowledge_snippets(
+            request, question_text, project_name
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "knowledge_lookup_failed",
+            session=str(llm_request.session_id),
+            project=project_name,
+            error=str(exc),
+        )
+    else:
+        knowledge_message = _compose_knowledge_message(knowledge_snippets)
+        if knowledge_message:
+            preset = preset + [{"role": "system", "content": knowledge_message}]
+            logger.info(
+                "knowledge_context_attached",
+                session=str(llm_request.session_id),
+                project=project_name,
+                docs=[
+                    {
+                        "id": item.get("id"),
+                        "name": item.get("name"),
+                        "source": item.get("source"),
+                        "url": item.get("url"),
+                        "chars": len(item.get("text", "")),
+                        "score": item.get("score"),
+                    }
+                    for item in knowledge_snippets
+                ],
+            )
 
     if project and project.llm_prompt:
         prompt_text = project.llm_prompt.strip()
@@ -137,8 +383,12 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         trimmed_model = project.llm_model.strip()
         if trimmed_model:
             model_override = trimmed_model
-    async for token in llm_client.generate(prompt, model=model_override):
-        chunks.append(token)
+    try:
+        async for token in llm_client.generate(prompt, model=model_override):
+            chunks.append(token)
+    except Exception as exc:
+        logger.error("llm_generate_failed", project=project_name, error=str(exc))
+        raise HTTPException(status_code=500, detail="LLM generation failed") from exc
     text = "".join(chunks)
     logger.info("llm answered", length=len(text))
 
@@ -174,6 +424,39 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
             model_override = model_text
 
     logger.info("chat", question=question, project=project_name)
+
+    knowledge_snippets: list[dict[str, Any]] = []
+    try:
+        knowledge_snippets = await _collect_knowledge_snippets(
+            request, question, project_name
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "knowledge_lookup_failed",
+            project=project_name,
+            error=str(exc),
+            mode="stream",
+        )
+    else:
+        knowledge_message = _compose_knowledge_message(knowledge_snippets)
+        if knowledge_message:
+            prompt_base = "\n\n".join([knowledge_message, f"Вопрос: {prompt_base}", "Ответ:"])
+            logger.info(
+                "knowledge_context_attached",
+                project=project_name,
+                mode="stream",
+                docs=[
+                    {
+                        "id": item.get("id"),
+                        "name": item.get("name"),
+                        "source": item.get("source"),
+                        "url": item.get("url"),
+                        "chars": len(item.get("text", "")),
+                        "score": item.get("score"),
+                    }
+                    for item in knowledge_snippets
+                ],
+            )
 
     async def event_stream():
         try:

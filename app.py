@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import os
 import asyncio
+import structlog
 
 from fastapi import FastAPI, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -28,6 +29,7 @@ from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
 from pymongo import MongoClient as SyncMongoClient
+from pymongo.errors import ServerSelectionTimeoutError
 from qdrant_client import QdrantClient
 from gridfs import GridFS
 from bson import ObjectId
@@ -41,6 +43,7 @@ from uuid import uuid4
 configure_logging()
 
 settings = Settings()
+logger = structlog.get_logger(__name__)
 
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD_HASH = os.getenv(
@@ -121,11 +124,34 @@ class TelegramController:
             self._token = None
 
 
-async def _get_project_context(request: Request, project_name: str | None):
+async def _get_project_context(
+    request: Request,
+    project_name: str | None,
+) -> tuple[str | None, Project | None, MongoClient, bool]:
+    """Resolve project configuration and Mongo client for a given project name.
+
+    Parameters
+    ----------
+    request:
+        Active FastAPI request containing ``mongo`` client in state.
+    project_name:
+        Optional project slug provided by the caller.
+
+    Returns
+    -------
+    tuple
+        ``(normalized_project, project_model, mongo_client, owns_client)`` where
+        ``owns_client`` indicates whether the caller must close the client.
+    """
+
     normalized = _normalize_project(project_name)
     project: Project | None = None
     if normalized:
-        project = await request.state.mongo.get_project(normalized)
+        try:
+            project = await request.state.mongo.get_project(normalized)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("project_lookup_failed", project=normalized, error=str(exc))
+            raise HTTPException(status_code=500, detail="Failed to read project configuration") from exc
     return normalized, project, request.state.mongo, False
 
 
@@ -142,8 +168,8 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                         hashed = hashlib.sha256(password.encode()).digest()
                         if hmac.compare_digest(hashed, ADMIN_PASSWORD_DIGEST):
                             return await call_next(request)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("basic_auth_decode_failed", error=str(exc))
             return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
         return await call_next(request)
 
@@ -201,6 +227,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         mongo_cfg.database,
         mongo_cfg.auth,
     )
+    await mongo_client.ensure_indexes()
     contexts_collection = mongo_cfg.contexts
     context_presets_collection = mongo_cfg.presets
     documents_collection = mongo_cfg.documents
@@ -211,12 +238,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     app.state.telegram = telegram_ctrl
 
     # Optionally auto start Telegram bot if stored in settings
-    try:
-        setting = await mongo_client.get_setting("telegram")
-        if setting and setting.get("auto_start") and setting.get("token"):
+    setting = None
+    for attempt in range(5):
+        try:
+            setting = await mongo_client.get_setting("telegram") or {}
+            break
+        except ServerSelectionTimeoutError as exc:
+            logger.warning(
+                "telegram_settings_retry",
+                attempt=attempt + 1,
+                error=str(exc),
+            )
+            await asyncio.sleep(2)
+        except Exception as exc:
+            logger.warning("telegram_settings_failed", error=str(exc), exc_info=True)
+            break
+    if setting and setting.get("auto_start") and setting.get("token"):
+        try:
             await telegram_ctrl.start(setting["token"])
-    except Exception:
-        logger.warning("telegram auto-start failed", exc_info=True)
+        except Exception as exc:
+            logger.warning("telegram_auto_start_failed", error=str(exc), exc_info=True)
 
     yield {
         "llm": llm,
@@ -230,7 +271,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     del llm
     with suppress(Exception):
         await telegram_ctrl.stop()
-    await mongo_client.client.close()
+    mongo_client.client.close()
     qdrant_client.close()
 
 
@@ -370,6 +411,8 @@ class KnowledgeUpdate(BaseModel):
     url: str | None = None
     project: str | None = None
     domain: str | None = None
+    status: str | None = None
+    status_message: str | None = None
 
 
 class ProjectCreate(BaseModel):
@@ -395,6 +438,7 @@ async def admin_knowledge(
     q: str | None = None,
     limit: int = 50,
     domain: str | None = None,
+    project: str | None = None,
 ) -> ORJSONResponse:
     """Return knowledge base documents for the admin UI."""
 
@@ -403,8 +447,9 @@ async def admin_knowledge(
     except Exception:  # noqa: BLE001
         limit = 50
 
+    selector = project or domain
     project_name, project, mongo_client, owns_client = await _get_project_context(
-        request, domain
+        request, selector
     )
 
     mongo_cfg = MongoSettings()
@@ -623,7 +668,7 @@ async def admin_project_names(request: Request, limit: int = 100) -> ORJSONRespo
 def admin_llm_models() -> ORJSONResponse:
     """Return available LLM model identifiers."""
 
-    models = backend_settings.get_available_llm_models()
+    models = base_settings.get_available_llm_models()
     return ORJSONResponse({"models": models})
 
 

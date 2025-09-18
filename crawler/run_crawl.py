@@ -6,7 +6,7 @@ make testing straightforward:
 
 - ``fetch(url)`` – synchronous fetch helper used in unit tests to verify
   content-type handling for non-HTML resources.
-- ``crawl(...)`` – asynchronous BFS crawler that yields ``(url, html, ctype)``.
+- ``crawl(...)`` – asynchronous BFS crawler that yields ``(url, payload, ctype, is_html)``.
 
 The CLI entry point remains lightweight and is not exercised by tests.
 """
@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import io
 import os
 import re
 import sys
@@ -28,6 +29,7 @@ import requests
 from bs4 import BeautifulSoup
 from contextlib import contextmanager
 from gridfs import GridFS
+from pypdf import PdfReader
 from pymongo import MongoClient, UpdateOne
 from pymongo.errors import ConfigurationError
 from redis import Redis
@@ -53,7 +55,6 @@ DEFAULT_MONGO_URI: str = os.getenv(
 DEFAULT_SITEMAP_URL: str | None = os.getenv("CRAWL_SITEMAP_URL")
 DEFAULT_IGNORE_ROBOTS: bool = os.getenv("CRAWL_IGNORE_ROBOTS", "0") == "1"
 BINARY_EXTENSIONS = {
-    ".pdf",
     ".png",
     ".jpg",
     ".jpeg",
@@ -150,15 +151,23 @@ BATCH_SIZE = 50  # сколько документов пушим в Mongo за 
 # ------------------------- Вспомогательные функции ------------------- #
 
 def fetch(url: str) -> Tuple[str | None, str | None]:
-    """Synchronously fetch a URL and return ``(html, content_type)``.
+    """Synchronously fetch a URL and return ``(text, content_type)``.
 
-    Non-HTML responses are skipped and logged with their ``content_type``.
+    HTML responses return the raw markup; PDF responses are converted to text;
+    other content types are skipped and logged with their ``content_type``.
     """
     try:
         resp = requests.get(url, headers=HEADERS, timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         ctype = resp.headers.get("content-type", "")
         main_type = ctype.split(";")[0].strip().lower()
+        if main_type == "application/pdf" or url.lower().endswith(".pdf"):
+            text = pdf_to_text(resp.content)
+            if text:
+                logger.info("pdf extracted", url=url, chars=len(text))
+                return text, ctype or "application/pdf"
+            logger.info("skip pdf", url=url, reason="no_text")
+            return None, ctype or "application/pdf"
         if main_type != "text/html":
             logger.info("skip non-html", url=url, content_type=ctype)
             return None, ctype
@@ -202,18 +211,42 @@ def html_to_text(html: str) -> str:
     return cleaned.strip()
 
 
-def _filename_from_url(url: str) -> str:
-    """Return a filesystem-friendly name for ``url`` with ``.txt`` extension."""
+def pdf_to_text(data: bytes) -> str:
+    """Extract UTF-8 text from PDF ``data`` using :mod:`pypdf`."""
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as exc:  # pragma: no cover - PDF parsing failure
+        logger.warning("pdf_parse_failed", error=str(exc))
+        return ""
+
+    chunks: list[str] = []
+    for idx, page in enumerate(reader.pages):
+        try:
+            extracted = page.extract_text() or ""
+        except Exception as exc:  # pragma: no cover - page level issues
+            logger.warning("pdf_page_extract_failed", page=idx, error=str(exc))
+            extracted = ""
+        if extracted:
+            chunks.append(extracted.strip())
+
+    return "\n\n".join(part for part in chunks if part).strip()
+
+
+def _filename_from_url(url: str, suffix: str = ".txt") -> str:
+    """Return a filesystem-friendly name for ``url`` terminated by ``suffix``."""
 
     parsed = urlparse.urlsplit(url)
     base = f"{parsed.netloc}{parsed.path}".strip("/") or parsed.netloc or "document"
     base = re.sub(r"[^A-Za-z0-9._-]+", "_", base)
     if parsed.query:
-        suffix = hashlib.sha1(parsed.query.encode("utf-8")).hexdigest()[:10]
-        base = f"{base}_{suffix}"
+        query_suffix = hashlib.sha1(parsed.query.encode("utf-8")).hexdigest()[:10]
+        base = f"{base}_{query_suffix}"
     base = base[:80]
-    if not base.endswith(".txt"):
-        base = f"{base}.txt"
+    if suffix and not base.endswith(suffix):
+        if suffix.endswith(".pdf.txt") and base.endswith(".pdf"):
+            base = base[:-4]
+        base = f"{base}{suffix}"
     return base
 
 
@@ -225,17 +258,18 @@ async def crawl(
     allowed_domain: Optional[str] = None,
     client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     concurrency: int = 5,
-) -> AsyncIterator[Tuple[str, str, str]]:
+) -> AsyncIterator[Tuple[str, str, str, bool]]:
     """Asynchronously crawl a site in BFS order.
 
-    Yields tuples ``(url, html, content_type)`` for HTML pages only.
-    Accepts an optional ``client_factory`` for tests to inject a custom
-    ``httpx.AsyncClient`` (e.g., with ``MockTransport``).
+    Yields tuples ``(url, payload, content_type, is_html)`` where ``payload`` is
+    the raw HTML for pages or extracted text for supported binary formats
+    (currently PDFs). Accepts an optional ``client_factory`` for tests to
+    inject a custom ``httpx.AsyncClient`` (e.g., with ``MockTransport``).
     """
 
     visited: Set[str] = set()
     url_queue: asyncio.Queue[Tuple[str, int]] = asyncio.Queue()
-    result_queue: asyncio.Queue[Tuple[str, str, str]] = asyncio.Queue()
+    result_queue: asyncio.Queue[Tuple[str, str, str, bool]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
 
     reset_counters()
@@ -244,19 +278,26 @@ async def crawl(
     await url_queue.put((start_url, 0))
     _incr("queued", 1)
 
-    async def _fetch_async(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | None]:
+    async def _fetch_async(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | None, bool]:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
             ctype = resp.headers.get("content-type", "")
             main_type = ctype.split(";")[0].strip().lower()
+            if main_type == "application/pdf" or url.lower().endswith(".pdf"):
+                text = pdf_to_text(resp.content)
+                if text:
+                    logger.info("pdf extracted", url=url, chars=len(text))
+                    return text, ctype or "application/pdf", False
+                logger.info("skip pdf", url=url, reason="no_text")
+                return None, ctype or "application/pdf", False
             if main_type != "text/html":
                 logger.info("skip non-html", url=url, content_type=ctype)
-                return None, ctype
-            return resp.text, ctype
+                return None, ctype, False
+            return resp.text, ctype, True
         except Exception as exc:  # pragma: no cover - error path
             logger.warning("fetch failed", url=url, error=str(exc))
-            return None, None
+            return None, None, False
 
     async def _worker(client: httpx.AsyncClient) -> None:
         while True:
@@ -267,12 +308,14 @@ async def crawl(
                     continue
                 visited.add(url)
             with mark_url(url):
-                html, ctype = await _fetch_async(client, url)
-            if html:
-                logger.info("page fetched", url=url, depth=depth, content_length=len(html))
-                await result_queue.put((url, html, ctype))
-                if not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain:
-                    for link in extract_links(html, url):
+                payload, ctype, is_html = await _fetch_async(client, url)
+            if payload:
+                logger.info(
+                    "page fetched", url=url, depth=depth, content_length=len(payload), content_type=ctype
+                )
+                await result_queue.put((url, payload, ctype, is_html))
+                if is_html and (not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain):
+                    for link in extract_links(payload, url):
                         async with visited_lock:
                             if link not in visited:
                                 await url_queue.put((link, depth + 1))
@@ -301,9 +344,9 @@ async def crawl(
                     if url_queue.empty():
                         break
                     continue
-                url, html, ctype = item
+                url, payload, ctype, is_html = item
                 pages += 1
-                yield url, html, ctype
+                yield url, payload, ctype, is_html
         finally:
             for w in workers:
                 w.cancel()
@@ -425,22 +468,25 @@ def run(
         operations: list[UpdateOne] = []
 
         async def _store() -> None:
-            async for page_url, html, _ctype in crawl(
+            async for page_url, raw_payload, source_ct, is_html in crawl(
                 start_url,
                 max_pages=max_pages,
                 max_depth=max_depth,
                 allowed_domain=allowed_domain,
             ):
-                text = html_to_text(html)
+                text = html_to_text(raw_payload) if is_html else raw_payload
                 if not text:
                     logger.info("empty_page", url=page_url)
                     if progress_callback:
                         progress_callback(page_url)
                     continue
 
-                filename = _filename_from_url(page_url)
+                suffix = ".txt"
+                if (source_ct and "pdf" in source_ct.lower()) or page_url.lower().endswith(".pdf"):
+                    suffix = ".pdf.txt"
+                filename = _filename_from_url(page_url, suffix=suffix)
                 description = text.replace("\n", " ").strip()[:200]
-                payload = text.encode("utf-8")
+                payload_bytes = text.encode("utf-8")
 
                 existing = documents_collection.find_one(
                     {"url": page_url, "project": document_project},
@@ -453,13 +499,13 @@ def run(
                         logger.warning("gridfs_delete_failed", file_id=existing["fileId"])
 
                 file_id = gridfs.put(
-                    payload,
+                    payload_bytes,
                     filename=filename,
                     content_type="text/plain",
                     encoding="utf-8",
                 )
 
-                doc = {
+                doc: dict[str, object] = {
                     "name": filename,
                     "description": description,
                     "fileId": str(file_id),
@@ -469,6 +515,8 @@ def run(
                     "domain": document_domain,
                     "project": document_project,
                 }
+                if source_ct:
+                    doc["source_content_type"] = source_ct
 
                 operations.append(
                     UpdateOne(

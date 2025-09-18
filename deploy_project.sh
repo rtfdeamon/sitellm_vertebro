@@ -494,13 +494,38 @@ printf '[+] Waiting for API health check...\n'
 # Prefer probing from inside the container to avoid host NAT issues
 ok=""
 attempts=${HEALTH_MAX_ATTEMPTS:-300}
+probe_interval=${HEALTH_RETRY_INTERVAL_SECONDS:-3}
 for i in $(seq 1 "$attempts"); do
-  if "${COMPOSE_CMD[@]}" exec -T app sh -lc "curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/healthz || curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/health || curl -fsS http://127.0.0.1:\${APP_PORT:-8000}/" >/dev/null 2>&1; then
-    echo "[✓] API healthy"
+  printf '  - attempt %s/%s: ' "$i" "$attempts"
+  if output=$("${COMPOSE_CMD[@]}" exec -T app sh -lc '
+set +e
+urls="http://127.0.0.1:${APP_PORT:-8000}/healthz http://127.0.0.1:${APP_PORT:-8000}/health http://127.0.0.1:${APP_PORT:-8000}/"
+for url in $urls; do
+  if curl --max-time 4 --fail --silent --show-error -o /dev/null "$url"; then
+    printf "%s\n" "$url"
+    exit 0
+  fi
+  status=$?
+  printf "curl_failed %s exit=%s\n" "$url" "$status" >&2
+done
+exit 1
+' 2>&1); then
+    printf '[✓] API healthy (%s)\n' "$output"
     ok=1
     break
+  else
+    rc=$?
+    echo "not ready (exit $rc)"
+    if [ -n "$output" ]; then
+      printf '    probe output:\n'
+      printf '%s\n' "$output" | sed 's/^/    /'
+    fi
+    if [ $(( i % 5 )) -eq 0 ]; then
+      printf '    recent app logs:\n'
+      "${COMPOSE_CMD[@]}" logs --no-color --tail=20 app | sed 's/^/    /' || true
+    fi
   fi
-  sleep 3
+  sleep "$probe_interval"
 done
 [ -n "$ok" ] || { echo "[!] API health check failed"; "${COMPOSE_CMD[@]}" logs --no-color --tail=200 app || true; exit 1; }
 

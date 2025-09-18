@@ -51,6 +51,15 @@
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
     .btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
     .muted { color: var(--muted); font-size: 12px; }
+    .project-panel { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: grid; gap: 12px; }
+    .project-panel label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+    .project-panel select, .project-panel textarea { width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 8px 10px; }
+    .project-panel select { min-height: 36px; }
+    .project-panel textarea { min-height: 80px; resize: vertical; }
+    .project-panel .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .project-panel .row > * { flex: 0 0 auto; }
+    .project-panel .grow { flex: 1 1 auto; }
+    .project-panel .actions { display: flex; gap: 8px; align-items: center; }
   </style>
 </head>
 <body>
@@ -59,7 +68,6 @@
       <strong>LLM Chat Widget</strong>
       <span class="spacer"></span>
       <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" />
-      <input type="text" id="projectName" placeholder="project" style="max-width:140px;" />
       <button id="saveCfg" class="btn secondary">Save</button>
       <button id="themeToggle" class="btn secondary" title="Toggle theme">Theme</button>
       <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText">unknown</span></span>
@@ -68,6 +76,25 @@
     <div id="banner" style="display:none; border:1px solid var(--error); color:#fff; background:#3a1f1f; padding:8px 10px; border-radius:6px; margin:10px 0;">
       <span id="bannerText">Connection error</span>
       <button id="bannerClose" class="btn secondary" style="float:right;">Dismiss</button>
+    </div>
+
+    <div class="project-panel">
+      <div>
+        <label for="projectSelect">Project</label>
+        <div class="row">
+          <select id="projectSelect" class="grow"></select>
+          <button id="refreshProjects" class="btn secondary" type="button">Reload</button>
+        </div>
+        <div class="muted" id="projectInfo"></div>
+      </div>
+      <div>
+        <label for="startPrompt">Стартовый промт</label>
+        <textarea id="startPrompt" placeholder="Стартовый промт проекта"></textarea>
+        <div class="actions">
+          <button id="savePrompt" class="btn secondary" type="button">Save prompt</button>
+          <span id="promptStatus" class="muted"></span>
+        </div>
+      </div>
     </div>
 
     <div id="messages"></div>
@@ -85,7 +112,6 @@ const messages = document.getElementById('messages');
 const stopBtn = document.getElementById('stop');
 const clearLink = document.getElementById('clear');
 const baseUrlInput = document.getElementById('baseUrl');
-const projectInput = document.getElementById('projectName');
 const saveCfgBtn = document.getElementById('saveCfg');
 const healthDot = document.getElementById('healthDot');
 const healthText = document.getElementById('healthText');
@@ -94,14 +120,21 @@ const banner = document.getElementById('banner');
 const bannerText = document.getElementById('bannerText');
 const bannerClose = document.getElementById('bannerClose');
 const themeToggle = document.getElementById('themeToggle');
+const projectSelect = document.getElementById('projectSelect');
+const refreshProjectsBtn = document.getElementById('refreshProjects');
+const projectInfo = document.getElementById('projectInfo');
+const startPromptInput = document.getElementById('startPrompt');
+const savePromptBtn = document.getElementById('savePrompt');
+const promptStatus = document.getElementById('promptStatus');
 
 let currentES = null;
 let streaming = false;
 let tokenChars = 0;
+let projectsCache = {};
+let currentProject = (localStorage.getItem('chat_project') || '').trim().toLowerCase();
 
 // Load saved base URL
 baseUrlInput.value = localStorage.getItem('chat_base_url') || '';
-projectInput.value = localStorage.getItem('chat_project') || '';
 
 function apiBase() {
   const v = baseUrlInput.value.trim();
@@ -123,8 +156,11 @@ async function probeHealth() {
 
 saveCfgBtn.addEventListener('click', () => {
   localStorage.setItem('chat_base_url', apiBase());
-  localStorage.setItem('chat_project', projectInput.value.trim());
+  if (currentProject) {
+    localStorage.setItem('chat_project', currentProject);
+  }
   probeHealth();
+  loadProjects();
 });
 
 // (clearing with confirmation is implemented later below)
@@ -187,7 +223,7 @@ form.addEventListener('submit', function(e) {
 
   stopStream();
   const url = apiBase() + `/api/v1/llm/chat?question=${encodeURIComponent(question)}`;
-  const project = projectInput.value.trim();
+  const project = currentProject;
   const fullUrl = project ? `${url}&project=${encodeURIComponent(project)}` : url;
   const es = new EventSource(fullUrl);
   currentES = es;
@@ -232,6 +268,7 @@ input.addEventListener('keydown', (e) => {
 });
 
 probeHealth();
+loadProjects();
 
 // History persistence (localStorage)
 function loadHistory() {
@@ -288,6 +325,118 @@ setTheme(initialTheme);
 themeToggle.addEventListener('click', () => {
   const next = (localStorage.getItem('chat_theme') || 'dark') === 'dark' ? 'light' : 'dark';
   setTheme(next);
+});
+
+async function loadProjects() {
+  const base = apiBase();
+  const url = `${base}/api/v1/admin/projects`;
+  projectSelect.innerHTML = '';
+  projectsCache = {};
+  projectInfo.textContent = 'Загружаем проекты…';
+  try {
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const projects = Array.isArray(data.projects) ? data.projects : [];
+    if (!projects.length) {
+      projectSelect.appendChild(new Option('— нет проектов —', ''));
+      projectSelect.disabled = true;
+      projectsCache = {};
+      currentProject = '';
+      applyProjectSelection();
+      projectInfo.textContent = 'Проекты не найдены';
+      return;
+    }
+    projectSelect.disabled = false;
+    projectSelect.appendChild(new Option('— выберите проект —', ''));
+    let found = false;
+    for (const raw of projects) {
+      const key = (raw.name || '').toLowerCase();
+      projectsCache[key] = raw;
+      const option = new Option(raw.title || raw.name || key || '(без имени)', key, false, key === currentProject);
+      projectSelect.appendChild(option);
+      if (key === currentProject) {
+        found = true;
+      }
+    }
+    if (!found) {
+      const first = (projects[0]?.name || '').toLowerCase();
+      currentProject = first;
+    }
+    applyProjectSelection();
+    projectInfo.textContent = '';
+  } catch (error) {
+    projectSelect.appendChild(new Option('— ошибка загрузки —', ''));
+    projectSelect.disabled = true;
+    projectInfo.textContent = 'Не удалось загрузить проекты';
+    console.error('Failed to load projects', error);
+  }
+}
+
+function applyProjectSelection() {
+  if (!currentProject || !projectsCache[currentProject]) {
+    projectSelect.value = '';
+    startPromptInput.value = '';
+    projectInfo.textContent = 'Проект не выбран';
+    promptStatus.textContent = '';
+    localStorage.removeItem('chat_project');
+    return;
+  }
+  const project = projectsCache[currentProject];
+  projectSelect.value = currentProject;
+  startPromptInput.value = project.llm_prompt || '';
+  const infoParts = [];
+  if (project.domain) infoParts.push(`Домен: ${project.domain}`);
+  if (project.llm_model) infoParts.push(`Модель: ${project.llm_model}`);
+  projectInfo.textContent = infoParts.join(' • ');
+  promptStatus.textContent = '';
+  localStorage.setItem('chat_project', currentProject);
+}
+
+projectSelect.addEventListener('change', () => {
+  currentProject = projectSelect.value.trim().toLowerCase();
+  applyProjectSelection();
+});
+
+refreshProjectsBtn.addEventListener('click', () => {
+  loadProjects();
+});
+
+savePromptBtn.addEventListener('click', async () => {
+  if (!currentProject) {
+    promptStatus.textContent = 'Выберите проект';
+    return;
+  }
+  const base = apiBase();
+  const url = `${base}/api/v1/admin/projects`;
+  const project = projectsCache[currentProject] || { name: currentProject };
+  const payload = {
+    name: project.name || currentProject,
+    title: project.title || null,
+    domain: project.domain || null,
+    llm_model: project.llm_model || null,
+    llm_prompt: startPromptInput.value,
+  };
+  promptStatus.textContent = 'Сохраняем…';
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const saved = await resp.json();
+    const key = (saved.name || currentProject).toLowerCase();
+    projectsCache[key] = saved;
+    currentProject = key;
+    applyProjectSelection();
+    promptStatus.textContent = 'Сохранено';
+    setTimeout(() => { promptStatus.textContent = ''; }, 2000);
+  } catch (err) {
+    console.error('Failed to save prompt', err);
+    promptStatus.textContent = 'Ошибка сохранения';
+    setTimeout(() => { promptStatus.textContent = ''; }, 4000);
+  }
 });
 </script>
 </body>

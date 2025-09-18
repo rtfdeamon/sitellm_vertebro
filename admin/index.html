@@ -166,7 +166,7 @@
           <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
         </label>
         <label>Limit
-          <input type="number" id="kbLimit" min="10" max="200" value="50" style="width:80px;">
+          <input type="number" id="kbLimit" min="10" max="1000" value="1000" style="width:100px;">
         </label>
         <button type="submit">Обновить</button>
         <button type="button" id="kbClear">Очистить</button>
@@ -538,8 +538,8 @@
       const limitField = document.getElementById('kbLimit');
       const qField = document.getElementById('kbSearch');
       const params = new URLSearchParams();
-      const limit = Number(limitField.value || 50);
-      if (Number.isFinite(limit)) params.set('limit', Math.min(Math.max(limit, 10), 200));
+      const limit = Number(limitField.value || 1000);
+      if (Number.isFinite(limit)) params.set('limit', Math.min(Math.max(limit, 10), 1000));
       const query = qField.value.trim();
       if (query) params.set('q', query);
       if (currentProject) {
@@ -635,7 +635,10 @@
           updateProjectInputs();
         }
         kbModalContent.value = doc.content || '';
-        kbModalStatus.textContent = '';
+        const status = doc.status || 'не обработано';
+        const message = doc.statusMessage || '';
+        kbModalStatus.dataset.fileId = doc.fileId || fileId;
+        kbModalStatus.textContent = message ? `${status}: ${message}` : `Статус: ${status}`;
         showKnowledgeModal();
       } catch (error) {
         console.error(error);
@@ -654,6 +657,8 @@
         description: kbModalDesc.value,
         content: kbModalContent.value,
         project: kbModalProject.value,
+        status: 'edited',
+        status_message: 'Изменено вручную',
       };
       try {
         const resp = await fetch(`/api/v1/admin/knowledge/${encodeURIComponent(fileId)}`, {
