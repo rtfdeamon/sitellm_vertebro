@@ -1,6 +1,9 @@
 """MongoDB client helpers used by the application."""
 
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
+from datetime import datetime, timezone
 from contextlib import suppress
 from urllib.parse import quote_plus
 import hashlib
@@ -110,6 +113,7 @@ class MongoClient:
         self.projects_collection = os.getenv("MONGO_PROJECTS", "projects")
         self.settings_collection = os.getenv("MONGO_SETTINGS", "app_settings")
         self.documents_collection = os.getenv("MONGO_DOCUMENTS", "documents")
+        self.stats_collection = os.getenv("MONGO_STATS", "request_stats")
         self._indexes_ready = False
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
@@ -330,6 +334,119 @@ class MongoClient:
             logger.error("mongo_upload_document_failed", collection=documents_collection, name=file_name, project=project, error=str(exc))
             raise
 
+    async def deduplicate_documents(
+        self,
+        documents_collection: str,
+        project: str | None = None,
+    ) -> dict[str, object]:
+        """Remove duplicate documents based on content hash within ``project``."""
+
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project
+
+        seen: dict[str, str] = {}
+        removed: list[str] = []
+        checked = 0
+
+        cursor = self.db[documents_collection].find(filter_query, {"_id": False, "fileId": 1, "project": 1, "domain": 1})
+        async for doc in cursor:
+            file_id = doc.get("fileId")
+            if not file_id:
+                continue
+            checked += 1
+            try:
+                _meta, payload = await self.get_document_with_content(documents_collection, file_id)
+            except NotFound:
+                with suppress(Exception):
+                    await self.db[documents_collection].delete_one({"fileId": file_id})
+                removed.append(file_id)
+                continue
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("mongo_deduplicate_fetch_failed", file_id=file_id, error=str(exc))
+                continue
+
+            digest = hashlib.sha1(payload).hexdigest()
+            project_key = (_meta.get("project") or _meta.get("domain") or "").strip().lower()
+            key = f"{project_key}:{digest}"
+            if key in seen:
+                try:
+                    await self.delete_document(documents_collection, file_id)
+                    removed.append(file_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("mongo_deduplicate_delete_failed", file_id=file_id, error=str(exc))
+            else:
+                seen[key] = file_id
+
+        return {
+            "checked": checked,
+            "kept": len(seen),
+            "removed": len(removed),
+            "removed_ids": removed,
+        }
+
+    async def append_session_message(
+        self,
+        collection: str,
+        session_id: str,
+        role: str,
+        text: str,
+        *,
+        project: str | None = None,
+    ) -> ContextMessage:
+        """Append a message to a conversation session."""
+
+        try:
+            last = await self.db[collection].find_one(
+                {"sessionId": session_id},
+                {"number": 1},
+                sort=[("number", -1)],
+            )
+            next_number = int(last.get("number", -1)) + 1 if last else 0
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "mongo_session_next_number_failed",
+                collection=collection,
+                session=session_id,
+                error=str(exc),
+            )
+            raise
+
+        message = ContextMessage(
+            sessionId=session_id,
+            role=role,
+            number=next_number,
+            text=text,
+        )
+        payload = message.model_dump(by_alias=True)
+        if project:
+            payload["project"] = project
+        try:
+            await self.db[collection].insert_one(payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "mongo_append_session_failed",
+                collection=collection,
+                session=session_id,
+                error=str(exc),
+            )
+            raise
+        return message
+
+    async def clear_session(self, collection: str, session_id: str) -> None:
+        """Remove all messages for ``session_id``."""
+
+        try:
+            await self.db[collection].delete_many({"sessionId": session_id})
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "mongo_clear_session_failed",
+                collection=collection,
+                session=session_id,
+                error=str(exc),
+            )
+            raise
+
     async def upsert_text_document(
         self,
         *,
@@ -436,6 +553,11 @@ class MongoClient:
         data["name"] = str(data["name"]).strip().lower()
         if data.get("domain") == "":
             data["domain"] = None
+        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "widget_url"):
+            value = data.get(field)
+            if isinstance(value, str):
+                stripped = value.strip()
+                data[field] = stripped or None
         return Project(**data)
 
     async def list_projects(self) -> list[Project]:
@@ -566,4 +688,132 @@ class MongoClient:
                 error=str(exc),
             )
 
+        try:
+            await self.db[self.stats_collection].create_index(
+                [("project", 1), ("date", 1)],
+                name="request_stats_project_date",
+            )
+            await self.db[self.stats_collection].create_index(
+                "date",
+                name="request_stats_date",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.stats_collection,
+                index="request_stats_project_date",
+                error=str(exc),
+            )
+
         self._indexes_ready = True
+
+    async def log_request_stat(
+        self,
+        *,
+        project: str | None,
+        question: str | None,
+        response_chars: int | None,
+        attachments: int | None,
+        prompt_chars: int | None,
+        channel: str,
+        session_id: str | None,
+        user_id: str | None,
+        error: str | None = None,
+    ) -> None:
+        """Persist a single request statistic entry."""
+
+        try:
+            now = datetime.now(timezone.utc)
+            day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            doc = {
+                "ts": now,
+                "date": day,
+                "project": (project or "__default__").strip().lower(),
+                "question": question[:1024] if question else None,
+                "response_chars": int(response_chars or 0),
+                "attachments": int(attachments or 0),
+                "prompt_chars": int(prompt_chars or 0) if prompt_chars is not None else None,
+                "channel": channel,
+                "session_id": session_id,
+                "user_id": user_id,
+                "error": error,
+            }
+            await self.db[self.stats_collection].insert_one(doc)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("stats_log_failed", project=project, error=str(exc))
+
+    async def aggregate_request_stats(
+        self,
+        *,
+        project: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        channel: str | None = None,
+    ) -> list[dict[str, object]]:
+        match: dict[str, object] = {}
+        if project:
+            match["project"] = project.strip().lower()
+        if channel:
+            match["channel"] = channel
+        if start or end:
+            bounds: dict[str, object] = {}
+            if start:
+                bounds["$gte"] = start
+            if end:
+                bounds["$lt"] = end
+            match["date"] = bounds
+
+        pipeline: list[dict[str, object]] = []
+        if match:
+            pipeline.append({"$match": match})
+        pipeline.extend(
+            [
+                {
+                    "$group": {
+                        "_id": "$date",
+                        "count": {"$sum": 1},
+                        "attachments": {"$sum": {"$ifNull": ["$attachments", 0]}},
+                        "response_chars": {"$sum": {"$ifNull": ["$response_chars", 0]}},
+                    }
+                },
+                {"$sort": {"_id": 1}},
+            ]
+        )
+        cursor = self.db[self.stats_collection].aggregate(pipeline)
+        results: list[dict[str, object]] = []
+        async for item in cursor:
+            day: datetime = item.get("_id")
+            results.append(
+                {
+                    "date": day.date().isoformat() if isinstance(day, datetime) else str(day),
+                    "count": item.get("count", 0),
+                    "attachments": item.get("attachments", 0),
+                    "response_chars": item.get("response_chars", 0),
+                }
+            )
+        return results
+
+    async def iter_request_stats(
+        self,
+        *,
+        project: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        channel: str | None = None,
+    ) -> AsyncGenerator[dict[str, object], None]:
+        match: dict[str, object] = {}
+        if project:
+            match["project"] = project.strip().lower()
+        if channel:
+            match["channel"] = channel
+        if start or end:
+            bounds: dict[str, object] = {}
+            if start:
+                bounds["$gte"] = start
+            if end:
+                bounds["$lt"] = end
+            match["date"] = bounds
+
+        cursor = self.db[self.stats_collection].find(match, {"_id": False}).sort("ts", 1)
+        async for item in cursor:
+            yield item

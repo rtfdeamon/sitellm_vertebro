@@ -8,6 +8,9 @@ from pathlib import Path
 
 import pytest
 
+if sys.version_info < (3, 10):  # pragma: no cover - tooling compatibility
+    pytest.skip("LLM API tests require Python 3.10+ for modern typing syntax", allow_module_level=True)
+
 import backend.cache as cache
 
 
@@ -58,6 +61,9 @@ async def test_ask_llm(monkeypatch):
     fastapi.APIRouter = APIRouter
     fastapi.Request = Request
     fastapi.HTTPException = HTTPException
+    fastapi.UploadFile = object
+    fastapi.File = lambda *a, **k: None
+    fastapi.Form = lambda *a, **k: None
     class BackgroundTasks:
         def add_task(self, *a, **k):
             pass
@@ -101,19 +107,64 @@ async def test_ask_llm(monkeypatch):
             self.session_id = sessionId
 
     class LLMResponse:
-        def __init__(self, text):
+        def __init__(self, text, attachments=None):
             self.text = text
+            self.attachments = attachments or []
 
         def model_dump(self):
-            return {"text": self.text}
+            return {"text": self.text, "attachments": self.attachments}
+
+    class Document:
+        def __init__(self, **data):
+            self.__dict__.update(data)
+
+        def model_dump(self):
+            return self.__dict__.copy()
+
+    class Project:
+        def __init__(self, **data):
+            self.__dict__.update(data)
 
     models_mod.RoleEnum = RoleEnum
     models_mod.LLMRequest = LLMRequest
     models_mod.LLMResponse = LLMResponse
+    models_mod.Document = Document
+    models_mod.Project = Project
+    models_mod.Attachment = lambda **data: data
     modules["models"] = models_mod
 
     for name, mod in modules.items():
         monkeypatch.setitem(sys.modules, name, mod)
+
+    qdrant_stub = types.ModuleType("qdrant_client")
+    qdrant_stub.QdrantClient = object
+    monkeypatch.setitem(sys.modules, "qdrant_client", qdrant_stub)
+
+    settings_stub = types.ModuleType("settings")
+    settings_stub.MongoSettings = lambda: types.SimpleNamespace(
+        host="localhost",
+        port=27017,
+        username=None,
+        password=None,
+        database="testdb",
+        auth="admin",
+        documents="documents",
+    )
+    monkeypatch.setitem(sys.modules, "settings", settings_stub)
+
+    eval_stub = types.ModuleType("eval_type_backport")
+    import typing as _typing
+
+    def _eval_type_backport(value, globalns=None, localns=None, type_params=None):
+        if hasattr(value, "__forward_arg__"):
+            expr = value.__forward_arg__.replace(" ", "")
+            if expr == "str|None":
+                return _typing.Optional[str]
+            return _typing.Any
+        return _typing.Any
+
+    eval_stub.eval_type_backport = _eval_type_backport
+    monkeypatch.setitem(sys.modules, "eval_type_backport", eval_stub)
 
     module_path = Path(__file__).resolve().parents[1] / "api.py"
     spec = importlib.util.spec_from_file_location("api", module_path)
@@ -153,7 +204,9 @@ async def test_ask_llm(monkeypatch):
 
     resp1 = await api.ask_llm(request, llm_request)
     assert resp1.content["text"] == "answer"
+    assert resp1.content["attachments"] == []
 
     resp2 = await api.ask_llm(request, llm_request)
     assert resp2.content["text"] == "answer"
+    assert resp2.content["attachments"] == []
     assert request.state.llm.calls == 1

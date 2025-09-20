@@ -36,6 +36,7 @@ class CrawlerProgress:
     errors: int = 0
     last_url: Optional[str] = None
     done: bool = False
+    project: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert progress to a plain dict for JSON/Redis."""
@@ -53,7 +54,10 @@ class Reporter:
         """Store and broadcast a progress snapshot for a job."""
         try:
             self.r.hset(KEY_TPL.format(job_id=p.job_id), mapping=p.to_dict())
-            self.r.publish(CHANNEL, json.dumps(p.to_dict()))
+            self.r.publish(
+                CHANNEL,
+                json.dumps(p.to_dict(), ensure_ascii=False),
+            )
         except redis.exceptions.RedisError as exc:  # pragma: no cover - logged
             logger.warning("redis update failed", error=str(exc))
 

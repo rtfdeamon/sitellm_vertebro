@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+import json
+from typing import Any, Dict, List
 
 import structlog
 
@@ -17,8 +18,8 @@ except ModuleNotFoundError:  # pragma: no cover - fallback for local runs
 logger = structlog.get_logger(__name__)
 
 
-async def rag_answer(question: str) -> str:
-    """Return answer text from the backend via SSE."""
+async def rag_answer(question: str, project: str | None = None, session_id: str | None = None) -> Dict[str, Any]:
+    """Return answer text and optional attachments from the backend via SSE."""
 
     # Import httpx lazily to allow tests to stub the module safely
     import importlib, sys
@@ -44,19 +45,38 @@ async def rag_answer(question: str) -> str:
                 async with client.stream(
                     "GET",
                     str(settings.backend_url),
-                    params={"question": question},
+                    params={
+                        "question": question,
+                        **({"project": project} if project else {}),
+                        **({"session_id": session_id} if session_id else {}),
+                    },
                     headers={"Accept": "text/event-stream"},
                 ) as resp:
                     resp.raise_for_status()
-                    chunks = []
+                    chunks: List[str] = []
+                    attachments: List[dict[str, Any]] = []
+                    current_event: str | None = None
                     async for line in resp.aiter_lines():
+                        if not line:
+                            current_event = None
+                            continue
+                        if line.startswith("event:"):
+                            current_event = line.split(":", 1)[1].strip()
+                            continue
                         if line.startswith("data:"):
-                            chunks.append(line[5:].strip())
+                            data = line[5:].strip()
+                            if current_event == "attachment":
+                                try:
+                                    attachments.append(json.loads(data))
+                                except json.JSONDecodeError as exc:
+                                    logger.warning("attachment_parse_failed", error=str(exc))
+                            else:
+                                chunks.append(data)
                     answer = "".join(chunks)
                     if safety_check(answer):
                         raise ValueError("safety")
-                    logger.info("success", bytes=len(answer))
-                    return answer
+                    logger.info("success", bytes=len(answer), attachments=len(attachments))
+                    return {"text": answer, "attachments": attachments}
         except (httpx.HTTPError, asyncio.TimeoutError) as exc:
             logger.warning("request failed", attempt=attempt + 1, error=str(exc))
             if attempt == 2:

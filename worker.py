@@ -1,6 +1,8 @@
 """Celery worker tasks for updating the Redis vector store."""
 
+import time
 from collections.abc import Generator
+from typing import Dict
 from urllib.parse import quote_plus
 
 from bson import ObjectId
@@ -44,24 +46,83 @@ celery.conf.beat_schedule = {
 
 
 def update_vector_store():
-    """Parse all documents from MongoDB and update the vector store.
+    """Parse new or updated documents from MongoDB into the vector store."""
 
-    All existing documents stored in GridFS are retrieved and parsed
-    into vectors which are then added to Redis.
-    """
     logger.info("updating vector store")
     vector_store = get_document_parser()
     mongo_client = get_mongo_client()
+    try:
+        db = mongo_client[settings.mongo.database]
+        documents_collection = db[settings.mongo.documents]
+        settings_collection = db[settings.mongo.settings]
 
-    for document, data in get_documents_sync(mongo_client):
-        logger.info("embedding", document=document.name)
-        vector_store.parse_document(document.name, document.fileId, data)
+        try:
+            documents_collection.create_index("ts", name="documents_ts")
+        except Exception as exc:
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=settings.mongo.documents,
+                index="documents_ts",
+                error=str(exc),
+            )
 
-    del vector_store
+        state_key = "vector_store_state"
+        state = settings_collection.find_one({"_id": state_key}) or {}
+        last_ts_raw = state.get("last_ts")
+        try:
+            last_ts = float(last_ts_raw)
+        except (TypeError, ValueError):
+            last_ts = 0.0
+
+        filter_query: Dict[str, object] | None = None
+        mode = "incremental"
+        if last_ts > 0:
+            filter_query = {"ts": {"$gt": last_ts}}
+            logger.info("vector store incremental", since=last_ts)
+        else:
+            mode = "full"
+            logger.info("vector store full rebuild")
+
+        processed = 0
+        latest_ts = last_ts
+
+        for document, data in get_documents_sync(
+            mongo_client, filter_query=filter_query
+        ):
+            logger.info("embedding", document=document.name)
+            vector_store.parse_document(document.name, document.fileId, data)
+            processed += 1
+            if document.ts is not None:
+                try:
+                    latest_ts = max(latest_ts, float(document.ts))
+                except (TypeError, ValueError):
+                    pass
+
+        state_payload = {
+            "last_ts": latest_ts if processed else last_ts,
+            "updated_at": time.time(),
+            "last_processed": processed,
+            "mode": mode,
+        }
+        settings_collection.update_one(
+            {"_id": state_key},
+            {"$set": state_payload},
+            upsert=True,
+        )
+        logger.info(
+            "vector store update complete",
+            processed=processed,
+            since=last_ts if last_ts > 0 else None,
+        )
+    finally:
+        mongo_client.close()
+        del vector_store
 
 
 def get_documents_sync(
     mongo_client: MongoClient,
+    *,
+    filter_query: Dict[str, object] | None = None,
 ) -> Generator[tuple[Document, bytes], None]:
     """Yield documents and their data from GridFS synchronously.
 
@@ -75,12 +136,19 @@ def get_documents_sync(
     tuple[Document, bytes]
         Parsed ``Document`` metadata along with the binary file contents.
     """
-    for document in mongo_client[settings.mongo.database][
-        settings.mongo.documents
-    ].find({}, {"_id": False}):
-        document = Document(**document)
-        gridfs = GridFS(mongo_client[settings.mongo.database])
-        file = gridfs.get(ObjectId(document.fileId))
+    db = mongo_client[settings.mongo.database]
+    collection = db[settings.mongo.documents]
+    gridfs = GridFS(db)
+    query = filter_query or {}
+    cursor = collection.find(query, {"_id": False}).sort("ts", 1).batch_size(50)
+
+    for raw_doc in cursor:
+        document = Document(**raw_doc)
+        try:
+            file = gridfs.get(ObjectId(document.fileId))
+        except Exception as exc:
+            logger.warning("gridfs_fetch_failed", file_id=document.fileId, error=str(exc))
+            continue
 
         yield document, file.read()
 

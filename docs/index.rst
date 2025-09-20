@@ -5,59 +5,19 @@
 
 sitellm_vertebro documentation
 ==============================
+
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: Guide
+
+   architecture
+   components
+   workflows
 
 
-Modules
--------
+API reference
+-------------
 
-Crawler
-~~~~~~~
-
-.. automodule:: crawler
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Backend
-~~~~~~~
-
-.. automodule:: backend
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Core
-~~~~
-
-.. automodule:: core
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Retrieval
-~~~~~~~~~
-
-.. automodule:: retrieval
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Telegram Bot
-~~~~~~~~~~~~
-
-.. automodule:: tg_bot
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-API
-~~~
-
-.. automodule:: api
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
+Auto-generated docs for key packages can be added in the future.  For now the
+architecture and component guides above provide the authoritative overview of
+responsibilities and data flow.

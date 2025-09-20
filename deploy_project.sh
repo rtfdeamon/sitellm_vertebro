@@ -343,8 +343,25 @@ update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
 APP_PORT_HOST=$(pick_free_port "${HOST_APP_PORT:-18000}")
 MONGO_PORT_HOST=$(pick_free_port "${HOST_MONGO_PORT:-27027}")
 REDIS_PORT_HOST=$(pick_free_port "${HOST_REDIS_PORT:-16379}")
+# Ensure HTTP/GRPC ports do not collide even if .env reuses the same value.
 QDRANT_HTTP_HOST=$(pick_free_port "${HOST_QDRANT_HTTP_PORT:-16333}")
-QDRANT_GRPC_HOST=$(pick_free_port "${HOST_QDRANT_GRPC_PORT:-16334}")
+
+grpc_start="${HOST_QDRANT_GRPC_PORT:-}" 
+if [ -z "$grpc_start" ]; then
+  grpc_start=$((QDRANT_HTTP_HOST + 1))
+else
+  # if user configured the same port as HTTP, shift to the next available slot
+  if [ "$grpc_start" = "$QDRANT_HTTP_HOST" ]; then
+    grpc_start=$((grpc_start + 1))
+  fi
+fi
+
+QDRANT_GRPC_HOST=$(pick_free_port "$grpc_start")
+
+# Final sanity: never persist identical host ports
+if [ "$QDRANT_GRPC_HOST" = "$QDRANT_HTTP_HOST" ]; then
+  QDRANT_GRPC_HOST=$(pick_free_port "$((QDRANT_HTTP_HOST + 1))")
+fi
 update_env_var HOST_APP_PORT "$APP_PORT_HOST"
 update_env_var HOST_MONGO_PORT "$MONGO_PORT_HOST"
 update_env_var HOST_REDIS_PORT "$REDIS_PORT_HOST"

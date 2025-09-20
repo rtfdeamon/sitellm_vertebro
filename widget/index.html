@@ -41,11 +41,19 @@
     .dot.ok { background: var(--ok); }
     .dot.bad { background: var(--error); }
     #messages { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; height: 360px; overflow-y: auto; margin-bottom: 12px; }
-    .msg { margin: 8px 0; white-space: pre-wrap; line-height: 1.5; }
+    .msg { margin: 8px 0; line-height: 1.55; }
     .msg .role { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
     .msg .time { opacity: 0.85; font-variant-numeric: tabular-nums; }
     .msg.user { color: #9cc9ff; }
     .msg.assistant { color: #b8e994; }
+    .msg .msg-body { white-space: pre-wrap; }
+    .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+    .msg-attachments .attachment-item { display: inline-flex; flex-direction: column; gap: 4px; background: rgba(96, 165, 250, 0.12); padding: 6px 8px; border-radius: 10px; max-width: 200px; }
+    .msg-attachments .attachment-file a { display: inline-flex; align-items: center; gap: 6px; color: #bfdbfe; font-size: 12px; text-decoration: none; }
+    .msg-attachments .attachment-file a::before { content: '\1F4CE'; }
+    .msg-attachments .attachment-image { background: rgba(59, 130, 246, 0.12); }
+    .msg-attachments .attachment-image img { display: block; max-width: 180px; border-radius: 8px; }
+    .msg-attachments .attachment-caption { font-size: 11px; color: var(--muted); }
     form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; }
     textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
@@ -131,7 +139,10 @@ let currentES = null;
 let streaming = false;
 let tokenChars = 0;
 let projectsCache = {};
-let currentProject = (localStorage.getItem('chat_project') || '').trim().toLowerCase();
+
+const urlParams = new URLSearchParams(window.location.search);
+const urlProject = (urlParams.get('project') || '').trim().toLowerCase();
+let currentProject = urlProject || (localStorage.getItem('chat_project') || '').trim().toLowerCase();
 
 // Load saved base URL
 baseUrlInput.value = localStorage.getItem('chat_base_url') || '';
@@ -169,7 +180,7 @@ function fmtTime(d) {
   try { return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-function addMsg(role, text, ts) {
+function addMsg(role, text, ts, attachments = []) {
   const wrap = document.createElement('div');
   wrap.className = 'msg ' + role;
   const r = document.createElement('span');
@@ -183,9 +194,17 @@ function addMsg(role, text, ts) {
   r.appendChild(roleSpan);
   r.appendChild(timeSpan);
   const body = document.createElement('div');
+  body.className = 'msg-body';
   body.textContent = text;
   wrap.appendChild(r);
   wrap.appendChild(body);
+  const attachmentsEl = document.createElement('div');
+  attachmentsEl.className = 'msg-attachments';
+  for (const att of attachments) {
+    appendAttachment(attachmentsEl, att);
+  }
+  wrap.appendChild(attachmentsEl);
+  body._attachmentsEl = attachmentsEl;
   wrap.dataset.ts = when.toISOString();
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
@@ -199,6 +218,74 @@ function addMsg(role, text, ts) {
     });
   }
   return body;
+}
+
+function appendAttachment(container, attachment) {
+  if (!container || !attachment || !attachment.url) return;
+  const already = Array.from(container.querySelectorAll('.attachment-item'))
+    .some(node => node.dataset.url === attachment.url);
+  if (already) return;
+
+  const type = (attachment.content_type || '').toLowerCase();
+  const name = attachment.name || 'Документ';
+  const description = attachment.description || '';
+
+  if (type.startsWith('image/')) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'attachment-item attachment-image';
+    wrapper.dataset.url = attachment.url;
+    wrapper.dataset.name = name;
+    wrapper.dataset.type = type;
+    wrapper.dataset.description = description;
+
+    const link = document.createElement('a');
+    link.href = attachment.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+
+    const img = document.createElement('img');
+    img.src = attachment.url;
+    img.alt = description || name;
+    img.loading = 'lazy';
+
+    link.appendChild(img);
+    wrapper.appendChild(link);
+
+    const captionText = description || name;
+    if (captionText) {
+      const caption = document.createElement('div');
+      caption.className = 'attachment-caption';
+      caption.textContent = captionText;
+      wrapper.appendChild(caption);
+    }
+
+    container.appendChild(wrapper);
+    return;
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'attachment-item attachment-file';
+  wrapper.dataset.url = attachment.url;
+  wrapper.dataset.name = name;
+  wrapper.dataset.type = type;
+  wrapper.dataset.description = description;
+
+  const link = document.createElement('a');
+  link.href = attachment.url;
+  link.target = '_blank';
+  link.rel = 'noopener';
+  link.textContent = name;
+
+  wrapper.appendChild(link);
+
+  if (description) {
+    const caption = document.createElement('div');
+    caption.className = 'attachment-caption';
+    caption.textContent = description;
+    wrapper.appendChild(caption);
+  }
+
+  container.appendChild(wrapper);
 }
 
 function stopStream() {
@@ -222,10 +309,9 @@ form.addEventListener('submit', function(e) {
   const ansBody = addMsg('assistant', '');
 
   stopStream();
-  const url = apiBase() + `/api/v1/llm/chat?question=${encodeURIComponent(question)}`;
-  const project = currentProject;
-  const fullUrl = project ? `${url}&project=${encodeURIComponent(project)}` : url;
-  const es = new EventSource(fullUrl);
+  const params = new URLSearchParams({ question });
+  if (currentProject) params.set('project', currentProject);
+  const es = new EventSource(`${apiBase()}/api/v1/llm/chat?${params.toString()}`);
   currentES = es;
   streaming = true;
   tokenChars = 0;
@@ -240,6 +326,15 @@ form.addEventListener('submit', function(e) {
     messages.scrollTop = messages.scrollHeight;
     persistHistory();
   };
+  es.addEventListener('attachment', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      appendAttachment(ansBody._attachmentsEl, payload);
+      persistHistory();
+    } catch (err) {
+      console.error('attachment parse failed', err);
+    }
+  });
   es.addEventListener('end', () => {
     // Server signaled normal end of stream
     stopStream();
@@ -278,17 +373,27 @@ function loadHistory() {
     const arr = JSON.parse(raw);
     if (!Array.isArray(arr)) return;
     messages.innerHTML = '';
-    for (const m of arr) { addMsg(m.role, m.text, m.ts); }
+    for (const m of arr) { addMsg(m.role, m.text, m.ts, m.attachments || []); }
   } catch {}
 }
 
 function persistHistory() {
   try {
-    const arr = Array.from(messages.querySelectorAll('.msg')).map(node => ({
-      role: node.classList.contains('user') ? 'user' : 'assistant',
-      text: node.querySelector('div').textContent || '',
-      ts: node.dataset.ts
-    }));
+    const arr = Array.from(messages.querySelectorAll('.msg')).map(node => {
+      const bodyEl = node.querySelector('.msg-body');
+      const attachments = Array.from(node.querySelectorAll('.msg-attachments .attachment-item')).map(item => ({
+        name: item.dataset.name || 'Документ',
+        url: item.dataset.url,
+        content_type: item.dataset.type || null,
+        description: item.dataset.description || null,
+      }));
+      return {
+        role: node.classList.contains('user') ? 'user' : 'assistant',
+        text: bodyEl ? bodyEl.textContent || '' : '',
+        ts: node.dataset.ts,
+        attachments,
+      };
+    });
     localStorage.setItem('chat_history', JSON.stringify(arr));
   } catch {}
 }
@@ -360,8 +465,8 @@ async function loadProjects() {
       }
     }
     if (!found) {
-      const first = (projects[0]?.name || '').toLowerCase();
-      currentProject = first;
+      const fallback = urlProject && projectsCache[urlProject] ? urlProject : (projects[0]?.name || '').toLowerCase();
+      currentProject = fallback;
     }
     applyProjectSelection();
     projectInfo.textContent = '';
@@ -388,6 +493,7 @@ function applyProjectSelection() {
   const infoParts = [];
   if (project.domain) infoParts.push(`Домен: ${project.domain}`);
   if (project.llm_model) infoParts.push(`Модель: ${project.llm_model}`);
+  if (project.widget_url) infoParts.push(`Виджет: ${project.widget_url}`);
   projectInfo.textContent = infoParts.join(' • ');
   promptStatus.textContent = '';
   localStorage.setItem('chat_project', currentProject);

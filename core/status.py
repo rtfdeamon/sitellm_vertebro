@@ -33,6 +33,11 @@ QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
 QDRANT_COLL = os.getenv("QDRANT_COLLECTION", "documents")
 TARGET_DOCS = int(os.getenv("TARGET_DOCS", "1000"))
 
+def _redis_key(name: str, project: str | None = None) -> str:
+    if project:
+        return f"{REDIS_PREFIX}{project}:{name}"
+    return REDIS_PREFIX + name
+
 
 @dataclass
 class CrawlerStats:
@@ -84,6 +89,8 @@ def get_status(domain: str | None = None) -> Status:
     # Redis counters
     redis_host = os.getenv("REDIS_HOST", "redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))
+    project_key = domain.strip().lower() if domain else None
+
     try:
         url = os.getenv("REDIS_URL")
         if url:
@@ -96,16 +103,16 @@ def get_status(domain: str | None = None) -> Status:
                 decode_responses=True,
                 socket_connect_timeout=1,
             )
-        q = _safe_int(r.get(REDIS_PREFIX + "queued"))
-        p = _safe_int(r.get(REDIS_PREFIX + "in_progress"))
-        d = _safe_int(r.get(REDIS_PREFIX + "done"))
-        f = _safe_int(r.get(REDIS_PREFIX + "failed"))
-        last_url = r.get(REDIS_PREFIX + "last_url")
+        q = _safe_int(r.get(_redis_key("queued", project_key)))
+        p = _safe_int(r.get(_redis_key("in_progress", project_key)))
+        d = _safe_int(r.get(_redis_key("done", project_key)))
+        f = _safe_int(r.get(_redis_key("failed", project_key)))
+        last_url = r.get(_redis_key("last_url", project_key))
         try:
-            recent_urls = list(r.lrange(REDIS_PREFIX + "recent_urls", 0, 19))
+            recent_urls = list(r.lrange(_redis_key("recent_urls", project_key), 0, 19))
         except Exception:
             recent_urls = None
-        started_at = float(r.get(REDIS_PREFIX + "started_at") or 0)
+        started_at = float(r.get(_redis_key("started_at", project_key)) or 0)
     except Exception as exc:
         logger.warning(
             "redis connection failed",

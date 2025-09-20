@@ -27,7 +27,7 @@ from typing import AsyncIterator, Callable, Iterable, List, Optional, Set, Tuple
 import httpx
 import requests
 from bs4 import BeautifulSoup
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from gridfs import GridFS
 from pypdf import PdfReader
 from pymongo import MongoClient, UpdateOne
@@ -90,55 +90,64 @@ else:
         decode_responses=True,
     )
 
-def _incr(key: str, delta: int = 1):
+
+def _redis_key(name: str, project: str | None = None) -> str:
+    if project:
+        return f"{REDIS_PREFIX}{project}:{name}"
+    return REDIS_PREFIX + name
+
+
+def _incr(key: str, delta: int = 1, project: str | None = None):
     try:
-        r.incrby(REDIS_PREFIX + key, delta)
+        r.incrby(_redis_key(key, project), delta)
     except Exception:
         pass
 
-def _set(key: str, value):
+
+def _set(key: str, value, project: str | None = None):
     try:
-        r.set(REDIS_PREFIX + key, value)
+        r.set(_redis_key(key, project), value)
     except Exception:
         pass
 
-def _push_recent(url: str, limit: int = 20) -> None:
+
+def _push_recent(url: str, limit: int = 20, project: str | None = None) -> None:
     try:
-        key = REDIS_PREFIX + "recent_urls"
+        key = _redis_key("recent_urls", project)
         r.lpush(key, url)
         r.ltrim(key, 0, limit - 1)
     except Exception:
         pass
 
-def on_crawler_start():
-    _set("started_at", time.time())
+def on_crawler_start(project: str | None = None):
+    _set("started_at", time.time(), project)
 
 
-def reset_counters() -> None:
+def reset_counters(project: str | None = None) -> None:
     """Reset queue counters before a new crawl run starts."""
 
     for key in ("queued", "in_progress", "done", "failed"):
-        _set(key, 0)
+        _set(key, 0, project)
     try:
-        r.delete(REDIS_PREFIX + "recent_urls")
+        r.delete(_redis_key("recent_urls", project))
     except Exception:
         pass
 
 @contextmanager
-def mark_url(url: str):
-    _incr("in_progress", 1)
-    _incr("queued", -1)
+def mark_url(url: str, project: str | None):
+    _incr("in_progress", 1, project)
+    _incr("queued", -1, project)
 
-    _set("last_url", url)
+    _set("last_url", url, project)
     try:
         yield
-        _incr("done", 1)
+        _incr("done", 1, project)
     except Exception:
-        _incr("failed", 1)
+        _incr("failed", 1, project)
         raise
     finally:
-        _incr("in_progress", -1)
-        _push_recent(url)
+        _incr("in_progress", -1, project)
+        _push_recent(url, project=project)
 
 HEADERS = {
     "User-Agent": (
@@ -147,6 +156,38 @@ HEADERS = {
 }
 REQUEST_TIMEOUT = float(os.getenv("CRAWL_TIMEOUT", "10"))  # seconds
 BATCH_SIZE = 50  # сколько документов пушим в Mongo за раз
+PAGE_TIMEOUT = float(os.getenv("CRAWL_PAGE_TIMEOUT", "120"))
+_js_render_setting = (os.getenv("CRAWL_JS_RENDER") or "auto").strip().lower()
+if _js_render_setting in {"1", "true", "yes", "on"}:
+    JS_RENDER_ENABLED = True
+elif _js_render_setting in {"0", "false", "no", "off"}:
+    JS_RENDER_ENABLED = False
+else:  # auto mode
+    JS_RENDER_ENABLED = True
+JS_RENDER_WAIT = float(os.getenv("CRAWL_JS_WAIT", "2.0"))
+JS_RENDER_TIMEOUT = int(float(os.getenv("CRAWL_JS_TIMEOUT", "10")) * 1000)
+_playwright_instance = None
+_playwright_browser = None
+_playwright_context = None
+_playwright_lock = None
+_playwright_page_lock = None
+
+NAVIGATION_TOKENS = {
+    "главная",
+    "контакты",
+    "наши контакты",
+    "личный кабинет",
+    "поиск",
+    "rss",
+    "подписаться",
+    "карта сайта",
+    "наверх",
+    "версия для печати",
+    "страница не найдена",
+}
+
+RE_CAMEL_CASE = re.compile(r"(?<=[a-zа-яё])(?=[A-ZА-ЯЁ])")
+RE_DIGIT_BOUNDARY = re.compile(r"(?<=[0-9])(?=[A-Za-zА-Яа-яЁё])|(?<=[A-Za-zА-Яа-яЁё])(?=[0-9])")
 
 # ------------------------- Вспомогательные функции ------------------- #
 
@@ -233,6 +274,123 @@ def pdf_to_text(data: bytes) -> str:
     return "\n\n".join(part for part in chunks if part).strip()
 
 
+def _fix_missing_spaces(text: str) -> str:
+    text = RE_CAMEL_CASE.sub(" ", text)
+    text = RE_DIGIT_BOUNDARY.sub(" ", text)
+    return text
+
+
+def clean_text(raw: str) -> str:
+    """Normalize whitespace, drop навигационные элементы и чинит переносы."""
+
+    if not raw:
+        return ""
+
+    text = raw.replace("\xa0", " ").replace("\u202f", " ")
+    text = re.sub(r"\r", "", text)
+    text = re.sub(r"(?<=\w)-\n(?=\w)", "", text)
+    text = re.sub(r"(?<=\S)\n(?=\S)", " ", text)
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    blank_pending = False
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if not blank_pending and lines:
+                lines.append("")
+            blank_pending = True
+            continue
+        blank_pending = False
+
+        lowered = line.lower()
+        if lowered in NAVIGATION_TOKENS:
+            continue
+        if len(line) <= 3 and sum(ch.isalpha() for ch in line) <= 1:
+            continue
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+
+        line = _fix_missing_spaces(line)
+        line = re.sub(r"\s{2,}", " ", line)
+        lines.append(line)
+
+    cleaned = "\n".join(lines)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
+
+
+async def _ensure_playwright():
+    global JS_RENDER_ENABLED, _playwright_instance, _playwright_browser, _playwright_context, _playwright_lock, _playwright_page_lock
+    if not JS_RENDER_ENABLED:
+        return None, None
+    if _playwright_lock is None:
+        _playwright_lock = asyncio.Lock()
+    async with _playwright_lock:
+        if _playwright_context is not None:
+            return _playwright_context, _playwright_page_lock
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            JS_RENDER_ENABLED = False
+            logger.warning(
+                "playwright_missing",
+                msg="Install playwright and run `playwright install chromium` to enable JS rendering",
+            )
+            return None, None
+        try:
+            _playwright_instance = await async_playwright().start()
+            _playwright_browser = await _playwright_instance.chromium.launch(
+                headless=True,
+                args=["--disable-gpu", "--no-sandbox"],
+            )
+            _playwright_context = await _playwright_browser.new_context()
+            _playwright_page_lock = asyncio.Lock()
+        except Exception as exc:  # noqa: BLE001
+            JS_RENDER_ENABLED = False
+            logger.warning("playwright_init_failed", error=str(exc))
+            return None, None
+        return _playwright_context, _playwright_page_lock
+
+
+async def _render_with_playwright(url: str) -> str | None:
+    context, page_lock = await _ensure_playwright()
+    if not context or not page_lock:
+        return None
+    async with page_lock:
+        page = await context.new_page()
+        try:
+            await page.goto(url, wait_until="networkidle", timeout=JS_RENDER_TIMEOUT)
+            if JS_RENDER_WAIT > 0:
+                await asyncio.sleep(JS_RENDER_WAIT)
+            return await page.content()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("playwright_render_failed", url=url, error=str(exc))
+            return None
+        finally:
+            with suppress(Exception):
+                await page.close()
+
+
+async def _shutdown_playwright():
+    global _playwright_instance, _playwright_browser, _playwright_context, _playwright_page_lock
+    if _playwright_context is not None:
+        with suppress(Exception):
+            await _playwright_context.close()
+    if _playwright_browser is not None:
+        with suppress(Exception):
+            await _playwright_browser.close()
+    if _playwright_instance is not None:
+        with suppress(Exception):
+            await _playwright_instance.stop()
+    _playwright_instance = None
+    _playwright_browser = None
+    _playwright_context = None
+    _playwright_page_lock = None
+
+
 def _filename_from_url(url: str, suffix: str = ".txt") -> str:
     """Return a filesystem-friendly name for ``url`` terminated by ``suffix``."""
 
@@ -258,6 +416,7 @@ async def crawl(
     allowed_domain: Optional[str] = None,
     client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     concurrency: int = 5,
+    project_label: str | None = None,
 ) -> AsyncIterator[Tuple[str, str, str, bool]]:
     """Asynchronously crawl a site in BFS order.
 
@@ -272,11 +431,15 @@ async def crawl(
     result_queue: asyncio.Queue[Tuple[str, str, str, bool]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
 
-    reset_counters()
-    on_crawler_start()
+    if project_label is None:
+        reset_counters()
+        on_crawler_start()
+    else:
+        reset_counters(project_label)
+        on_crawler_start(project_label)
 
     await url_queue.put((start_url, 0))
-    _incr("queued", 1)
+    _incr("queued", 1, project_label)
 
     async def _fetch_async(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | None, bool]:
         try:
@@ -294,6 +457,10 @@ async def crawl(
             if main_type != "text/html":
                 logger.info("skip non-html", url=url, content_type=ctype)
                 return None, ctype, False
+            if JS_RENDER_ENABLED:
+                rendered = await _render_with_playwright(url)
+                if rendered:
+                    return rendered, ctype or "text/html", True
             return resp.text, ctype, True
         except Exception as exc:  # pragma: no cover - error path
             logger.warning("fetch failed", url=url, error=str(exc))
@@ -302,27 +469,44 @@ async def crawl(
     async def _worker(client: httpx.AsyncClient) -> None:
         while True:
             url, depth = await url_queue.get()
-            async with visited_lock:
-                if url in visited or depth > max_depth or len(visited) >= max_pages:
-                    url_queue.task_done()
+            try:
+                async with visited_lock:
+                    if url in visited or depth > max_depth or len(visited) >= max_pages:
+                        _incr("queued", -1, project_label)
+                        continue
+                    visited.add(url)
+                try:
+                    with mark_url(url, project_label):
+                        payload, ctype, is_html = await asyncio.wait_for(
+                            _fetch_async(client, url),
+                            timeout=PAGE_TIMEOUT,
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "fetch timeout",
+                        url=url,
+                        timeout=PAGE_TIMEOUT,
+                    )
                     continue
-                visited.add(url)
-            with mark_url(url):
-                payload, ctype, is_html = await _fetch_async(client, url)
-            if payload:
-                logger.info(
-                    "page fetched", url=url, depth=depth, content_length=len(payload), content_type=ctype
-                )
-                await result_queue.put((url, payload, ctype, is_html))
-                if is_html and (not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain):
-                    for link in extract_links(payload, url):
-                        async with visited_lock:
-                            if link not in visited:
+
+                if payload:
+                    logger.info(
+                        "page fetched", url=url, depth=depth, content_length=len(payload), content_type=ctype
+                    )
+                    await result_queue.put((url, payload, ctype, is_html))
+                    if is_html and (not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain):
+                        for link in extract_links(payload, url):
+                            async with visited_lock:
+                                if link in visited:
+                                    continue
+                                if len(visited) + url_queue.qsize() >= max_pages:
+                                    continue
                                 await url_queue.put((link, depth + 1))
-                                _incr("queued", 1)
-            else:
-                logger.info("page skipped", url=url, reason="non_html_or_error")
-            url_queue.task_done()
+                                _incr("queued", 1, project_label)
+                else:
+                    logger.info("page skipped", url=url, reason="non_html_or_error")
+            finally:
+                url_queue.task_done()
 
     # Create client
     if client_factory is None:
@@ -385,6 +569,9 @@ def run(
         allowed_domain=allowed_domain,
         project=document_project,
     )
+
+    reset_counters(document_project)
+    on_crawler_start(document_project)
 
     mongo_cfg = MongoSettings()
     uri_candidates: list[str] = []
@@ -468,79 +655,98 @@ def run(
         operations: list[UpdateOne] = []
 
         async def _store() -> None:
-            async for page_url, raw_payload, source_ct, is_html in crawl(
-                start_url,
-                max_pages=max_pages,
-                max_depth=max_depth,
-                allowed_domain=allowed_domain,
-            ):
-                text = html_to_text(raw_payload) if is_html else raw_payload
-                if not text:
-                    logger.info("empty_page", url=page_url)
+            try:
+                async for page_url, raw_payload, source_ct, is_html in crawl(
+                    start_url,
+                    max_pages=max_pages,
+                    max_depth=max_depth,
+                    allowed_domain=allowed_domain,
+                    project_label=document_project,
+                ):
+                    raw_text = html_to_text(raw_payload) if is_html else raw_payload
+                    text = clean_text(raw_text)
+                    if not text:
+                        logger.info("empty_page", url=page_url)
+                        if progress_callback:
+                            progress_callback(page_url)
+                        continue
+
+                    suffix = ".txt"
+                    if (source_ct and "pdf" in source_ct.lower()) or page_url.lower().endswith(".pdf"):
+                        suffix = ".pdf.txt"
+                    filename = _filename_from_url(page_url, suffix=suffix)
+                    description = text.replace("\n", " ").strip()[:200]
+                    payload_bytes = text.encode("utf-8")
+
+                    existing = documents_collection.find_one(
+                        {"url": page_url, "project": document_project},
+                        {"fileId": 1},
+                    )
+                    if existing and existing.get("fileId"):
+                        try:
+                            gridfs.delete(ObjectId(existing["fileId"]))
+                        except Exception:
+                            logger.warning("gridfs_delete_failed", file_id=existing["fileId"])
+
+                    file_id = gridfs.put(
+                        payload_bytes,
+                        filename=filename,
+                        content_type="text/plain",
+                        encoding="utf-8",
+                    )
+
+                    doc: dict[str, object] = {
+                        "name": filename,
+                        "description": description,
+                        "fileId": str(file_id),
+                        "url": page_url,
+                        "ts": time.time(),
+                        "content_type": "text/plain",
+                        "domain": document_domain,
+                        "project": document_project,
+                    }
+                    if source_ct:
+                        doc["source_content_type"] = source_ct
+
+                    operations.append(
+                        UpdateOne(
+                            {"url": page_url, "project": document_project},
+                            {"$set": doc},
+                            upsert=True,
+                        )
+                    )
+
                     if progress_callback:
                         progress_callback(page_url)
-                    continue
 
-                suffix = ".txt"
-                if (source_ct and "pdf" in source_ct.lower()) or page_url.lower().endswith(".pdf"):
-                    suffix = ".pdf.txt"
-                filename = _filename_from_url(page_url, suffix=suffix)
-                description = text.replace("\n", " ").strip()[:200]
-                payload_bytes = text.encode("utf-8")
-
-                existing = documents_collection.find_one(
-                    {"url": page_url, "project": document_project},
-                    {"fileId": 1},
-                )
-                if existing and existing.get("fileId"):
-                    try:
-                        gridfs.delete(ObjectId(existing["fileId"]))
-                    except Exception:
-                        logger.warning("gridfs_delete_failed", file_id=existing["fileId"])
-
-                file_id = gridfs.put(
-                    payload_bytes,
-                    filename=filename,
-                    content_type="text/plain",
-                    encoding="utf-8",
-                )
-
-                doc: dict[str, object] = {
-                    "name": filename,
-                    "description": description,
-                    "fileId": str(file_id),
-                    "url": page_url,
-                    "ts": time.time(),
-                    "content_type": "text/plain",
-                    "domain": document_domain,
-                    "project": document_project,
-                }
-                if source_ct:
-                    doc["source_content_type"] = source_ct
-
-                operations.append(
-                    UpdateOne(
-                        {"url": page_url, "project": document_project},
-                        {"$set": doc},
-                        upsert=True,
-                    )
-                )
-
-                if progress_callback:
-                    progress_callback(page_url)
-
-                if len(operations) >= BATCH_SIZE:
-                    documents_collection.bulk_write(operations, ordered=False)
-                    operations.clear()
+                    if len(operations) >= BATCH_SIZE:
+                        try:
+                            documents_collection.bulk_write(operations, ordered=False)
+                        except Exception as exc:  # pragma: no cover - bulk failure
+                            logger.warning("bulk_write_failed", error=str(exc))
+                        finally:
+                            operations.clear()
+            finally:
+                if JS_RENDER_ENABLED:
+                    await _shutdown_playwright()
 
         asyncio.run(_store())
 
         if operations:
-            documents_collection.bulk_write(operations, ordered=False)
+            try:
+                documents_collection.bulk_write(operations, ordered=False)
+            except Exception as exc:  # pragma: no cover - bulk failure
+                logger.warning("bulk_write_failed", error=str(exc))
+            finally:
+                operations.clear()
 
         logger.info("crawler finished")
     finally:
+        _set("queued", 0, document_project)
+        _set("in_progress", 0, document_project)
         client.close()
+        if JS_RENDER_ENABLED:
+            asyncio.run(_shutdown_playwright())
 
 # ------------------------------ main --------------------------------- #
 

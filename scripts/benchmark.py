@@ -52,7 +52,7 @@ async def main() -> None:
 
     result = {"p95_ms": round(p95), "throughput": round(throughput, 2)}
     logger.info("result", **result)
-    logger.info("result_json", json=json.dumps(result))
+    logger.info("result_json", json=json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

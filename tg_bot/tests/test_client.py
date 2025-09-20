@@ -86,7 +86,9 @@ def test_rag_answer_success(monkeypatch):
     importlib.reload(client)
 
     result = asyncio.run(client.rag_answer("hi"))
-    assert result == "foobar"
+    assert isinstance(result, dict)
+    assert result.get("text") == "foobar"
+    assert result.get("attachments") == []
 
 
 def test_rag_answer_safety(monkeypatch):
@@ -98,4 +100,3 @@ def test_rag_answer_safety(monkeypatch):
 
     with pytest.raises(ValueError):
         asyncio.run(client.rag_answer("hi"))
-

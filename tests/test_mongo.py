@@ -114,10 +114,24 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
     class _FakeProjects:
         def __init__(self):
             self.updated = None
-            self.stored = {"name": "demo", "domain": "example.com", "title": "Old"}
+            self.stored = {
+                "name": "demo",
+                "domain": "example.com",
+                "title": "Old",
+                "telegram_token": "oldtoken",
+                "telegram_auto_start": True,
+                "widget_url": "https://old.example/widget",
+            }
 
         async def update_one(self, filter, update, upsert=False):
             self.updated = (filter, update, upsert)
+            if isinstance(update, dict) and "$set" in update:
+                payload = update["$set"]
+            else:
+                payload = {}
+            merged = self.stored.copy()
+            merged.update(payload)
+            self.stored = merged
 
         async def find_one(self, filter, projection=None):
             return self.stored
@@ -132,7 +146,14 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
 
     mc.db = _FakeDB()
 
-    project = Project(name="demo", domain="example.com", title="New")
+    project = Project(
+        name="demo",
+        domain="example.com",
+        title="New",
+        telegram_token="newtoken",
+        telegram_auto_start=False,
+        widget_url="https://demo.example/widget",
+    )
     result = await MongoClient.upsert_project(mc, project)
 
     assert result.name == "demo"
@@ -140,3 +161,24 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
     filter_doc, update_doc, upsert_flag = projects.updated
     assert filter_doc == {"name": "demo"}
     assert upsert_flag is True
+    stored = update_doc["$set"]
+    assert stored["telegram_token"] == "newtoken"
+    assert stored["telegram_auto_start"] is False
+    assert stored["widget_url"] == "https://demo.example/widget"
+    assert result.telegram_token == "newtoken"
+    assert result.telegram_auto_start is False
+    assert result.widget_url == "https://demo.example/widget"
+
+
+def test_project_from_doc_trims_optional_fields() -> None:
+    mc = MongoClient.__new__(MongoClient)
+    raw = {
+        "name": " Demo ",
+        "telegram_token": " token123 ",
+        "widget_url": " https://demo.example/widget ",
+    }
+    project = MongoClient._project_from_doc(mc, raw)
+    assert project is not None
+    assert project.name == "demo"
+    assert project.telegram_token == "token123"
+    assert project.widget_url == "https://demo.example/widget"

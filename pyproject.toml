@@ -29,6 +29,7 @@ dependencies = [
     "aiohttp>=3.9.5",
     "uvloop>=0.17.0",
     "python-dotenv>=1.0.1",
+    "python-multipart>=0.0.9",
     # sentence-transformers (and torch) removed for Ollama-only runtime
     "nltk>=3.8.1",
     "prometheus-client>=0.20.0",

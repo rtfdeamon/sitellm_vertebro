@@ -7,8 +7,10 @@ library logging records as plain text in FIFO order.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections import deque
+from functools import partial
 from typing import List
 
 import structlog
@@ -47,7 +49,9 @@ def configure_logging() -> None:
         processors=[
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.stdlib.add_log_level,
-            structlog.processors.JSONRenderer(),
+            structlog.processors.JSONRenderer(
+                serializer=partial(json.dumps, ensure_ascii=False)
+            ),
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),
     )

@@ -3,6 +3,8 @@
 Adds a compatibility shim for ``enum.StrEnum`` on Python < 3.11.
 """
 
+from __future__ import annotations
+
 from enum import Enum
 try:  # Python 3.11+
     from enum import StrEnum as _StrEnum
@@ -30,15 +32,31 @@ class LLMRequest(BaseModel):
     )
 
 
+class Attachment(BaseModel):
+    """Metadata about a downloadable document attachment."""
+
+    name: str
+    url: str
+    content_type: str | None = None
+
+
 class LLMResponse(BaseModel):
     """Response returned by the language model."""
 
     text: str
+    attachments: list[Attachment] = []
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "text": "This is a model answer.",
+                "text": "Это выдержка из договора.",
+                "attachments": [
+                    {
+                        "name": "typical-contract.pdf",
+                        "url": "https://example.com/api/v1/admin/knowledge/documents/abc123",
+                        "content_type": "application/pdf",
+                    }
+                ],
             }
         }
     )
@@ -126,6 +144,9 @@ class Project(BaseModel):
     domain: str | None = None
     llm_model: str | None = None
     llm_prompt: str | None = None
+    telegram_token: str | None = None
+    telegram_auto_start: bool | None = None
+    widget_url: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -135,6 +156,8 @@ class Project(BaseModel):
                 "title": "Проект MMVS",
                 "llm_model": "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
                 "llm_prompt": "You are helpful and concise.",
+                "telegram_auto_start": False,
+                "widget_url": "https://example.com/widget?project=mmvs",
             }
         }
     )

@@ -68,7 +68,7 @@ def cache_response(
             data = cached.decode() if isinstance(cached, (bytes, bytearray)) else cached
             return _deserialize(json.loads(data))
         answer = await func(*args, **kwargs)
-        serialized = json.dumps(_serialize(answer))
+        serialized = json.dumps(_serialize(answer), ensure_ascii=False)
         await redis.setex(key, 86400, serialized)
         logger.info("cache store", key=key)
         return answer

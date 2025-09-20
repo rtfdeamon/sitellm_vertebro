@@ -1,5 +1,7 @@
 """Application settings models."""
 
+from __future__ import annotations
+
 from functools import lru_cache
 from pydantic import AnyUrl, ConfigDict, Field
 from pydantic_settings import BaseSettings
@@ -75,6 +77,8 @@ class Settings(BaseSettings):
     redis_url: AnyUrl | str = "redis://localhost:6379/0"
     use_gpu: bool = False
     llm_model: str = "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
+    telegram_api_base: AnyUrl | str = "http://app:8000"
+    telegram_request_timeout: int = 30
 
     mongo: MongoSettings = MongoSettings()
     celery: CelerySettings = CelerySettings()

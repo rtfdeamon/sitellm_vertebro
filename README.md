@@ -1,227 +1,204 @@
-# YaLLM
+# SiteLLM Vertebro
 
-This project exposes a simple API backed by Yandex GPT models using the
-`llama-cpp-python` runtime. Documents are stored in MongoDB/GridFS and their
-embeddings are indexed in Redis.
+SiteLLM Vertebro is an end-to-end platform for collecting domain knowledge,
+embedding it into a vector store and serving grounded answers via a FastAPI
+backend.  The stack bundles a crawler, embeddings worker, admin dashboard,
+chat widget and optional Telegram bot, so that a single deployment can ingest
+and serve information for multiple projects or domains.
 
-Before running the application copy `.env.example` to `.env` and fill in the
-connection parameters for MongoDB and Redis. The compose file expects at least
-`MONGO_USERNAME` and `MONGO_PASSWORD` to be set.
+> **Looking for a quick orientation?** Start with the architecture and
+> subsystem reference in `docs/`:
+> - `docs/architecture.rst`
+> - `docs/components.rst`
+> - `docs/workflows.rst`
 
-## Requirements
-- gcc or clang
-- cmake
-- openblas
-- [CUDA](https://developer.nvidia.com/cuda-toolkit)
+---
 
-Python dependencies are managed with [uv](https://github.com/astral-sh/uv).
-To install them run:
+## Feature Highlights
 
-```bash
-CMAKE_ARGS="-DGGML_CUDA=on -DGGML_BLAS=ON -DGGML_BLAS_VENDOR=OpenBLAS -DGGML_VULKAN=on" uv sync
+- **Multi-project knowledge bases** – isolate content, prompts and LLM models
+  per project while sharing infrastructure.
+- **Incremental crawling pipeline** – cleanses HTML/PDF content, stores it in
+  Mongo/GridFS and refreshes embeddings only for new material.
+- **Grounded chat responses** – hybrid retrieval mixes vector search with
+  keyword signals and feeds curated excerpts into the LLM.
+- **Operations dashboard** – monitor services, manage knowledge documents,
+  inspect prompts/logs and control the Telegram bot from one UI.
+- **Request analytics** – per-project request statistics are logged in Mongo;
+  the admin panel shows daily activity for the last 14 days and allows
+  exporting CSV reports for external analysis.
+- **Composable deployment** – run locally with `uv` or spin up the full stack
+  using Docker Compose (GPU settings included).
+
+---
+
+## Repository Layout
+
+```
+admin/          – operator dashboard (static HTML/JS)
+api.py          – public API router (chat, crawler, knowledge)
+app.py          – FastAPI application factory and lifespan hooks
+backend/        – shared infrastructure (settings, LLM client, caching)
+core/           – status aggregation and health checks
+crawler/        – asynchronous site crawler and Celery tasks
+docs/           – Sphinx documentation (architecture, workflows)
+retrieval/      – hybrid search utilities and reranking pipeline
+tg_bot/         – optional Telegram bot (Aiogram)
+widget/         – embeddable chat widget (SSE stream)
+worker.py       – Celery worker that maintains the vector store
 ```
 
-## Running
-Start the FastAPI application using:
+Additional helper directories include `observability/` (logging + metrics),
+`scripts/` (benchmarks, maintenance jobs) and platform-specific deployment
+scripts under the repository root.
+
+---
+
+## Prerequisites
+
+- MongoDB 5+ and Redis (or use the bundled Docker services)
+- Python 3.9+ with [uv](https://github.com/astral-sh/uv)
+- Build toolchain for llama.cpp (`cmake`, `gcc`/`clang`, OpenBLAS)
+- Optional GPU acceleration: CUDA Toolkit or Vulkan for llama.cpp
+
+Clone the repository and copy the environment template:
+
+```bash
+git clone https://github.com/rtfdeamon/sitellm_vertebro.git
+cd sitellm_vertebro
+cp .env.example .env
+```
+
+Populate the `.env` file with MongoDB and Redis credentials (required by the
+app, worker and crawler).  Additional environment variables are documented in
+`settings.py` and `backend/settings.py`.
+
+---
+
+## Local Development
+
+Install project dependencies via `uv` (CUDA flags optional):
+
+```bash
+CMAKE_ARGS="-DGGML_CUDA=on -DGGML_BLAS=ON" uv sync
+```
+
+Spawn the API and Celery worker in separate terminals:
 
 ```bash
 uvicorn app:app --reload
-```
-
-A Celery worker can be started with:
-
-```bash
 celery -A worker worker --beat
 ```
 
-Alternatively you can start the whole stack using Docker Compose:
+Open the admin dashboard at `http://localhost:18080/admin/` to create your
+first project, configure the base prompt and trigger a crawl.
+
+### Optional services
+
+- **Telegram bot** – configure the token in the admin UI and start the bot via
+  the "Telegram Bot" card.
+- **Metrics** – Prometheus-compatible metrics are exposed at `/metrics` when
+  the app runs under Uvicorn/Gunicorn.
+
+---
+
+## Docker Compose Stack
+
+To run the complete stack with all dependencies (MongoDB, Redis, Qdrant,
+Ollama/YaLLM, Celery worker and the API) execute:
 
 ```bash
 docker compose up --build
 ```
 
-For a minimal local run with the bundled values:
+Useful overrides:
 
-```bash
-cp .env.example .env
-docker compose up -d --build
-# autodetects host architecture and adjusts Qdrant platform (amd64/arm64)
-# optional: immediately collect text pages for the knowledge base
-docker compose exec app python crawler/run_crawl.py \\
-  --url "https://mmvs.ru" \\
-  --mongo-uri "$MONGO_URI"
-```
+- `compose.gpu.yaml` – enable GPU-backed inference.
+- `docker-compose.override.windows.yml` – CPU/memory limits for Windows hosts.
 
-The crawler stores only plain text extracted from HTML. Binary links (PDF,
-images, archives, etc.) are skipped automatically so the knowledge base stays
-focused on textual content.
+The helper script `./deploy_project.sh` automates environment generation,
+image builds and an initial crawl.  The PowerShell variant `./deploy_project.ps1`
+performs the same setup on Windows.
 
-### Multi-domain knowledge bases
+---
 
-The admin UI now allows managing several projects (domains) inside one
-deployment. Specify the desired domain in the “Knowledge Base” card when
-searching or adding documents; entries are stored with this domain marker in
-MongoDB(GridFS) and reused after container restarts. The crawler automatically
-assigns documents to the domain derived from the start URL host, so each
-domain keeps its own knowledge set while continuing to use the same Ollama
-language model.
+## Knowledge Workflow
 
-On first launch open `http://localhost:${HOST_APP_PORT:-18080}/admin/`, create
-проект (домен) в блоке “Project” и только после этого запускайте краулер или
-добавляйте знания — все запросы в админке автоматически используют выбранный
-домен.
+1. **Create a project** – provide a slug, optional display title and the
+   system prompt the LLM should follow.  Every chat request logs a
+   `project_prompt_attached` entry confirming the prompt is applied.
+2. **Collect knowledge** – either upload documents via the admin UI or launch
+   an automated crawl.  Crawled text is cleaned (navigation stripped, PDF
+   spacing restored) before being stored in Mongo/GridFS.  When you upload
+   binaries (PDF agreements, scans, licence photos) provide a short
+   description – it is indexed for search and used as the caption when the
+   chat widget or Telegram bot shares the attachment with users.
+3. **Index embeddings** – the Celery worker tracks the latest document
+   timestamp and incrementally updates the Redis vector store after each
+   crawl or manual upload.
+4. **Serve answers** – chat requests call `/api/v1/llm/ask` which retrieves
+   hybrid search results, injects them into the prompt and streams the final
+   answer to the widget/bot.
+5. **Dynamic sites** – for SPA/JS-heavy pages export `CRAWL_JS_RENDER=1`
+   (optionally tweak `CRAWL_JS_WAIT` and `CRAWL_JS_TIMEOUT`). The crawler will
+   render pages with Playwright before extracting text; install Playwright and
+   run `playwright install chromium` inside the container/venv beforehand.
+6. **Page timeout** – each URL is processed at most `CRAWL_PAGE_TIMEOUT`
+   seconds (defaults to 120 s) so slow resources do not stall the queue.
 
-## One-shot deployment
+The "Logs" panel in the admin UI shows the full compiled prompt for each
+request (`llm_prompt_compiled`), making it easy to audit which sources were
+used.
 
-For an automated setup on Linux or macOS the repository ships a helper
-script:
-
-```bash
-./deploy_project.sh
-```
-
-The script asks for your domain name, writes a `.env` file, builds the Docker
-images sequentially, waits for the API to become healthy from inside the
-`app` container and then launches an initial crawl.  The crawl start URL
-defaults to `https://<DOMAIN>` but can be overridden by setting
-`CRAWL_START_URL` before running the script.  Run with `--yes` to skip
-interactive prompts.
-
-## Auto-deploy (push to main)
-
-For automatic rollout to a target server on each push to `main`, see
-`docs/deploy.md`. It describes required GitHub Action secrets and a
-non-interactive server-side script used by the workflow.
+---
 
 ## Testing
 
-Run unit tests with:
+Run the unit test suite with:
 
 ```bash
-pytest -q
+python -m pytest
 ```
+
+For lightweight load tests and latency measurements use:
+
+```bash
+python scripts/benchmark.py --requests 200 --concurrency 8
+```
+
+---
 
 ## Documentation
 
-Build the HTML documentation with:
+Build the Sphinx docs locally:
 
 ```bash
 sphinx-build -b html docs build/docs
 ```
 
-Inline code is documented with comprehensive docstrings across modules; the
-Sphinx configuration is set to include undoc-members so new symbols will be
-picked up automatically.
+The generated site summarises architecture, components and operational
+workflows.  Extend it with module-level autodoc if deeper API references are
+required.
 
-## Configuration
+---
 
-Key settings are loaded from environment variables or ``.env``:
+## Deployment Notes
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| ``LLM_URL`` | ``http://localhost:8000`` | vLLM HTTP endpoint used by ``backend.llm_client`` |
-| ``EMB_MODEL_NAME`` | ``sentence-transformers/sbert_large_nlu_ru`` | Embedding model name for the vector store |
-| ``RERANK_MODEL_NAME`` | ``sbert_cross_ru`` | Cross-encoder used for reranking search results |
-| ``REDIS_URL`` | ``redis://localhost:6379/0`` | Redis instance storing cached responses and vectors |
-| ``QDRANT_HTTP_PORT`` | ``6333`` | Qdrant HTTP port exposed by the container |
-| ``QDRANT_GRPC_PORT`` | ``6334`` | Qdrant gRPC port exposed by the container |
-| ``QDRANT_LOG_LEVEL`` | ``INFO`` | Logging level passed to the Qdrant service |
+- Automate rollouts with the instructions in `docs/deploy.md`.
+- For one-off installations run `deploy_project.sh` (Linux/macOS) or
+  `deploy_project.ps1` (Windows).  Both scripts produce `.env` backups and wait
+  for the API health check before exiting.
+- After deployment visit the admin dashboard, create a project and verify that
+  the status cards report healthy Mongo/Redis/Qdrant connections.
 
-MongoDB and Redis specific variables also use prefixes ``MONGO_`` and
-``REDIS_`` as documented in ``settings.py``.
+---
 
-## Telegram Bot Usage
+## Support & Monitoring
 
-The optional Telegram bot can be started with Docker Compose. Set the
-following variables in ``.env``:
+- Health endpoints: `/health` (external dependencies) and `/healthz`
+  (container liveness).
+- Metrics: `/metrics` (Prometheus exposition).
+- Logs: admin dashboard "Logs" card + container logs via Docker.
 
-* ``BOT_TOKEN`` – bot token from BotFather.
-* ``TG_API_URL`` – URL of the backend chat API (usually ``http://api:8000/api/chat``).
-* ``SUPPORT_GROUP_ID`` – identifier of the operator group.
-
-Then run:
-
-```bash
-docker compose up -d telegram
-```
-
-The bot supports the ``/operator`` command to switch a user into operator mode
-and ``/end`` to return to the LLM.
-
-## Project Structure
-
-```
-backend/      - application logic and FastAPI router
-retrieval/    - search utilities and embedding models
-tg_bot/       - optional Telegram bot implementation
-observability/ - Prometheus metrics setup
-scripts/      - helper scripts like benchmark and crawler
-``` 
-
-## Windows quickstart
-
-> Требуется: **Docker Desktop**, **Git for Windows**, **PowerShell 7+**.  
-> Рекомендуется включённый WSL2 backend в Docker Desktop.
-
-1. Клонировать репозиторий и перейти в папку проекта.
-2. (Опционально) отредактировать `.env.example`.
-3. Запустить:
-
-```powershell
-.\deploy_project.ps1
-```
-
-Скрипт:
-- проверит наличие инструментов;
-- создаст/обновит `.env` (при необходимости сгенерирует пароль для Mongo);
-- сохранит бэкап env в `deploy-backups\<timestamp>-windows.zip`;
-\- соберёт образы последовательно (без `--no-parallel`);
-\- поднимет `docker compose` со слабыми лимитами CPU/RAM через `docker-compose.override.windows.yml`;
-\- дождётся готовности API по `http://localhost:${APP_PORT:-8000}/healthz`.
-
-### Нагрузка на слабых машинах
-По умолчанию в Windows-оверрайде заданы щадящие параметры:
-
-```bash
-SERVICE_CPUS=1.0
-SERVICE_MEM_LIMIT=1g
-UVICORN_WORKERS=1
-CELERY_WORKERS=1
-```
-
-Меняйте значения через переменные в `.env` или в окружении, не правя YAML.
-
-### Первичный crawl
-Если хотите сразу запустить первичный обход сайта, передайте URL:
-
-```powershell
-.\deploy_project.ps1 -CrawlUrl "https://example.com"
-```
-
-> Если в проекте используется другой CLI-модуль для crawl — поправьте команду внутри скрипта (поиск `sitellm_vertebro.crawl`).
-
-Минимальный краулер `crawler/run_crawl.py` загружает `robots.txt` и обходит
-только разрешённые страницы. При наличии `sitemap.xml` очередь стартовых URL
-расширяется адресами из карты сайта. Явный URL карты можно указать через
-`--sitemap-url`, а флаг `--ignore-robots` отключит проверку `robots.txt`.
-
-### Вопросы к модели по HTTP
-После запуска можно обращаться к API из PowerShell:
-
-```powershell
-$port = ${env:APP_PORT} ; if(-not $port){ $port = 8000 }
-Invoke-RestMethod -Uri "http://localhost:$port/api/chat" -Method POST `
-  -ContentType "application/json" `
-  -Body (@{messages=@(@{role="user";content="Привет!"})} | ConvertTo-Json -Depth 5)
-```
-
-Маршрут `/api/chat` приведён как пример — используйте фактические эндпойнты проекта.
-
-## Web Chat Widget
-
-After the stack is running the application serves a small widget at
-``/widget/``. Open [http://localhost:8000/widget/](http://localhost:8000/widget/)
-in a browser and type a question to see the model's answer streamed live.
-
-To reuse the widget in another site copy ``widget/index.html`` and adjust the
-``EventSource`` URL to your deployment.
+If you encounter issues, start by checking the crawler progress channel in
+Redis (`crawler:events`) and the Celery worker logs for embedding status.

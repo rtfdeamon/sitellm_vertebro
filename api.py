@@ -1,5 +1,8 @@
 """FastAPI routers for interacting with the LLM and crawler."""
 
+from __future__ import annotations
+
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -8,7 +11,7 @@ import signal
 import urllib.parse as urlparse
 from typing import Any
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 try:
     from fastapi import BackgroundTasks
 except ImportError:  # pragma: no cover - fallback for test stubs
@@ -16,6 +19,7 @@ except ImportError:  # pragma: no cover - fallback for test stubs
         def __init__(self, *args, **kwargs):
             pass
 from fastapi.responses import ORJSONResponse, StreamingResponse
+from starlette.routing import NoMatchFound
 import asyncio
 
 import redis.asyncio as redis
@@ -26,7 +30,7 @@ from backend import llm_client
 from backend.settings import settings as backend_settings
 from retrieval import search as retrieval_search
 
-from models import Document, LLMResponse, LLMRequest, RoleEnum, Project
+from models import Document, LLMResponse, LLMRequest, RoleEnum, Project, Attachment
 from mongo import NotFound
 from pydantic import BaseModel
 
@@ -46,8 +50,8 @@ def _normalize_project(value: str | None) -> str | None:
     return None
 
 
-_KNOWLEDGE_SNIPPET_CHARS = 480
-_MAX_DIALOG_TURNS = 10
+_KNOWLEDGE_SNIPPET_CHARS = 640
+_MAX_DIALOG_TURNS = 5
 
 
 def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
@@ -96,12 +100,42 @@ def _extract_payload_url(payload: Any) -> str | None:
     return None
 
 
+def _is_attachment_doc(meta: dict[str, Any]) -> bool:
+    content_type = str(meta.get("content_type") or "").lower()
+    if not content_type:
+        return False
+    return not content_type.startswith("text/")
+
+
+def _build_download_url(request: Request, file_id: str) -> str:
+    try:
+        return str(request.url_for("admin_download_document", file_id=file_id))
+    except NoMatchFound:
+        base = str(request.base_url).rstrip("/")
+        return f"{base}/api/v1/admin/knowledge/documents/{file_id}"
+
+
+def _collect_attachments(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    attachments: list[dict[str, Any]] = []
+    for item in snippets:
+        att = item.get("attachment")
+        if not att:
+            continue
+        key = att.get("url") or att.get("name")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        attachments.append(att)
+    return attachments
+
+
 async def _collect_knowledge_snippets(
     request: Request,
     question: str,
     project: str | None,
     *,
-    limit: int = 3,
+    limit: int = 6,
 ) -> list[dict[str, Any]]:
     question = (question or "").strip()
     if not question:
@@ -111,7 +145,7 @@ async def _collect_knowledge_snippets(
     seen_ids: set[str] = set()
 
     try:
-        docs = await asyncio.to_thread(retrieval_search.hybrid_search, question, limit * 2)
+        docs = await asyncio.to_thread(retrieval_search.hybrid_search, question, limit * 3)
     except Exception as exc:  # noqa: BLE001
         logger.debug("knowledge_hybrid_failed", error=str(exc))
         docs = []
@@ -166,7 +200,7 @@ async def _collect_knowledge_snippets(
                 mongo_client.db[collection]
                 .find(query, {"_id": False})
                 .sort("ts", -1)
-                .limit(limit * 2)
+                .limit(limit * 3)
             )
             candidates = [Document(**doc) async for doc in cursor]
         except Exception as exc:  # noqa: BLE001
@@ -179,27 +213,51 @@ async def _collect_knowledge_snippets(
         file_id = getattr(doc, "fileId", None)
         if file_id and file_id in seen_ids:
             continue
+        attachment_meta: dict[str, Any] | None = None
+        doc_meta = doc.model_dump()
         text = ""
+        doc_url = doc.url
         try:
-            _meta, payload = await mongo_client.get_document_with_content(
-                collection, doc.fileId
-            )
-            text = payload.decode("utf-8", errors="ignore")
+            if file_id and _is_attachment_doc(doc_meta):
+                text = doc.description or ""
+            else:
+                _meta, payload = await mongo_client.get_document_with_content(
+                    collection, doc.fileId
+                )
+                text = payload.decode("utf-8", errors="ignore")
+                if not doc_url:
+                    doc_url = _meta.get("url")
         except Exception as exc:  # noqa: BLE001
             logger.debug("knowledge_content_fetch_failed", file_id=file_id, error=str(exc))
             text = doc.description or ""
-        if not text.strip():
-            continue
-        snippets.append(
-            {
-                "id": file_id,
-                "name": doc.name,
-                "text": text,
-                "score": getattr(doc, "ts", None),
-                "url": doc.url,
-                "source": "mongo",
+
+        if file_id and _is_attachment_doc(doc_meta):
+            download_url = _build_download_url(request, file_id)
+            doc_url = doc_url or download_url
+            attachment_meta = {
+                "name": doc.name or file_id,
+                "url": doc_url,
+                "content_type": doc.content_type,
             }
-        )
+            if doc.description:
+                attachment_meta["description"] = doc.description
+            if not text.strip():
+                text = doc.description or ""
+
+        if not text.strip() and not attachment_meta:
+            continue
+
+        item = {
+            "id": file_id,
+            "name": doc.name,
+            "text": text,
+            "score": getattr(doc, "ts", None),
+            "url": doc_url,
+            "source": "mongo",
+        }
+        if attachment_meta:
+            item["attachment"] = attachment_meta
+        snippets.append(item)
         if file_id:
             seen_ids.add(file_id)
 
@@ -213,9 +271,23 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     for idx, item in enumerate(snippets, 1):
         name = item.get("name") or f"Источник {idx}"
         snippet_text = _truncate_text(item.get("text", ""))
-        blocks.append(f"Источник {idx} ({name}):\n{snippet_text}")
+        attachment = item.get("attachment")
+        url = item.get("url")
+        if attachment:
+            attachment_url = attachment.get("url") or url
+            attachment_name = attachment.get("name") or name
+            attachment_line = f"Документ: {attachment_name} ({attachment_url})" if attachment_url else f"Документ: {attachment_name}"
+            if snippet_text:
+                snippet_text = f"{snippet_text}\n{attachment_line}"
+            else:
+                snippet_text = attachment_line
+            url = attachment_url or url
+        footer = f"\nИсточник: {url}" if url and url not in snippet_text else ""
+        blocks.append(f"Источник {idx} ({name}):\n{snippet_text}{footer}")
     return (
-        "Используй приведённые ниже выдержки из базы знаний при ответе."
+        "Тебе доступны выдержки из базы знаний."
+        " Сначала проанализируй их, выдели ключевые факты и противоречия,"
+        " затем дай итоговый ответ, ссылаясь на несколько источников, если это повышает точность."
         "\n\n" + "\n\n".join(blocks)
     )
 
@@ -330,6 +402,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         )
 
     knowledge_snippets: list[dict[str, Any]] = []
+    attachments_payload: list[dict[str, Any]] = []
     knowledge_message = ""
     try:
         question_text = context[-1].get("content", "")
@@ -345,6 +418,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         )
     else:
         knowledge_message = _compose_knowledge_message(knowledge_snippets)
+        attachments_payload = _collect_attachments(knowledge_snippets)
         if knowledge_message:
             preset = preset + [{"role": "system", "content": knowledge_message}]
             logger.info(
@@ -368,6 +442,12 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         prompt_text = project.llm_prompt.strip()
         if prompt_text:
             preset = [{"role": "system", "content": prompt_text}] + preset
+            logger.info(
+                "project_prompt_attached",
+                session=str(llm_request.session_id),
+                project=project_name,
+                prompt_length=len(prompt_text),
+            )
 
     # Build a prompt similar to the HTTPModelClient/YaLLM formatting
     prompt_parts: list[str] = []
@@ -376,6 +456,25 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         text = m.get("content", "")
         prompt_parts.append(f"{role}: {text}")
     prompt = "\n".join(prompt_parts)
+
+    knowledge_log = [
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "source": item.get("source"),
+            "chars": len(item.get("text", "")),
+            "url": item.get("url"),
+        }
+        for item in knowledge_snippets
+    ]
+    logger.info(
+        "llm_prompt_compiled",
+        session=str(llm_request.session_id),
+        project=project_name,
+        prompt_preview=prompt[:500],
+        prompt_length=len(prompt),
+        knowledge=knowledge_log,
+    )
 
     chunks: list[str] = []
     model_override = None
@@ -392,7 +491,22 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     text = "".join(chunks)
     logger.info("llm answered", length=len(text))
 
-    return ORJSONResponse(LLMResponse(text=text).model_dump())
+    response_payload = LLMResponse(
+        text=text,
+        attachments=[Attachment(**att) for att in attachments_payload],
+    )
+    await request.state.mongo.log_request_stat(
+        project=project_name,
+        question=context[-1].get("content", "") if context else None,
+        response_chars=len(text),
+        attachments=len(attachments_payload),
+        prompt_chars=len(prompt),
+        channel="api",
+        session_id=str(llm_request.session_id),
+        user_id=None,
+        error=None,
+    )
+    return ORJSONResponse(response_payload.model_dump())
 
 
 @llm_router.get("/chat")
@@ -417,6 +531,12 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
         prompt_text = project_obj.llm_prompt.strip()
         if prompt_text:
             prompt_base = f"{prompt_text}\n\n{question}"
+            logger.info(
+                "project_prompt_attached",
+                project=project_name,
+                prompt_length=len(prompt_text),
+                mode="stream",
+            )
     model_override = None
     if project_obj and project_obj.llm_model:
         model_text = project_obj.llm_model.strip()
@@ -426,6 +546,7 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
     logger.info("chat", question=question, project=project_name)
 
     knowledge_snippets: list[dict[str, Any]] = []
+    attachments_payload: list[dict[str, Any]] = []
     try:
         knowledge_snippets = await _collect_knowledge_snippets(
             request, question, project_name
@@ -439,6 +560,7 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
         )
     else:
         knowledge_message = _compose_knowledge_message(knowledge_snippets)
+        attachments_payload = _collect_attachments(knowledge_snippets)
         if knowledge_message:
             prompt_base = "\n\n".join([knowledge_message, f"Вопрос: {prompt_base}", "Ответ:"])
             logger.info(
@@ -458,16 +580,55 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
                 ],
             )
 
+    knowledge_log_stream = [
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "source": item.get("source"),
+            "chars": len(item.get("text", "")),
+            "url": item.get("url"),
+        }
+        for item in knowledge_snippets
+    ]
+    logger.info(
+        "llm_prompt_compiled_stream",
+        project=project_name,
+        prompt_preview=prompt_base[:500],
+        prompt_length=len(prompt_base),
+        knowledge=knowledge_log_stream,
+    )
+
+    stream_chars = 0
+    error_message: str | None = None
+
     async def event_stream():
+        nonlocal stream_chars, error_message
         try:
+            if attachments_payload:
+                for att in attachments_payload:
+                    yield "event: attachment\n"
+                    yield f"data: {json.dumps(att, ensure_ascii=False)}\n\n"
             async for token in llm_client.generate(prompt_base, model=model_override):
+                stream_chars += len(token)
                 yield f"data: {token}\n\n"
         except Exception as exc:  # keep connection graceful for the widget
             logger.warning("sse_generate_failed", error=str(exc))
+            error_message = str(exc)
             yield "event: llm_error\ndata: generation_failed\n\n"
         finally:
             # Signal the client that stream has completed
             yield "event: end\ndata: [DONE]\n\n"
+            await request.state.mongo.log_request_stat(
+                project=project_name,
+                question=question,
+                response_chars=stream_chars,
+                attachments=len(attachments_payload),
+                prompt_chars=len(prompt_base),
+                channel="widget",
+                session_id=None,
+                user_id=None,
+                error=error_message,
+            )
 
     model_header = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
     headers = {"X-Model-Name": model_header}
@@ -557,7 +718,19 @@ async def run_crawler(
 async def crawler_status(project: str | None = None) -> dict[str, object]:
     """Return current crawler and database status."""
 
-    return status_dict(_normalize_project(project))
+    data = status_dict(_normalize_project(project))
+    crawler = data.get("crawler") or {}
+    data.update(
+        {
+            "queued": crawler.get("queued", 0),
+            "in_progress": crawler.get("in_progress", 0),
+            "done": crawler.get("done", 0),
+            "failed": crawler.get("failed", 0),
+            "recent_urls": crawler.get("recent_urls") or [],
+            "last_url": crawler.get("last_url"),
+        }
+    )
+    return data
 
 
 @crawler_router.post("/stop", status_code=202)
