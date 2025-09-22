@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import os
+import time
 import asyncio
 import structlog
 
@@ -34,11 +35,13 @@ from models import Document, Project
 from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
+from backend.cache import _get_redis
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
 from bson import ObjectId
 from retrieval import search as retrieval_search
+from knowledge.summary import generate_document_summary
 import redis
 import requests
 from pydantic import BaseModel
@@ -92,6 +95,38 @@ def _build_token_preview(token: str | None) -> str | None:
     if not token:
         return None
     return f"{token[:4]}…{token[-2:]}" if len(token) > 6 else "***"
+
+
+async def _redis_project_usage() -> dict[str, dict[str, float | int]]:
+    redis = _get_redis()
+    usage: dict[str, dict[str, float | int]] = {}
+    try:
+        async for key in redis.scan_iter(match="crawler:progress:*"):
+            project_key = "__default__"
+            try:
+                project_value = await redis.hget(key, "project")
+                if project_value:
+                    decoded = project_value.decode().strip().lower()
+                    if decoded:
+                        project_key = decoded
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                size = await redis.memory_usage(key)
+            except Exception:  # noqa: BLE001
+                size = None
+            entry = usage.setdefault(
+                project_key,
+                {
+                    "redis_bytes": 0.0,
+                    "redis_keys": 0,
+                },
+            )
+            entry["redis_keys"] += 1
+            entry["redis_bytes"] += float(size or 0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("redis_usage_failed", error=str(exc))
+    return usage
 
 
 def _project_telegram_payload(
@@ -149,6 +184,7 @@ class TelegramRunner:
         loop = asyncio.get_running_loop()
         self._task = loop.create_task(self._run())
         self._hub._errors.pop(self.project, None)
+        logger.info("telegram_runner_started", project=self.project)
 
     async def stop(self) -> None:
         if not self._task:
@@ -259,6 +295,7 @@ class TelegramHub:
         if auto_start:
             try:
                 await runner.start()
+                logger.info("telegram_autostart_success", project=project.name)
             except Exception:
                 async with self._lock:
                     self._runners.pop(project.name, None)
@@ -277,6 +314,7 @@ class TelegramHub:
         runner = await self._get_or_create_runner(project.name, token)
         try:
             await runner.start()
+            logger.info("telegram_runner_manual_start", project=project.name)
         except Exception as exc:  # noqa: BLE001
             async with self._lock:
                 self._runners.pop(project.name, None)
@@ -296,6 +334,7 @@ class TelegramHub:
             runner = self._runners.pop(project_name, None)
             self._errors.pop(project_name, None)
         if runner:
+            logger.info("telegram_runner_stopping", project=project_name)
             await runner.stop()
         if auto_start is not None:
             project = await self._mongo.get_project(project_name)
@@ -601,7 +640,56 @@ class KnowledgeDeduplicate(BaseModel):
     project: str | None = None
 
 
+class KnowledgeServiceConfig(BaseModel):
+    enabled: bool
+    idle_threshold_seconds: int | None = None
+    poll_interval_seconds: int | None = None
+    cooldown_seconds: int | None = None
+
+
+KNOWLEDGE_SERVICE_KEY = "knowledge_service"
+
+
 class TelegramConfig(BaseModel):
+async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
+    doc = await request.state.mongo.get_setting(KNOWLEDGE_SERVICE_KEY) or {}
+    enabled = bool(doc.get("enabled", False))
+    idle = int(doc.get("idle_threshold_seconds") or 300)
+    poll = int(doc.get("poll_interval_seconds") or 60)
+    cooldown = int(doc.get("cooldown_seconds") or 900)
+    payload = {
+        "enabled": enabled,
+        "running": bool(doc.get("running", False)),
+        "idle_threshold_seconds": max(60, idle),
+        "poll_interval_seconds": max(15, poll),
+        "cooldown_seconds": max(60, cooldown),
+        "last_run_ts": doc.get("last_run_ts"),
+        "last_reason": doc.get("last_reason"),
+        "last_queue": doc.get("last_queue"),
+        "idle_seconds": doc.get("idle_seconds"),
+        "last_seen_ts": doc.get("last_seen_ts"),
+        "updated_at": doc.get("updated_at"),
+        "last_error": doc.get("last_error"),
+        "message": doc.get("message"),
+    }
+    return ORJSONResponse(payload)
+
+
+async def _knowledge_service_update_impl(request: Request, payload: "KnowledgeServiceConfig") -> ORJSONResponse:
+    current = await request.state.mongo.get_setting(KNOWLEDGE_SERVICE_KEY) or {}
+    updated = current.copy()
+    updated["enabled"] = bool(payload.enabled)
+    if payload.idle_threshold_seconds is not None:
+        updated["idle_threshold_seconds"] = max(60, int(payload.idle_threshold_seconds))
+    if payload.poll_interval_seconds is not None:
+        updated["poll_interval_seconds"] = max(15, int(payload.poll_interval_seconds))
+    if payload.cooldown_seconds is not None:
+        updated["cooldown_seconds"] = max(60, int(payload.cooldown_seconds))
+    updated["updated_at"] = time.time()
+    await request.state.mongo.set_setting(KNOWLEDGE_SERVICE_KEY, updated)
+    return ORJSONResponse({"status": "ok", "enabled": updated["enabled"]})
+
+
     token: str | None = None
     auto_start: bool | None = None
 
@@ -626,6 +714,8 @@ class ProjectCreate(BaseModel):
     domain: str | None = None
     llm_model: str | None = None
     llm_prompt: str | None = None
+    llm_emotions_enabled: bool | None = None
+    debug_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     widget_url: str | None = None
@@ -717,13 +807,19 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
+    auto_description = False
+    description_value = (payload.description or "").strip()
+    if not description_value:
+        description_value = await generate_document_summary(name, payload.content, project)
+        auto_description = True
+
     try:
         domain_value = payload.domain or (project.domain if project else None)
         file_id = await mongo_client.upsert_text_document(
             name=name,
             content=payload.content,
             documents_collection=collection,
-            description=payload.description,
+            description=description_value,
             project=project_name,
             domain=domain_value,
             url=payload.url,
@@ -735,6 +831,7 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
                 domain=domain_value,
                 llm_model=project.llm_model if project else None,
                 llm_prompt=project.llm_prompt if project else None,
+                llm_emotions_enabled=project.llm_emotions_enabled if project else True,
             )
             await request.state.mongo.upsert_project(project_payload)
     except HTTPException:
@@ -750,6 +847,8 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
         "name": name,
         "project": project_name,
         "domain": domain_value,
+        "description": description_value,
+        "auto_description": auto_description,
     })
 
 
@@ -780,10 +879,17 @@ async def admin_upload_knowledge(
 
     content_type = (file.content_type or "").lower()
     description_value = (description or "").strip()
-    if content_type and not content_type.startswith("text/") and not description_value:
-        raise HTTPException(status_code=400, detail="Описание обязательно для файлов и изображений")
+    auto_description = False
+    text_for_summary = ""
     if not description_value:
-        description_value = None
+        if content_type.startswith("text/") or content_type in {"application/json", "application/xml"}:
+            text_for_summary = payload.decode("utf-8", errors="ignore")
+        description_value = await generate_document_summary(
+            filename,
+            text_for_summary,
+            project_model,
+        )
+        auto_description = True
 
     try:
         file_id = await mongo_client.upload_document(
@@ -816,6 +922,7 @@ async def admin_upload_knowledge(
             "download_url": download_url,
             "content_type": file.content_type,
             "description": description_value,
+            "auto_description": auto_description,
         }
     )
 
@@ -859,13 +966,18 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
 
     domain_value = (payload.domain.strip() if isinstance(payload.domain, str) else current_domain) or None
     project_value = _normalize_project(payload.project or current_project)
-    description_value = (payload.description.strip() if isinstance(payload.description, str) else current_description) or None
+    description_input_provided = isinstance(payload.description, str)
+    description_input = payload.description.strip() if description_input_provided else None
     url_value = (payload.url.strip() if isinstance(payload.url, str) else current_url) or None
+    project_model = await request.state.mongo.get_project(project_value) if project_value else None
     is_binary = bool(current_content_type and not current_content_type.startswith("text/"))
+    auto_description = False
 
     if is_binary:
+        description_value = description_input if description_input_provided else current_description
         if not description_value:
-            raise HTTPException(status_code=400, detail="Описание обязательно для файлов и изображений")
+            description_value = await generate_document_summary(new_name, "", project_model)
+            auto_description = True
         update_doc: dict[str, Any] = {
             "name": new_name,
             "description": description_value,
@@ -885,13 +997,18 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
                 "project": project_value,
                 "domain": domain_value,
                 "description": description_value,
+                "auto_description": auto_description,
             }
         )
 
     content_value = payload.content if payload.content is not None else current_content
-
     if not content_value or not content_value.strip():
         raise HTTPException(status_code=400, detail="Content is empty")
+
+    description_value = description_input if description_input_provided else current_description
+    if not description_value:
+        description_value = await generate_document_summary(new_name, content_value, project_model)
+        auto_description = True
 
     name_changed = new_name.lower() != (current_name or "").lower()
     project_changed = project_value != _normalize_project(current_project)
@@ -926,6 +1043,7 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             domain=domain_value or (existing.domain if existing else None),
             llm_model=existing.llm_model if existing else None,
             llm_prompt=existing.llm_prompt if existing else None,
+            llm_emotions_enabled=existing.llm_emotions_enabled if existing and existing.llm_emotions_enabled is not None else True,
             telegram_token=existing.telegram_token if existing else None,
             telegram_auto_start=existing.telegram_auto_start if existing else None,
             widget_url=existing.widget_url if existing else None,
@@ -941,6 +1059,8 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             "name": new_name,
             "project": project_value,
             "domain": domain_value,
+            "description": description_value,
+            "auto_description": auto_description,
         }
     )
 
@@ -961,6 +1081,25 @@ async def admin_deduplicate_knowledge(request: Request, payload: KnowledgeDedupl
 async def admin_reindex_documents() -> ORJSONResponse:
     loop = asyncio.get_running_loop()
 
+@app.delete("/api/v1/admin/knowledge", response_class=ORJSONResponse)
+async def admin_clear_knowledge(request: Request, project: str | None = None) -> ORJSONResponse:
+    """Remove documents from the knowledge base (optionally scoped to a project)."""
+
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    project_name, _, mongo_client, _ = await _get_project_context(request, project)
+    summary = await mongo_client.delete_documents(collection, project_name)
+
+    loop = asyncio.get_running_loop()
+
+    def _refresh() -> None:
+        from worker import update_vector_store
+
+        update_vector_store()
+
+    loop.run_in_executor(None, _refresh)
+    return ORJSONResponse({"project": project_name, **summary})
+
     def _run_update() -> None:
         from worker import update_vector_store
 
@@ -969,6 +1108,29 @@ async def admin_reindex_documents() -> ORJSONResponse:
     loop.run_in_executor(None, _run_update)
     return ORJSONResponse({"status": "queued"})
 
+
+@app.get("/api/v1/admin/knowledge/service", response_class=ORJSONResponse)
+async def admin_knowledge_service_status(request: Request) -> ORJSONResponse:
+    return await _knowledge_service_status_impl(request)
+
+
+@app.post("/api/v1/admin/knowledge/service", response_class=ORJSONResponse)
+async def admin_knowledge_service_update(
+    request: Request, payload: KnowledgeServiceConfig
+) -> ORJSONResponse:
+    return await _knowledge_service_update_impl(request, payload)
+
+
+@llm_router.get("/admin/knowledge/service", response_class=ORJSONResponse)
+async def llm_knowledge_service_status(request: Request) -> ORJSONResponse:
+    return await _knowledge_service_status_impl(request)
+
+
+@llm_router.post("/admin/knowledge/service", response_class=ORJSONResponse)
+async def llm_knowledge_service_update(
+    request: Request, payload: KnowledgeServiceConfig
+) -> ORJSONResponse:
+    return await _knowledge_service_update_impl(request, payload)
 
 @app.get("/api/v1/admin/projects/names", response_class=ORJSONResponse)
 async def admin_project_names(request: Request, limit: int = 100) -> ORJSONResponse:
@@ -1120,6 +1282,7 @@ async def admin_project_telegram_config(
         domain=existing.domain,
         llm_model=existing.llm_model,
         llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         widget_url=existing.widget_url,
@@ -1178,6 +1341,7 @@ async def admin_project_telegram_start(
         domain=existing.domain,
         llm_model=existing.llm_model,
         llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         widget_url=existing.widget_url,
@@ -1220,6 +1384,7 @@ async def admin_project_telegram_stop(
         domain=existing.domain,
         llm_model=existing.llm_model,
         llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
         telegram_token=existing.telegram_token,
         telegram_auto_start=auto_start_value,
         widget_url=existing.widget_url,
@@ -1328,12 +1493,58 @@ async def admin_request_stats_export(
     )
 
 
+def _resolve_session_identifiers(request: Request, project: str | None, session_id: str | None) -> tuple[str | None, str]:
+    project_name = _normalize_project(project)
+    base = session_id or request.headers.get("X-Session-Id") or request.headers.get("X-Client-Session")
+    if not base:
+        base = request.cookies.get("chat_session")
+    if not base:
+        base = uuid4().hex
+    base = base.strip().lower()
+    if project_name:
+        return project_name, f"{project_name}::{base}"
+    return project_name, base
+
+
 @app.get("/api/v1/admin/projects", response_class=ORJSONResponse)
 async def admin_projects(request: Request) -> ORJSONResponse:
     """Return configured projects."""
 
     projects = await request.state.mongo.list_projects()
     return ORJSONResponse({"projects": [p.model_dump() for p in projects]})
+
+
+@app.get("/api/v1/admin/projects/storage", response_class=ORJSONResponse)
+async def admin_projects_storage(request: Request) -> ORJSONResponse:
+    """Return aggregated storage usage per project (Mongo/GridFS/Redis)."""
+
+    mongo_cfg = MongoSettings()
+    documents_collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    contexts_collection = getattr(request.state, "contexts_collection", mongo_cfg.contexts)
+
+    storage = await request.state.mongo.aggregate_project_storage(documents_collection, contexts_collection)
+    redis_usage = await _redis_project_usage()
+
+    combined_keys = set(storage.keys()) | set(redis_usage.keys())
+    combined: dict[str, dict[str, float | int]] = {}
+    for key in combined_keys:
+        doc_stats = storage.get(key, {})
+        redis_stats = redis_usage.get(key, {})
+        documents_bytes = int(doc_stats.get("documents_bytes", 0) or 0)
+        binary_bytes = int(doc_stats.get("binary_bytes", 0) or 0)
+        text_bytes = max(documents_bytes - binary_bytes, 0)
+        combined[key] = {
+            "documents_bytes": documents_bytes,
+            "binary_bytes": binary_bytes,
+            "text_bytes": text_bytes,
+            "document_count": int(doc_stats.get("document_count", 0)),
+            "context_bytes": int(doc_stats.get("context_bytes", 0) or 0),
+            "context_count": int(doc_stats.get("context_count", 0)),
+            "redis_bytes": float(redis_stats.get("redis_bytes", 0)),
+            "redis_keys": int(redis_stats.get("redis_keys", 0)),
+        }
+
+    return ORJSONResponse({"projects": combined})
 
 
 @app.post("/api/v1/admin/projects", response_class=ORJSONResponse, status_code=201)
@@ -1357,6 +1568,26 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         domain_value = existing.domain if existing else None
     model_value = payload.llm_model.strip() if isinstance(payload.llm_model, str) and payload.llm_model.strip() else (existing.llm_model if existing and existing.llm_model else None)
     prompt_value = payload.llm_prompt.strip() if isinstance(payload.llm_prompt, str) and payload.llm_prompt.strip() else (existing.llm_prompt if existing and existing.llm_prompt else None)
+
+    if "llm_emotions_enabled" in provided_fields:
+        emotions_value = (
+            bool(payload.llm_emotions_enabled)
+            if payload.llm_emotions_enabled is not None
+            else True
+        )
+    else:
+        if existing and existing.llm_emotions_enabled is not None:
+            emotions_value = existing.llm_emotions_enabled
+        else:
+            emotions_value = True
+
+    if "debug_enabled" in provided_fields:
+        debug_value = bool(payload.debug_enabled) if payload.debug_enabled is not None else False
+    else:
+        if existing and existing.debug_enabled is not None:
+            debug_value = bool(existing.debug_enabled)
+        else:
+            debug_value = False
 
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
@@ -1389,6 +1620,8 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         domain=domain_value,
         llm_model=model_value,
         llm_prompt=prompt_value,
+        llm_emotions_enabled=emotions_value,
+        debug_enabled=debug_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         widget_url=widget_url_value,

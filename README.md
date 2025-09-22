@@ -24,6 +24,8 @@ and serve information for multiple projects or domains.
   keyword signals and feeds curated excerpts into the LLM.
 - **Operations dashboard** – monitor services, manage knowledge documents,
   inspect prompts/logs and control the Telegram bot from one UI.
+- **Intelligent knowledge processor** – optional microservice refreshes
+  embeddings automatically when the crawler queue stays idle.
 - **Request analytics** – per-project request statistics are logged in Mongo;
   the admin panel shows daily activity for the last 14 days and allows
   exporting CSV reports for external analysis.
@@ -116,9 +118,17 @@ Useful overrides:
 - `compose.gpu.yaml` – enable GPU-backed inference.
 - `docker-compose.override.windows.yml` – CPU/memory limits for Windows hosts.
 
+> Tip: use `python3 scripts/update_versions.py --format shell` to bump the
+> service-specific image versions before calling `docker compose build`. This
+> keeps unchanged containers cached and mirrors the behaviour of the deploy
+> scripts described below.
+
+Knowledge base operations and the background service are documented in `docs/knowledge_service.md` and `docs/crawler_images.md`.
+
 The helper script `./deploy_project.sh` automates environment generation,
-image builds and an initial crawl.  The PowerShell variant `./deploy_project.ps1`
-performs the same setup on Windows.
+tracks per-service image versions and rebuilds only the containers whose
+sources changed before performing an initial crawl.  The PowerShell variant
+`./deploy_project.ps1` provides the same behaviour on Windows.
 
 ---
 

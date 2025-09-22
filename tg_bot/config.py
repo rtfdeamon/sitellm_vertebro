@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     bot_token: str | None = None
     project: str = "default"
     api_base_url: AnyUrl = "http://app:8000"
-    backend_url: AnyUrl = "http://app:8000/api/v1/llm/ask"
+    backend_url: AnyUrl = "http://app:8000/api/v1/llm/chat"
     status_url: AnyUrl | None = None
     project_sync_interval: int = 30
     request_timeout: int = 30

@@ -78,6 +78,12 @@ function Get-ComposeCmd(){
   throw "Docker Compose не найден (ни 'docker compose', ни 'docker-compose')."
 }
 
+function Get-PythonCmd(){
+  if (Test-Cmd "python3") { return "python3" }
+  if (Test-Cmd "python") { return "python" }
+  throw "Python 3 (python/python3) не найден — требуется для расчёта версий образов."
+}
+
 function Compose([string[]]$args){
   & $script:ComposeCmd @args
   if ($LASTEXITCODE -ne 0){ throw "Команда 'docker compose $args' завершилась ошибкой." }
@@ -111,6 +117,8 @@ try {
   Set-EnvVarInFile ".env" "MONGO_INITDB_ROOT_PASSWORD" $MongoPassword
   Set-EnvVarInFile ".env" "APP_PORT" "$AppPort"
   Set-EnvVarInFile ".env" "CRAWL_START_URL" $CrawlUrl
+  Set-EnvVarInFile ".env" "BACKEND_IMAGE" "sitellm/backend"
+  Set-EnvVarInFile ".env" "TELEGRAM_IMAGE" "sitellm/telegram"
 
   # Бэкап env
   $stamp = (Get-Date).ToString("yyyyMMddHHmmss")
@@ -127,25 +135,47 @@ try {
   }
 
   # Сборка (последовательно, чтобы исключить 'unknown flag: --no-parallel')
+  $changedComponents = @()
   if (-not $NoBuild){
+    $pythonCmd = Get-PythonCmd
+    $versionJson = & $pythonCmd "scripts/update_versions.py" --versions-file "versions.json" --format json
+    if ($LASTEXITCODE -ne 0){
+      throw "update_versions.py завершился с ошибкой"
+    }
+    $versionData = $versionJson | ConvertFrom-Json
+    $backendVersion = [string]$versionData.versions.BACKEND_VERSION
+    $telegramVersion = [string]$versionData.versions.TELEGRAM_VERSION
+    Set-EnvVarInFile ".env" "BACKEND_VERSION" $backendVersion
+    Set-EnvVarInFile ".env" "TELEGRAM_VERSION" $telegramVersion
+    Write-Info ("Версии образов: backend={0} telegram={1}" -f $backendVersion, $telegramVersion)
+    if ($versionData.changed){
+      $changedComponents = @($versionData.changed)
+    }
     Write-Info "Сборка образов (последовательно)…"
-    $services = @("app","celery_worker","celery_beat","telegram-bot")
-    foreach($svc in $services){
-      try {
+    $services = @()
+    if ($changedComponents -contains "backend") { $services += "app" }
+    if ($changedComponents -contains "telegram") { $services += "telegram-bot" }
+    if ($services.Count -eq 0){
+      Write-Info "Изменений для контейнеров нет — пропускаем build"
+    } else {
+      foreach($svc in $services){
         Write-Info "build $svc"
         Compose @("build", $svc)
-      } catch {
-        Write-Warn "Не удалось собрать $svc напрямую, пробуем общее 'up --build' позже. Детали: $($_.Exception.Message)"
       }
     }
   } else {
     Write-Warn "Флаг -NoBuild: сборка пропущена"
+    if (-not (Get-Content ".env" -Raw | Select-String '^BACKEND_VERSION=' -Quiet)){
+      Set-EnvVarInFile ".env" "BACKEND_VERSION" "1"
+    }
+    if (-not (Get-Content ".env" -Raw | Select-String '^TELEGRAM_VERSION=' -Quiet)){
+      Set-EnvVarInFile ".env" "TELEGRAM_VERSION" "1"
+    }
   }
 
   # docker compose up
   Write-Info "Запуск контейнеров…"
   $composeArgs = @("up","-d")
-  if (-not $NoBuild){ $composeArgs += "--build" }
   # Если есть windows-оверрайд — используем
   if (Test-Path "docker-compose.override.windows.yml"){
     $composeArgs = @("-f","docker-compose.yml","-f","docker-compose.override.windows.yml") + $composeArgs

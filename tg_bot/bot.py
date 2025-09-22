@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import re
+import time
+from contextlib import suppress
+from typing import Any, Dict, List
+
 from aiogram import Dispatcher, types
 from aiogram.types import URLInputFile
 from aiogram.filters import Command, CommandStart
@@ -13,8 +19,307 @@ from .client import rag_answer
 
 logger = structlog.get_logger(__name__)
 
+_FEATURE_CACHE: dict[str, tuple[float, dict[str, bool]]] = {}
+_FEATURE_CACHE_TTL = 120.0
+_FEATURE_CACHE_LOCK = asyncio.Lock()
 
-async def start_handler(message: types.Message, project: str, session_id: str | None) -> None:
+POSITIVE_REPLIES = {
+    'да', 'давай', 'ок', 'хочу', 'конечно', 'ага', 'отправь', 'да пожалуйста',
+    'yes', 'yep', 'sure', 'send', 'please send', 'да, отправь', 'да отправь',
+}
+NEGATIVE_REPLIES = {
+    'нет', 'не надо', 'не нужно', 'пока нет', 'no', 'not now', 'нет, спасибо',
+}
+
+PENDING_ATTACHMENTS: Dict[str, Dict[str, Any]] = {}
+GOD_MODE_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+GOD_MODE_STEPS = [
+    {
+        "key": "project",
+        "prompt": "1/8. Укажите идентификатор проекта (латиница, цифры, дефисы):",
+        "validator": "slug",
+        "required": True,
+    },
+    {
+        "key": "title",
+        "prompt": "2/8. Введите отображаемое название проекта (можно оставить пустым):",
+        "validator": "text_optional",
+        "required": False,
+    },
+    {
+        "key": "domain",
+        "prompt": "3/8. Укажите основной домен без протокола (например, example.com):",
+        "validator": "domain",
+        "required": True,
+    },
+    {
+        "key": "start_url",
+        "prompt": "4/8. Введите стартовый URL для краулинга (https://...):",
+        "validator": "url",
+        "required": True,
+    },
+    {
+        "key": "llm_model",
+        "prompt": "5/8. Укажите LLM модель (оставьте пустым, чтобы использовать настройку по умолчанию):",
+        "validator": "text_optional",
+        "required": False,
+    },
+    {
+        "key": "llm_prompt",
+        "prompt": "6/8. Введите стартовый промпт для проекта (можно пропустить):",
+        "validator": "text_optional",
+        "required": False,
+    },
+    {
+        "key": "emotions",
+        "prompt": "7/8. Включить эмоциональные ответы и эмодзи? (да/нет, по умолчанию да):",
+        "validator": "bool_optional",
+        "required": False,
+    },
+    {
+        "key": "telegram_token",
+        "prompt": "8/8. Введите токен Telegram-бота (формат 123456:ABC...):",
+        "validator": "token",
+        "required": True,
+    },
+]
+
+
+def _pending_key(project: str | None, session_id: str | None, user_id: int | None) -> str:
+    user_part = str(user_id or 'anon')
+    return f"{(project or '').lower()}::{session_id or user_part}"
+
+
+async def _send_attachments(message: types.Message, attachments: List[Dict[str, Any]]) -> None:
+    """Deliver queued attachments to the chat."""
+
+    for attachment in attachments:
+        name = attachment.get('name') or 'документ'
+        url = attachment.get('url')
+        content_type = str(attachment.get('content_type') or '').lower()
+        description = attachment.get('description')
+        caption = description or name
+        try:
+            if content_type.startswith('image/') and url:
+                media = URLInputFile(url, filename=name)
+                await message.answer_photo(media, caption=caption)
+            elif url:
+                media = URLInputFile(url, filename=name)
+                extra = {"caption": caption} if caption and caption != name else {}
+                await message.answer_document(media, **extra)
+            else:
+                text = f"Документ: {name}"
+                if url:
+                    text += f"\n{url}"
+                if description and not url:
+                    text += f"\n{description}"
+                await message.answer(text)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("attachment_send_failed", error=str(exc), name=name)
+            if url:
+                await message.answer(f"Документ: {name}\n{url}")
+
+
+def _god_mode_key(message: types.Message) -> str:
+    return f"{message.chat.id}:{message.from_user.id}"
+
+
+def _validate_god_mode_input(kind: str, value: str) -> Any:
+    text = value.strip()
+    if kind == "slug":
+        slug = re.sub(r"[^a-zA-Z0-9_-]", "", text).lower()
+        if not slug:
+            raise ValueError("Используйте латиницу, цифры и дефисы")
+        return slug
+    if kind == "text_optional":
+        return text or None
+    if kind == "domain":
+        domain = text.lower()
+        if not domain or " " in domain or "/" in domain:
+            raise ValueError("Введите домен без протокола, например example.com")
+        return domain
+    if kind == "url":
+        if not text.lower().startswith("http://") and not text.lower().startswith("https://"):
+            raise ValueError("URL должен начинаться с http:// или https://")
+        return text
+    if kind == "bool_optional":
+        if not text:
+            return True
+        return text.lower() in {"да", "yes", "y", "true", "1", "+"}
+    if kind == "token":
+        if len(text) < 20 or ":" not in text:
+            raise ValueError("Похоже, токен неверный. Формат 123456:ABC...")
+        return text
+    return text
+
+
+async def _god_mode_command(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
+    key = _god_mode_key(message)
+    GOD_MODE_SESSIONS[key] = {
+        "step": 0,
+        "data": {},
+        "project": project,
+        "session_id": session_id,
+        "started_at": time.time(),
+    }
+    await message.answer(
+        "👑 Режим супер-админа активирован. Ответы 'cancel' прерывают сценарий."
+        "\n\nСейчас настроим новый проект и Telegram-бота."
+    )
+    await message.answer(GOD_MODE_STEPS[0]["prompt"])
+
+
+async def _get_project_features(project: str | None) -> dict[str, bool]:
+    """Return cached feature flags for the given project."""
+
+    if not project:
+        return {"emotions_enabled": True, "debug_enabled": False}
+
+    key = project.lower()
+    now = time.time()
+
+    async with _FEATURE_CACHE_LOCK:
+        cached = _FEATURE_CACHE.get(key)
+        if cached and (now - cached[0]) < _FEATURE_CACHE_TTL:
+            return cached[1].copy()
+
+    settings = get_settings()
+    api_url = f"{settings.api_base_url}/api/v1/admin/projects"
+    emotions_enabled = True
+    debug_enabled = False
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            resp = await client.get(api_url)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "project_features_fetch_failed",
+            project=project,
+            error=str(exc),
+        )
+    else:
+        for item in data.get("projects", []):
+            name = (item.get("name") or "").lower()
+            if name == key:
+                emotions_enabled = item.get("llm_emotions_enabled", True) is not False
+                debug_enabled = bool(item.get("debug_enabled", False))
+                break
+
+    features = {"emotions_enabled": emotions_enabled, "debug_enabled": debug_enabled}
+    async with _FEATURE_CACHE_LOCK:
+        _FEATURE_CACHE[key] = (now, features.copy())
+    return features
+
+
+async def _typing_indicator(message: types.Message, stop_event: asyncio.Event) -> None:
+    """Continuously send the typing status until ``stop_event`` is set."""
+
+    try:
+        while not stop_event.is_set():
+            try:
+                await message.chat.do("typing")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("typing_indicator_failed", error=str(exc))
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=4.0)
+            except asyncio.TimeoutError:
+                continue
+    except asyncio.CancelledError:
+        raise
+
+
+async def _complete_god_mode(message: types.Message, session: Dict[str, Any]) -> None:
+    data = session.get("data", {})
+    project_slug = data.get("project")
+    domain = data.get("domain")
+    start_url = data.get("start_url")
+    llm_model = data.get("llm_model") or None
+    llm_prompt = data.get("llm_prompt") or None
+    emotions_enabled = data.get("emotions") if "emotions" in data else True
+    telegram_token = data.get("telegram_token")
+    if not (project_slug and domain and start_url and telegram_token):
+        await message.answer("⚠️ Недостаточно данных для создания бота. Попробуйте заново.")
+        return
+
+    settings = get_settings()
+    base_url = str(settings.api_base_url).rstrip('/')
+    status_messages = []
+
+    payload_project = {
+        "name": project_slug,
+        "title": data.get("title") or None,
+        "domain": domain,
+        "llm_model": llm_model,
+        "llm_prompt": llm_prompt,
+        "llm_emotions_enabled": emotions_enabled,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            resp = await client.post(f"{base_url}/api/v1/admin/projects", json=payload_project)
+            if not resp.ok:
+                raise RuntimeError(f"Создание проекта: {resp.status_code} {await resp.text()}")
+            status_messages.append("• Проект сохранён")
+
+            cfg_payload = {"token": telegram_token, "auto_start": True}
+            resp = await client.post(
+                f"{base_url}/api/v1/admin/projects/{project_slug}/telegram/config",
+                json=cfg_payload,
+            )
+            if not resp.ok:
+                raise RuntimeError(f"Настройка Telegram: {resp.status_code} {await resp.text()}")
+            status_messages.append("• Токен Telegram сохранён")
+
+            resp = await client.post(
+                f"{base_url}/api/v1/admin/projects/{project_slug}/telegram/start",
+                json={"token": telegram_token, "auto_start": True},
+            )
+            if not resp.ok:
+                raise RuntimeError(f"Запуск Telegram-бота: {resp.status_code} {await resp.text()}")
+            status_messages.append("• Бот запущен")
+
+            crawler_payload = {
+                "start_url": start_url,
+                "max_depth": 2,
+                "max_pages": 200,
+                "project": project_slug,
+                "domain": domain,
+            }
+            resp = await client.post(f"{base_url}/api/v1/crawler/run", json=crawler_payload)
+            if not resp.ok:
+                raise RuntimeError(f"Старт краулинга: {resp.status_code} {await resp.text()}")
+            status_messages.append("• Краулер запущен")
+    except Exception as exc:  # noqa: BLE001
+        await message.answer(f"⚠️ Не удалось завершить настройку: {exc}")
+        return
+
+    features_snapshot = await _get_project_features(project_slug)
+    features_snapshot["emotions_enabled"] = emotions_enabled
+    async with _FEATURE_CACHE_LOCK:
+        _FEATURE_CACHE[project_slug] = (time.time(), features_snapshot.copy())
+
+    summary = "\n".join(status_messages)
+    await message.answer(
+        "✅ Готово!" \
+        + f"\n{summary}\n" \
+        + f"\nАдмин-панель: /admin?project={project_slug}"
+    )
+
+
+async def start_handler(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
     """Send greeting with short instructions."""
     logger.info("/start", user=message.from_user.id)
 
@@ -25,56 +330,228 @@ async def start_handler(message: types.Message, project: str, session_id: str | 
     await message.answer(text)
 
 
-async def help_handler(message: types.Message, project: str, session_id: str | None) -> None:
+async def help_handler(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
     """Display available commands."""
     logger.info("/help", user=message.from_user.id)
 
-    text = "/start - начать диалог\n/help - помощь"
+    text = "/start - начать диалог\n/help - помощь\n/rtfdeamon_god_mode - режим супер-админа"
     await message.answer(text)
 
 
-async def text_handler(message: types.Message, project: str, session_id: str | None) -> None:
+async def text_handler(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
     """Handle regular user messages."""
 
     logger.info("user message", user=message.from_user.id)
-    await message.chat.do("typing")
+    raw_text = (message.text or "").strip()
+
+    god_key = _god_mode_key(message)
+    god_session = GOD_MODE_SESSIONS.get(god_key)
+    if god_session:
+        if raw_text.lower() in {"cancel", "отмена"}:
+            GOD_MODE_SESSIONS.pop(god_key, None)
+            await message.answer("❌ Режим супер-админа завершён.")
+            return
+        step_index = god_session["step"]
+        if 0 <= step_index < len(GOD_MODE_STEPS):
+            step = GOD_MODE_STEPS[step_index]
+            try:
+                value = _validate_god_mode_input(step["validator"], raw_text)
+            except ValueError as exc:
+                await message.answer(f"⚠️ {exc}. Попробуйте ещё раз.")
+                return
+            god_session["data"][step["key"]] = value
+            god_session["step"] += 1
+            if god_session["step"] >= len(GOD_MODE_STEPS):
+                await _complete_god_mode(message, god_session)
+                GOD_MODE_SESSIONS.pop(god_key, None)
+            else:
+                await message.answer(GOD_MODE_STEPS[god_session["step"]]["prompt"])
+            return
+
+    normalized_text = raw_text.lower()
+    pending_key = _pending_key(project, session_id, message.from_user.id)
+    pending_pack = PENDING_ATTACHMENTS.get(pending_key)
+    if pending_pack:
+        attachments_to_send = pending_pack.get('attachments', [])
+        pending_emotions = pending_pack.get('emotions', True)
+        if normalized_text in POSITIVE_REPLIES:
+            await message.answer(
+                "📎 Отправляю документы!" if pending_emotions else "Отправляю документы."
+            )
+            await _send_attachments(message, attachments_to_send)
+            await message.answer(
+                "Готово! Если нужен ещё документ — просто скажите 😊"
+                if pending_emotions
+                else "Готово. Могу помочь чем-то ещё?"
+            )
+            PENDING_ATTACHMENTS.pop(pending_key, None)
+            return
+        if normalized_text in NEGATIVE_REPLIES:
+            await message.answer(
+                "Хорошо, не буду отправлять 📁" if pending_emotions else "Понял, не отправляю документ."
+            )
+            PENDING_ATTACHMENTS.pop(pending_key, None)
+            return
+        if normalized_text:
+            PENDING_ATTACHMENTS.pop(pending_key, None)
+
+    stop_typing = asyncio.Event()
+    typing_task = asyncio.create_task(_typing_indicator(message, stop_typing))
     try:
-        response = await rag_answer(message.text or "", project=project, session_id=session_id)
+        settings = get_settings()
+        backend_hint = str(settings.backend_url)
+        features = await _get_project_features(project)
+        emotions_enabled = features.get("emotions_enabled", True)
+        debug_allowed = features.get("debug_enabled", False)
+        request_lines = [
+            "🛰️ Отправляю запрос бэкенду",
+            f"• проект: {project or '—'}",
+            f"• endpoint: {backend_hint}",
+            f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
+        ]
+        if debug_allowed:
+            request_lines.append("• отладка: включена")
+        await message.answer("\n".join(request_lines))
+        try:
+            response = await rag_answer(
+                message.text or "",
+                project=project,
+                session_id=session_id,
+                debug=debug_allowed,
+            )
+        except ValueError:
+            stop_typing.set()
+            await message.answer("🚫 Ответ заблокирован фильтром безопасности.")
+            await message.answer("К сожалению, я не могу помочь с этим вопросом.")
+            return
+        except Exception as exc:  # noqa: BLE001
+            stop_typing.set()
+            logger.exception("rag_answer_failed", user=message.from_user.id, error=str(exc))
+            await message.answer(f"⚠️ Ошибка при обращении к бэкенду: {exc}")
+            await message.answer("Сервис сейчас недоступен, попробуйте позже.")
+            return
+
+        stop_typing.set()
         answer_text = response.get("text", "") if isinstance(response, dict) else str(response)
         attachments = response.get("attachments", []) if isinstance(response, dict) else []
-        logger.info("answer ready", user=message.from_user.id, attachments=len(attachments))
-    except ValueError:
-        await message.answer("К сожалению, я не могу помочь с этим вопросом.")
-        return
+        meta = response.get("meta", {}) if isinstance(response, dict) else {}
+        emotions_enabled = bool(meta.get('emotions_enabled', emotions_enabled))
+        debug_allowed = bool(meta.get('debug_enabled', debug_allowed))
+        if project:
+            async with _FEATURE_CACHE_LOCK:
+                _FEATURE_CACHE[project.lower()] = (
+                    time.time(),
+                    {"emotions_enabled": emotions_enabled, "debug_enabled": debug_allowed},
+                )
+        logger.info(
+            "answer ready",
+            user=message.from_user.id,
+            attachments=len(attachments),
+            session=meta.get('session_id'),
+        )
 
-    chunks = [answer_text[i : i + 4000] for i in range(0, len(answer_text), 4000)]
-    if chunks:
-        for chunk in chunks:
-            await message.answer(chunk)
-    elif attachments:
-        await message.answer("Нашёл подходящие документы:")
+        chunks = [answer_text[i : i + 4000] for i in range(0, len(answer_text), 4000)]
+        if chunks:
+            for chunk in chunks:
+                await message.answer(chunk)
 
-    for attachment in attachments:
-        name = attachment.get("name") or "document"
-        url = attachment.get("url")
-        if not url:
-            continue
-        content_type = str(attachment.get("content_type") or "").lower()
-        caption = attachment.get("description") or name
-        try:
-            if content_type.startswith("image/"):
-                media = URLInputFile(url, filename=name)
-                await message.answer_photo(media, caption=caption)
-            else:
-                media = URLInputFile(url, filename=name)
-                kwargs = {"caption": caption} if caption and caption != name else {}
-                await message.answer_document(media, **kwargs)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("attachment_send_failed", error=str(exc), name=name)
-            await message.answer(f"Документ: {name}\n{url}")
+        summary_lines: List[str] = [
+            "✅ Ответ получен",
+            f"• символов: {len(answer_text)} (SSE: {meta.get('chars', '—')})",
+            f"• вложений: {len(attachments)}",
+            f"• SSE строк: {meta.get('lines', '—')}",
+            f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
+        ]
+
+        model_name = meta.get('model')
+        if model_name:
+            summary_lines.append(f"• модель: {model_name}")
+
+        last_debug_event: Dict[str, Any] | None = None
+        debug_events = meta.get('debug')
+        if isinstance(debug_events, list) and debug_events:
+            maybe_last = debug_events[-1]
+            if isinstance(maybe_last, dict):
+                last_debug_event = maybe_last
+
+        session_label = meta.get('session_id') or (last_debug_event.get('session_id') if last_debug_event else None)
+        if session_label:
+            summary_lines.append(f"• сессия: {session_label}")
+
+        if debug_allowed:
+            summary_lines.append("• отладка: включена")
+            debug_origin = meta.get('debug_origin') or (last_debug_event.get('debug_origin') if last_debug_event else None)
+            if debug_origin:
+                summary_lines.append(f"• источник отладки: {debug_origin}")
+
+        if last_debug_event:
+            sources = last_debug_event.get('knowledge_sources')
+            knowledge_count = last_debug_event.get('knowledge_count')
+            if isinstance(knowledge_count, int):
+                if isinstance(sources, dict) and sources:
+                    formatted_sources = ", ".join(f"{k}:{v}" for k, v in sources.items())
+                    summary_lines.append(f"• знания: {knowledge_count} ({formatted_sources})")
+                else:
+                    summary_lines.append(f"• знания: {knowledge_count}")
+            debug_origin = last_debug_event.get('debug_origin') or meta.get('debug_origin')
+            if debug_origin:
+                summary_lines.append(f"• отладка: {debug_origin}")
+            error_text = last_debug_event.get('error')
+            if error_text:
+                summary_lines.append(f"• ошибка: {error_text}")
+
+        await message.answer(
+            "\n".join(summary_lines)
+            if (answer_text or attachments)
+            else "ℹ️ Бэкенд не вернул текста или вложений"
+        )
+    finally:
+        stop_typing.set()
+        with suppress(asyncio.CancelledError):
+            await typing_task
+
+    if attachments:
+        PENDING_ATTACHMENTS[pending_key] = {
+            "attachments": attachments,
+            "emotions": emotions_enabled,
+        }
+        preview_lines: List[str] = []
+        for idx, att in enumerate(attachments, 1):
+            title = att.get('name') or f'Документ {idx}'
+            desc = att.get('description') or ''
+            if len(desc) > 120:
+                desc = desc[:117].rstrip() + '…'
+            line = f"• {title}"
+            if desc:
+                line += f" — {desc}"
+            preview_lines.append(line)
+        confirm_body = "\n".join(preview_lines)
+        prompt_text = (
+            f"📎 Кажется, этот материал пригодится:\n{confirm_body}\nОтправить? Ответьте «да» — и пришлю, «нет» — чтобы пропустить."
+            if emotions_enabled
+            else f"Нашёл документы:\n{confirm_body}\nНапишите \"да\" для отправки или \"нет\", если они не нужны."
+        )
+        await message.answer(prompt_text)
+    else:
+        PENDING_ATTACHMENTS.pop(pending_key, None)
 
 
-async def unknown_handler(message: types.Message, project: str, session_id: str | None) -> None:
+async def unknown_handler(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
     """Reply to unsupported commands."""
     user_id = getattr(getattr(message, "from_user", None), "id", None)
     logger.info("unknown command", user=user_id)
@@ -96,12 +573,18 @@ def setup(dp: Dispatcher, project: str, session_provider) -> None:
 
     dp.message.register(with_context(start_handler), CommandStart())
     dp.message.register(with_context(help_handler), Command("help"))
+    dp.message.register(with_context(_god_mode_command), Command("rtfdeamon_god_mode"))
     dp.message.register(with_context(status_handler), Command("status"))
     dp.message.register(with_context(text_handler), lambda m: m.text and not m.text.startswith("/"))
     dp.message.register(with_context(unknown_handler))
 
 
-async def status_handler(message: types.Message, project: str, session_id: str | None) -> None:
+async def status_handler(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
     """Return crawler and DB status from the API."""
     settings = get_settings()
     try:

@@ -100,3 +100,18 @@ def test_rag_answer_safety(monkeypatch):
 
     with pytest.raises(ValueError):
         asyncio.run(client.rag_answer("hi"))
+
+
+def test_rag_answer_debug_parameter(monkeypatch):
+    """Explicit debug flag must be forwarded as query parameter."""
+    stream = FakeStream(["data: ok"])
+    store = FakeClient([stream])
+    fake_httpx.AsyncClient = lambda timeout: store
+    fake_safety.safety_check = lambda text: False
+    importlib.reload(client)
+
+    result = asyncio.run(client.rag_answer("hi", debug=True))
+    assert result["text"] == "ok"
+    assert store.calls, "Expected store to record at least one request"
+    params = store.calls[0][2]["params"]
+    assert params.get("debug") == "1"

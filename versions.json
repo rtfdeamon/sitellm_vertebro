@@ -1,0 +1,10 @@
+{
+  "backend": {
+    "version": 3,
+    "hash": "1bd20d7c0e601fd92a8ce96493d1951da5ecef2bee17ad10172977657d06ef32"
+  },
+  "telegram": {
+    "version": 5,
+    "hash": "a2ea2b7d8ec5a30e78443dff88f5e0c7d1d6ba90c504587806b23c72d4ba802c"
+  }
+}

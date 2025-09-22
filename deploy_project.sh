@@ -68,6 +68,16 @@ open_firewall_ports() {
   fi
 }
 
+component_changed() {
+  local target="$1"
+  for comp in ${CHANGED_COMPONENTS:-}; do
+    if [ "$comp" = "$target" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 is_port_free() {
   local p="$1"
   # try ss first, fallback to lsof
@@ -411,18 +421,58 @@ echo '[+] Starting project in CPU mode'
 COMPOSE_FILES=(-f compose.yaml)
 COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
 
-printf '[+] Building images sequentially...\n'
-# Build only required services; skip local-LLM services if disabled
-SERVICES=(app telegram-bot)
-if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
-  SERVICES+=(celery_worker celery_beat)
+PYTHON_BIN=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN=$(command -v python3)
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN=$(command -v python)
+else
+  echo '[!] python3 (or python) is required to compute component versions'
+  exit 1
 fi
-for svc in "${SERVICES[@]}"; do
-  if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
-    printf '[!] Failed to build %s\n' "$svc"
-    exit 1
-  fi
-done
+
+VERSION_OUTPUT=$("$PYTHON_BIN" scripts/update_versions.py --versions-file versions.json --format shell)
+if [ -z "$VERSION_OUTPUT" ]; then
+  echo '[!] Failed to compute component versions'
+  exit 1
+fi
+eval "$VERSION_OUTPUT"
+: "${BACKEND_VERSION:=1}"
+: "${TELEGRAM_VERSION:=1}"
+BACKEND_IMAGE_VALUE=$(awk -F= '/^BACKEND_IMAGE=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+if [ -z "$BACKEND_IMAGE_VALUE" ]; then
+  BACKEND_IMAGE_VALUE="sitellm/backend"
+fi
+TELEGRAM_IMAGE_VALUE=$(awk -F= '/^TELEGRAM_IMAGE=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+if [ -z "$TELEGRAM_IMAGE_VALUE" ]; then
+  TELEGRAM_IMAGE_VALUE="sitellm/telegram"
+fi
+update_env_var BACKEND_IMAGE "$BACKEND_IMAGE_VALUE"
+update_env_var TELEGRAM_IMAGE "$TELEGRAM_IMAGE_VALUE"
+update_env_var BACKEND_VERSION "$BACKEND_VERSION"
+update_env_var TELEGRAM_VERSION "$TELEGRAM_VERSION"
+[ -n "${CHANGED_COMPONENTS:-}" ] || CHANGED_COMPONENTS=""
+printf '[i] Component versions: backend=%s telegram=%s\n' "$BACKEND_VERSION" "$TELEGRAM_VERSION"
+
+printf '[+] Building images sequentially...\n'
+SERVICES=()
+if component_changed backend; then
+  SERVICES+=("app")
+fi
+if component_changed telegram; then
+  SERVICES+=("telegram-bot")
+fi
+
+if [ ${#SERVICES[@]} -eq 0 ]; then
+  printf '[+] No source changes detected for container images; skipping build step\n'
+else
+  for svc in "${SERVICES[@]}"; do
+    if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
+      printf '[!] Failed to build %s\n' "$svc"
+      exit 1
+    fi
+  done
+fi
 
 # Enable compose profiles only when local LLM is enabled
 PROFILE_ARGS=()

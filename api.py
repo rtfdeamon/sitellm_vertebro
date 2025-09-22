@@ -8,8 +8,10 @@ import subprocess
 import sys
 import os
 import signal
+import time
 import urllib.parse as urlparse
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 try:
@@ -39,6 +41,14 @@ from settings import MongoSettings
 
 logger = structlog.get_logger(__name__)
 
+EMOTION_ON_PROMPT = (
+    "Отвечай в тёплом, дружелюбном тоне, добавляй уместные эмоции и подходящие эмодзи (не более двух в ответе),"
+    " чтобы поддерживать живой диалог и эмпатию."
+)
+EMOTION_OFF_PROMPT = (
+    "Отвечай в спокойном, нейтральном тоне и не используй эмодзи либо эмоциональные высказывания."
+)
+
 
 def _normalize_project(value: str | None) -> str | None:
     candidate = (value or "").strip().lower()
@@ -48,6 +58,35 @@ def _normalize_project(value: str | None) -> str | None:
     if fallback:
         return fallback.strip().lower() or None
     return None
+
+
+def _resolve_session_identifiers(
+    request: Request,
+    project: str | None,
+    session_id: str | None,
+) -> tuple[str | None, str, str, bool]:
+    """Return normalized project, composite session key and base id."""
+
+    project_name = _normalize_project(project)
+    candidates = (
+        session_id,
+        request.headers.get("X-Session-Id"),
+        request.headers.get("X-Client-Session"),
+        request.cookies.get("chat_session"),
+    )
+    base_id: str | None = None
+    for candidate in candidates:
+        if isinstance(candidate, str):
+            trimmed = candidate.strip().lower()
+            if trimmed:
+                base_id = trimmed
+                break
+    generated = False
+    if not base_id:
+        base_id = uuid4().hex
+        generated = True
+    session_key = f"{project_name}::{base_id}" if project_name else base_id
+    return project_name, session_key, base_id, generated
 
 
 _KNOWLEDGE_SNIPPET_CHARS = 640
@@ -360,7 +399,16 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         except Exception as exc:
             logger.error("project_resolve_failed", project=project_name, error=str(exc))
             raise HTTPException(status_code=500, detail="Failed to resolve project") from exc
-    logger.info("ask", session=str(llm_request.session_id), project=project_name)
+    emotions_enabled = True
+    if project and project.llm_emotions_enabled is not None:
+        emotions_enabled = bool(project.llm_emotions_enabled)
+
+    logger.info(
+        "ask",
+        session=str(llm_request.session_id),
+        project=project_name,
+        emotions=emotions_enabled,
+    )
     context = []
 
     try:
@@ -438,16 +486,23 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
                 ],
             )
 
+    system_messages: list[dict[str, str]] = []
     if project and project.llm_prompt:
         prompt_text = project.llm_prompt.strip()
         if prompt_text:
-            preset = [{"role": "system", "content": prompt_text}] + preset
+            system_messages.append({"role": "system", "content": prompt_text})
             logger.info(
                 "project_prompt_attached",
                 session=str(llm_request.session_id),
                 project=project_name,
                 prompt_length=len(prompt_text),
             )
+
+    emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
+    system_messages.append({"role": "system", "content": emotion_instruction})
+
+    if system_messages:
+        preset = system_messages + preset
 
     # Build a prompt similar to the HTTPModelClient/YaLLM formatting
     prompt_parts: list[str] = []
@@ -471,6 +526,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         "llm_prompt_compiled",
         session=str(llm_request.session_id),
         project=project_name,
+        emotions=emotions_enabled,
         prompt_preview=prompt[:500],
         prompt_length=len(prompt),
         knowledge=knowledge_log,
@@ -489,11 +545,12 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         logger.error("llm_generate_failed", project=project_name, error=str(exc))
         raise HTTPException(status_code=500, detail="LLM generation failed") from exc
     text = "".join(chunks)
-    logger.info("llm answered", length=len(text))
+    logger.info("llm answered", length=len(text), emotions=emotions_enabled)
 
     response_payload = LLMResponse(
         text=text,
         attachments=[Attachment(**att) for att in attachments_payload],
+        emotions_enabled=emotions_enabled,
     )
     await request.state.mongo.log_request_stat(
         project=project_name,
@@ -510,7 +567,14 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
 
 @llm_router.get("/chat")
-async def chat(request: Request, question: str, project: str | None = None) -> StreamingResponse:
+async def chat(
+    request: Request,
+    question: str,
+    project: str | None = None,
+    channel: str | None = None,
+    debug: bool | None = None,
+    session_id: str | None = None,
+) -> StreamingResponse:
     """Stream tokens from the language model using server-sent events.
 
     Parameters
@@ -519,12 +583,34 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
         Text sent as a query parameter. Example: ``/chat?question=hi``.
     """
 
-    project_name = _normalize_project(project)
+    project_name, session_key, session_base, session_generated = _resolve_session_identifiers(
+        request,
+        project,
+        session_id,
+    )
+    channel_name = (channel or "widget").strip() or "widget"
     project_obj: Project | None = None
     if project_name:
         project_obj = await request.state.mongo.get_project(project_name)
         if project_obj is None:
             project_obj = await request.state.mongo.upsert_project(Project(name=project_name))
+
+    emotions_enabled = True
+    if project_obj and project_obj.llm_emotions_enabled is not None:
+        emotions_enabled = bool(project_obj.llm_emotions_enabled)
+
+    request_debug_enabled = bool(debug) if debug is not None else False
+    project_debug_enabled = bool(project_obj.debug_enabled) if project_obj and project_obj.debug_enabled is not None else False
+    send_debug = request_debug_enabled or project_debug_enabled
+    if send_debug:
+        if request_debug_enabled and project_debug_enabled:
+            debug_origin = "project+request"
+        elif request_debug_enabled:
+            debug_origin = "request"
+        else:
+            debug_origin = "project"
+    else:
+        debug_origin = None
 
     prompt_base = question
     if project_obj and project_obj.llm_prompt:
@@ -543,10 +629,21 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
         if model_text:
             model_override = model_text
 
-    logger.info("chat", question=question, project=project_name)
+    effective_model = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
+
+    logger.info(
+        "chat",
+        question=question,
+        project=project_name,
+        emotions=emotions_enabled,
+        session=session_key,
+        debug=send_debug,
+        channel=channel_name,
+    )
 
     knowledge_snippets: list[dict[str, Any]] = []
     attachments_payload: list[dict[str, Any]] = []
+    knowledge_message = ""
     try:
         knowledge_snippets = await _collect_knowledge_snippets(
             request, question, project_name
@@ -562,11 +659,12 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
         knowledge_message = _compose_knowledge_message(knowledge_snippets)
         attachments_payload = _collect_attachments(knowledge_snippets)
         if knowledge_message:
-            prompt_base = "\n\n".join([knowledge_message, f"Вопрос: {prompt_base}", "Ответ:"])
             logger.info(
                 "knowledge_context_attached",
                 project=project_name,
                 mode="stream",
+                session=session_key,
+                debug=send_debug,
                 docs=[
                     {
                         "id": item.get("id"),
@@ -580,6 +678,14 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
                 ],
             )
 
+    emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
+    prompt_segments = [emotion_instruction]
+    if knowledge_message:
+        prompt_segments.append(knowledge_message)
+    prompt_segments.append(f"Вопрос: {prompt_base}")
+    prompt_segments.append("Ответ:")
+    prompt_base = "\n\n".join(segment for segment in prompt_segments if segment)
+
     knowledge_log_stream = [
         {
             "id": item.get("id"),
@@ -590,12 +696,32 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
         }
         for item in knowledge_snippets
     ]
+    knowledge_source_counts: dict[str, int] = {}
+    total_knowledge_chars = 0
+    for item in knowledge_snippets:
+        source_label = str(item.get("source") or "unknown").lower()
+        knowledge_source_counts[source_label] = knowledge_source_counts.get(source_label, 0) + 1
+        total_knowledge_chars += len(item.get("text", ""))
+
+    knowledge_preview = [
+        {
+            "id": entry.get("id"),
+            "name": entry.get("name"),
+            "source": entry.get("source"),
+            "score": entry.get("score"),
+            "url": entry.get("url"),
+        }
+        for entry in knowledge_snippets[:3]
+    ]
     logger.info(
         "llm_prompt_compiled_stream",
         project=project_name,
+        emotions=emotions_enabled,
         prompt_preview=prompt_base[:500],
         prompt_length=len(prompt_base),
         knowledge=knowledge_log_stream,
+        session=session_key,
+        debug=send_debug,
     )
 
     stream_chars = 0
@@ -604,6 +730,36 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
     async def event_stream():
         nonlocal stream_chars, error_message
         try:
+            meta_payload = {
+                "emotions_enabled": emotions_enabled,
+                "session_id": session_key,
+                "debug_enabled": send_debug,
+                "debug_origin": debug_origin,
+                "model": effective_model,
+            }
+            yield "event: meta\n"
+            yield f"data: {json.dumps(meta_payload, ensure_ascii=False)}\n\n"
+            if send_debug:
+                debug_start_payload = {
+                    "stage": "begin",
+                    "session_id": session_key,
+                    "project": project_name,
+                    "channel": channel_name,
+                    "question_preview": question[:160],
+                    "question_chars": len(question or ""),
+                    "prompt_chars": len(prompt_base),
+                    "knowledge_count": len(knowledge_snippets),
+                    "knowledge_sources": knowledge_source_counts,
+                    "knowledge_preview": knowledge_preview,
+                    "attachments_planned": len(attachments_payload),
+                    "emotions_enabled": emotions_enabled,
+                    "model": effective_model,
+                    "debug_origin": debug_origin,
+                    "total_knowledge_chars": total_knowledge_chars,
+                    "ts": time.time(),
+                }
+                yield "event: debug\n"
+                yield f"data: {json.dumps(debug_start_payload, ensure_ascii=False)}\n\n"
             if attachments_payload:
                 for att in attachments_payload:
                     yield "event: attachment\n"
@@ -616,6 +772,24 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
             error_message = str(exc)
             yield "event: llm_error\ndata: generation_failed\n\n"
         finally:
+            if send_debug:
+                debug_summary_payload = {
+                    "stage": "end",
+                    "session_id": session_key,
+                    "project": project_name,
+                    "channel": channel_name,
+                    "response_chars": stream_chars,
+                    "attachments": len(attachments_payload),
+                    "error": error_message,
+                    "knowledge_count": len(knowledge_snippets),
+                    "knowledge_sources": knowledge_source_counts,
+                    "total_knowledge_chars": total_knowledge_chars,
+                    "model": effective_model,
+                    "emotions_enabled": emotions_enabled,
+                    "ts": time.time(),
+                }
+                yield "event: debug\n"
+                yield f"data: {json.dumps(debug_summary_payload, ensure_ascii=False)}\n\n"
             # Signal the client that stream has completed
             yield "event: end\ndata: [DONE]\n\n"
             await request.state.mongo.log_request_stat(
@@ -624,15 +798,23 @@ async def chat(request: Request, question: str, project: str | None = None) -> S
                 response_chars=stream_chars,
                 attachments=len(attachments_payload),
                 prompt_chars=len(prompt_base),
-                channel="widget",
-                session_id=None,
+                channel=channel_name,
+                session_id=session_key,
                 user_id=None,
                 error=error_message,
             )
 
-    model_header = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
+    model_header = effective_model
     headers = {"X-Model-Name": model_header}
     response = StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
+    if session_generated:
+        response.set_cookie(
+            "chat_session",
+            session_base,
+            max_age=30 * 24 * 3600,
+            httponly=False,
+            samesite="Lax",
+        )
     return response
 
 

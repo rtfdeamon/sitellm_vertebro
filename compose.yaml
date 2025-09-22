@@ -1,5 +1,13 @@
 # Docker Compose stack to run the API, Redis and Mongo locally
 name: sitellm_vertebro
+x-backend-build: &backend-build
+  context: ./
+  dockerfile: Dockerfile
+  args:
+    APT_CACHE_ID: apt-cache
+    UV_CACHE_ID: uv-cache
+    # Force CPU wheels for PyTorch in CPU mode
+    PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
 x-health: &health_defaults
   interval: 15s
   timeout: 3s
@@ -39,14 +47,7 @@ services:
 
   celery_worker:
     # Processes scheduled tasks that update the vector store
-    build:
-      context: ./
-      dockerfile: Dockerfile
-      args:
-        APT_CACHE_ID: apt-cache
-        UV_CACHE_ID: uv-cache
-        # Force CPU wheels for PyTorch in CPU mode
-        PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
+    image: ${BACKEND_IMAGE:-sitellm/backend}:${BACKEND_VERSION:-1}
     restart: unless-stopped
     env_file: .env
     profiles: ["local-llm"]
@@ -75,14 +76,7 @@ services:
 
   celery_beat:
     # Scheduler for periodic vector store updates
-    build:
-      context: ./
-      dockerfile: Dockerfile
-      args:
-        APT_CACHE_ID: apt-cache
-        UV_CACHE_ID: uv-cache
-        # Force CPU wheels for PyTorch in CPU mode
-        PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
+    image: ${BACKEND_IMAGE:-sitellm/backend}:${BACKEND_VERSION:-1}
     restart: unless-stopped
     env_file: .env
     profiles: ["local-llm"]
@@ -104,14 +98,8 @@ services:
 
   app:
     # FastAPI application exposing the LLM endpoints
-    build:
-      context: ./
-      dockerfile: Dockerfile
-      args:
-        APT_CACHE_ID: apt-cache
-        UV_CACHE_ID: uv-cache
-        # Force CPU wheels for PyTorch in CPU mode
-        PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu/simple"
+    image: ${BACKEND_IMAGE:-sitellm/backend}:${BACKEND_VERSION:-1}
+    build: *backend-build
     restart: unless-stopped
     env_file: .env
     ports:
@@ -175,6 +163,7 @@ services:
 
 
   telegram-bot:
+    image: ${TELEGRAM_IMAGE:-sitellm/telegram}:${TELEGRAM_VERSION:-1}
     build:
       context: .
       dockerfile: docker/Dockerfile.tg_bot

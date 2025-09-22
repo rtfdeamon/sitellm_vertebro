@@ -6,7 +6,7 @@ make testing straightforward:
 
 - ``fetch(url)`` – synchronous fetch helper used in unit tests to verify
   content-type handling for non-HTML resources.
-- ``crawl(...)`` – asynchronous BFS crawler that yields ``(url, payload, ctype, is_html)``.
+- ``crawl(...)`` – asynchronous BFS crawler that yields ``(url, payload, ctype, is_html, binary)``.
 
 The CLI entry point remains lightweight and is not exercised by tests.
 """
@@ -37,6 +37,11 @@ import structlog
 from urllib import robotparser
 import xml.etree.ElementTree as ET
 from bson import ObjectId
+from PIL import Image
+
+from knowledge.summary import generate_document_summary
+from knowledge.text import extract_doc_text, extract_docx_text
+from models import Project
 
 from observability.logging import configure_logging
 from settings import MongoSettings
@@ -71,13 +76,23 @@ BINARY_EXTENSIONS = {
     ".zip",
     ".rar",
     ".7z",
-    ".doc",
-    ".docx",
     ".ppt",
     ".pptx",
     ".xls",
     ".xlsx",
 }
+DOCX_MIME_TYPES = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
+DOC_MIME_TYPES = {
+    "application/msword",
+    "application/ms-word",
+    "application/vnd.ms-word",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
+MAX_IMAGE_DIMENSION = int(os.getenv("CRAWL_IMAGE_MAX_DIM", "1280"))
+IMAGE_JPEG_QUALITY = int(os.getenv("CRAWL_IMAGE_JPEG_QUALITY", "85"))
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 _redis_url = os.getenv("REDIS_URL")
 if _redis_url:
@@ -219,6 +234,23 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
         return None, None
 
 
+def extract_image_links(html: str, base_url: str) -> List[dict[str, str]]:
+    """Extract image URLs with optional alt text from ``html``."""
+
+    soup = BeautifulSoup(html, "html.parser")
+    result: list[dict[str, str]] = []
+    for img in soup.find_all("img", src=True):
+        src = (img.get("src") or "").strip()
+        if not src or src.startswith("data:"):
+            continue
+        abs_url = urlparse.urljoin(base_url, src)
+        if not abs_url.lower().startswith(("http://", "https://")):
+            continue
+        alt = (img.get("alt") or img.get("title") or "").strip()
+        result.append({"url": abs_url, "alt": alt})
+    return result
+
+
 def extract_links(html: str, base_url: str) -> List[str]:
     """Вытаскивает все <a href="..."> и приводит к абсолютному URL."""
     soup = BeautifulSoup(html, "html.parser")
@@ -272,6 +304,37 @@ def pdf_to_text(data: bytes) -> str:
             chunks.append(extracted.strip())
 
     return "\n\n".join(part for part in chunks if part).strip()
+
+
+def compress_image(data: bytes) -> tuple[bytes | None, str | None]:
+    """Compress binary image data to JPEG suitable for messaging platforms."""
+
+    try:
+        image = Image.open(io.BytesIO(data))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("image_open_failed", error=str(exc))
+        return None, None
+
+    try:
+        image = image.convert("RGB")
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("image_convert_failed", error=str(exc))
+        return None, None
+
+    try:
+        image.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("image_thumbnail_failed", error=str(exc))
+        return None, None
+
+    buffer = io.BytesIO()
+    try:
+        image.save(buffer, format="JPEG", quality=IMAGE_JPEG_QUALITY, optimize=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("image_save_failed", error=str(exc))
+        return None, None
+
+    return buffer.getvalue(), "image/jpeg"
 
 
 def _fix_missing_spaces(text: str) -> str:
@@ -417,18 +480,19 @@ async def crawl(
     client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     concurrency: int = 5,
     project_label: str | None = None,
-) -> AsyncIterator[Tuple[str, str, str, bool]]:
+) -> AsyncIterator[Tuple[str, str, str, bool, bytes | None]]:
     """Asynchronously crawl a site in BFS order.
 
-    Yields tuples ``(url, payload, content_type, is_html)`` where ``payload`` is
-    the raw HTML for pages or extracted text for supported binary formats
-    (currently PDFs). Accepts an optional ``client_factory`` for tests to
-    inject a custom ``httpx.AsyncClient`` (e.g., with ``MockTransport``).
+    Yields tuples ``(url, payload, content_type, is_html, binary)`` where
+    ``payload`` contains extracted text (or HTML) and ``binary`` holds the raw
+    bytes for downloadable documents (PDF/DOC/DOCX). Accepts an optional
+    ``client_factory`` for tests to inject a custom ``httpx.AsyncClient`` (e.g.,
+    with ``MockTransport``).
     """
 
     visited: Set[str] = set()
     url_queue: asyncio.Queue[Tuple[str, int]] = asyncio.Queue()
-    result_queue: asyncio.Queue[Tuple[str, str, str, bool]] = asyncio.Queue()
+    result_queue: asyncio.Queue[Tuple[str, str, str, bool, bytes | None]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
 
     if project_label is None:
@@ -441,30 +505,47 @@ async def crawl(
     await url_queue.put((start_url, 0))
     _incr("queued", 1, project_label)
 
-    async def _fetch_async(client: httpx.AsyncClient, url: str) -> Tuple[str | None, str | None, bool]:
+    async def _fetch_async(
+        client: httpx.AsyncClient, url: str
+    ) -> Tuple[str | None, str | None, bool, bytes | None]:
         try:
             resp = await client.get(url)
             resp.raise_for_status()
             ctype = resp.headers.get("content-type", "")
             main_type = ctype.split(";")[0].strip().lower()
-            if main_type == "application/pdf" or url.lower().endswith(".pdf"):
+            path_lower = urlparse.urlparse(url).path.lower()
+            if main_type == "application/pdf" or path_lower.endswith(".pdf"):
                 text = pdf_to_text(resp.content)
                 if text:
                     logger.info("pdf extracted", url=url, chars=len(text))
-                    return text, ctype or "application/pdf", False
-                logger.info("skip pdf", url=url, reason="no_text")
-                return None, ctype or "application/pdf", False
+                else:
+                    logger.info("pdf extracted", url=url, chars=0, reason="empty_text")
+                return text, (ctype or "application/pdf"), False, resp.content
+            if main_type in DOCX_MIME_TYPES or path_lower.endswith(".docx"):
+                text = extract_docx_text(resp.content)
+                if text:
+                    logger.info("docx extracted", url=url, chars=len(text))
+                else:
+                    logger.info("docx extracted", url=url, chars=0, reason="empty_text")
+                return text, (ctype or "application/vnd.openxmlformats-officedocument.wordprocessingml.document"), False, resp.content
+            if main_type in DOC_MIME_TYPES or path_lower.endswith(".doc"):
+                text = extract_doc_text(resp.content)
+                if text:
+                    logger.info("doc extracted", url=url, chars=len(text))
+                else:
+                    logger.info("doc extracted", url=url, chars=0, reason="empty_text")
+                return text, (ctype or "application/msword"), False, resp.content
             if main_type != "text/html":
                 logger.info("skip non-html", url=url, content_type=ctype)
-                return None, ctype, False
+                return None, ctype, False, None
             if JS_RENDER_ENABLED:
                 rendered = await _render_with_playwright(url)
                 if rendered:
-                    return rendered, ctype or "text/html", True
-            return resp.text, ctype, True
+                    return rendered, ctype or "text/html", True, None
+            return resp.text, ctype, True, None
         except Exception as exc:  # pragma: no cover - error path
             logger.warning("fetch failed", url=url, error=str(exc))
-            return None, None, False
+            return None, None, False, None
 
     async def _worker(client: httpx.AsyncClient) -> None:
         while True:
@@ -477,7 +558,7 @@ async def crawl(
                     visited.add(url)
                 try:
                     with mark_url(url, project_label):
-                        payload, ctype, is_html = await asyncio.wait_for(
+                        payload, ctype, is_html, binary_data = await asyncio.wait_for(
                             _fetch_async(client, url),
                             timeout=PAGE_TIMEOUT,
                         )
@@ -489,11 +570,11 @@ async def crawl(
                     )
                     continue
 
-                if payload:
+                if payload or binary_data:
                     logger.info(
                         "page fetched", url=url, depth=depth, content_length=len(payload), content_type=ctype
                     )
-                    await result_queue.put((url, payload, ctype, is_html))
+                    await result_queue.put((url, payload or "", ctype, is_html, binary_data))
                     if is_html and (not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain):
                         for link in extract_links(payload, url):
                             async with visited_lock:
@@ -528,9 +609,9 @@ async def crawl(
                     if url_queue.empty():
                         break
                     continue
-                url, payload, ctype, is_html = item
+                url, payload, ctype, is_html, binary_data = item
                 pages += 1
-                yield url, payload, ctype, is_html
+                yield url, payload, ctype, is_html, binary_data
         finally:
             for w in workers:
                 w.cancel()
@@ -653,10 +734,26 @@ def run(
             logger.warning("project_upsert_failed", project=document_project)
 
         operations: list[UpdateOne] = []
+        project_model: Project | None = None
+        try:
+            project_doc = db[os.getenv("MONGO_PROJECTS", "projects")].find_one(
+                {"name": document_project}
+            )
+            if project_doc:
+                project_model = Project(**project_doc)
+        except Exception as exc:
+            logger.debug("project_model_load_failed", project=document_project, error=str(exc))
 
         async def _store() -> None:
+            img_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
             try:
-                async for page_url, raw_payload, source_ct, is_html in crawl(
+                async for (
+                    page_url,
+                    raw_payload,
+                    source_ct,
+                    is_html,
+                    binary_payload,
+                ) in crawl(
                     start_url,
                     max_pages=max_pages,
                     max_depth=max_depth,
@@ -664,19 +761,50 @@ def run(
                     project_label=document_project,
                 ):
                     raw_text = html_to_text(raw_payload) if is_html else raw_payload
-                    text = clean_text(raw_text)
-                    if not text:
+                    text = clean_text(raw_text) if raw_text else ""
+
+                    main_type = (source_ct or "").split(";")[0].strip().lower()
+                    lower_url = page_url.lower()
+                    is_binary = not is_html and binary_payload is not None
+
+                    image_links = extract_image_links(raw_payload, page_url) if is_html else []
+
+                    if not text and not is_binary and not image_links:
                         logger.info("empty_page", url=page_url)
                         if progress_callback:
                             progress_callback(page_url)
                         continue
 
-                    suffix = ".txt"
-                    if (source_ct and "pdf" in source_ct.lower()) or page_url.lower().endswith(".pdf"):
-                        suffix = ".pdf.txt"
+                    if is_binary:
+                        if main_type in DOCX_MIME_TYPES or lower_url.endswith(".docx"):
+                            suffix = ".docx"
+                            storage_type = main_type or "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        elif main_type in DOC_MIME_TYPES or lower_url.endswith(".doc"):
+                            suffix = ".doc"
+                            storage_type = main_type or "application/msword"
+                        elif main_type == "application/pdf" or lower_url.endswith(".pdf"):
+                            suffix = ".pdf"
+                            storage_type = main_type or "application/pdf"
+                        else:
+                            suffix = ".bin"
+                            storage_type = main_type or "application/octet-stream"
+                    else:
+                        suffix = ".txt"
+                        storage_type = "text/plain"
+
                     filename = _filename_from_url(page_url, suffix=suffix)
-                    description = text.replace("\n", " ").strip()[:200]
-                    payload_bytes = text.encode("utf-8")
+
+                    if is_binary:
+                        description = await generate_document_summary(filename, text, project_model)
+                        if not description.strip() and text:
+                            description = text.replace("\n", " ").strip()[:200]
+                        if not description.strip():
+                            description = f"Документ «{filename}»."
+                        payload_bytes = binary_payload or b""
+                    else:
+                        description = text.replace("\n", " ").strip()[:200]
+                        payload_source = text if text else raw_payload
+                        payload_bytes = payload_source.encode("utf-8")
 
                     existing = documents_collection.find_one(
                         {"url": page_url, "project": document_project},
@@ -691,8 +819,7 @@ def run(
                     file_id = gridfs.put(
                         payload_bytes,
                         filename=filename,
-                        content_type="text/plain",
-                        encoding="utf-8",
+                        content_type=storage_type,
                     )
 
                     doc: dict[str, object] = {
@@ -701,12 +828,17 @@ def run(
                         "fileId": str(file_id),
                         "url": page_url,
                         "ts": time.time(),
-                        "content_type": "text/plain",
+                        "content_type": storage_type,
                         "domain": document_domain,
                         "project": document_project,
+                        "size_bytes": len(payload_bytes),
                     }
                     if source_ct:
                         doc["source_content_type"] = source_ct
+                    elif is_binary and storage_type != "text/plain":
+                        doc["source_content_type"] = storage_type
+                    elif is_html:
+                        doc["source_content_type"] = "text/html"
 
                     operations.append(
                         UpdateOne(
@@ -715,6 +847,57 @@ def run(
                             upsert=True,
                         )
                     )
+
+                    for image_info in image_links:
+                        image_url = image_info.get("url") or ""
+                        if not image_url or image_url in downloaded_images:
+                            continue
+                        if allowed_domain:
+                            parsed_image = urlparse.urlsplit(image_url)
+                            if parsed_image.netloc and parsed_image.netloc.lower() != allowed_domain.lower():
+                                continue
+                        try:
+                            img_resp = await img_client.get(image_url)
+                            img_resp.raise_for_status()
+                        except Exception as exc:
+                            logger.debug("image_fetch_failed", url=image_url, error=str(exc))
+                            continue
+                        downloaded_images.add(image_url)
+                        original_type = (img_resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+                        compressed, final_type = compress_image(img_resp.content)
+                        if not compressed or not final_type:
+                            continue
+                        image_filename = _filename_from_url(image_url, suffix=".jpg")
+                        image_description = image_info.get("alt") or f"Изображение со страницы {page_url}"
+                        try:
+                            image_file_id = gridfs.put(
+                                compressed,
+                                filename=image_filename,
+                                content_type=final_type,
+                            )
+                        except Exception as exc:
+                            logger.warning("gridfs_image_write_failed", url=image_url, error=str(exc))
+                            continue
+                        image_doc = {
+                            "name": image_filename,
+                            "description": image_description,
+                            "fileId": str(image_file_id),
+                            "url": image_url,
+                            "ts": time.time(),
+                            "content_type": final_type,
+                            "domain": document_domain,
+                            "project": document_project,
+                            "size_bytes": len(compressed),
+                        }
+                        if original_type:
+                            image_doc["source_content_type"] = original_type
+                        operations.append(
+                            UpdateOne(
+                                {"url": image_url, "project": document_project},
+                                {"$set": image_doc},
+                                upsert=True,
+                            )
+                        )
 
                     if progress_callback:
                         progress_callback(page_url)
@@ -729,6 +912,7 @@ def run(
             finally:
                 if JS_RENDER_ENABLED:
                     await _shutdown_playwright()
+                await img_client.aclose()
 
         asyncio.run(_store())
 

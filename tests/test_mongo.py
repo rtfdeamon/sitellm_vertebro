@@ -68,6 +68,7 @@ async def test_upload_document_returns_str() -> None:
     assert result == str(f_id)
     assert collection.inserted["fileId"] == str(f_id)
     assert collection.inserted["project"] == "demo"
+    assert collection.inserted["size_bytes"] == len(b"data")
 
 
 @pytest.mark.asyncio
@@ -102,6 +103,7 @@ async def test_upsert_text_document_sets_domain_and_description() -> None:
     assert stored["content_type"] == "text/plain"
     assert stored["url"] == "https://example.com/doc"
     assert "ts" in stored
+    assert stored["size_bytes"] == len("hello world".encode("utf-8"))
 
 
 @pytest.mark.asyncio
@@ -182,3 +184,4 @@ def test_project_from_doc_trims_optional_fields() -> None:
     assert project.name == "demo"
     assert project.telegram_token == "token123"
     assert project.widget_url == "https://demo.example/widget"
+    assert project.llm_emotions_enabled is True

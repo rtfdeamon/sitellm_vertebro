@@ -11,6 +11,8 @@ from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, Te
 
 from redis import Redis
 
+from knowledge.text import extract_doc_text
+
 
 class DocumentsParser:
     """Parse documents and store embeddings in a Redis vector store."""
@@ -68,6 +70,7 @@ class DocumentsParser:
             Raw file contents to embed.
         """
         _, file_extension = os.path.splitext(name)
+        file_extension = file_extension.lower()
 
         # use a dedicated temporary file to avoid name collisions
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
@@ -80,6 +83,20 @@ class DocumentsParser:
                     parser = TextLoader(saved_file)
                 case ".docx":
                     parser = Docx2txtLoader(saved_file)
+                case ".doc":
+                    text = extract_doc_text(saved_file.read_bytes())
+                    if not text.strip():
+                        raise ValueError("Unsupported DOC document")
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                        tmp_txt.write(text.encode("utf-8"))
+                        tmp_txt_path = Path(tmp_txt.name)
+                    try:
+                        parser = TextLoader(tmp_txt_path)
+                        document = parser.load()
+                        self.redis_store.add_documents(document, ids=[document_id])
+                    finally:
+                        tmp_txt_path.unlink(missing_ok=True)
+                    return
                 case ".pdf":
                     parser = PyPDFLoader(file_path=str(saved_file), mode="single")
                 case _:

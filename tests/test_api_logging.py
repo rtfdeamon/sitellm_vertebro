@@ -102,11 +102,16 @@ async def test_session_id_logged_on_error(monkeypatch):
             self.session_id = session_id
 
     class LLMResponse:
-        def __init__(self, text):
+        def __init__(self, text, attachments=None, emotions_enabled=None):
             self.text = text
+            self.attachments = attachments or []
+            self.emotions_enabled = emotions_enabled
 
         def model_dump(self):
-            return {"text": self.text}
+            data = {"text": self.text, "attachments": self.attachments}
+            if self.emotions_enabled is not None:
+                data["emotions_enabled"] = self.emotions_enabled
+            return data
 
     models_mod.RoleEnum = RoleEnum
     models_mod.LLMRequest = LLMRequest

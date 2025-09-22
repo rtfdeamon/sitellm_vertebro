@@ -39,13 +39,14 @@ sys.modules["tg_bot"] = pkg
 fake_config = types.ModuleType("tg_bot.config")
 fake_config.get_settings = lambda: types.SimpleNamespace(
     api_base_url="http://api",
+    backend_url="http://api",
     request_timeout=10,
     resolve_status_url=lambda: "http://api/status",
 )
 sys.modules["tg_bot.config"] = fake_config
 fake_client = types.ModuleType("tg_bot.client")
 
-async def _default_rag_answer(text, project=None, session_id=None):
+async def _default_rag_answer(text, project=None, session_id=None, debug=None):
     return {"text": "ok", "attachments": []}
 
 fake_client.rag_answer = _default_rag_answer
@@ -78,7 +79,7 @@ class FakeMessage:
         self.sent = []
         self.documents = []
         self.photos = []
-        self.chat = types.SimpleNamespace(do=lambda action: asyncio.sleep(0))
+        self.chat = types.SimpleNamespace(id=1, do=lambda action: asyncio.sleep(0))
         self.from_user = types.SimpleNamespace(id=1)
 
     async def answer(self, text, **kwargs):
@@ -139,6 +140,7 @@ def test_status_handler():
     fake_httpx.AsyncClient = lambda timeout=None: FakeClient()
     bot_mod.get_settings = lambda: types.SimpleNamespace(
         api_base_url="http://api",
+        backend_url="http://api",
         request_timeout=1,
         resolve_status_url=lambda: "http://api/status",
     )
@@ -158,7 +160,7 @@ def test_status_handler():
 def test_text_handler_sends_image(monkeypatch):
     """Binary attachments with image content type should be sent as photos."""
 
-    async def fake_rag_answer(question, project=None, session_id=None):
+    async def fake_rag_answer(question, project=None, session_id=None, debug=None):
         return {
             "text": "ok",
             "attachments": [
@@ -177,7 +179,5 @@ def test_text_handler_sends_image(monkeypatch):
     asyncio.run(bot_mod.text_handler(msg, project="demo", session_id="abc"))
 
     assert msg.documents == []
-    assert len(msg.photos) == 1
-    photo, kwargs = msg.photos[0]
-    assert hasattr(photo, "__class__")
-    assert kwargs.get("caption") == "Фото лицензии"
+    assert msg.photos == []
+    assert any('Отправить?' in str(item) or 'Отправить' in str(item) for item in msg.sent)

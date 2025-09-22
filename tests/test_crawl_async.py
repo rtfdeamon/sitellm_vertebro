@@ -61,7 +61,7 @@ async def test_crawl_collects_pages():
         return httpx.AsyncClient(transport=transport)
 
     seen = set()
-    async for url, payload, ctype, is_html in crawl(
+    async for url, payload, ctype, is_html, binary in crawl(
         "https://example.com",
         max_pages=3,
         max_depth=2,
@@ -72,5 +72,6 @@ async def test_crawl_collects_pages():
         assert ctype.startswith("text/html")
         assert is_html is True
         assert payload
+        assert binary is None
 
     assert seen == set(pages)

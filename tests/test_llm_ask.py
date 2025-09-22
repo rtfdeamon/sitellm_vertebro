@@ -107,12 +107,16 @@ async def test_ask_llm(monkeypatch):
             self.session_id = sessionId
 
     class LLMResponse:
-        def __init__(self, text, attachments=None):
+        def __init__(self, text, attachments=None, emotions_enabled=None):
             self.text = text
             self.attachments = attachments or []
+            self.emotions_enabled = emotions_enabled
 
         def model_dump(self):
-            return {"text": self.text, "attachments": self.attachments}
+            data = {"text": self.text, "attachments": self.attachments}
+            if self.emotions_enabled is not None:
+                data["emotions_enabled"] = self.emotions_enabled
+            return data
 
     class Document:
         def __init__(self, **data):

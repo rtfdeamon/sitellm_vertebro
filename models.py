@@ -45,6 +45,7 @@ class LLMResponse(BaseModel):
 
     text: str
     attachments: list[Attachment] = []
+    emotions_enabled: bool | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -57,6 +58,7 @@ class LLMResponse(BaseModel):
                         "content_type": "application/pdf",
                     }
                 ],
+                "emotions_enabled": True,
             }
         }
     )
@@ -76,6 +78,7 @@ class ContextMessage(BaseModel):
     text: str
     role: RoleEnum
     number: int = Field(ge=0)
+    project: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -119,6 +122,7 @@ class Document(BaseModel):
     domain: str | None = None
     project: str | None = None
     source_content_type: str | None = None
+    size_bytes: int | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -131,6 +135,7 @@ class Document(BaseModel):
                 "content_type": "text/plain",
                 "domain": "example.com",
                 "project": "mmvs",
+                "size_bytes": 10240,
             }
         }
     )
@@ -144,9 +149,11 @@ class Project(BaseModel):
     domain: str | None = None
     llm_model: str | None = None
     llm_prompt: str | None = None
+    llm_emotions_enabled: bool | None = True
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     widget_url: str | None = None
+    debug_enabled: bool | None = None
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -156,6 +163,8 @@ class Project(BaseModel):
                 "title": "Проект MMVS",
                 "llm_model": "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
                 "llm_prompt": "You are helpful and concise.",
+                "llm_emotions_enabled": True,
+                "debug_enabled": False,
                 "telegram_auto_start": False,
                 "widget_url": "https://example.com/widget?project=mmvs",
             }

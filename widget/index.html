@@ -46,6 +46,7 @@
     .msg .time { opacity: 0.85; font-variant-numeric: tabular-nums; }
     .msg.user { color: #9cc9ff; }
     .msg.assistant { color: #b8e994; }
+    .msg.debug { color: #facc15; }
     .msg .msg-body { white-space: pre-wrap; }
     .msg-attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
     .msg-attachments .attachment-item { display: inline-flex; flex-direction: column; gap: 4px; background: rgba(96, 165, 250, 0.12); padding: 6px 8px; border-radius: 10px; max-width: 200px; }
@@ -68,6 +69,8 @@
     .project-panel .row > * { flex: 0 0 auto; }
     .project-panel .grow { flex: 1 1 auto; }
     .project-panel .actions { display: flex; gap: 8px; align-items: center; }
+    .project-panel .checkbox { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: var(--text); }
+    .project-panel .checkbox input { width: 16px; height: 16px; }
   </style>
 </head>
 <body>
@@ -94,6 +97,13 @@
           <button id="refreshProjects" class="btn secondary" type="button">Reload</button>
         </div>
         <div class="muted" id="projectInfo"></div>
+      </div>
+      <div class="row" style="align-items:center;">
+        <label class="checkbox">
+          <input type="checkbox" id="projectDebug">
+          <span>Отладка</span>
+        </label>
+        <span class="muted" id="projectDebugHint">Показывать расширенные события в чате</span>
       </div>
       <div>
         <label for="startPrompt">Стартовый промт</label>
@@ -134,6 +144,48 @@ const projectInfo = document.getElementById('projectInfo');
 const startPromptInput = document.getElementById('startPrompt');
 const savePromptBtn = document.getElementById('savePrompt');
 const promptStatus = document.getElementById('promptStatus');
+const debugCheckbox = document.getElementById('projectDebug');
+const debugHint = document.getElementById('projectDebugHint');
+
+const SESSION_STORAGE_KEY = 'chat_session_base';
+let currentSessionBase = (() => {
+  try {
+    const stored = localStorage.getItem(SESSION_STORAGE_KEY) || '';
+    return stored.trim().toLowerCase();
+  } catch {
+    return '';
+  }
+})();
+
+function generateSessionId() {
+  try {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID().toLowerCase();
+    }
+  } catch {}
+  const suffix = Math.random().toString(36).slice(2, 10);
+  return `${Date.now().toString(36)}${suffix}`.toLowerCase();
+}
+
+function ensureSessionId() {
+  if (currentSessionBase) return currentSessionBase;
+  currentSessionBase = generateSessionId();
+  try { localStorage.setItem(SESSION_STORAGE_KEY, currentSessionBase); } catch {}
+  return currentSessionBase;
+}
+
+function updateSessionBase(sessionValue) {
+  if (!sessionValue) return;
+  let base = String(sessionValue);
+  if (base.includes('::')) {
+    const parts = base.split('::');
+    base = parts[parts.length - 1] || parts[0];
+  }
+  base = base.trim().toLowerCase();
+  if (!base || base === currentSessionBase) return;
+  currentSessionBase = base;
+  try { localStorage.setItem(SESSION_STORAGE_KEY, currentSessionBase); } catch {}
+}
 
 let currentES = null;
 let streaming = false;
@@ -311,6 +363,10 @@ form.addEventListener('submit', function(e) {
   stopStream();
   const params = new URLSearchParams({ question });
   if (currentProject) params.set('project', currentProject);
+  params.set('session_id', ensureSessionId());
+  if (debugCheckbox && debugCheckbox.checked) {
+    params.set('debug', '1');
+  }
   const es = new EventSource(`${apiBase()}/api/v1/llm/chat?${params.toString()}`);
   currentES = es;
   streaming = true;
@@ -333,6 +389,49 @@ form.addEventListener('submit', function(e) {
       persistHistory();
     } catch (err) {
       console.error('attachment parse failed', err);
+    }
+  });
+  es.addEventListener('meta', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      if (payload.session_id) {
+        updateSessionBase(payload.session_id);
+      }
+      if (debugCheckbox && typeof payload.debug_enabled === 'boolean') {
+        debugCheckbox.checked = payload.debug_enabled;
+        if (debugHint) {
+          debugHint.textContent = payload.debug_enabled ? 'Отладка включена' : 'Отладка отключена';
+        }
+      }
+    } catch (err) {
+      console.error('meta parse failed', err);
+    }
+  });
+  es.addEventListener('debug', (event) => {
+    try {
+      const payload = JSON.parse(event.data || '{}');
+      const stage = (payload.stage || 'debug').toString();
+      const parts = [];
+      if (stage === 'begin') {
+        const queued = typeof payload.knowledge_count === 'number' ? payload.knowledge_count : '—';
+        parts.push(`Начало обработки • знания: ${queued}`);
+      } else if (stage === 'end') {
+        parts.push('Завершение обработки');
+        if (payload.error) parts.push(`Ошибка: ${payload.error}`);
+        parts.push(`Символов ответа: ${payload.response_chars ?? '—'}`);
+      } else {
+        parts.push(`Событие ${stage}`);
+      }
+      const source = payload.channel ? `канал: ${payload.channel}` : null;
+      if (source) parts.push(source);
+      const session = payload.session_id ? `сессия: ${payload.session_id}` : null;
+      if (session) parts.push(session);
+      const summary = parts.join(' • ');
+      const jsonBody = JSON.stringify(payload, null, 2);
+      addMsg('debug', summary ? `${summary}\n${jsonBody}` : jsonBody);
+      persistHistory();
+    } catch (err) {
+      console.error('debug parse failed', err);
     }
   });
   es.addEventListener('end', () => {
@@ -418,6 +517,7 @@ function updateStatus() {
 }
 
 loadHistory();
+ensureSessionId();
 
 // Theme toggle
 function setTheme(theme) {
@@ -457,7 +557,10 @@ async function loadProjects() {
     let found = false;
     for (const raw of projects) {
       const key = (raw.name || '').toLowerCase();
-      projectsCache[key] = raw;
+      projectsCache[key] = {
+        ...raw,
+        debug_enabled: !!raw.debug_enabled,
+      };
       const option = new Option(raw.title || raw.name || key || '(без имени)', key, false, key === currentProject);
       projectSelect.appendChild(option);
       if (key === currentProject) {
@@ -484,6 +587,8 @@ function applyProjectSelection() {
     startPromptInput.value = '';
     projectInfo.textContent = 'Проект не выбран';
     promptStatus.textContent = '';
+    if (debugCheckbox) debugCheckbox.checked = false;
+    if (debugHint) debugHint.textContent = 'Показывать расширенные события в чате';
     localStorage.removeItem('chat_project');
     return;
   }
@@ -496,6 +601,13 @@ function applyProjectSelection() {
   if (project.widget_url) infoParts.push(`Виджет: ${project.widget_url}`);
   projectInfo.textContent = infoParts.join(' • ');
   promptStatus.textContent = '';
+  if (debugCheckbox) {
+    const enabled = !!project.debug_enabled;
+    debugCheckbox.checked = enabled;
+    if (debugHint) {
+      debugHint.textContent = enabled ? 'Отладка включена' : 'Отладка отключена';
+    }
+  }
   localStorage.setItem('chat_project', currentProject);
 }
 
@@ -522,6 +634,7 @@ savePromptBtn.addEventListener('click', async () => {
     domain: project.domain || null,
     llm_model: project.llm_model || null,
     llm_prompt: startPromptInput.value,
+    debug_enabled: debugCheckbox ? debugCheckbox.checked : false,
   };
   promptStatus.textContent = 'Сохраняем…';
   try {
@@ -533,7 +646,10 @@ savePromptBtn.addEventListener('click', async () => {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const saved = await resp.json();
     const key = (saved.name || currentProject).toLowerCase();
-    projectsCache[key] = saved;
+    projectsCache[key] = {
+      ...saved,
+      debug_enabled: !!saved.debug_enabled,
+    };
     currentProject = key;
     applyProjectSelection();
     promptStatus.textContent = 'Сохранено';
@@ -544,6 +660,14 @@ savePromptBtn.addEventListener('click', async () => {
     setTimeout(() => { promptStatus.textContent = ''; }, 4000);
   }
 });
+
+if (debugCheckbox) {
+  debugCheckbox.addEventListener('change', () => {
+    if (debugHint) {
+      debugHint.textContent = debugCheckbox.checked ? 'Отладка включена' : 'Отладка отключена';
+    }
+  });
+}
 </script>
 </body>
 </html>

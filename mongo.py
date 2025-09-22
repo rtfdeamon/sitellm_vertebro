@@ -318,6 +318,7 @@ class MongoClient:
                 file,
             )
             project_key = (project or "default").strip().lower()
+            size_bytes = len(file) if isinstance(file, (bytes, bytearray)) else None
             document = Document(
                 name=file_name,
                 description=description or "",
@@ -327,6 +328,7 @@ class MongoClient:
                 content_type=content_type,
                 domain=domain or project_key,
                 project=project_key,
+                size_bytes=size_bytes,
             ).model_dump()
             await self.db[documents_collection].insert_one(document)
             return str(f_id)
@@ -393,6 +395,7 @@ class MongoClient:
         text: str,
         *,
         project: str | None = None,
+        keep: int = 10,
     ) -> ContextMessage:
         """Append a message to a conversation session."""
 
@@ -417,12 +420,23 @@ class MongoClient:
             role=role,
             number=next_number,
             text=text,
+            project=(project or None),
         )
         payload = message.model_dump(by_alias=True)
-        if project:
-            payload["project"] = project
         try:
             await self.db[collection].insert_one(payload)
+            if keep > 0:
+                total = await self.db[collection].count_documents({"sessionId": session_id})
+                if total > keep:
+                    async for outdated in (
+                        self.db[collection]
+                        .find({"sessionId": session_id}, {"_id": 1})
+                        .sort("number", 1)
+                        .limit(total - keep)
+                    ):
+                        oid = outdated.get("_id")
+                        if oid:
+                            await self.db[collection].delete_one({"_id": oid})
         except Exception as exc:  # noqa: BLE001
             logger.error(
                 "mongo_append_session_failed",
@@ -490,6 +504,7 @@ class MongoClient:
                 content_type="text/plain",
                 domain=domain or project_key,
                 project=project_key,
+                size_bytes=len(payload),
             ).model_dump()
 
             await self.db[documents_collection].update_one(
@@ -558,6 +573,32 @@ class MongoClient:
             if isinstance(value, str):
                 stripped = value.strip()
                 data[field] = stripped or None
+        emotions_value = data.get("llm_emotions_enabled")
+        if isinstance(emotions_value, str):
+            lowered = emotions_value.strip().lower()
+            if lowered in {"false", "0", "off", "no"}:
+                data["llm_emotions_enabled"] = False
+            elif lowered in {"true", "1", "on", "yes"}:
+                data["llm_emotions_enabled"] = True
+            else:
+                data["llm_emotions_enabled"] = True
+        elif emotions_value is None:
+            data["llm_emotions_enabled"] = True
+        else:
+            data["llm_emotions_enabled"] = bool(emotions_value)
+        debug_value = data.get("debug_enabled")
+        if isinstance(debug_value, str):
+            lowered = debug_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["debug_enabled"] = True
+            elif lowered in {"false", "0", "off", "no"}:
+                data["debug_enabled"] = False
+            else:
+                data["debug_enabled"] = False
+        elif debug_value is None:
+            data["debug_enabled"] = False
+        else:
+            data["debug_enabled"] = bool(debug_value)
         return Project(**data)
 
     async def list_projects(self) -> list[Project]:
@@ -741,6 +782,131 @@ class MongoClient:
             await self.db[self.stats_collection].insert_one(doc)
         except Exception as exc:  # noqa: BLE001
             logger.debug("stats_log_failed", project=project, error=str(exc))
+
+    async def aggregate_project_storage(
+        self,
+        documents_collection: str,
+        contexts_collection: str,
+    ) -> dict[str, dict[str, float | int]]:
+        """Return storage metrics per project for documents and contexts."""
+
+        result: dict[str, dict[str, float | int]] = {}
+
+        def _ensure(project_key: str) -> dict[str, float | int]:
+            return result.setdefault(
+                project_key,
+                {
+                    "documents_bytes": 0.0,
+                    "document_count": 0,
+                    "binary_bytes": 0.0,
+                    "context_bytes": 0.0,
+                    "context_count": 0,
+                },
+            )
+
+        project_expr = {
+            "$ifNull": [
+                {
+                    "$cond": [
+                        {"$gt": [{"$strLenCP": {"$ifNull": ["$project", ""]}}, 0]},
+                        {"$toLower": "$project"},
+                        {
+                            "$cond": [
+                                {"$gt": [{"$strLenCP": {"$ifNull": ["$domain", ""]}}, 0]},
+                                {"$toLower": "$domain"},
+                                "__default__",
+                            ]
+                        },
+                    ]
+                },
+                "__default__",
+            ]
+        }
+
+        docs_pipeline = [
+            {
+                "$project": {
+                    "project": project_expr,
+                    "size": {
+                        "$ifNull": [
+                            "$size_bytes",
+                            {"$bsonSize": "$$ROOT"},
+                        ]
+                    },
+                    "is_binary": {
+                        "$cond": [
+                            {
+                                "$and": [
+                                    {"$ne": ["$content_type", None]},
+                                    {"$ne": ["$content_type", ""]},
+                                    {
+                                        "$not": [
+                                            {
+                                                "$regexMatch": {
+                                                    "input": {"$toLower": "$content_type"},
+                                                    "regex": "^text/",
+                                                }
+                                            }
+                                        ]
+                                    },
+                                ]
+                            },
+                            True,
+                            False,
+                        ]
+                    },
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$project",
+                    "documents_bytes": {"$sum": "$size"},
+                    "document_count": {"$sum": 1},
+                    "binary_bytes": {
+                        "$sum": {
+                            "$cond": ["$is_binary", "$size", 0]
+                        }
+                    },
+                }
+            },
+        ]
+
+        contexts_pipeline = [
+            {
+                "$project": {
+                    "project": project_expr,
+                    "size": {"$bsonSize": "$$ROOT"},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$project",
+                    "context_bytes": {"$sum": "$size"},
+                    "context_count": {"$sum": 1},
+                }
+            },
+        ]
+
+        try:
+            async for item in self.db[documents_collection].aggregate(docs_pipeline):
+                project_key = item.get("_id") or "__default__"
+                entry = _ensure(project_key)
+                entry["documents_bytes"] = int(item.get("documents_bytes", 0) or 0)
+                entry["document_count"] = int(item.get("document_count", 0) or 0)
+                entry["binary_bytes"] = int(item.get("binary_bytes", 0) or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("mongo_aggregate_documents_failed", error=str(exc))
+
+        try:
+            async for item in self.db[contexts_collection].aggregate(contexts_pipeline):
+                project_key = item.get("_id") or "__default__"
+                entry = _ensure(project_key)
+                entry["context_bytes"] = int(item.get("context_bytes", 0) or 0)
+                entry["context_count"] = int(item.get("context_count", 0) or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("mongo_aggregate_contexts_failed", error=str(exc))
+
+        return result
 
     async def aggregate_request_stats(
         self,
