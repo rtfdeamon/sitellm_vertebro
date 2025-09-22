@@ -910,7 +910,8 @@ async def run_crawler(
 async def crawler_status(project: str | None = None) -> dict[str, object]:
     """Return current crawler and database status."""
 
-    data = status_dict(_normalize_project(project))
+    project_label = _normalize_project(project)
+    data = status_dict(project_label)
     crawler = data.get("crawler") or {}
     data.update(
         {
@@ -921,6 +922,17 @@ async def crawler_status(project: str | None = None) -> dict[str, object]:
             "recent_urls": crawler.get("recent_urls") or [],
             "last_url": crawler.get("last_url"),
         }
+    )
+    logger.info(
+        "crawler_status_snapshot",
+        project=project_label,
+        ok=data.get("ok"),
+        queued=data.get("queued"),
+        in_progress=data.get("in_progress"),
+        done=data.get("done"),
+        failed=data.get("failed"),
+        last_url=data.get("last_url"),
+        notes=data.get("notes"),
     )
     return data
 
