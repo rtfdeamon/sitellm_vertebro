@@ -729,19 +729,44 @@ class MaxRunner:
         api_client,
         download_client,
     ) -> dict[str, Any] | None:
-        download_url = attachment.get("download_url") or attachment.get("url")
-        if not download_url or not str(download_url).lower().startswith("http"):
-            return None
         name = str(attachment.get("name") or attachment.get("title") or "attachment")
         description = attachment.get("description")
-        try:
-            response = await download_client.get(download_url)
-            response.raise_for_status()
-            file_bytes = response.content
-            content_type = str(attachment.get("content_type") or response.headers.get("content-type") or "application/octet-stream")
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("max_attachment_download_failed", project=self.project, error=str(exc), url=download_url)
+        content_type = str(attachment.get("content_type") or "")
+        file_bytes: bytes | None = None
+
+        file_id = attachment.get("file_id") or attachment.get("id")
+        if file_id:
+            try:
+                doc_meta, payload = await self._hub._mongo.get_document_with_content(
+                    self._hub._mongo.documents_collection,
+                    file_id,
+                )
+                file_bytes = payload
+                if not content_type:
+                    content_type = str(doc_meta.get("content_type") or "")
+            except NotFound:
+                file_bytes = None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("max_attachment_mongo_failed", project=self.project, error=str(exc))
+
+        if file_bytes is None:
+            download_url = attachment.get("download_url") or attachment.get("url")
+            if download_url and str(download_url).lower().startswith("http"):
+                try:
+                    response = await download_client.get(download_url)
+                    response.raise_for_status()
+                    file_bytes = response.content
+                    if not content_type:
+                        content_type = str(response.headers.get("content-type") or "")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("max_attachment_download_failed", project=self.project, error=str(exc), url=download_url)
+            else:
+                return None
+
+        if not file_bytes:
             return None
+        if not content_type:
+            content_type = "application/octet-stream"
 
         upload_type = self._detect_upload_type(content_type)
         base_url = self._settings.base_url()

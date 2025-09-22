@@ -149,6 +149,120 @@
 
     .muted { color: var(--text-muted); font-size: 12px; }
 
+    .knowledge-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow: hidden;
+    }
+
+    .thinking-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(11, 16, 38, 0.78);
+      backdrop-filter: blur(6px);
+      z-index: 20;
+    }
+
+    .thinking-overlay.active {
+      display: flex;
+    }
+
+    .thinking-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      text-align: center;
+      max-width: 320px;
+    }
+
+    .thinking-illustration {
+      width: 180px;
+      max-width: 65%;
+      filter: drop-shadow(0 18px 28px rgba(59, 130, 246, 0.35));
+      animation: thinking-float 3.6s ease-in-out infinite;
+    }
+
+    .thinking-spinner {
+      width: 68px;
+      height: 68px;
+      border-radius: 50%;
+      background: conic-gradient(from 0deg, rgba(96, 165, 250, 0.85), rgba(59, 130, 246, 0.2) 55%, rgba(192, 132, 252, 0.8));
+      position: relative;
+      animation: thinking-spin 1.6s linear infinite;
+    }
+
+    .thinking-spinner::after {
+      content: '';
+      position: absolute;
+      inset: 14px;
+      border-radius: 50%;
+      background: rgba(11, 16, 38, 0.85);
+      box-shadow: inset 0 0 18px rgba(96, 165, 250, 0.35);
+    }
+
+    .thinking-caption {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .thinking-subtitle {
+      font-size: 13px;
+      color: rgba(191, 219, 254, 0.75);
+      line-height: 1.6;
+    }
+
+    .thinking-preview {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(17, 24, 39, 0.86);
+      border: 1px solid rgba(96, 165, 250, 0.45);
+      color: rgba(226, 232, 255, 0.92);
+      font-size: 13px;
+      line-height: 1.6;
+      box-shadow: 0 14px 28px rgba(37, 99, 235, 0.2);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .thinking-preview.visible {
+      display: block;
+    }
+
+    .auto-description {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 12px;
+      margin-top: -4px;
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(139, 92, 246, 0.12));
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: rgba(226, 232, 255, 0.85);
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .auto-description.visible {
+      display: block;
+    }
+
+    @keyframes thinking-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+
+    @keyframes thinking-spin {
+      to { transform: rotate(360deg); }
+    }
+
     .stats-card { display: flex; flex-direction: column; gap: 16px; }
     .stats-graph {
       position: relative;
@@ -720,6 +834,19 @@
     <section id="block-knowledge" class="dashboard-stack span-7" data-block-id="knowledge" data-block-group="knowledge">
       <div class="card knowledge-card">
         <b>Knowledge Base</b>
+        <div id="kbThinkingOverlay" class="thinking-overlay">
+          <div class="thinking-inner">
+            <img
+              src="data:image/svg+xml;utf8,%3Csvg%20width%3D%22180%22%20height%3D%22140%22%20viewBox%3D%220%200%20180%20140%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22grad%22%20x1%3D%220%22%20x2%3D%221%22%20y1%3D%220%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2360a5fa%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2250%25%22%20stop-color%3D%22%237c3aed%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23f97316%22/%3E%0A%20%20%20%20%3C/linearGradient%3E%0A%20%20%20%20%3Cfilter%20id%3D%22blur%22%20x%3D%22-20%25%22%20y%3D%22-20%25%22%20width%3D%22140%25%22%20height%3D%22140%25%22%3E%0A%20%20%20%20%20%20%3CfeGaussianBlur%20stdDeviation%3D%2218%22/%3E%0A%20%20%20%20%3C/filter%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%2250%22%20cy%3D%2270%22%20r%3D%2240%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.65%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22110%22%20cy%3D%2250%22%20r%3D%2230%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.45%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%2295%22%20r%3D%2236%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.55%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Cpath%20d%3D%22M52%2036c26%200%2048%2020%2048%2045s-22%2045-48%2045-48-20-48-45%2022-45%2048-45zm0%2016c-18%200-32%2013-32%2029s14%2029%2032%2029%2032-13%2032-29-14-29-32-29z%22%20fill%3D%22%23111827%22%20opacity%3D%220.72%22/%3E%0A%20%20%3Cpath%20d%3D%22M116%2028c16%200%2028%2012%2028%2028s-12%2028-28%2028-28-12-28-28%2012-28%2028-28z%22%20fill%3D%22%231e293b%22%20opacity%3D%220.7%22/%3E%0A%20%20%3Ccircle%20cx%3D%22104%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Ccircle%20cx%3D%22128%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Cpath%20d%3D%22M112%2072c5%206%2013%206%2018%200%22%20stroke%3D%22%23a855f7%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22/%3E%0A%3C/svg%3E"
+              alt="Идёт генерация описания"
+              class="thinking-illustration"
+            >
+            <div class="thinking-spinner"></div>
+            <div class="thinking-caption" id="kbThinkingCaption">Генерируем описание…</div>
+            <div class="thinking-subtitle" id="kbThinkingMessage">Это может занять несколько секунд.</div>
+            <div class="thinking-preview" id="kbThinkingPreview"></div>
+          </div>
+        </div>
         <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
           <label style="flex:1 1 200px;">Проект
             <input type="text" list="kbProjectList" id="kbProject" placeholder="mmvs" style="width:100%;" readonly>
@@ -753,6 +880,7 @@
           <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
             Перетащите файлы сюда или нажмите на поле выше
           </div>
+          <div id="kbAutoDescription" class="auto-description"></div>
           <label style="flex:1 1 100%;">Текст
             <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
           </label>
@@ -1115,6 +1243,73 @@
     const kbDropZone = document.getElementById('kbDropZone');
     const kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
     const kbNewFileInput = document.getElementById('kbNewFile');
+    const kbThinkingOverlay = document.getElementById('kbThinkingOverlay');
+    const kbThinkingCaption = document.getElementById('kbThinkingCaption');
+    const kbThinkingMessage = document.getElementById('kbThinkingMessage');
+    const kbThinkingPreview = document.getElementById('kbThinkingPreview');
+    const kbAutoDescription = document.getElementById('kbAutoDescription');
+
+    const resetKnowledgePreview = () => {
+      if (kbThinkingPreview) {
+        kbThinkingPreview.textContent = '';
+        kbThinkingPreview.classList.remove('visible');
+      }
+    };
+
+    const showKnowledgeDescriptionPreview = (text) => {
+      if (!kbThinkingPreview) return;
+      const value = (text || '').trim();
+      if (!value) {
+        kbThinkingPreview.textContent = '';
+        kbThinkingPreview.classList.remove('visible');
+        return;
+      }
+      kbThinkingPreview.textContent = value;
+      kbThinkingPreview.classList.add('visible');
+    };
+
+    const renderAutoDescription = (text) => {
+      if (!kbAutoDescription) return;
+      const value = (text || '').trim();
+      if (!value) {
+        kbAutoDescription.textContent = '';
+        kbAutoDescription.classList.remove('visible');
+        return;
+      }
+      kbAutoDescription.textContent = `Автоописание: ${value}`;
+      kbAutoDescription.classList.add('visible');
+    };
+
+    const showKnowledgeThinking = (
+      caption = 'Генерируем описание…',
+      subtitle = 'Это может занять несколько секунд.'
+    ) => {
+      if (!kbThinkingOverlay) return;
+      kbThinkingOverlay.classList.add('active');
+      if (kbThinkingCaption) kbThinkingCaption.textContent = caption;
+      if (kbThinkingMessage) kbThinkingMessage.textContent = subtitle;
+      resetKnowledgePreview();
+      renderAutoDescription('');
+    };
+
+    const updateKnowledgeThinking = (subtitle, caption) => {
+      if (caption && kbThinkingCaption) {
+        kbThinkingCaption.textContent = caption;
+      }
+      if (
+        kbThinkingOverlay &&
+        kbThinkingOverlay.classList.contains('active') &&
+        kbThinkingMessage &&
+        subtitle
+      ) {
+        kbThinkingMessage.textContent = subtitle;
+      }
+    };
+
+    const hideKnowledgeThinking = () => {
+      if (kbThinkingOverlay) kbThinkingOverlay.classList.remove('active');
+      resetKnowledgePreview();
+    };
 
     const summaryState = {
       project: '',
@@ -2550,11 +2745,21 @@
       const fileInput = document.getElementById('kbNewFile');
       const files = Array.from(fileInput?.files || []);
       const statusLabel = document.getElementById('kbAddStatus');
+      let overlayVisible = false;
+
+      const ensureOverlayHidden = () => {
+        if (overlayVisible) {
+          hideKnowledgeThinking();
+          overlayVisible = false;
+        }
+      };
 
       try {
         if (files.length) {
           let uploaded = 0;
           let autoDescriptions = 0;
+          overlayVisible = true;
+          showKnowledgeThinking(`Загружаем 1/${files.length}…`);
           for (let idx = 0; idx < files.length; idx += 1) {
             const file = files[idx];
             const fd = new FormData();
@@ -2564,6 +2769,7 @@
             if (files.length === 1 && description) fd.append('description', description);
             fd.append('file', file);
             statusLabel.textContent = `Загружаем ${idx + 1}/${files.length}: ${file.name}`;
+            updateKnowledgeThinking(`Генерируем описание для «${file.name}»…`);
             const resp = await fetch('/api/v1/admin/knowledge/upload', { method: 'POST', body: fd });
             if (!resp.ok) {
               const reason = await resp.text();
@@ -2572,9 +2778,23 @@
               continue;
             }
             const result = await resp.json().catch(() => ({}));
+            const generatedDescription = typeof result?.description === 'string' ? result.description : '';
             if (result?.auto_description) autoDescriptions += 1;
+            if (generatedDescription) {
+              showKnowledgeDescriptionPreview(generatedDescription);
+              renderAutoDescription(generatedDescription);
+              if (files.length === 1) {
+                document.getElementById('kbNewDescription').value = generatedDescription;
+              }
+            }
+            const nextMessage = generatedDescription ? 'Описание готово! Обновляем список...' : 'Готово! Обновляем список...';
+            updateKnowledgeThinking(nextMessage);
             uploaded += 1;
+            if (idx + 1 < files.length) {
+              updateKnowledgeThinking(`Обрабатываем ${idx + 2}/${files.length}…`);
+            }
           }
+          ensureOverlayHidden();
           await loadKnowledge();
           await loadProjectsList();
           await fetchProjectStorage();
@@ -2602,6 +2822,8 @@
           return;
         }
 
+        overlayVisible = true;
+        showKnowledgeThinking('Генерируем описание…');
         statusLabel.textContent = 'Сохраняем...';
         const resp = await fetch('/api/v1/admin/knowledge', {
           method: 'POST',
@@ -2619,7 +2841,15 @@
           return;
         }
         const result = await resp.json().catch(() => ({}));
+        const generatedDescription = typeof result?.description === 'string' ? result.description : '';
+        if (generatedDescription) {
+          showKnowledgeDescriptionPreview(generatedDescription);
+          renderAutoDescription(generatedDescription);
+          document.getElementById('kbNewDescription').value = generatedDescription;
+        }
         const autoNote = result?.auto_description ? ' · автоописание создано' : '';
+        const nextMessage = generatedDescription ? 'Описание готово! Обновляем список...' : 'Готово! Обновляем список...';
+        updateKnowledgeThinking(nextMessage);
         statusLabel.textContent = `Сохранено${autoNote}`;
         document.getElementById('kbNewName').value = '';
         document.getElementById('kbNewUrl').value = '';
@@ -2638,6 +2868,8 @@
       } catch (error) {
         console.error(error);
         statusLabel.textContent = 'Ошибка сохранения';
+      } finally {
+        ensureOverlayHidden();
       }
     }
 
@@ -2735,6 +2967,7 @@
       } else {
         updateDropZonePreview();
       }
+      renderAutoDescription('');
       document.getElementById('kbAddStatus').textContent = '';
     });
     if (kbDedupBtn) {

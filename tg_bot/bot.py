@@ -6,7 +6,7 @@ import asyncio
 import re
 import time
 from contextlib import suppress
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 from aiogram import Dispatcher, types
 from aiogram.types import URLInputFile, BufferedInputFile
@@ -16,6 +16,8 @@ import structlog
 
 from .config import get_settings
 from .client import rag_answer
+from settings import MongoSettings
+from mongo import MongoClient as AppMongoClient, NotFound
 
 logger = structlog.get_logger(__name__)
 
@@ -111,12 +113,30 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
     base_api_url = str(settings.api_base_url).rstrip('/')
     download_timeout = settings.request_timeout
     http_client: httpx.AsyncClient | None = None
+    mongo_client: AppMongoClient | None = None
+    mongo_documents_collection: str | None = None
 
     async def _get_client() -> httpx.AsyncClient:
         nonlocal http_client
         if http_client is None:
             http_client = httpx.AsyncClient(timeout=download_timeout)
         return http_client
+
+    async def _get_mongo() -> Tuple[AppMongoClient, str]:
+        nonlocal mongo_client, mongo_documents_collection
+        if mongo_client is None:
+            cfg = MongoSettings()
+            mongo_client = AppMongoClient(
+                cfg.host,
+                cfg.port,
+                cfg.username,
+                cfg.password,
+                cfg.database,
+                cfg.auth,
+            )
+            mongo_documents_collection = cfg.documents
+        assert mongo_documents_collection is not None
+        return mongo_client, mongo_documents_collection
 
     try:
         for attachment in attachments:
@@ -128,28 +148,46 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
             caption = description or name
             absolute_url = _resolve_absolute_url(url, base_api_url)
             file_bytes: bytes | None = None
-            download_url = None
-            if file_id:
-                download_url = absolute_url or f"{base_api_url}/api/v1/admin/knowledge/documents/{file_id}"
-            elif absolute_url:
-                download_url = absolute_url
 
-            if download_url:
+            if file_id:
                 try:
-                    client = await _get_client()
-                    response = await client.get(download_url)
-                    response.raise_for_status()
-                    file_bytes = response.content
+                    mongo, collection = await _get_mongo()
+                    doc_meta, payload = await mongo.get_document_with_content(collection, file_id)
+                    file_bytes = payload
                     if not content_type:
-                        content_type = str(response.headers.get('content-type') or '').lower()
+                        content_type = str(doc_meta.get('content_type') or '').lower()
+                except NotFound:
+                    file_bytes = None
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
-                        "attachment_download_failed",
+                        "attachment_mongo_fetch_failed",
                         error=str(exc),
                         file_id=file_id,
-                        url=download_url,
                     )
-                    file_bytes = None
+
+            download_url = None
+            if file_bytes is None:
+                if file_id:
+                    download_url = absolute_url or f"{base_api_url}/api/v1/admin/knowledge/documents/{file_id}"
+                elif absolute_url:
+                    download_url = absolute_url
+
+                if download_url:
+                    try:
+                        client = await _get_client()
+                        response = await client.get(download_url)
+                        response.raise_for_status()
+                        file_bytes = response.content
+                        if not content_type:
+                            content_type = str(response.headers.get('content-type') or '').lower()
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "attachment_download_failed",
+                            error=str(exc),
+                            file_id=file_id,
+                            url=download_url,
+                        )
+                        file_bytes = None
 
             try:
                 if file_bytes is not None:
@@ -183,6 +221,8 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
     finally:
         if http_client is not None:
             await http_client.aclose()
+        if mongo_client is not None:
+            await mongo_client.close()
 
 
 def _god_mode_key(message: types.Message) -> str:
