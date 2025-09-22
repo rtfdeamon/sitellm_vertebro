@@ -9,7 +9,7 @@ from contextlib import suppress
 from typing import Any, Dict, List
 
 from aiogram import Dispatcher, types
-from aiogram.types import URLInputFile
+from aiogram.types import URLInputFile, BufferedInputFile
 from aiogram.filters import Command, CommandStart
 import httpx
 import structlog
@@ -91,34 +91,98 @@ def _pending_key(project: str | None, session_id: str | None, user_id: int | Non
     return f"{(project or '').lower()}::{session_id or user_part}"
 
 
+def _resolve_absolute_url(url: str | None, base_url: str) -> str | None:
+    if not url:
+        return None
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    if url.startswith('/'):
+        return f"{base_url}{url}"
+    return f"{base_url}/{url}"
+
+
 async def _send_attachments(message: types.Message, attachments: List[Dict[str, Any]]) -> None:
     """Deliver queued attachments to the chat."""
 
-    for attachment in attachments:
-        name = attachment.get('name') or 'документ'
-        url = attachment.get('url')
-        content_type = str(attachment.get('content_type') or '').lower()
-        description = attachment.get('description')
-        caption = description or name
-        try:
-            if content_type.startswith('image/') and url:
-                media = URLInputFile(url, filename=name)
-                await message.answer_photo(media, caption=caption)
-            elif url:
-                media = URLInputFile(url, filename=name)
-                extra = {"caption": caption} if caption and caption != name else {}
-                await message.answer_document(media, **extra)
-            else:
-                text = f"Документ: {name}"
-                if url:
-                    text += f"\n{url}"
-                if description and not url:
-                    text += f"\n{description}"
-                await message.answer(text)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("attachment_send_failed", error=str(exc), name=name)
-            if url:
-                await message.answer(f"Документ: {name}\n{url}")
+    if not attachments:
+        return
+
+    settings = get_settings()
+    base_api_url = str(settings.api_base_url).rstrip('/')
+    download_timeout = settings.request_timeout
+    http_client: httpx.AsyncClient | None = None
+
+    async def _get_client() -> httpx.AsyncClient:
+        nonlocal http_client
+        if http_client is None:
+            http_client = httpx.AsyncClient(timeout=download_timeout)
+        return http_client
+
+    try:
+        for attachment in attachments:
+            name = attachment.get('name') or 'документ'
+            url = attachment.get('url')
+            file_id = attachment.get('file_id') or attachment.get('id')
+            content_type = str(attachment.get('content_type') or '').lower()
+            description = attachment.get('description')
+            caption = description or name
+            absolute_url = _resolve_absolute_url(url, base_api_url)
+            file_bytes: bytes | None = None
+            download_url = None
+            if file_id:
+                download_url = absolute_url or f"{base_api_url}/api/v1/admin/knowledge/documents/{file_id}"
+            elif absolute_url:
+                download_url = absolute_url
+
+            if download_url:
+                try:
+                    client = await _get_client()
+                    response = await client.get(download_url)
+                    response.raise_for_status()
+                    file_bytes = response.content
+                    if not content_type:
+                        content_type = str(response.headers.get('content-type') or '').lower()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "attachment_download_failed",
+                        error=str(exc),
+                        file_id=file_id,
+                        url=download_url,
+                    )
+                    file_bytes = None
+
+            try:
+                if file_bytes is not None:
+                    media = BufferedInputFile(file_bytes, filename=name)
+                    if content_type.startswith('image/'):
+                        await message.answer_photo(media, caption=caption)
+                    else:
+                        extra = {"caption": caption} if caption and caption != name else {}
+                        await message.answer_document(media, **extra)
+                    continue
+
+                if absolute_url:
+                    media = URLInputFile(absolute_url, filename=name)
+                    if content_type.startswith('image/'):
+                        await message.answer_photo(media, caption=caption)
+                    else:
+                        extra = {"caption": caption} if caption and caption != name else {}
+                        await message.answer_document(media, **extra)
+                else:
+                    text = f"Документ: {name}"
+                    if description:
+                        text += f"\n{description}"
+                    await message.answer(text)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("attachment_send_failed", error=str(exc), name=name)
+                fallback_url = absolute_url or (file_id and f"{base_api_url}/api/v1/admin/knowledge/documents/{file_id}")
+                if fallback_url:
+                    await message.answer(f"Документ: {name}\n{fallback_url}")
+                elif description:
+                    await message.answer(f"Документ: {name}\n{description}")
+    finally:
+        if http_client is not None:
+            await http_client.aclose()
 
 
 def _god_mode_key(message: types.Message) -> str:

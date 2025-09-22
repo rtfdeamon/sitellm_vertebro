@@ -23,6 +23,8 @@ async def rag_answer(
     project: str | None = None,
     session_id: str | None = None,
     debug: bool | None = None,
+    *,
+    channel: str = "telegram",
 ) -> Dict[str, Any]:
     """Return answer text and optional attachments from the backend via SSE.
 
@@ -78,7 +80,7 @@ async def rag_answer(
                         "question": question,
                         **({"project": project} if project else {}),
                         **({"session_id": session_id} if session_id else {}),
-                        "channel": "telegram",
+                        "channel": channel,
                         **({"debug": "1" if debug else "0"} if debug is not None else {}),
                     },
                     headers={"Accept": "text/event-stream"},

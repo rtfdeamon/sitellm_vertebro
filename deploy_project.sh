@@ -12,6 +12,11 @@
 
 set -euo pipefail
 
+# Allow ports (notably the default 18000/18001 pair) a short grace period to
+# be released by Docker before we pick an alternative.
+PORT_REUSE_GRACE_SECONDS="${PORT_REUSE_GRACE_SECONDS:-6}"
+PORT_REUSE_POLL_INTERVAL="${PORT_REUSE_POLL_INTERVAL:-1}"
+
 # Enable Docker BuildKit for faster image builds
 export DOCKER_BUILDKIT=1
 export COMPOSE_DOCKER_CLI_BUILD=1
@@ -68,16 +73,6 @@ open_firewall_ports() {
   fi
 }
 
-component_changed() {
-  local target="$1"
-  for comp in ${CHANGED_COMPONENTS:-}; do
-    if [ "$comp" = "$target" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
 is_port_free() {
   local p="$1"
   # try ss first, fallback to lsof
@@ -130,8 +125,43 @@ PY
   return 0
 }
 
+wait_for_port_release() {
+  local port="$1"
+  local timeout="$PORT_REUSE_GRACE_SECONDS"
+  local interval="$PORT_REUSE_POLL_INTERVAL"
+
+  if ! [[ "$timeout" =~ ^[0-9]+$ ]] || [ "$timeout" -le 0 ]; then
+    return 1
+  fi
+
+  if ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -le 0 ]; then
+    interval=1
+  fi
+
+  local end_ts=$(( $(date +%s) + timeout ))
+  local announced=0
+
+  while [ "$(date +%s)" -lt "$end_ts" ]; do
+    if is_port_free "$port"; then
+      return 0
+    fi
+    if [ "$announced" -eq 0 ]; then
+      printf '[i] Waiting up to %ss for port %s to be released...\n' "$timeout" "$port"
+      announced=1
+    fi
+    sleep "$interval"
+  done
+
+  # Give it one last check before returning failure
+  if is_port_free "$port"; then
+    return 0
+  fi
+  return 1
+}
+
 pick_free_port() {
   local start="$1"; local max_scan=100; local p="$start"
+  wait_for_port_release "$start" >/dev/null 2>&1 || true
   for _ in $(seq 1 "$max_scan"); do
     if is_port_free "$p"; then echo "$p"; return; fi
     p=$((p+1))
@@ -451,28 +481,16 @@ update_env_var BACKEND_IMAGE "$BACKEND_IMAGE_VALUE"
 update_env_var TELEGRAM_IMAGE "$TELEGRAM_IMAGE_VALUE"
 update_env_var BACKEND_VERSION "$BACKEND_VERSION"
 update_env_var TELEGRAM_VERSION "$TELEGRAM_VERSION"
-[ -n "${CHANGED_COMPONENTS:-}" ] || CHANGED_COMPONENTS=""
 printf '[i] Component versions: backend=%s telegram=%s\n' "$BACKEND_VERSION" "$TELEGRAM_VERSION"
 
 printf '[+] Building images sequentially...\n'
-SERVICES=()
-if component_changed backend; then
-  SERVICES+=("app")
-fi
-if component_changed telegram; then
-  SERVICES+=("telegram-bot")
-fi
-
-if [ ${#SERVICES[@]} -eq 0 ]; then
-  printf '[+] No source changes detected for container images; skipping build step\n'
-else
-  for svc in "${SERVICES[@]}"; do
-    if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
-      printf '[!] Failed to build %s\n' "$svc"
-      exit 1
-    fi
-  done
-fi
+SERVICES=(app telegram-bot)
+for svc in "${SERVICES[@]}"; do
+  if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
+    printf '[!] Failed to build %s\n' "$svc"
+    exit 1
+  fi
+done
 
 # Enable compose profiles only when local LLM is enabled
 PROFILE_ARGS=()

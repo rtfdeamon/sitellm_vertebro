@@ -36,8 +36,11 @@ class Attachment(BaseModel):
     """Metadata about a downloadable document attachment."""
 
     name: str
-    url: str
+    url: str | None = None
     content_type: str | None = None
+    file_id: str | None = None
+    size_bytes: int | None = None
+    description: str | None = None
 
 
 class LLMResponse(BaseModel):
@@ -54,8 +57,9 @@ class LLMResponse(BaseModel):
                 "attachments": [
                     {
                         "name": "typical-contract.pdf",
-                        "url": "https://example.com/api/v1/admin/knowledge/documents/abc123",
                         "content_type": "application/pdf",
+                        "file_id": "686e3550df26ab9c2015d727",
+                        "url": "https://example.com/api/v1/admin/knowledge/documents/abc123",
                     }
                 ],
                 "emotions_enabled": True,
@@ -147,11 +151,15 @@ class Project(BaseModel):
     name: str
     title: str | None = None
     domain: str | None = None
+    admin_username: str | None = None
+    admin_password_hash: str | None = None
     llm_model: str | None = None
     llm_prompt: str | None = None
     llm_emotions_enabled: bool | None = True
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
+    max_token: str | None = None
+    max_auto_start: bool | None = None
     widget_url: str | None = None
     debug_enabled: bool | None = None
 
@@ -161,11 +169,13 @@ class Project(BaseModel):
                 "name": "mmvs",
                 "domain": "mmvs.ru",
                 "title": "Проект MMVS",
+                "admin_username": "mmvs_admin",
                 "llm_model": "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
                 "llm_prompt": "You are helpful and concise.",
                 "llm_emotions_enabled": True,
                 "debug_enabled": False,
                 "telegram_auto_start": False,
+                "max_auto_start": False,
                 "widget_url": "https://example.com/widget?project=mmvs",
             }
         }

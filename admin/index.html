@@ -59,6 +59,13 @@
       gap: 24px;
     }
 
+    .page-header-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
     h1 {
       margin: 0;
       font-size: 28px;
@@ -194,6 +201,44 @@
     .stats-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .knowledge-service-card { display: flex; flex-direction: column; gap: 10px; }
     .knowledge-service-card b { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
+    .reorder-mode .dashboard-grid section[data-block-id] {
+      cursor: grab;
+      outline: 1px dashed rgba(96, 165, 250, 0.45);
+      border-radius: 20px;
+      transition: outline 0.2s ease, background 0.2s ease;
+      position: relative;
+    }
+    .reorder-mode .dashboard-grid section[data-block-id]::after {
+      content: '⇅';
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      font-size: 18px;
+      color: rgba(96, 165, 250, 0.6);
+      pointer-events: none;
+    }
+    .reorder-mode .dashboard-grid section[data-block-id].dragging {
+      opacity: 0.6;
+      cursor: grabbing;
+    }
+    .dashboard-grid section[data-block-id].reorder-drop-target {
+      outline: 2px solid var(--accent);
+    }
+    .drop-zone {
+      border: 2px dashed rgba(96, 165, 250, 0.5);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      font-size: 14px;
+      color: var(--text-muted);
+      transition: border-color 0.2s ease, background 0.2s ease;
+      cursor: pointer;
+    }
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(79, 70, 229, 0.1);
+      color: var(--text-primary);
+    }
     .project-storage-panel {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -423,6 +468,9 @@
         <h1>Crawler Control Panel</h1>
         <p class="page-subtitle">Управление краулингом, базой знаний и окружением в едином окне</p>
       </div>
+      <div class="page-header-actions">
+        <button type="button" id="toggleLayoutOrdering">Упорядочить блоки</button>
+      </div>
     </div>
 
     <div class="overview-banner">
@@ -453,7 +501,7 @@
   </div>
 
   <div class="dashboard-grid">
-    <section class="dashboard-stack span-3">
+    <section id="block-projects" class="dashboard-stack span-3" data-block-id="projects" data-block-group="overview">
       <div class="card project-switch-card">
         <b>Projects</b>
         <select id="projectSelect" size="6"></select>
@@ -466,7 +514,7 @@
       </div>
     </section>
 
-    <section class="dashboard-stack span-9 status-tiles">
+    <section id="block-status" class="dashboard-stack span-9 status-tiles" data-block-id="status" data-block-group="overview">
       <div class="card status-card">
         <b>Статус краулера</b>
         <div>Queued: <span id="queued">0</span></div>
@@ -502,7 +550,7 @@
 
     <h2 class="section-title span-all">Управление</h2>
 
-    <section class="dashboard-stack span-4">
+    <section id="block-crawler" class="dashboard-stack span-4" data-block-id="crawler" data-block-group="manage">
       <div class="card control-card">
         <b>Запуск краулера</b>
         <form id="crawler-form" style="margin-top:4px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
@@ -522,7 +570,7 @@
       </div>
     </section>
 
-    <section class="dashboard-stack span-8">
+    <section id="block-project" class="dashboard-stack span-8" data-block-id="project" data-block-group="manage">
       <div class="card control-card project-card">
         <b>Project</b>
         <form id="projectForm" style="display:flex; flex-wrap:wrap; gap:10px;">
@@ -555,6 +603,15 @@
             </label>
             <span class="muted" id="projectDebugHint">Включите, чтобы получать технические сообщения.</span>
           </div>
+          <div id="projectAdminSection" style="flex:1 1 100%; display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;">
+            <label style="flex:1 1 200px;">Админ логин
+              <input type="text" id="projectAdminUsername" placeholder="project_admin">
+            </label>
+            <label style="flex:1 1 200px;">Новый пароль
+              <input type="password" id="projectAdminPassword" placeholder="Оставьте пустым, чтобы не менять">
+            </label>
+            <span class="muted" id="projectAdminHint" style="flex:1 1 100%;">Укажите логин и пароль администратора проекта.</span>
+          </div>
           <div class="project-storage-panel">
             <div>Тексты: <span id="projectStorageText">—</span></div>
             <div>Файлы: <span id="projectStorageFiles">—</span></div>
@@ -586,6 +643,23 @@
               <span class="muted" id="projectTelegramMessage"></span>
             </div>
           </div>
+          <div class="project-max" style="flex:1 1 260px; min-width:240px;">
+            <b style="display:block; margin-bottom:8px;">MAX бот</b>
+            <label style="display:block; margin-bottom:8px;">Access Token
+              <input type="password" id="projectMaxToken" placeholder="Введите токен" style="width:100%;">
+            </label>
+            <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+              <input type="checkbox" id="projectMaxAutoStart"> Автозапуск при старте
+            </label>
+            <div>Status: <span id="projectMaxStatus">—</span></div>
+            <div class="muted" id="projectMaxInfo"></div>
+            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <button type="button" id="projectMaxSave">Сохранить</button>
+              <button type="button" id="projectMaxStart">Запустить</button>
+              <button type="button" id="projectMaxStop">Остановить</button>
+              <span class="muted" id="projectMaxMessage"></span>
+            </div>
+          </div>
           <div class="project-widget" style="flex:1 1 260px; min-width:240px;">
             <b style="display:block; margin-bottom:8px;">Виджет</b>
             <label style="display:block; margin-bottom:8px;">Ссылка на виджет
@@ -602,7 +676,7 @@
       </div>
     </section>
 
-    <section class="dashboard-stack span-4">
+    <section id="block-llm" class="dashboard-stack span-4" data-block-id="llm" data-block-group="manage">
       <div class="card control-card">
         <b>LLM</b>
         <div>Model: <code id="model">–</code></div>
@@ -624,7 +698,7 @@
       </div>
     </section>
 
-    <section class="dashboard-stack span-8">
+    <section id="block-stats" class="dashboard-stack span-8" data-block-id="stats" data-block-group="manage">
       <div class="card stats-card">
         <b>Активность пользователей</b>
         <div class="muted" id="statsSubtitle">Последние 14 дней</div>
@@ -643,7 +717,7 @@
 
     <h2 class="section-title span-all">База знаний</h2>
 
-    <section class="dashboard-stack span-7">
+    <section id="block-knowledge" class="dashboard-stack span-7" data-block-id="knowledge" data-block-group="knowledge">
       <div class="card knowledge-card">
         <b>Knowledge Base</b>
         <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
@@ -673,9 +747,12 @@
           <label style="flex:1 1 220px;">Описание
             <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
           </label>
-            <label style="flex:1 1 220px;">Файл
-              <input type="file" id="kbNewFile" multiple style="width:100%;">
+          <label style="flex:1 1 220px;">Файл
+            <input type="file" id="kbNewFile" multiple style="width:100%;">
           </label>
+          <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
+            Перетащите файлы сюда или нажмите на поле выше
+          </div>
           <label style="flex:1 1 100%;">Текст
             <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
           </label>
@@ -702,7 +779,7 @@
       </div>
     </section>
 
-    <section class="dashboard-stack span-5">
+    <section id="block-knowledge-tools" class="dashboard-stack span-5" data-block-id="knowledge-tools" data-block-group="knowledge">
       <div class="card knowledge-service-card">
         <b>Интеллектуальная обработка</b>
         <div class="muted">Автоматически обновляет векторное представление базы знаний, когда очередь простаивает больше 5 минут.</div>
@@ -756,6 +833,12 @@
           </label>
           <label>Стартовый промпт
             <textarea id="projectModalPrompt" rows="4" placeholder="Опишите инструкцию для модели"></textarea>
+          </label>
+          <label>Админ логин
+            <input type="text" id="projectModalAdminUsername" placeholder="project_admin">
+          </label>
+          <label>Пароль администратора
+            <input type="password" id="projectModalAdminPassword" placeholder="Оставьте пустым, чтобы не задавать">
           </label>
           <label style="display:flex; gap:10px; align-items:center;">
             <input type="checkbox" id="projectModalEmotions" checked>
@@ -832,6 +915,14 @@
     const projectTelegramSaveBtn = document.getElementById('projectTelegramSave');
     const projectTelegramStartBtn = document.getElementById('projectTelegramStart');
     const projectTelegramStopBtn = document.getElementById('projectTelegramStop');
+    const projectMaxTokenInput = document.getElementById('projectMaxToken');
+    const projectMaxAutoStart = document.getElementById('projectMaxAutoStart');
+    const projectMaxStatus = document.getElementById('projectMaxStatus');
+    const projectMaxInfo = document.getElementById('projectMaxInfo');
+    const projectMaxMessage = document.getElementById('projectMaxMessage');
+    const projectMaxSaveBtn = document.getElementById('projectMaxSave');
+    const projectMaxStartBtn = document.getElementById('projectMaxStart');
+    const projectMaxStopBtn = document.getElementById('projectMaxStop');
     const statsCanvas = document.getElementById('statsCanvas');
     const statsTooltip = document.getElementById('statsTooltip');
     const statsEmpty = document.getElementById('statsEmpty');
@@ -872,6 +963,14 @@
       } catch {}
     });
 
+    const sessionDefaults = {
+      username: '',
+      is_super: false,
+      projects: [],
+      primary_project: null,
+      can_manage_projects: false,
+    };
+    let adminSession = { ...sessionDefaults };
     let currentProject = (localStorage.getItem('admin_project') || '').trim().toLowerCase();
     const projectSelect = document.getElementById('projectSelect');
     const projectStatus = document.getElementById('projectStatus');
@@ -886,6 +985,11 @@
     const projectDebugInput = document.getElementById('projectDebug');
     const projectDebugHint = document.getElementById('projectDebugHint');
     const projectEmotionsHint = document.getElementById('projectEmotionsHint');
+    const projectDeleteBtn = document.getElementById('projectDelete');
+    const projectAdminSection = document.getElementById('projectAdminSection');
+    const projectAdminUsernameInput = document.getElementById('projectAdminUsername');
+    const projectAdminPasswordInput = document.getElementById('projectAdminPassword');
+    const projectAdminHint = document.getElementById('projectAdminHint');
     const projectStorageText = document.getElementById('projectStorageText');
     const projectStorageFiles = document.getElementById('projectStorageFiles');
     const projectStorageContexts = document.getElementById('projectStorageContexts');
@@ -895,6 +999,65 @@
     const knowledgeServiceRefresh = document.getElementById('knowledgeServiceRefresh');
     const knowledgeServiceStatus = document.getElementById('knowledgeServiceStatus');
     const knowledgeServiceCard = document.querySelector('.knowledge-service-card');
+    const knowledgeServiceEndpoints = [
+      '/api/v1/admin/knowledge/service',
+      '/api/v1/llm/admin/knowledge/service',
+      '/api/v1/knowledge/service',
+    ];
+    let activeKnowledgeServiceEndpoint = null;
+    const setKnowledgeServiceControlsDisabled = (disabled) => {
+      if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
+      if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
+      if (knowledgeServiceRefresh) knowledgeServiceRefresh.disabled = disabled;
+    };
+
+    const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+    const applySessionPermissions = () => {
+      if (!adminSession.is_super) {
+        if (projectAddBtn) projectAddBtn.style.display = 'none';
+        if (projectDeleteBtn) projectDeleteBtn.style.display = 'none';
+        if (knowledgeServiceCard) knowledgeServiceCard.style.display = 'none';
+        const promptsCard = document.querySelector('.prompts-card');
+        if (promptsCard) promptsCard.style.display = 'none';
+        const logsCard = document.querySelector('.logs-card');
+        if (logsCard) logsCard.style.display = 'none';
+        setKnowledgeServiceControlsDisabled(true);
+        const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
+        const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
+        if (modalAdminLogin) modalAdminLogin.style.display = 'none';
+        if (modalAdminPass) modalAdminPass.style.display = 'none';
+      } else {
+        setKnowledgeServiceControlsDisabled(false);
+        const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
+        const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
+        if (modalAdminLogin) modalAdminLogin.style.display = '';
+        if (modalAdminPass) modalAdminPass.style.display = '';
+      }
+    };
+
+    async function fetchSession() {
+      try {
+        const resp = await fetch('/api/v1/admin/session');
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        const projects = Array.isArray(data.projects)
+          ? data.projects.map((item) => normalizeProjectName(item)).filter(Boolean)
+          : [];
+        adminSession = {
+          username: typeof data.username === 'string' ? data.username.trim().toLowerCase() : '',
+          is_super: Boolean(data.is_super),
+          can_manage_projects: Boolean(data.can_manage_projects),
+          projects,
+          primary_project: data.primary_project ? normalizeProjectName(data.primary_project) : (projects[0] || null),
+        };
+      } catch (error) {
+        console.error('Failed to load admin session', error);
+        adminSession = { ...sessionDefaults };
+      }
+      applySessionPermissions();
+    }
+    const LAYOUT_ORDER_STORAGE_KEY = 'admin_layout_order_v1';
     const projectTestBtn = document.getElementById('projectTest');
     const projectPromptSaveBtn = document.getElementById('projectPromptSave');
     const projectForm = document.getElementById('projectForm');
@@ -916,6 +1079,8 @@
     const projectModalModel = document.getElementById('projectModalModel');
     const projectModalPrompt = document.getElementById('projectModalPrompt');
     const projectModalEmotions = document.getElementById('projectModalEmotions');
+    const projectModalAdminUsername = document.getElementById('projectModalAdminUsername');
+    const projectModalAdminPassword = document.getElementById('projectModalAdminPassword');
     const projectModalWidget = document.getElementById('projectModalWidgetUrl');
     const projectModalTelegram = document.getElementById('projectModalTelegram');
     const projectModalTelegramAuto = document.getElementById('projectModalTelegramAuto');
@@ -947,6 +1112,9 @@
     const kbDedupStatus = document.getElementById('kbDedupStatus');
     const kbClearBtn = document.getElementById('kbClearKnowledge');
     const kbClearStatus = document.getElementById('kbClearStatus');
+    const kbDropZone = document.getElementById('kbDropZone');
+    const kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
+    const kbNewFileInput = document.getElementById('kbNewFile');
 
     const summaryState = {
       project: '',
@@ -980,6 +1148,27 @@
       card.classList.add('updated');
       setTimeout(() => card.classList.remove('updated'), 1800);
     }
+
+    function updateDropZonePreview(fileList) {
+      if (!kbDropZone) return;
+      const files = Array.from(fileList || []).filter(Boolean);
+      if (!files.length) {
+        kbDropZone.textContent = kbDropZoneDefaultText || 'Перетащите файлы сюда или нажмите на поле выше';
+        kbDropZone.classList.remove('has-files');
+        return;
+      }
+
+      const maxPreview = 4;
+      const preview = files.slice(0, maxPreview).map((file) => {
+        const size = typeof file.size === 'number' ? ` (${formatBytes(file.size)})` : '';
+        return `${file.name}${size}`;
+      }).join(', ');
+      const remaining = files.length > maxPreview ? `, +${files.length - maxPreview}` : '';
+      kbDropZone.textContent = `Выбрано файлов: ${files.length}. ${preview}${remaining}`;
+      kbDropZone.classList.add('has-files');
+    }
+
+    window.updateDropZonePreview = updateDropZonePreview;
 
     function formatDateISO(date) {
       const year = date.getFullYear();
@@ -1066,43 +1255,268 @@
       knowledgeServiceStatus.textContent = bits.join(' • ') || '—';
     }
 
+    async function callKnowledgeService(method = 'GET', payload = null) {
+      if (!knowledgeServiceToggle && method === 'GET') {
+        return null;
+      }
+
+      const headers = { Accept: 'application/json' };
+      let body;
+      if (method !== 'GET' && payload !== null) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(payload);
+      }
+
+      const tried = new Set();
+      const order = [];
+      if (activeKnowledgeServiceEndpoint) {
+        order.push(activeKnowledgeServiceEndpoint);
+        tried.add(activeKnowledgeServiceEndpoint);
+      }
+      for (const endpoint of knowledgeServiceEndpoints) {
+        if (!tried.has(endpoint)) {
+          order.push(endpoint);
+          tried.add(endpoint);
+        }
+      }
+
+      let lastError = null;
+      for (const endpoint of order) {
+        try {
+          const resp = await fetch(endpoint, {
+            method,
+            headers,
+            body,
+            credentials: 'same-origin',
+          });
+          if (resp.status === 404) {
+            const err = new Error('not_found');
+            err.status = 404;
+            lastError = err;
+            continue;
+          }
+          if (!resp.ok) {
+            const err = new Error(`HTTP ${resp.status}`);
+            err.response = resp;
+            throw err;
+          }
+          let data = null;
+          if (method === 'GET') {
+            data = await resp.json();
+          } else if (resp.headers.get('Content-Type')?.includes('application/json')) {
+            data = await resp.json();
+          }
+          activeKnowledgeServiceEndpoint = endpoint;
+          return data;
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError || new Error('knowledge service unavailable');
+    }
+
     async function fetchKnowledgeServiceStatus(triggerPulse = false) {
       if (!knowledgeServiceToggle) return;
+      if (!adminSession.is_super) {
+        knowledgeServiceStatus.textContent = 'Недоступно для вашего доступа';
+        setKnowledgeServiceControlsDisabled(true);
+        return;
+      }
       knowledgeServiceStatus.textContent = 'Загружаем…';
+      setKnowledgeServiceControlsDisabled(true);
       try {
-        const resp = await fetch('/api/v1/admin/knowledge/service');
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const data = await resp.json();
-        knowledgeServiceToggle.checked = !!data.enabled;
-        renderKnowledgeServiceStatus(data);
-        if (triggerPulse && knowledgeServiceCard) {
-          pulseCard(knowledgeServiceCard);
+        const data = await callKnowledgeService('GET');
+        if (data) {
+          knowledgeServiceToggle.checked = !!data.enabled;
+          renderKnowledgeServiceStatus(data);
+          if (triggerPulse && knowledgeServiceCard) {
+            pulseCard(knowledgeServiceCard);
+          }
+        } else {
+          knowledgeServiceStatus.textContent = 'Нет данных';
         }
       } catch (error) {
         console.error('knowledge_service_status_failed', error);
-        knowledgeServiceStatus.textContent = 'Не удалось получить статус';
+        if (error?.message === 'not_found') {
+          knowledgeServiceStatus.textContent = 'Сервис недоступен (обновите backend)';
+        } else {
+          knowledgeServiceStatus.textContent = 'Не удалось получить статус';
+        }
+      } finally {
+        setKnowledgeServiceControlsDisabled(false);
       }
     }
 
     async function saveKnowledgeServiceState() {
       if (!knowledgeServiceToggle) return;
+      if (!adminSession.is_super) return;
       knowledgeServiceStatus.textContent = 'Сохраняем…';
+      setKnowledgeServiceControlsDisabled(true);
       try {
         const payload = {
           enabled: knowledgeServiceToggle.checked,
         };
-        const resp = await fetch('/api/v1/admin/knowledge/service', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        await callKnowledgeService('POST', payload);
         knowledgeServiceStatus.textContent = 'Сохранено';
         await fetchKnowledgeServiceStatus(true);
       } catch (error) {
         console.error('knowledge_service_save_failed', error);
-        knowledgeServiceStatus.textContent = 'Ошибка сохранения';
+        if (error?.message === 'not_found') {
+          knowledgeServiceStatus.textContent = 'Сервис недоступен (обновите backend)';
+        } else {
+          knowledgeServiceStatus.textContent = 'Ошибка сохранения';
+        }
+      } finally {
+        setKnowledgeServiceControlsDisabled(false);
       }
+    }
+
+    function initLayoutReordering() {
+      const layout = document.querySelector('.dashboard-grid');
+      const toggleButton = document.getElementById('toggleLayoutOrdering');
+      if (!layout || !toggleButton) return;
+
+      const getSections = () => Array.from(layout.querySelectorAll(':scope > section[data-block-id]'));
+
+      const saveOrder = () => {
+        const order = getSections()
+          .map((section) => section.dataset.blockId || '')
+          .filter(Boolean);
+        try {
+          localStorage.setItem(LAYOUT_ORDER_STORAGE_KEY, JSON.stringify(order));
+        } catch (error) {
+          console.warn('layout_order_save_failed', error);
+        }
+      };
+
+      const restoreOrder = () => {
+        const raw = localStorage.getItem(LAYOUT_ORDER_STORAGE_KEY);
+        if (!raw) return;
+        try {
+          const stored = JSON.parse(raw);
+          if (!Array.isArray(stored) || !stored.length) return;
+          const sections = getSections();
+          const desiredOrder = sections.slice().sort((a, b) => {
+            const aIndex = stored.indexOf(a.dataset.blockId || '');
+            const bIndex = stored.indexOf(b.dataset.blockId || '');
+            const fallbackA = sections.indexOf(a);
+            const fallbackB = sections.indexOf(b);
+            const safeA = aIndex === -1 ? stored.length + fallbackA : aIndex;
+            const safeB = bIndex === -1 ? stored.length + fallbackB : bIndex;
+            return safeA - safeB;
+          });
+          const currentSections = sections.slice();
+          desiredOrder.forEach((section, index) => {
+            const target = currentSections[index];
+            if (!target || section === target) {
+              return;
+            }
+            layout.insertBefore(section, target);
+            const currentIndex = currentSections.indexOf(section);
+            currentSections.splice(currentIndex, 1);
+            currentSections.splice(index, 0, section);
+          });
+        } catch (error) {
+          console.warn('layout_order_restore_failed', error);
+        }
+      };
+
+      restoreOrder();
+
+      const clearDropHighlights = () => {
+        layout.querySelectorAll('.reorder-drop-target').forEach((el) => el.classList.remove('reorder-drop-target'));
+      };
+
+      const getDragAfterElement = (container, y) => {
+        const draggableElements = [...container.querySelectorAll(':scope > section[data-block-id]:not(.dragging)')];
+        let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+        draggableElements.forEach((child) => {
+          const rect = child.getBoundingClientRect();
+          const offset = y - rect.top - rect.height / 2;
+          if (offset < 0 && offset > closest.offset) {
+            closest = { offset, element: child };
+          }
+        });
+        return closest.element;
+      };
+
+      let isReorderMode = false;
+      let draggingSection = null;
+
+      const handleDragStart = (event) => {
+        if (!isReorderMode) return;
+        draggingSection = event.currentTarget;
+        draggingSection.classList.add('dragging');
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', draggingSection.dataset.blockId || '');
+        }
+      };
+
+      const handleDragEnd = (event) => {
+        if (!isReorderMode) return;
+        event.currentTarget.classList.remove('dragging');
+        draggingSection = null;
+        clearDropHighlights();
+        saveOrder();
+      };
+
+      const handleDragOver = (event) => {
+        if (!isReorderMode || !draggingSection) return;
+        event.preventDefault();
+        const afterElement = getDragAfterElement(layout, event.clientY);
+        if (afterElement === draggingSection) return;
+        if (afterElement == null) {
+          layout.appendChild(draggingSection);
+        } else {
+          layout.insertBefore(draggingSection, afterElement);
+        }
+        clearDropHighlights();
+        if (afterElement) {
+          afterElement.classList.add('reorder-drop-target');
+        }
+      };
+
+      layout.addEventListener('dragover', handleDragOver);
+      layout.addEventListener('drop', (event) => {
+        if (!isReorderMode) return;
+        event.preventDefault();
+        clearDropHighlights();
+      });
+
+      getSections().forEach((section) => {
+        section.draggable = false;
+        section.addEventListener('dragstart', handleDragStart);
+        section.addEventListener('dragend', handleDragEnd);
+      });
+
+      const applyMode = (enabled) => {
+        isReorderMode = enabled;
+        document.body.classList.toggle('reorder-mode', enabled);
+        toggleButton.textContent = enabled ? 'Готово' : 'Упорядочить блоки';
+        toggleButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+        if (!enabled) {
+          clearDropHighlights();
+          if (draggingSection) {
+            draggingSection.classList.remove('dragging');
+            draggingSection = null;
+          }
+          saveOrder();
+        }
+        getSections().forEach((section) => {
+          section.draggable = enabled;
+        });
+      };
+
+      toggleButton.addEventListener('click', () => {
+        applyMode(!isReorderMode);
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isReorderMode) {
+          applyMode(false);
+        }
+      });
     }
 
     function ensureStatsCanvas() {
@@ -1587,6 +2001,8 @@
       projectModalModel.value = LLM_MODEL_OPTIONS[0]?.value || '';
       projectModalPrompt.value = '';
       if (projectModalEmotions) projectModalEmotions.checked = true;
+       if (projectModalAdminUsername) projectModalAdminUsername.value = '';
+       if (projectModalAdminPassword) projectModalAdminPassword.value = '';
       projectModalStatus.textContent = '';
     }
 
@@ -1600,7 +2016,9 @@
       projectModalBackdrop.classList.remove('show');
     }
 
-    projectAddBtn.addEventListener('click', showProjectModal);
+    if (projectAddBtn) {
+      projectAddBtn.addEventListener('click', showProjectModal);
+    }
     projectRefreshBtn.addEventListener('click', async () => {
       setProjectStatus('Обновляем…', 1500);
       await fetchProjects();
@@ -1633,6 +2051,16 @@
         llm_prompt: projectModalPrompt.value.trim() || null,
         llm_emotions_enabled: projectModalEmotions ? projectModalEmotions.checked : true,
       };
+      if (adminSession.is_super && projectModalAdminUsername) {
+        const modalAdmin = projectModalAdminUsername.value.trim();
+        payload.admin_username = modalAdmin || null;
+      }
+      if (adminSession.is_super && projectModalAdminPassword) {
+        const modalPassword = projectModalAdminPassword.value;
+        if (modalPassword && modalPassword.trim()) {
+          payload.admin_password = modalPassword;
+        }
+      }
       projectModalStatus.textContent = 'Создаём…';
       try {
         const resp = await fetch('/api/v1/admin/projects', {
@@ -2154,7 +2582,12 @@
           document.getElementById('kbNewUrl').value = '';
           document.getElementById('kbNewDescription').value = '';
           document.getElementById('kbNewContent').value = '';
-          if (fileInput) fileInput.value = '';
+          if (fileInput) {
+            fileInput.value = '';
+            updateDropZonePreview(fileInput.files);
+          } else {
+            updateDropZonePreview();
+          }
           let resultMsg = `Загружено ${uploaded}/${files.length}`;
           if (autoDescriptions) {
             resultMsg += ` · автоописаний: ${autoDescriptions}`;
@@ -2192,6 +2625,12 @@
         document.getElementById('kbNewUrl').value = '';
         document.getElementById('kbNewDescription').value = '';
         document.getElementById('kbNewContent').value = '';
+        if (fileInput) {
+          fileInput.value = '';
+          updateDropZonePreview(fileInput.files);
+        } else {
+          updateDropZonePreview();
+        }
         await loadKnowledge();
         await loadProjectsList();
         await fetchProjectStorage();
@@ -2227,6 +2666,29 @@
         setTimeout(() => { kbDedupStatus.textContent = ''; }, 4000);
       }
     }
+    async function clearKnowledge(){
+      if (!kbClearStatus) return;
+      const confirmed = confirm(currentProject ? `Очистить базу для проекта ${currentProject}?` : 'Очистить всю базу знаний?');
+      if (!confirmed) return;
+      kbClearStatus.textContent = 'Удаляем…';
+      try {
+        const params = new URLSearchParams();
+        if (currentProject) params.set('project', currentProject);
+        const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        kbClearStatus.textContent = `Удалено документов: ${data.documents_removed || 0}`;
+        await fetchKnowledge();
+        await fetchProjectStorage();
+        populateProjectForm(currentProject);
+        setTimeout(() => { kbClearStatus.textContent = ''; }, 3000);
+      } catch (error) {
+        console.error('knowledge_clear_failed', error);
+        kbClearStatus.textContent = 'Ошибка очистки';
+        setTimeout(() => { kbClearStatus.textContent = ''; }, 4000);
+      }
+    }
+
 
     async function clearKnowledge(){
       if (!kbClearStatus) return;
@@ -2267,7 +2729,12 @@
       document.getElementById('kbNewDescription').value = '';
       document.getElementById('kbNewContent').value = '';
       const fileInput = document.getElementById('kbNewFile');
-      if (fileInput) fileInput.value = '';
+      if (fileInput) {
+        fileInput.value = '';
+        updateDropZonePreview(fileInput.files);
+      } else {
+        updateDropZonePreview();
+      }
       document.getElementById('kbAddStatus').textContent = '';
     });
     if (kbDedupBtn) {
@@ -2275,6 +2742,38 @@
     }
     if (kbClearBtn) {
       kbClearBtn.addEventListener('click', clearKnowledge);
+    }
+    if (kbDropZone && kbNewFileInput) {
+      const highlight = () => kbDropZone.classList.add('drag-over');
+      const unhighlight = () => kbDropZone.classList.remove('drag-over');
+      kbDropZone.addEventListener('click', () => kbNewFileInput.click());
+      ['dragenter', 'dragover'].forEach((evt) => {
+        kbDropZone.addEventListener(evt, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          highlight();
+        });
+      });
+      ['dragleave', 'dragend'].forEach((evt) => {
+        kbDropZone.addEventListener(evt, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          unhighlight();
+        });
+      });
+      kbDropZone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        unhighlight();
+        const files = event.dataTransfer?.files;
+        if (!files || !files.length) return;
+        const dt = new DataTransfer();
+        Array.from(files).forEach((file) => dt.items.add(file));
+        kbNewFileInput.files = dt.files;
+        updateDropZonePreview(kbNewFileInput.files);
+      });
+      kbNewFileInput.addEventListener('change', () => updateDropZonePreview(kbNewFileInput.files));
+      updateDropZonePreview(kbNewFileInput.files);
     }
 
     kbModalClose.addEventListener('click', hideKnowledgeModal);
@@ -2435,6 +2934,149 @@
     if (projectTelegramSaveBtn) projectTelegramSaveBtn.addEventListener('click', saveProjectTelegramConfig);
     if (projectTelegramStartBtn) projectTelegramStartBtn.addEventListener('click', startProjectTelegram);
     if (projectTelegramStopBtn) projectTelegramStopBtn.addEventListener('click', stopProjectTelegram);
+
+    function applyProjectMaxState(data, projectName) {
+      const running = data ? !!data.running : false;
+      if (projectMaxStatus) projectMaxStatus.textContent = data ? (running ? 'работает' : 'остановлен') : '—';
+      if (projectMaxInfo) {
+        if (!projectName) {
+          projectMaxInfo.textContent = 'Выберите проект';
+        } else if (data) {
+          const bits = [];
+          bits.push(data.token_set ? 'Токен настроен' : 'Токен не указан');
+          if (data.token_preview) bits.push(`ID: ${data.token_preview}`);
+          if (running) bits.push('бот запущен');
+          if (data.last_error) bits.push(`Ошибка: ${data.last_error}`);
+          projectMaxInfo.textContent = bits.join(' • ');
+        } else {
+          projectMaxInfo.textContent = 'Нет данных';
+        }
+      }
+      if (projectMaxAutoStart && data) {
+        projectMaxAutoStart.checked = !!data.auto_start;
+      } else if (projectMaxAutoStart && !projectName) {
+        projectMaxAutoStart.checked = false;
+      }
+      if (projectMaxStartBtn) projectMaxStartBtn.disabled = !projectName || running;
+      if (projectMaxStopBtn) projectMaxStopBtn.disabled = !projectName || !running;
+      if (projectMaxSaveBtn) projectMaxSaveBtn.disabled = !projectName;
+      if (projectMaxTokenInput) projectMaxTokenInput.disabled = !projectName;
+      if (projectMaxAutoStart) projectMaxAutoStart.disabled = !projectName;
+    }
+
+    function resetProjectMaxUI() {
+      applyProjectMaxState(null, '');
+      if (projectMaxStatus) projectMaxStatus.textContent = '—';
+      if (projectMaxInfo) projectMaxInfo.textContent = 'Выберите проект';
+      if (projectMaxMessage) projectMaxMessage.textContent = '';
+      if (projectMaxTokenInput) projectMaxTokenInput.value = '';
+    }
+
+    async function loadProjectMaxStatus(projectName) {
+      if (!projectName) {
+        resetProjectMaxUI();
+        return;
+      }
+      if (projectMaxMessage) projectMaxMessage.textContent = 'Обновляем...';
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(projectName)}/max`);
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        applyProjectMaxState(data, projectName);
+        if (projectMaxMessage) projectMaxMessage.textContent = '';
+      } catch (error) {
+        console.error(error);
+        if (projectMaxStatus) projectMaxStatus.textContent = 'ошибка';
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Не удалось получить статус';
+        applyProjectMaxState(null, projectName);
+        if (projectMaxStartBtn) projectMaxStartBtn.disabled = !projectName;
+      }
+    }
+
+    async function saveProjectMaxConfig() {
+      if (!currentProject) {
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Выберите проект';
+        return;
+      }
+      if (projectMaxMessage) projectMaxMessage.textContent = 'Сохраняем...';
+      const payload = {
+        token: projectMaxTokenInput && projectMaxTokenInput.value ? projectMaxTokenInput.value : null,
+        auto_start: projectMaxAutoStart ? projectMaxAutoStart.checked : false,
+      };
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/max/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (projectMaxTokenInput) projectMaxTokenInput.value = '';
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Сохранено';
+        await loadProjectMaxStatus(currentProject);
+      } catch (error) {
+        console.error(error);
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Ошибка сохранения';
+      }
+    }
+
+    async function startProjectMax() {
+      if (!currentProject) {
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Выберите проект';
+        return;
+      }
+      if (projectMaxMessage) projectMaxMessage.textContent = 'Запускаем...';
+      const payload = {};
+      if (projectMaxTokenInput && projectMaxTokenInput.value) {
+        payload.token = projectMaxTokenInput.value;
+      }
+      if (projectMaxAutoStart) {
+        payload.auto_start = projectMaxAutoStart.checked;
+      }
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/max/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (projectMaxTokenInput) projectMaxTokenInput.value = '';
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Бот запущен';
+        await loadProjectMaxStatus(currentProject);
+      } catch (error) {
+        console.error(error);
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Ошибка запуска';
+      }
+    }
+
+    async function stopProjectMax() {
+      if (!currentProject) {
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Выберите проект';
+        return;
+      }
+      if (projectMaxMessage) projectMaxMessage.textContent = 'Останавливаем...';
+      const payload = {};
+      if (projectMaxAutoStart) {
+        payload.auto_start = projectMaxAutoStart.checked;
+      }
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/max/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Бот остановлен';
+        await loadProjectMaxStatus(currentProject);
+      } catch (error) {
+        console.error(error);
+        if (projectMaxMessage) projectMaxMessage.textContent = 'Ошибка остановки';
+      }
+    }
+
+    if (projectMaxSaveBtn) projectMaxSaveBtn.addEventListener('click', saveProjectMaxConfig);
+    if (projectMaxStartBtn) projectMaxStartBtn.addEventListener('click', startProjectMax);
+    if (projectMaxStopBtn) projectMaxStopBtn.addEventListener('click', stopProjectMax);
+
     if (statsRefreshBtn) statsRefreshBtn.addEventListener('click', loadRequestStats);
     if (statsExportBtn) statsExportBtn.addEventListener('click', exportRequestStats);
 
@@ -2536,6 +3178,7 @@
 
     refreshProjectWidgetUI();
     resetProjectTelegramUI();
+    resetProjectMaxUI();
 
     function populateProjectForm(projectName){
       const normalized = (projectName || '').trim().toLowerCase();
@@ -2546,7 +3189,10 @@
       if (projectWidgetMessage) projectWidgetMessage.textContent = '';
       if (projectTelegramMessage) projectTelegramMessage.textContent = '';
       if (projectTelegramTokenInput) projectTelegramTokenInput.value = '';
+      if (projectMaxMessage) projectMaxMessage.textContent = '';
+      if (projectMaxTokenInput) projectMaxTokenInput.value = '';
       projectNameInput.value = project ? project.name : normalized;
+      projectNameInput.readOnly = !adminSession.is_super;
       projectTitleInput.value = project?.title || '';
       projectDomainInput.value = project?.domain || '';
       populateModelOptions(project?.llm_model || '');
@@ -2575,6 +3221,37 @@
       }
       if (projectTelegramAutoStart) {
         projectTelegramAutoStart.checked = !!project?.telegram_auto_start;
+      }
+      if (projectMaxAutoStart) {
+        projectMaxAutoStart.checked = !!project?.max_auto_start;
+      }
+      if (projectAdminSection) {
+        projectAdminSection.style.display = project ? 'flex' : 'none';
+      }
+      if (projectAdminUsernameInput) {
+        projectAdminUsernameInput.value = project?.admin_username || '';
+        projectAdminUsernameInput.disabled = false;
+        projectAdminUsernameInput.readOnly = !adminSession.is_super;
+      }
+      if (projectAdminPasswordInput) {
+        projectAdminPasswordInput.value = '';
+        projectAdminPasswordInput.disabled = !project;
+        projectAdminPasswordInput.placeholder = adminSession.is_super
+          ? 'Оставьте пустым, чтобы не менять'
+          : 'Введите новый пароль';
+      }
+      if (projectAdminHint) {
+        if (!project) {
+          projectAdminHint.textContent = 'Выберите проект, чтобы управлять учётными данными.';
+        } else if (adminSession.is_super) {
+          projectAdminHint.textContent = project?.admin_password_set
+            ? 'Пароль настроен. Оставьте поле пустым, чтобы не менять.'
+            : 'Укажите логин и пароль администратора проекта.';
+        } else {
+          projectAdminHint.textContent = project?.admin_password_set
+            ? 'Введите новый пароль, чтобы сменить текущий.'
+            : 'Установите пароль для доступа к админке проекта.';
+        }
       }
       if (crawlerProjectLabel) {
         crawlerProjectLabel.textContent = project ? project.name || normalized || '—' : (normalized || '—');
@@ -2609,6 +3286,7 @@
       projectPromptSaveBtn.disabled = !project;
       refreshProjectWidgetUI();
       loadProjectTelegramStatus(currentProject);
+      loadProjectMaxStatus(currentProject);
       loadRequestStats();
       if (currentProject) {
         localStorage.setItem('admin_project', currentProject);
@@ -2625,7 +3303,7 @@
           return;
         }
         const data = await resp.json();
-        const projects = data.projects || [];
+        const projects = Array.isArray(data.projects) ? data.projects : [];
         projectSelect.innerHTML = '';
         projectsCache = {};
         lastProjectCount = projects.length;
@@ -2640,28 +3318,48 @@
           return;
         }
 
+        const normalizedNames = projects
+          .map((project) => normalizeProjectName(project.name))
+          .filter(Boolean);
+        const uniqueNames = [...new Set(normalizedNames)];
+
+        let selectedKey = '';
+        if (currentProject && uniqueNames.includes(currentProject)) {
+          selectedKey = currentProject;
+        } else if (adminSession.primary_project && uniqueNames.includes(adminSession.primary_project)) {
+          selectedKey = adminSession.primary_project;
+        } else if (uniqueNames.length) {
+          selectedKey = uniqueNames[0];
+        }
+
         projectSelect.disabled = false;
-        projectSelect.appendChild(new Option('— выберите проект —', '', false, !currentProject));
+        if (adminSession.is_super) {
+          projectSelect.appendChild(new Option('— выберите проект —', '', false, !selectedKey));
+        }
 
-        let selectedKey = currentProject && projects.some(p => (p.name || '').toLowerCase() === currentProject)
-          ? currentProject
-          : '';
-
-        projects.forEach((p, idx) => {
-          const key = (p.name || '').toLowerCase();
+        projects.forEach((p, index) => {
+          const key = normalizeProjectName(p.name);
+          if (!key) {
+            return;
+          }
           const cleaned = {
             ...p,
             name: key,
             llm_model: typeof p.llm_model === 'string' ? p.llm_model.trim() : p.llm_model,
             widget_url: typeof p.widget_url === 'string' ? p.widget_url.trim() : p.widget_url,
             telegram_auto_start: typeof p.telegram_auto_start === 'boolean' ? p.telegram_auto_start : !!p.telegram_auto_start,
+            max_auto_start: typeof p.max_auto_start === 'boolean' ? p.max_auto_start : !!p.max_auto_start,
             llm_emotions_enabled: p.llm_emotions_enabled !== false,
             debug_enabled: !!p.debug_enabled,
+            admin_username: typeof p.admin_username === 'string' ? p.admin_username.trim() : '',
+            admin_password_set: Boolean(p.admin_password_set),
           };
           delete cleaned.telegram_token;
           projectsCache[key] = cleaned;
-          const shouldSelect = key === selectedKey || (!selectedKey && idx === 0);
-          const option = new Option(p.title || p.name || key, key, false, shouldSelect);
+
+          const shouldSelect = key === selectedKey || (!selectedKey && index === 0 && !adminSession.is_super);
+          const optionLabel = p.title || p.name || key;
+          const option = new Option(optionLabel, key, false, shouldSelect);
           projectSelect.appendChild(option);
           if (shouldSelect) {
             selectedKey = key;
@@ -2707,6 +3405,16 @@
         debug_enabled: projectDebugInput ? projectDebugInput.checked : false,
         widget_url: projectWidgetUrl && projectWidgetUrl.value.trim() ? projectWidgetUrl.value.trim() : null,
       };
+      if (adminSession.is_super && projectAdminUsernameInput) {
+        const adminUsername = projectAdminUsernameInput.value.trim();
+        payload.admin_username = adminUsername || null;
+      }
+      if (projectAdminPasswordInput) {
+        const adminPasswordRaw = projectAdminPasswordInput.value;
+        if (adminPasswordRaw && adminPasswordRaw.trim()) {
+          payload.admin_password = adminPasswordRaw;
+        }
+      }
       setProjectStatus('Сохраняем проект...');
       try {
         const resp = await fetch('/api/v1/admin/projects', {
@@ -2732,7 +3440,7 @@
       }
     });
 
-    document.getElementById('projectDelete').addEventListener('click', async () => {
+    if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
       if (!currentProject) return;
       if (!confirm(`Удалить проект ${currentProject}?`)) return;
       const toDelete = currentProject;
@@ -2787,14 +3495,22 @@
       knowledgeServiceRefresh.addEventListener('click', () => fetchKnowledgeServiceStatus(true));
     }
 
+    initLayoutReordering();
+
     (async () => {
+      await fetchSession();
+      if (!currentProject && adminSession.primary_project) {
+        currentProject = adminSession.primary_project;
+      }
       await loadLlmModels();
       await fetchProjectStorage();
       await fetchProjects();
       await loadProjectsList();
       await fetchProjectStorage();
       await loadRequestStats();
-      await fetchKnowledgeServiceStatus();
+      if (adminSession.is_super) {
+        await fetchKnowledgeServiceStatus();
+      }
       if (currentProject) {
         populateProjectForm(currentProject);
         await loadKnowledge();

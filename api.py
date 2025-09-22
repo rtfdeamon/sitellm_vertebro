@@ -277,9 +277,12 @@ async def _collect_knowledge_snippets(
                 "name": doc.name or file_id,
                 "url": doc_url,
                 "content_type": doc.content_type,
+                "file_id": file_id,
             }
             if doc.description:
                 attachment_meta["description"] = doc.description
+            if doc.size_bytes is not None:
+                attachment_meta["size_bytes"] = int(doc.size_bytes)
             if not text.strip():
                 text = doc.description or ""
 

@@ -568,7 +568,20 @@ class MongoClient:
         data["name"] = str(data["name"]).strip().lower()
         if data.get("domain") == "":
             data["domain"] = None
-        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "widget_url"):
+        admin_username = data.get("admin_username")
+        if isinstance(admin_username, str):
+            admin_username = admin_username.strip().lower()
+            data["admin_username"] = admin_username or None
+        elif admin_username is None:
+            data["admin_username"] = None
+        else:
+            data["admin_username"] = str(admin_username).strip().lower() or None
+        admin_password_hash = data.get("admin_password_hash")
+        if isinstance(admin_password_hash, str):
+            data["admin_password_hash"] = admin_password_hash.strip() or None
+        else:
+            data["admin_password_hash"] = None
+        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "max_token", "widget_url"):
             value = data.get(field)
             if isinstance(value, str):
                 stripped = value.strip()
@@ -599,6 +612,20 @@ class MongoClient:
             data["debug_enabled"] = False
         else:
             data["debug_enabled"] = bool(debug_value)
+        for field in ("telegram_auto_start", "max_auto_start"):
+            auto_value = data.get(field)
+            if isinstance(auto_value, str):
+                lowered = auto_value.strip().lower()
+                if lowered in {"true", "1", "on", "yes"}:
+                    data[field] = True
+                elif lowered in {"false", "0", "off", "no"}:
+                    data[field] = False
+                else:
+                    data[field] = None
+            elif auto_value is None:
+                data[field] = None
+            else:
+                data[field] = bool(auto_value)
         return Project(**data)
 
     async def list_projects(self) -> list[Project]:
@@ -615,6 +642,14 @@ class MongoClient:
         if not data.get("name"):
             raise ValueError("project name is required")
         data["name"] = str(data["name"]).strip().lower()
+        if data.get("admin_username"):
+            data["admin_username"] = str(data["admin_username"]).strip().lower() or None
+        for field in ("telegram_token", "max_token"):
+            if data.get(field):
+                data[field] = str(data[field]).strip() or None
+        for field in ("telegram_auto_start", "max_auto_start"):
+            if field in data and data[field] is not None:
+                data[field] = bool(data[field])
         try:
             await self.db[self.projects_collection].update_one(
                 {"name": data["name"]},
@@ -652,6 +687,24 @@ class MongoClient:
             return self._project_from_doc(doc)
         except Exception as exc:
             logger.error("mongo_get_project_failed", project=domain, error=str(exc))
+            raise
+
+    async def get_project_by_admin_username(self, username: str) -> Project | None:
+        normalized = (username or "").strip().lower()
+        if not normalized:
+            return None
+        try:
+            doc = await self.db[self.projects_collection].find_one(
+                {"admin_username": normalized},
+                {"_id": False},
+            )
+            return self._project_from_doc(doc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "mongo_get_project_by_admin_failed",
+                username=normalized,
+                error=str(exc),
+            )
             raise
 
     async def get_setting(self, key: str) -> dict | None:
@@ -693,6 +746,21 @@ class MongoClient:
                 "mongo_index_create_failed",
                 collection=self.projects_collection,
                 index="project_name_unique",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.projects_collection].create_index(
+                "admin_username",
+                name="project_admin_username_unique",
+                unique=True,
+                sparse=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.projects_collection,
+                index="project_admin_username_unique",
                 error=str(exc),
             )
 
