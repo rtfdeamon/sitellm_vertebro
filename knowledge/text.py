@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import subprocess
@@ -9,6 +10,7 @@ import tempfile
 from pathlib import Path
 
 import structlog
+from pypdf import PdfReader
 
 
 logger = structlog.get_logger(__name__)
@@ -103,3 +105,25 @@ def extract_doc_text(data: bytes) -> str:
             tmp_path.unlink(missing_ok=True)
         except Exception:  # pragma: no cover - cleanup best effort
             pass
+
+
+def extract_pdf_text(data: bytes) -> str:
+    """Return plain text extracted from a PDF payload using :mod:`pypdf`."""
+
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pdf_extract_open_failed", error=str(exc))
+        return ""
+
+    chunks: list[str] = []
+    for index, page in enumerate(reader.pages):
+        try:
+            extracted = page.extract_text() or ""
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("pdf_extract_page_failed", page=index, error=str(exc))
+            continue
+        if extracted:
+            chunks.append(extracted.strip())
+
+    return "\n\n".join(part for part in chunks if part).strip()

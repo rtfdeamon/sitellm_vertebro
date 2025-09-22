@@ -148,6 +148,42 @@ def reset_counters(project: str | None = None) -> None:
     except Exception:
         pass
 
+
+def clear_crawler_state(project: str | None = None) -> None:
+    """Reset counters and recent URLs for the crawler."""
+
+    reset_counters(project)
+    _set("last_url", "", project)
+    _set("last_run", "", project)
+
+
+def deduplicate_recent_urls(project: str | None = None) -> int:
+    """Remove duplicate entries from the recent URL list.
+
+    Returns the number of removed duplicates.
+    """
+
+    try:
+        key = _redis_key("recent_urls", project)
+        urls = r.lrange(key, 0, -1) or []
+        seen: set[str] = set()
+        unique: list[str] = []
+        for url in urls:
+            if url in seen:
+                continue
+            seen.add(url)
+            unique.append(url)
+        if unique == urls:
+            return 0
+        pipe = r.pipeline()
+        pipe.delete(key)
+        if unique:
+            pipe.rpush(key, *unique)
+        pipe.execute()
+        return len(urls) - len(unique)
+    except Exception:
+        return 0
+
 @contextmanager
 def mark_url(url: str, project: str | None):
     _incr("in_progress", 1, project)
@@ -505,6 +541,7 @@ async def crawl(
     url_queue: asyncio.Queue[Tuple[str, int]] = asyncio.Queue()
     result_queue: asyncio.Queue[Tuple[str, str, str, bool, bytes | None]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
+    enqueued: Set[str] = set()
 
     allowed_host_suffixes: set[str] | None = None
     if allowed_domain:
@@ -538,7 +575,27 @@ async def crawl(
         on_crawler_start(project_label)
 
     await url_queue.put((start_url, 0))
+    enqueued.add(start_url)
     _incr("queued", 1, project_label)
+
+    def _fallback_fetch(url: str) -> str | None:
+        try:
+            resp = requests.get(
+                url,
+                headers=HEADERS,
+                timeout=REQUEST_TIMEOUT,
+                allow_redirects=True,
+            )
+            resp.raise_for_status()
+            if not resp.encoding:
+                resp.encoding = resp.apparent_encoding or "utf-8"
+            text = resp.text
+            if not text and resp.content:
+                text = resp.content.decode("utf-8", errors="ignore")
+            return text if text and text.strip() else None
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("fallback_fetch_failed", url=url, error=str(exc))
+            return None
 
     async def _fetch_async(
         client: httpx.AsyncClient, url: str
@@ -577,7 +634,12 @@ async def crawl(
                 rendered = await _render_with_playwright(url)
                 if rendered:
                     return rendered, ctype or "text/html", True, None
-            return resp.text, ctype, True, None
+            text = resp.text
+            if (not text or len(text.strip()) < 50) and resp.content:
+                fallback = await asyncio.to_thread(_fallback_fetch, url)
+                if fallback:
+                    return fallback, ctype or "text/html", True, None
+            return text, ctype, True, None
         except Exception as exc:  # pragma: no cover - error path
             logger.warning("fetch failed", url=url, error=str(exc))
             return None, None, False, None
@@ -588,6 +650,7 @@ async def crawl(
             try:
                 async with visited_lock:
                     if url in visited or depth > max_depth or len(visited) >= max_pages:
+                        enqueued.discard(url)
                         _incr("queued", -1, project_label)
                         continue
                     visited.add(url)
@@ -620,18 +683,26 @@ async def crawl(
                                     continue
                                 if link in visited:
                                     continue
+                                if link in enqueued:
+                                    continue
                                 if len(visited) + url_queue.qsize() >= max_pages:
                                     continue
                                 await url_queue.put((link, depth + 1))
+                                enqueued.add(link)
                                 _incr("queued", 1, project_label)
                 else:
                     logger.info("page skipped", url=url, reason="non_html_or_error")
             finally:
+                enqueued.discard(url)
                 url_queue.task_done()
 
     # Create client
     if client_factory is None:
-        context = httpx.AsyncClient(headers=HEADERS, timeout=REQUEST_TIMEOUT)
+        context = httpx.AsyncClient(
+            headers=HEADERS,
+            timeout=REQUEST_TIMEOUT,
+            follow_redirects=True,
+        )
         created_client = True
     else:
         context = client_factory()

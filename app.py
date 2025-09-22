@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 import csv
 import io
 import base64
@@ -43,6 +44,14 @@ from gridfs import GridFS
 from bson import ObjectId
 from retrieval import search as retrieval_search
 from knowledge.summary import generate_document_summary
+from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from update_service.service import (
+    DEFAULT_BRANCH as GIT_DEFAULT_BRANCH,
+    DEFAULT_DEPLOY_COMMAND as GIT_DEFAULT_DEPLOY_COMMAND,
+    DEFAULT_POLL_INTERVAL_SECONDS as GIT_DEFAULT_POLL_INTERVAL,
+    DEFAULT_REMOTE as GIT_DEFAULT_REMOTE,
+    GitAutoUpdateService,
+)
 from max_bot.config import get_settings as get_max_settings
 import redis
 import requests
@@ -60,6 +69,18 @@ ADMIN_PASSWORD_HASH = os.getenv(
     "ADMIN_PASSWORD", hashlib.sha256(b"admin").hexdigest()
 )
 ADMIN_PASSWORD_DIGEST = bytes.fromhex(ADMIN_PASSWORD_HASH)
+
+PDF_MIME_TYPES: set[str] = {"application/pdf"}
+DOCX_MIME_TYPES: set[str] = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
+DOC_MIME_TYPES: set[str] = {
+    "application/msword",
+    "application/ms-word",
+    "application/vnd.ms-word",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
 
 
 @dataclass(frozen=True)
@@ -1131,12 +1152,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
 
     telegram_hub = TelegramHub(mongo_client)
     max_hub = MaxHub(mongo_client)
+    git_update_service: GitAutoUpdateService | None = None
+    git_update_task: asyncio.Task | None = None
+
     app.state.telegram = telegram_hub
     app.state.max = max_hub
     app.state.mongo = mongo_client
     app.state.contexts_collection = contexts_collection
     app.state.context_presets_collection = context_presets_collection
     app.state.documents_collection = documents_collection
+    app.state.pending_attachments = {}
+    app.state.pending_attachments_lock = asyncio.Lock()
 
     # Warm-up runners based on stored configuration
     try:
@@ -1147,6 +1173,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         await max_hub.refresh()
     except Exception as exc:  # noqa: BLE001
         logger.warning("max_hub_refresh_failed", error=str(exc))
+
+    try:
+        git_update_service = GitAutoUpdateService()
+        git_update_task = asyncio.create_task(git_update_service.run())
+        app.state.git_update_service = git_update_service
+        app.state.git_update_task = git_update_task
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("git_update_service_start_failed", error=str(exc))
+        git_update_service = None
+        git_update_task = None
 
     yield {
         "llm": llm,
@@ -1162,6 +1198,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         await telegram_hub.stop_all()
     with suppress(Exception):
         await max_hub.stop_all()
+    if git_update_service is not None:
+        git_update_service.stop()
+    if git_update_task is not None:
+        with suppress(Exception):
+            await git_update_task
+    if git_update_service is not None:
+        with suppress(Exception):
+            await git_update_service.shutdown()
     mongo_client.client.close()
     qdrant_client.close()
     with suppress(AttributeError):
@@ -1171,6 +1215,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         del app.state.documents_collection
         del app.state.telegram
         del app.state.max
+        if hasattr(app.state, "git_update_service"):
+            del app.state.git_update_service
+        if hasattr(app.state, "git_update_task"):
+            del app.state.git_update_task
 
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
@@ -1325,6 +1373,22 @@ class KnowledgeServiceConfig(BaseModel):
 
 
 KNOWLEDGE_SERVICE_KEY = "knowledge_service"
+GIT_UPDATE_KEY = "git_auto_update"
+
+
+class GitUpdateConfig(BaseModel):
+    enabled: bool | None = None
+    repo_url: str | None = None
+    remote: str | None = None
+    branch: str | None = None
+    poll_interval_seconds: int | None = None
+    auto_deploy: bool | None = None
+    deploy_command: str | None = None
+    repo_path: str | None = None
+
+
+class GitUpdateRun(BaseModel):
+    force_deploy: bool | None = None
 
 
 async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
@@ -1364,6 +1428,65 @@ async def _knowledge_service_update_impl(request: Request, payload: "KnowledgeSe
     updated["updated_at"] = time.time()
     await request.state.mongo.set_setting(KNOWLEDGE_SERVICE_KEY, updated)
     return ORJSONResponse({"status": "ok", "enabled": updated["enabled"]})
+
+
+async def _git_update_status_impl(request: Request) -> ORJSONResponse:
+    doc = await request.state.mongo.get_setting(GIT_UPDATE_KEY) or {}
+    payload = {
+        "enabled": bool(doc.get("enabled", False)),
+        "running": bool(doc.get("running", False)),
+        "remote": (doc.get("remote") or GIT_DEFAULT_REMOTE).strip() or GIT_DEFAULT_REMOTE,
+        "branch": (doc.get("branch") or GIT_DEFAULT_BRANCH).strip() or GIT_DEFAULT_BRANCH,
+        "repo_url": (doc.get("repo_url") or "").strip() or None,
+        "repo_path": (doc.get("repo_path") or "").strip() or str(Path(__file__).resolve().parents[0]),
+        "poll_interval_seconds": max(60, int(doc.get("poll_interval_seconds") or GIT_DEFAULT_POLL_INTERVAL)),
+        "auto_deploy": bool(doc.get("auto_deploy", False)),
+        "deploy_command": (doc.get("deploy_command") or GIT_DEFAULT_DEPLOY_COMMAND).strip() or None,
+        "update_available": bool(doc.get("update_available", False)),
+        "local_commit": doc.get("local_commit"),
+        "remote_commit": doc.get("remote_commit"),
+        "last_check_ts": doc.get("last_check_ts"),
+        "last_update_ts": doc.get("last_update_ts"),
+        "last_seen_ts": doc.get("last_seen_ts"),
+        "last_error": doc.get("last_error"),
+        "message": doc.get("message"),
+    }
+    return ORJSONResponse(payload)
+
+
+async def _git_update_update_impl(request: Request, payload: GitUpdateConfig) -> ORJSONResponse:
+    current = await request.state.mongo.get_setting(GIT_UPDATE_KEY) or {}
+    updated = current.copy()
+    if payload.enabled is not None:
+        updated["enabled"] = bool(payload.enabled)
+    if payload.repo_url is not None:
+        updated["repo_url"] = payload.repo_url.strip() or None
+    if payload.remote is not None:
+        updated["remote"] = payload.remote.strip() or GIT_DEFAULT_REMOTE
+    if payload.branch is not None:
+        updated["branch"] = payload.branch.strip() or GIT_DEFAULT_BRANCH
+    if payload.poll_interval_seconds is not None:
+        updated["poll_interval_seconds"] = max(60, int(payload.poll_interval_seconds))
+    if payload.auto_deploy is not None:
+        updated["auto_deploy"] = bool(payload.auto_deploy)
+    if payload.deploy_command is not None:
+        updated["deploy_command"] = payload.deploy_command.strip() or None
+    if payload.repo_path is not None:
+        updated["repo_path"] = payload.repo_path.strip() or str(Path(__file__).resolve().parents[0])
+    updated["updated_at"] = time.time()
+    await request.state.mongo.set_setting(GIT_UPDATE_KEY, updated)
+    return ORJSONResponse({"status": "ok", "enabled": bool(updated.get("enabled", False))})
+
+
+async def _git_update_run_impl(request: Request, payload: GitUpdateRun) -> ORJSONResponse:
+    from update_service.service import GitAutoUpdateService
+
+    service = GitAutoUpdateService()
+    try:
+        result = await service.run_once(force_deploy=payload.force_deploy)
+    finally:
+        await service.shutdown()
+    return ORJSONResponse({"status": "ok", "result": result})
 
 
 class TelegramConfig(BaseModel):
@@ -1602,9 +1725,16 @@ async def admin_upload_knowledge(
     description_value = (description or "").strip()
     auto_description = False
     text_for_summary = ""
+    lower_name = filename.lower()
     if not description_value:
         if content_type.startswith("text/") or content_type in {"application/json", "application/xml"}:
             text_for_summary = payload.decode("utf-8", errors="ignore")
+        elif content_type in PDF_MIME_TYPES or lower_name.endswith(".pdf"):
+            text_for_summary = extract_pdf_text(payload)
+        elif content_type in DOCX_MIME_TYPES or lower_name.endswith(".docx"):
+            text_for_summary = extract_docx_text(payload)
+        elif content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
+            text_for_summary = extract_doc_text(payload)
         description_value = await generate_document_summary(
             filename,
             text_for_summary,
@@ -1682,6 +1812,7 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
     current_content_type = str(existing_doc.get("content_type") or "").lower()
 
     new_name = (payload.name.strip() if isinstance(payload.name, str) else current_name).strip()
+    lower_name = new_name.lower()
     if not new_name:
         raise HTTPException(status_code=400, detail="Document name cannot be empty")
 
@@ -1697,7 +1828,15 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
     if is_binary:
         description_value = description_input if description_input_provided else current_description
         if not description_value:
-            description_value = await generate_document_summary(new_name, "", project_model)
+            extracted_text = ""
+            binary_payload = raw_content or b""
+            if current_content_type in PDF_MIME_TYPES or lower_name.endswith(".pdf"):
+                extracted_text = extract_pdf_text(binary_payload)
+            elif current_content_type in DOCX_MIME_TYPES or lower_name.endswith(".docx"):
+                extracted_text = extract_docx_text(binary_payload)
+            elif current_content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
+                extracted_text = extract_doc_text(binary_payload)
+            description_value = await generate_document_summary(new_name, extracted_text, project_model)
             auto_description = True
         update_doc: dict[str, Any] = {
             "name": new_name,
@@ -1850,6 +1989,24 @@ async def admin_knowledge_service_update(
 ) -> ORJSONResponse:
     _require_super_admin(request)
     return await _knowledge_service_update_impl(request, payload)
+
+
+@app.get("/api/v1/admin/update/service", response_class=ORJSONResponse)
+async def admin_git_update_status(request: Request) -> ORJSONResponse:
+    _require_super_admin(request)
+    return await _git_update_status_impl(request)
+
+
+@app.post("/api/v1/admin/update/service", response_class=ORJSONResponse)
+async def admin_git_update_config(request: Request, payload: GitUpdateConfig) -> ORJSONResponse:
+    _require_super_admin(request)
+    return await _git_update_update_impl(request, payload)
+
+
+@app.post("/api/v1/admin/update/service/run", response_class=ORJSONResponse)
+async def admin_git_update_run(request: Request, payload: GitUpdateRun) -> ORJSONResponse:
+    _require_super_admin(request)
+    return await _git_update_run_impl(request, payload)
 
 
 @app.get("/api/v1/knowledge/service", response_class=ORJSONResponse)

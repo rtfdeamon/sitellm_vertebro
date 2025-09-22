@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import copy
 import subprocess
 import sys
 import os
 import signal
 import time
+import re
 import urllib.parse as urlparse
 from typing import Any
 from uuid import uuid4
@@ -31,6 +33,7 @@ import structlog
 from backend import llm_client
 from backend.settings import settings as backend_settings
 from retrieval import search as retrieval_search
+from crawler.run_crawl import clear_crawler_state, deduplicate_recent_urls
 
 from models import Document, LLMResponse, LLMRequest, RoleEnum, Project, Attachment
 from mongo import NotFound
@@ -91,6 +94,33 @@ def _resolve_session_identifiers(
 
 _KNOWLEDGE_SNIPPET_CHARS = 640
 _MAX_DIALOG_TURNS = 5
+_ATTACHMENT_PENDING_TTL = 10 * 60  # seconds
+_ATTACHMENT_CONSENT_SIMPLE = {
+    "да",
+    "давай",
+    "ок",
+    "окей",
+    "хочу",
+    "угу",
+    "ага",
+    "yes",
+    "y",
+}
+_ATTACHMENT_CONSENT_KEYWORDS = {
+    "отправь",
+    "пришли",
+    "скинь",
+    "присылай",
+    "загрузи",
+    "покажи",
+}
+_ATTACHMENT_NEGATIONS = {
+    "нет",
+    "не",
+    "ненадо",
+    "no",
+    "неа",
+}
 
 
 def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
@@ -117,6 +147,83 @@ def _extract_payload_text(payload: Any) -> str:
         if isinstance(meta, dict):
             return _extract_payload_text(meta)
     return ""
+
+
+def _normalize_consent_text(value: str) -> str:
+    normalized = re.sub(r"[^0-9a-zа-яё\s]+", " ", value.strip().lower())
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _detect_attachment_consent(text: str) -> bool:
+    normalized = _normalize_consent_text(text)
+    if not normalized or len(normalized) > 120:
+        return False
+    tokens = normalized.split()
+    if not tokens:
+        return False
+    if any(token in _ATTACHMENT_NEGATIONS for token in tokens):
+        return False
+    if normalized in _ATTACHMENT_CONSENT_SIMPLE:
+        return True
+    if normalized.startswith("да ") and len(tokens) <= 4:
+        return True
+    for keyword in _ATTACHMENT_CONSENT_KEYWORDS:
+        if keyword in normalized:
+            return True
+    return False
+
+
+def _ensure_attachment_store(app) -> tuple[dict[str, Any], asyncio.Lock]:
+    store = getattr(app.state, "pending_attachments", None)
+    lock = getattr(app.state, "pending_attachments_lock", None)
+    if store is None or lock is None:
+        store = {}
+        lock = asyncio.Lock()
+        app.state.pending_attachments = store
+        app.state.pending_attachments_lock = lock
+    return store, lock
+
+
+async def _prune_pending_attachments(app, now: float) -> None:
+    store, lock = _ensure_attachment_store(app)
+    async with lock:
+        expired_keys = [
+            key
+            for key, payload in store.items()
+            if now - float(payload.get("ts", 0.0) or 0.0) > _ATTACHMENT_PENDING_TTL
+        ]
+        for key in expired_keys:
+            store.pop(key, None)
+
+
+async def _set_pending_attachments(
+    app,
+    session_key: str | None,
+    attachments: list[dict[str, Any]],
+    snippets: list[dict[str, Any]],
+    now: float,
+) -> None:
+    if not session_key:
+        return
+    store, lock = _ensure_attachment_store(app)
+    async with lock:
+        if attachments:
+            store[session_key] = {
+                "attachments": copy.deepcopy(attachments),
+                "snippets": copy.deepcopy(snippets),
+                "ts": now,
+            }
+        else:
+            store.pop(session_key, None)
+
+
+async def _pop_pending_attachments(app, session_key: str | None) -> dict[str, Any] | None:
+    if not session_key:
+        return None
+    store, lock = _ensure_attachment_store(app)
+    async with lock:
+        return store.pop(session_key, None)
 
 
 def _extract_payload_name(payload: Any, default: str | None = None) -> str | None:
@@ -310,6 +417,7 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     if not snippets:
         return ""
     blocks: list[str] = []
+    has_attachments = any(bool(item.get("attachment")) for item in snippets)
     for idx, item in enumerate(snippets, 1):
         name = item.get("name") or f"Источник {idx}"
         snippet_text = _truncate_text(item.get("text", ""))
@@ -326,12 +434,17 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
             url = attachment_url or url
         footer = f"\nИсточник: {url}" if url and url not in snippet_text else ""
         blocks.append(f"Источник {idx} ({name}):\n{snippet_text}{footer}")
-    return (
-        "Тебе доступны выдержки из базы знаний."
-        " Сначала проанализируй их, выдели ключевые факты и противоречия,"
-        " затем дай итоговый ответ, ссылаясь на несколько источников, если это повышает точность."
-        "\n\n" + "\n\n".join(blocks)
-    )
+    prefix = [
+        "Тебе доступны выдержки из базы знаний. Сначала проанализируй их, выдели ключевые факты и противоречия,",
+        "затем дай итоговый ответ, ссылаясь на несколько источников, если это повышает точность.",
+    ]
+    if has_attachments:
+        prefix.append(
+            "Если посчитаешь нужным отправить документ, кратко опиши его, спроси подтверждение и жди явного согласия"
+            " (например: 'да', 'пришли', 'отправь'). Не отправляй файлы без подтверждения пользователя."
+        )
+    header = " ".join(prefix)
+    return header + "\n\n" + "\n\n".join(blocks)
 
 
 def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_DIALOG_TURNS) -> list[dict[str, Any]]:
@@ -644,42 +757,71 @@ async def chat(
         channel=channel_name,
     )
 
+    now_ts = time.time()
+    await _prune_pending_attachments(request.app, now_ts)
+
     knowledge_snippets: list[dict[str, Any]] = []
     attachments_payload: list[dict[str, Any]] = []
-    knowledge_message = ""
-    try:
-        knowledge_snippets = await _collect_knowledge_snippets(
-            request, question, project_name
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "knowledge_lookup_failed",
-            project=project_name,
-            error=str(exc),
-            mode="stream",
-        )
-    else:
-        knowledge_message = _compose_knowledge_message(knowledge_snippets)
-        attachments_payload = _collect_attachments(knowledge_snippets)
-        if knowledge_message:
-            logger.info(
-                "knowledge_context_attached",
-                project=project_name,
-                mode="stream",
-                session=session_key,
-                debug=send_debug,
-                docs=[
-                    {
-                        "id": item.get("id"),
-                        "name": item.get("name"),
-                        "source": item.get("source"),
-                        "url": item.get("url"),
-                        "chars": len(item.get("text", "")),
-                        "score": item.get("score"),
-                    }
-                    for item in knowledge_snippets
-                ],
+    planned_attachments_count = 0
+    pending_consumed = False
+
+    if session_key and _detect_attachment_consent(question):
+        stored_entry = await _pop_pending_attachments(request.app, session_key)
+        attachments_from_store = (stored_entry or {}).get("attachments") or []
+        if attachments_from_store:
+            attachments_payload = attachments_from_store
+            knowledge_snippets = (stored_entry or {}).get("snippets") or []
+            planned_attachments_count = len(attachments_payload)
+            pending_consumed = True
+
+    if not knowledge_snippets:
+        try:
+            knowledge_snippets = await _collect_knowledge_snippets(
+                request, question, project_name
             )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "knowledge_lookup_failed",
+                project=project_name,
+                error=str(exc),
+                mode="stream",
+            )
+        else:
+            attachments_to_queue = _collect_attachments(knowledge_snippets)
+            if pending_consumed:
+                # Attachments already confirmed for delivery; do not overwrite payload
+                planned_attachments_count = len(attachments_payload)
+            else:
+                planned_attachments_count = len(attachments_to_queue)
+                await _set_pending_attachments(
+                    request.app,
+                    session_key,
+                    attachments_to_queue,
+                    knowledge_snippets,
+                    now_ts,
+                )
+                attachments_payload = []  # wait for explicit confirmation
+
+    knowledge_message = _compose_knowledge_message(knowledge_snippets)
+    if knowledge_message:
+        logger.info(
+            "knowledge_context_attached",
+            project=project_name,
+            mode="stream",
+            session=session_key,
+            debug=send_debug,
+            docs=[
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "source": item.get("source"),
+                    "url": item.get("url"),
+                    "chars": len(item.get("text", "")),
+                    "score": item.get("score"),
+                }
+                for item in knowledge_snippets
+            ],
+        )
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
     prompt_segments = [emotion_instruction]
@@ -738,6 +880,7 @@ async def chat(
                 "session_id": session_key,
                 "debug_enabled": send_debug,
                 "debug_origin": debug_origin,
+                "attachments_pending": planned_attachments_count,
                 "model": effective_model,
             }
             yield "event: meta\n"
@@ -754,7 +897,7 @@ async def chat(
                     "knowledge_count": len(knowledge_snippets),
                     "knowledge_sources": knowledge_source_counts,
                     "knowledge_preview": knowledge_preview,
-                    "attachments_planned": len(attachments_payload),
+                    "attachments_planned": planned_attachments_count,
                     "emotions_enabled": emotions_enabled,
                     "model": effective_model,
                     "debug_origin": debug_origin,
@@ -935,6 +1078,26 @@ async def crawler_status(project: str | None = None) -> dict[str, object]:
         notes=data.get("notes"),
     )
     return data
+
+
+@crawler_router.post("/reset", status_code=202)
+async def crawler_reset(request: Request, project: str | None = None) -> dict[str, object]:
+    """Reset crawler counters and recent URLs for the given project."""
+
+    _require_super_admin(request)
+    project_label = _normalize_project(project)
+    clear_crawler_state(project_label)
+    return {"status": "reset", "project": project_label}
+
+
+@crawler_router.post("/deduplicate", status_code=200)
+async def crawler_deduplicate(request: Request, project: str | None = None) -> dict[str, object]:
+    """Deduplicate the recent URL list for the crawler."""
+
+    _require_super_admin(request)
+    project_label = _normalize_project(project)
+    removed = deduplicate_recent_urls(project_label)
+    return {"status": "deduplicated", "removed": removed, "project": project_label}
 
 
 @crawler_router.post("/stop", status_code=202)

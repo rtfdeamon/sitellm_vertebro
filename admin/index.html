@@ -261,9 +261,36 @@
       font-size: 12px;
       line-height: 1.5;
       color: #e2e8f0;
+      user-select: text;
+    }
+
+    .crawler-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .crawler-actions button {
+      background: rgba(96, 165, 250, 0.16);
+      border: 1px solid rgba(96, 165, 250, 0.35);
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+
+    .crawler-actions button:hover {
+      border-color: rgba(147, 197, 253, 0.7);
     }
 
     .muted { color: var(--text-muted); font-size: 12px; }
+
+    .span-12 {
+      grid-column: span 12;
+    }
 
     .knowledge-card {
       position: relative;
@@ -431,6 +458,32 @@
     .stats-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .knowledge-service-card { display: flex; flex-direction: column; gap: 10px; }
     .knowledge-service-card b { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
+    .update-service-card { display: flex; flex-direction: column; gap: 10px; }
+    .update-service-card b { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
+    .update-service-card label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+    .update-service-card input[type=text],
+    .update-service-card input[type=url],
+    .update-service-card input[type=number] {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      color: var(--text-primary);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .update-service-card .inline-checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-primary);
+    }
+    .update-service-card .update-service-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
     .reorder-mode .dashboard-grid section[data-block-id] {
       cursor: grab;
       outline: 1px dashed rgba(96, 165, 250, 0.45);
@@ -664,6 +717,7 @@
       .span-5 { grid-column: span 8; }
       .span-4 { grid-column: span 4; }
       .span-3 { grid-column: span 4; }
+      .span-12 { grid-column: span 8; }
     }
 
     @media (max-width: 1080px) {
@@ -674,6 +728,7 @@
       .span-5,
       .span-4,
       .span-3 { grid-column: span 4; }
+      .span-12 { grid-column: span 4; }
     }
 
     @media (max-width: 720px) {
@@ -686,7 +741,8 @@
       .span-7,
       .span-5,
       .span-4,
-      .span-3 { grid-column: span 1; }
+      .span-3,
+      .span-12 { grid-column: span 1; }
     }
   </style>
   </head>
@@ -812,10 +868,16 @@
           <button type="button" id="stopBtn">Остановить</button>
           <span id="launchMsg" class="muted"></span>
         </form>
+        <div class="crawler-actions">
+          <button type="button" id="crawlerResetBtn">Сбросить счётчики</button>
+          <button type="button" id="crawlerDedupBtn">Убрать дубликаты URL</button>
+          <span class="muted" id="crawlerActionStatus"></span>
+        </div>
         <div class="crawler-logs" id="crawlerLogsPanel">
           <div class="crawler-logs-header">
             <span>Логи краулера</span>
             <div class="crawler-logs-buttons">
+              <button type="button" id="crawlerLogsCopy" class="icon-button" title="Скопировать">⧉</button>
               <button type="button" id="crawlerLogsRefresh" class="icon-button" title="Обновить">↻</button>
               <button type="button" id="crawlerLogsClose" class="icon-button" title="Скрыть">×</button>
             </div>
@@ -972,7 +1034,7 @@
 
     <h2 class="section-title span-all">База знаний</h2>
 
-    <section id="block-knowledge" class="dashboard-stack span-7" data-block-id="knowledge" data-block-group="knowledge">
+    <section id="block-knowledge" class="dashboard-stack span-12" data-block-id="knowledge" data-block-group="knowledge">
       <div class="card knowledge-card">
         <b>Knowledge Base</b>
         <div id="kbThinkingOverlay" class="thinking-overlay">
@@ -1048,7 +1110,7 @@
       </div>
     </section>
 
-    <section id="block-knowledge-tools" class="dashboard-stack span-5" data-block-id="knowledge-tools" data-block-group="knowledge">
+    <section id="block-knowledge-tools" class="dashboard-stack span-12" data-block-id="knowledge-tools" data-block-group="knowledge">
       <div class="card knowledge-service-card">
         <b>Интеллектуальная обработка</b>
         <div class="muted">Автоматически обновляет векторное представление базы знаний, когда очередь простаивает больше 5 минут.</div>
@@ -1061,6 +1123,39 @@
           <button type="button" id="knowledgeServiceRefresh">Обновить</button>
           <span class="muted" id="knowledgeServiceStatus">—</span>
         </div>
+      </div>
+      <div class="card update-service-card">
+        <b>Автообновление из GitHub</b>
+        <div class="muted">Следит за веткой репозитория и при необходимости подтягивает обновления с опциональным деплоем.</div>
+        <label class="inline-checkbox">
+          <input type="checkbox" id="autoUpdateToggle">
+          <span>Включить автообновление</span>
+        </label>
+        <label>Remote URL
+          <input type="url" id="autoUpdateRepoUrl" placeholder="https://github.com/company/project.git">
+        </label>
+        <label>Имя remote
+          <input type="text" id="autoUpdateRemote" placeholder="origin">
+        </label>
+        <label>Ветка
+          <input type="text" id="autoUpdateBranch" placeholder="main">
+        </label>
+        <label>Интервал проверки (секунды)
+          <input type="number" id="autoUpdateInterval" min="60" step="30" value="300">
+        </label>
+        <label class="inline-checkbox">
+          <input type="checkbox" id="autoUpdateDeploy">
+          <span>Автоматически выполнять deploy после обновления</span>
+        </label>
+        <label>Команда деплоя
+          <input type="text" id="autoUpdateCommand" placeholder="./deploy_project.sh">
+        </label>
+        <div class="update-service-actions">
+          <button type="button" id="autoUpdateSave">Сохранить</button>
+          <button type="button" id="autoUpdateRefresh">Обновить статус</button>
+          <button type="button" id="autoUpdateRun">Проверить сейчас</button>
+        </div>
+        <span class="muted" id="autoUpdateStatus">—</span>
       </div>
       <div class="card prompts-card">
         <b>LLM Prompts</b>
@@ -1172,6 +1267,10 @@
     const crawlerLogsOutput = document.getElementById('crawlerLogsOutput');
     const crawlerLogsRefresh = document.getElementById('crawlerLogsRefresh');
     const crawlerLogsClose = document.getElementById('crawlerLogsClose');
+    const crawlerLogsCopy = document.getElementById('crawlerLogsCopy');
+    const crawlerResetBtn = document.getElementById('crawlerResetBtn');
+    const crawlerDedupBtn = document.getElementById('crawlerDedupBtn');
+    const crawlerActionStatus = document.getElementById('crawlerActionStatus');
     const kbModalBackdrop = document.getElementById('kbModal');
     const kbModalClose = document.getElementById('kbModalClose');
     const kbModalCancel = document.getElementById('kbModalCancel');
@@ -1257,6 +1356,34 @@
     }
     if (crawlerLogsClose) crawlerLogsClose.addEventListener('click', hideCrawlerLogs);
     if (crawlerLogsRefresh) crawlerLogsRefresh.addEventListener('click', () => refreshCrawlerLogs(true));
+    if (crawlerLogsCopy) {
+      crawlerLogsCopy.addEventListener('click', async () => {
+        const text = crawlerLogsOutput?.textContent || '';
+        if (!text.trim()) {
+          setCrawlerActionStatus('Нет данных для копирования', 2000);
+          return;
+        }
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+          } else {
+            const selection = window.getSelection();
+            if (!selection) throw new Error('selection_unavailable');
+            const range = document.createRange();
+            range.selectNodeContents(crawlerLogsOutput);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            const legacyOk = document.execCommand('copy');
+            selection.removeAllRanges();
+            if (!legacyOk) throw new Error('exec_command_failed');
+          }
+          setCrawlerActionStatus('Логи скопированы', 2000);
+        } catch (error) {
+          console.error('crawler_logs_copy_failed', error);
+          setCrawlerActionStatus('Не удалось скопировать', 3000);
+        }
+      });
+    }
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && crawlerLogsPanel?.classList.contains('visible')) {
         hideCrawlerLogs();
@@ -1305,6 +1432,20 @@
       '/api/v1/knowledge/service',
     ];
     let activeKnowledgeServiceEndpoint = null;
+    const autoUpdateToggle = document.getElementById('autoUpdateToggle');
+    const autoUpdateRepoUrl = document.getElementById('autoUpdateRepoUrl');
+    const autoUpdateRemote = document.getElementById('autoUpdateRemote');
+    const autoUpdateBranch = document.getElementById('autoUpdateBranch');
+    const autoUpdateInterval = document.getElementById('autoUpdateInterval');
+    const autoUpdateDeploy = document.getElementById('autoUpdateDeploy');
+    const autoUpdateCommand = document.getElementById('autoUpdateCommand');
+    const autoUpdateSave = document.getElementById('autoUpdateSave');
+    const autoUpdateRefresh = document.getElementById('autoUpdateRefresh');
+    const autoUpdateRun = document.getElementById('autoUpdateRun');
+    const autoUpdateStatus = document.getElementById('autoUpdateStatus');
+    const autoUpdateCard = document.querySelector('.update-service-card');
+    const autoUpdateEndpoints = ['/api/v1/admin/update/service'];
+    let activeAutoUpdateEndpoint = null;
     const setKnowledgeServiceControlsDisabled = (disabled) => {
       if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
       if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
@@ -1735,6 +1876,151 @@
         }
       } finally {
         setKnowledgeServiceControlsDisabled(false);
+      }
+    }
+
+    const setAutoUpdateControlsDisabled = (disabled) => {
+      [autoUpdateToggle, autoUpdateRepoUrl, autoUpdateRemote, autoUpdateBranch, autoUpdateInterval,
+        autoUpdateDeploy, autoUpdateCommand, autoUpdateSave, autoUpdateRefresh, autoUpdateRun]
+        .filter(Boolean)
+        .forEach((el) => { el.disabled = disabled; });
+    };
+
+    const renderAutoUpdateStatus = (data) => {
+      if (!autoUpdateStatus) return;
+      const bits = [];
+      const message = data?.message || (data?.enabled ? 'Автообновление включено' : 'Автообновление выключено');
+      bits.push(message);
+      if (typeof data?.running === 'boolean') {
+        bits.push(data.running ? 'Сервис активен' : 'Сервис остановлен');
+      }
+      if (typeof data?.update_available === 'boolean') {
+        bits.push(data.update_available ? 'Обновление доступно' : 'Обновлений нет');
+      }
+      if (data?.local_commit) bits.push(`Локальный коммит: ${data.local_commit.slice(0, 8)}`);
+      if (data?.remote_commit) bits.push(`Удалённый коммит: ${data.remote_commit.slice(0, 8)}`);
+      if (data?.last_update_ts) bits.push(`Последнее обновление: ${formatTimestamp(data.last_update_ts)}`);
+      if (data?.last_check_ts) bits.push(`Проверка: ${formatTimestamp(data.last_check_ts)}`);
+      if (data?.last_error) bits.push(`Ошибка: ${data.last_error}`);
+      autoUpdateStatus.textContent = bits.join(' • ') || '—';
+    };
+
+    async function callAutoUpdateService(path = '', method = 'GET', payload = null) {
+      const endpointBase = activeAutoUpdateEndpoint || autoUpdateEndpoints[0];
+      const url = `${endpointBase}${path}`;
+      const headers = { Accept: 'application/json' };
+      let body;
+      if (method !== 'GET' && payload !== null) {
+        headers['Content-Type'] = 'application/json';
+        body = JSON.stringify(payload);
+      }
+      const resp = await fetch(url, { method, headers, body, credentials: 'same-origin' });
+      if (resp.status === 404) {
+        const err = new Error('not_found');
+        err.status = 404;
+        throw err;
+      }
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+      if (method === 'GET' || resp.headers.get('Content-Type')?.includes('application/json')) {
+        const data = await resp.json();
+        activeAutoUpdateEndpoint = endpointBase;
+        return data;
+      }
+      activeAutoUpdateEndpoint = endpointBase;
+      return null;
+    }
+
+    async function fetchAutoUpdateStatus(triggerPulse = false) {
+      if (!autoUpdateToggle || !autoUpdateStatus) return;
+      if (!adminSession.is_super) {
+        autoUpdateStatus.textContent = 'Недоступно для вашего доступа';
+        setAutoUpdateControlsDisabled(true);
+        return;
+      }
+      autoUpdateStatus.textContent = 'Загружаем…';
+      setAutoUpdateControlsDisabled(true);
+      try {
+        const data = await callAutoUpdateService('', 'GET');
+        if (data) {
+          autoUpdateToggle.checked = !!data.enabled;
+          if (autoUpdateRepoUrl) autoUpdateRepoUrl.value = data.repo_url || '';
+          if (autoUpdateRemote) autoUpdateRemote.value = data.remote || '';
+          if (autoUpdateBranch) autoUpdateBranch.value = data.branch || '';
+          if (autoUpdateInterval) autoUpdateInterval.value = data.poll_interval_seconds ?? 300;
+          if (autoUpdateDeploy) autoUpdateDeploy.checked = !!data.auto_deploy;
+          if (autoUpdateCommand) autoUpdateCommand.value = data.deploy_command || '';
+          renderAutoUpdateStatus(data);
+          if (triggerPulse && autoUpdateCard) {
+            pulseCard(autoUpdateCard);
+          }
+        } else {
+          autoUpdateStatus.textContent = 'Нет данных';
+        }
+      } catch (error) {
+        console.error('git_auto_update_status_failed', error);
+        if (error?.message === 'not_found') {
+          autoUpdateStatus.textContent = 'Сервис недоступен (обновите backend)';
+        } else {
+          autoUpdateStatus.textContent = 'Не удалось получить статус';
+        }
+      } finally {
+        setAutoUpdateControlsDisabled(false);
+      }
+    }
+
+    async function saveAutoUpdateState() {
+      if (!autoUpdateToggle || !adminSession.is_super) return;
+      autoUpdateStatus.textContent = 'Сохраняем…';
+      setAutoUpdateControlsDisabled(true);
+      try {
+        const payload = {
+          enabled: autoUpdateToggle.checked,
+          repo_url: autoUpdateRepoUrl?.value || null,
+          remote: autoUpdateRemote?.value || null,
+          branch: autoUpdateBranch?.value || null,
+          poll_interval_seconds: Number(autoUpdateInterval?.value || 0) || null,
+          auto_deploy: autoUpdateDeploy?.checked ?? null,
+          deploy_command: autoUpdateCommand?.value || null,
+        };
+        await callAutoUpdateService('', 'POST', payload);
+        autoUpdateStatus.textContent = 'Сохранено';
+        await fetchAutoUpdateStatus(true);
+      } catch (error) {
+        console.error('git_auto_update_save_failed', error);
+        if (error?.message === 'not_found') {
+          autoUpdateStatus.textContent = 'Сервис недоступен (обновите backend)';
+        } else {
+          autoUpdateStatus.textContent = 'Ошибка сохранения';
+        }
+      } finally {
+        setAutoUpdateControlsDisabled(false);
+      }
+    }
+
+    async function runAutoUpdateNow(forceDeploy = false) {
+      if (!adminSession.is_super || !autoUpdateStatus) return;
+      autoUpdateStatus.textContent = 'Выполняем обновление…';
+      setAutoUpdateControlsDisabled(true);
+      try {
+        const payload = { force_deploy: forceDeploy || undefined };
+        const data = await callAutoUpdateService('/run', 'POST', payload);
+        if (data?.result) {
+          renderAutoUpdateStatus(data.result);
+        } else {
+          autoUpdateStatus.textContent = 'Проверка завершена';
+        }
+        await fetchAutoUpdateStatus(true);
+      } catch (error) {
+        console.error('git_auto_update_run_failed', error);
+        if (error?.message === 'not_found') {
+          autoUpdateStatus.textContent = 'Сервис недоступен (обновите backend)';
+        } else {
+          autoUpdateStatus.textContent = 'Ошибка выполнения';
+        }
+      } finally {
+        setAutoUpdateControlsDisabled(false);
       }
     }
 
@@ -2536,6 +2822,22 @@
       }
     }
 
+    let crawlerActionTimer = null;
+    const setCrawlerActionStatus = (message = '', timeout = 3000) => {
+      if (!crawlerActionStatus) return;
+      if (crawlerActionTimer) {
+        clearTimeout(crawlerActionTimer);
+        crawlerActionTimer = null;
+      }
+      crawlerActionStatus.textContent = message || '';
+      if (timeout > 0 && message) {
+        crawlerActionTimer = setTimeout(() => {
+          crawlerActionStatus.textContent = '';
+          crawlerActionTimer = null;
+        }, timeout);
+      }
+    };
+
     async function refreshCrawlerLogs(force = false) {
       if (!crawlerLogsOutput) return;
       const now = Date.now();
@@ -2557,6 +2859,35 @@
       } finally {
         crawlerLogsLoading = false;
         lastCrawlerLogFetch = Date.now();
+      }
+    }
+
+    const buildCrawlerActionUrl = (path) => {
+      const base = `/api/v1/crawler${path}`;
+      if (currentProject) {
+        return `${base}?project=${encodeURIComponent(currentProject)}`;
+      }
+      return base;
+    };
+
+    async function performCrawlerAction(path, successMessage) {
+      if (!currentProject) {
+        setCrawlerActionStatus('Выберите проект', 2500);
+        return;
+      }
+      setCrawlerActionStatus('Выполняем…', 0);
+      try {
+        const resp = await fetch(buildCrawlerActionUrl(path), { method: 'POST' });
+        if (!resp.ok) {
+          const text = await resp.text().catch(() => '');
+          throw new Error(text || `HTTP ${resp.status}`);
+        }
+        setCrawlerActionStatus(successMessage, 2000);
+        await pollStatus();
+        await refreshCrawlerLogs(true);
+      } catch (error) {
+        console.error('crawler_action_failed', error);
+        setCrawlerActionStatus('Ошибка выполнения действия', 3000);
       }
     }
 
@@ -2597,7 +2928,15 @@
           const list = document.getElementById('recent_urls');
           list.innerHTML = '';
           const arr = (data.crawler && data.crawler.recent_urls) || data.recent_urls || [];
-          for (const u of arr) {
+          const uniqueUrls = [];
+          const seenUrls = new Set();
+          for (const candidate of arr) {
+            const trimmed = (candidate || '').trim();
+            if (!trimmed || seenUrls.has(trimmed)) continue;
+            seenUrls.add(trimmed);
+            uniqueUrls.push(trimmed);
+          }
+          for (const u of uniqueUrls) {
             const li = document.createElement('li');
             const a = document.createElement('a'); a.href = u; a.textContent = u; a.target = '_blank';
             li.appendChild(a); list.appendChild(li);
@@ -2774,7 +3113,16 @@
       }catch(e){}
     }
 
-    function tick(){ pollStatus(); pollHealth(); pollLLM(); pollSys(); pollLogs(); }
+    function tick(){
+      pollStatus();
+      pollHealth();
+      pollLLM();
+      pollSys();
+      pollLogs();
+      if (adminSession.is_super) {
+        fetchAutoUpdateStatus();
+      }
+    }
     tick();
     setInterval(tick, 3000);
 
@@ -2840,11 +3188,10 @@
             const editBtn = document.createElement('button');
             editBtn.type = 'button';
             editBtn.textContent = 'Редактировать';
+            editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
             if (isAttachment) {
-              editBtn.disabled = true;
-              editBtn.title = 'Редактирование недоступно для загруженных файлов';
-            } else {
-              editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
+              editBtn.textContent = 'Описание';
+              editBtn.title = 'Изменить описание и метаданные файла';
             }
             actionsTd.appendChild(editBtn);
             tr.append(nameTd, descTd, projectTd, linkTd, actionsTd);
@@ -3019,6 +3366,7 @@
       const files = Array.from(fileInput?.files || []);
       const statusLabel = document.getElementById('kbAddStatus');
       let overlayVisible = false;
+      let lastGeneratedDescription = '';
 
       const ensureOverlayHidden = () => {
         if (overlayVisible) {
@@ -3054,6 +3402,7 @@
             const generatedDescription = typeof result?.description === 'string' ? result.description : '';
             if (result?.auto_description) autoDescriptions += 1;
             if (generatedDescription) {
+              lastGeneratedDescription = generatedDescription;
               showKnowledgeDescriptionPreview(generatedDescription);
               renderAutoDescription(generatedDescription);
               if (files.length === 1) {
@@ -3073,13 +3422,19 @@
           await fetchProjectStorage();
           document.getElementById('kbNewName').value = '';
           document.getElementById('kbNewUrl').value = '';
-          document.getElementById('kbNewDescription').value = '';
+          if (!lastGeneratedDescription) {
+            document.getElementById('kbNewDescription').value = '';
+          }
           document.getElementById('kbNewContent').value = '';
           if (fileInput) {
             fileInput.value = '';
             updateDropZonePreview(fileInput.files);
           } else {
             updateDropZonePreview();
+          }
+          if (lastGeneratedDescription) {
+            document.getElementById('kbNewDescription').value = lastGeneratedDescription;
+            renderAutoDescription(lastGeneratedDescription);
           }
           let resultMsg = `Загружено ${uploaded}/${files.length}`;
           if (autoDescriptions) {
@@ -3116,6 +3471,7 @@
         const result = await resp.json().catch(() => ({}));
         const generatedDescription = typeof result?.description === 'string' ? result.description : '';
         if (generatedDescription) {
+          lastGeneratedDescription = generatedDescription;
           showKnowledgeDescriptionPreview(generatedDescription);
           renderAutoDescription(generatedDescription);
           document.getElementById('kbNewDescription').value = generatedDescription;
@@ -3126,13 +3482,19 @@
         statusLabel.textContent = `Сохранено${autoNote}`;
         document.getElementById('kbNewName').value = '';
         document.getElementById('kbNewUrl').value = '';
-        document.getElementById('kbNewDescription').value = '';
+        if (!lastGeneratedDescription) {
+          document.getElementById('kbNewDescription').value = '';
+        }
         document.getElementById('kbNewContent').value = '';
         if (fileInput) {
           fileInput.value = '';
           updateDropZonePreview(fileInput.files);
         } else {
           updateDropZonePreview();
+        }
+        if (lastGeneratedDescription) {
+          document.getElementById('kbNewDescription').value = lastGeneratedDescription;
+          renderAutoDescription(lastGeneratedDescription);
         }
         await loadKnowledge();
         await loadProjectsList();
@@ -4000,6 +4362,21 @@
     if (knowledgeServiceRefresh) {
       knowledgeServiceRefresh.addEventListener('click', () => fetchKnowledgeServiceStatus(true));
     }
+    if (crawlerResetBtn) {
+      crawlerResetBtn.addEventListener('click', () => performCrawlerAction('/reset', 'Счётчики сброшены'));
+    }
+    if (crawlerDedupBtn) {
+      crawlerDedupBtn.addEventListener('click', () => performCrawlerAction('/deduplicate', 'Дубликаты удалены'));
+    }
+    if (autoUpdateSave) {
+      autoUpdateSave.addEventListener('click', saveAutoUpdateState);
+    }
+    if (autoUpdateRefresh) {
+      autoUpdateRefresh.addEventListener('click', () => fetchAutoUpdateStatus(true));
+    }
+    if (autoUpdateRun) {
+      autoUpdateRun.addEventListener('click', () => runAutoUpdateNow());
+    }
 
     initLayoutReordering();
 
@@ -4016,6 +4393,7 @@
       await loadRequestStats();
       if (adminSession.is_super) {
         await fetchKnowledgeServiceStatus();
+        await fetchAutoUpdateStatus();
       }
       if (currentProject) {
         populateProjectForm(currentProject);
