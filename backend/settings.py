@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Optional
 from pydantic import Field
 import json
+import subprocess
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,6 +81,7 @@ class Settings(BaseSettings):
         ]
 
         models: list[str] = []
+        models.extend(self._discover_local_ollama_models())
         if self.llm_model:
             models.append(str(self.llm_model).strip())
 
@@ -101,6 +103,61 @@ class Settings(BaseSettings):
             if model and model not in unique:
                 unique.append(model)
         return unique
+
+    def _discover_local_ollama_models(self) -> list[str]:
+        """Return models available in the local Ollama instance (best effort)."""
+
+        candidates: list[str] = []
+        try:
+            proc = subprocess.run(
+                ["ollama", "list", "--json"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except FileNotFoundError:
+            return []
+        except Exception:
+            return []
+
+        output = (proc.stdout or "").strip()
+        if not output:
+            return []
+
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith("{"):
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                for key in ("name", "model"):
+                    value = payload.get(key)
+                    if isinstance(value, str) and value.strip():
+                        candidates.append(value.strip())
+                        break
+                continue
+            # Fallback for tabular output without --json support
+            if line.lower().startswith("name"):
+                continue
+            parts = line.split()
+            if not parts:
+                continue
+            value = parts[0].strip()
+            if value:
+                candidates.append(value)
+
+        # Preserve order while removing duplicates
+        seen: set[str] = set()
+        filtered: list[str] = []
+        for item in candidates:
+            if item not in seen:
+                seen.add(item)
+                filtered.append(item)
+        return filtered
 
 
 settings = Settings()

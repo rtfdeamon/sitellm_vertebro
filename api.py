@@ -841,7 +841,8 @@ def _spawn_crawler(
     domain: str | None,
     mongo_uri: str | None,
 ) -> None:
-    script = Path(__file__).resolve().parent / "crawler" / "run_crawl.py"
+    base_dir = Path(__file__).resolve().parent
+    script = base_dir / "crawler" / "run_crawl.py"
     cmd = [
         sys.executable,
         str(script),
@@ -858,7 +859,13 @@ def _spawn_crawler(
         cmd.extend(["--domain", domain])
     if mongo_uri:
         cmd.extend(["--mongo-uri", mongo_uri])
-    proc = subprocess.Popen(cmd)
+    env = os.environ.copy()
+    python_paths = [str(base_dir)]
+    existing_py_path = env.get("PYTHONPATH")
+    if existing_py_path:
+        python_paths.append(existing_py_path)
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
+    proc = subprocess.Popen(cmd, cwd=str(base_dir), env=env)
     try:
         (Path("/tmp") / "crawler.pid").write_text(str(proc.pid), encoding="utf-8")
     except Exception:
