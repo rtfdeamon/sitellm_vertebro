@@ -147,6 +147,122 @@
       color: #cbd5ff;
     }
 
+    .crawler-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .icon-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      background: rgba(15, 17, 29, 0.6);
+      color: #dbeafe;
+      font-size: 13px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease;
+    }
+
+    .icon-button:hover {
+      border-color: rgba(96, 165, 250, 0.7);
+      background: rgba(96, 165, 250, 0.15);
+    }
+
+    .icon-button:focus {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.35);
+    }
+
+    .crawler-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .crawler-progress-track {
+      position: relative;
+      width: 100%;
+      height: 8px;
+      border-radius: 6px;
+      background: rgba(71, 85, 105, 0.45);
+      overflow: hidden;
+    }
+
+    .crawler-progress-fill {
+      position: absolute;
+      inset: 0;
+      width: 0%;
+      background: linear-gradient(90deg, rgba(96, 165, 250, 0.9), rgba(139, 92, 246, 0.9));
+      transition: width 0.35s ease;
+    }
+
+    .crawler-progress-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: rgba(203, 213, 225, 0.85);
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .crawler-progress-note {
+      font-size: 12px;
+      color: rgba(148, 163, 184, 0.85);
+      white-space: pre-wrap;
+      line-height: 1.5;
+      display: none;
+    }
+
+    .crawler-logs {
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 12px;
+      background: rgba(17, 24, 39, 0.85);
+      border: 1px solid rgba(96, 165, 250, 0.32);
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .crawler-logs.visible {
+      display: flex;
+    }
+
+    .crawler-logs-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: rgba(226, 232, 255, 0.85);
+    }
+
+    .crawler-logs-buttons {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .crawler-logs-output {
+      max-height: 200px;
+      overflow-y: auto;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 6px;
+      padding: 10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      color: #e2e8f0;
+    }
+
     .muted { color: var(--text-muted); font-size: 12px; }
 
     .knowledge-card {
@@ -666,7 +782,22 @@
 
     <section id="block-crawler" class="dashboard-stack span-4" data-block-id="crawler" data-block-group="manage">
       <div class="card control-card">
-        <b>Запуск краулера</b>
+        <div class="crawler-header">
+          <b>Запуск краулера</b>
+          <div class="crawler-logs-buttons">
+            <button type="button" id="crawlerLogsBtn" class="icon-button" title="Показать логи">?</button>
+          </div>
+        </div>
+        <div class="crawler-progress" id="crawlerProgress">
+          <div class="crawler-progress-track">
+            <div class="crawler-progress-fill" id="crawlerProgressFill"></div>
+          </div>
+          <div class="crawler-progress-meta">
+            <span id="crawlerProgressStatus">Ожидание запуска</span>
+            <span id="crawlerProgressCounters">0 / 0 страниц</span>
+          </div>
+          <div class="crawler-progress-note" id="crawlerProgressNote"></div>
+        </div>
         <form id="crawler-form" style="margin-top:4px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
           <label style="flex:1 1 200px;">Start URL
             <input type="url" id="url" placeholder="https://example.com" required style="width:100%;">
@@ -681,6 +812,16 @@
           <button type="button" id="stopBtn">Остановить</button>
           <span id="launchMsg" class="muted"></span>
         </form>
+        <div class="crawler-logs" id="crawlerLogsPanel">
+          <div class="crawler-logs-header">
+            <span>Логи краулера</span>
+            <div class="crawler-logs-buttons">
+              <button type="button" id="crawlerLogsRefresh" class="icon-button" title="Обновить">↻</button>
+              <button type="button" id="crawlerLogsClose" class="icon-button" title="Скрыть">×</button>
+            </div>
+          </div>
+          <pre id="crawlerLogsOutput" class="crawler-logs-output">Логи будут загружены по запросу.</pre>
+        </div>
       </div>
     </section>
 
@@ -1022,6 +1163,15 @@
   <script>
     const form = document.getElementById('crawler-form');
     const stopBtn = document.getElementById('stopBtn');
+    const crawlerProgressFill = document.getElementById('crawlerProgressFill');
+    const crawlerProgressStatus = document.getElementById('crawlerProgressStatus');
+    const crawlerProgressCounters = document.getElementById('crawlerProgressCounters');
+    const crawlerProgressNote = document.getElementById('crawlerProgressNote');
+    const crawlerLogsBtn = document.getElementById('crawlerLogsBtn');
+    const crawlerLogsPanel = document.getElementById('crawlerLogsPanel');
+    const crawlerLogsOutput = document.getElementById('crawlerLogsOutput');
+    const crawlerLogsRefresh = document.getElementById('crawlerLogsRefresh');
+    const crawlerLogsClose = document.getElementById('crawlerLogsClose');
     const kbModalBackdrop = document.getElementById('kbModal');
     const kbModalClose = document.getElementById('kbModalClose');
     const kbModalCancel = document.getElementById('kbModalCancel');
@@ -1060,6 +1210,10 @@
     const statsExportBtn = document.getElementById('statsExport');
     const STATS_DAYS = 14;
     let projectStorageCache = {};
+    const CRAWLER_LOG_REFRESH_INTERVAL = 5000;
+    let lastCrawlerLogFetch = 0;
+    let crawlerLogsLoading = false;
+    resetCrawlerProgress();
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const payload = {
@@ -1089,6 +1243,24 @@
         const r = await fetch('/api/v1/crawler/stop', { method: 'POST' });
         document.getElementById('launchMsg').textContent = r.ok ? 'Останавливаем…' : 'Не удалось остановить';
       } catch {}
+    });
+
+    if (crawlerLogsBtn) {
+      crawlerLogsBtn.addEventListener('click', () => {
+        if (!crawlerLogsPanel) return;
+        if (crawlerLogsPanel.classList.contains('visible')) {
+          hideCrawlerLogs();
+        } else {
+          showCrawlerLogs();
+        }
+      });
+    }
+    if (crawlerLogsClose) crawlerLogsClose.addEventListener('click', hideCrawlerLogs);
+    if (crawlerLogsRefresh) crawlerLogsRefresh.addEventListener('click', () => refreshCrawlerLogs(true));
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && crawlerLogsPanel?.classList.contains('visible')) {
+        hideCrawlerLogs();
+      }
     });
 
     const sessionDefaults = {
@@ -2313,6 +2485,91 @@
       const project = projectsCache[currentProject] || null;
       projectField.value = project ? project.name : (currentProject || '');
     }
+
+    function resetCrawlerProgress() {
+      if (crawlerProgressFill) crawlerProgressFill.style.width = '0%';
+      if (crawlerProgressStatus) crawlerProgressStatus.textContent = 'Ожидание запуска';
+      if (crawlerProgressCounters) crawlerProgressCounters.textContent = '0 / 0 страниц';
+      if (crawlerProgressNote) {
+        crawlerProgressNote.textContent = '';
+        crawlerProgressNote.style.display = 'none';
+      }
+    }
+
+    function setCrawlerProgressError(message = 'Не удалось получить данные о краулере') {
+      if (crawlerProgressFill) crawlerProgressFill.style.width = '0%';
+      if (crawlerProgressStatus) crawlerProgressStatus.textContent = 'Ошибка статуса';
+      if (crawlerProgressCounters) crawlerProgressCounters.textContent = '—';
+      if (crawlerProgressNote) {
+        crawlerProgressNote.textContent = message;
+        crawlerProgressNote.style.display = 'block';
+      }
+    }
+
+    function updateCrawlerProgress(active, queued, done, failed, note, lastUrl) {
+      if (crawlerProgressFill) {
+        const total = Math.max(active + queued + done + failed, 0);
+        const completed = Math.max(done, 0);
+        const percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+        crawlerProgressFill.style.width = `${percent}%`;
+      }
+      if (crawlerProgressStatus) {
+        let statusText = 'Ожидание запуска';
+        if (active > 0) statusText = `Сканирование (${active})`;
+        else if (queued > 0) statusText = `В очереди (${queued})`;
+        else if (failed > 0) statusText = 'Ошибки';
+        else if (done > 0) statusText = 'Готово';
+        crawlerProgressStatus.textContent = statusText;
+      }
+      if (crawlerProgressCounters) {
+        const total = Math.max(active + queued + done + failed, 0);
+        const completed = Math.max(done, 0);
+        const base = total > 0 ? `${completed} / ${total} страниц` : '0 / 0 страниц';
+        crawlerProgressCounters.textContent = failed > 0 ? `${base} · ошибок: ${failed}` : base;
+      }
+      if (crawlerProgressNote) {
+        const bits = [];
+        if (note) bits.push(String(note));
+        if (lastUrl) bits.push(`Последний URL: ${lastUrl}`);
+        crawlerProgressNote.textContent = bits.join('\n');
+        crawlerProgressNote.style.display = bits.length ? 'block' : 'none';
+      }
+    }
+
+    async function refreshCrawlerLogs(force = false) {
+      if (!crawlerLogsOutput) return;
+      const now = Date.now();
+      if (!force && !crawlerLogsPanel?.classList.contains('visible')) return;
+      if (!force && now - lastCrawlerLogFetch < CRAWLER_LOG_REFRESH_INTERVAL) return;
+      if (crawlerLogsLoading) return;
+      crawlerLogsLoading = true;
+      crawlerLogsOutput.textContent = 'Загружаем…';
+      try {
+        const resp = await fetch('/api/v1/admin/logs?limit=400');
+        if (!resp.ok) throw new Error('logs request failed');
+        const data = await resp.json();
+        const lines = Array.isArray(data.lines) ? data.lines : [];
+        const filtered = lines.filter((line) => /crawler/i.test(line));
+        crawlerLogsOutput.textContent = filtered.length ? filtered.join('\n') : 'Логи краулера пока пусты.';
+      } catch (error) {
+        console.error('crawler logs fetch failed', error);
+        crawlerLogsOutput.textContent = 'Не удалось загрузить логи краулера';
+      } finally {
+        crawlerLogsLoading = false;
+        lastCrawlerLogFetch = Date.now();
+      }
+    }
+
+    function showCrawlerLogs() {
+      if (!crawlerLogsPanel) return;
+      crawlerLogsPanel.classList.add('visible');
+      refreshCrawlerLogs(true);
+    }
+
+    function hideCrawlerLogs() {
+      if (!crawlerLogsPanel) return;
+      crawlerLogsPanel.classList.remove('visible');
+    }
     async function pollStatus() {
       if (!currentProject) {
         document.getElementById('queued').textContent = '0';
@@ -2322,6 +2579,7 @@
         document.getElementById('last_crawl').textContent = 'Last: –';
         document.getElementById('recent_urls').innerHTML = '';
         setSummaryCrawler('Нет данных', 'Выберите проект слева');
+        resetCrawlerProgress();
         return;
       }
       try {
@@ -2329,6 +2587,7 @@
         const resp = await fetch(url);
         if (resp.ok) {
           const data = await resp.json();
+          const crawlerData = data.crawler || {};
           document.getElementById('queued').textContent = data.queued ?? 0;
           document.getElementById('in_progress').textContent = data.in_progress ?? 0;
           document.getElementById('done').textContent = data.done ?? 0;
@@ -2352,10 +2611,24 @@
           if (data.last_url) metaLines.push(`Последний: ${data.last_url}`);
           if (iso && iso !== '–') metaLines.push(`Последний запуск: ${iso}`);
           setSummaryCrawler(summaryMain, metaLines.join('\n'));
+          updateCrawlerProgress(
+            active,
+            queued,
+            done,
+            failed,
+            data.notes || crawlerData.notes || '',
+            data.last_url || crawlerData.last_url || ''
+          );
+          if (crawlerLogsPanel?.classList.contains('visible')) {
+            refreshCrawlerLogs();
+          }
+        } else {
+          setCrawlerProgressError('Не удалось получить статус краулера');
         }
       } catch (err) {
         console.error(err);
         setSummaryCrawler('Ошибка', 'Не удалось получить статус краулера');
+        setCrawlerProgressError();
       }
     }
 

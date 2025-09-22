@@ -270,6 +270,17 @@ def extract_links(html: str, base_url: str) -> List[str]:
     return links
 
 
+def _is_allowed_host(url: str, suffixes: set[str]) -> bool:
+    host = urlparse.urlsplit(url).hostname
+    if not host:
+        return False
+    host = host.lower()
+    bare = host.split(":")[0]
+    if bare in suffixes:
+        return True
+    return any(bare.endswith(f".{suffix}") for suffix in suffixes if suffix)
+
+
 def html_to_text(html: str) -> str:
     """Extract readable text from ``html`` removing scripts/styles."""
 
@@ -495,6 +506,30 @@ async def crawl(
     result_queue: asyncio.Queue[Tuple[str, str, str, bool, bytes | None]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
 
+    allowed_host_suffixes: set[str] | None = None
+    if allowed_domain:
+        allowed_host_suffixes = set()
+
+        def _register_host(value: str | None) -> None:
+            if not value:
+                return
+            host = value.lower().strip()
+            if not host:
+                return
+            allowed_host_suffixes.add(host)
+            if host.startswith("www."):
+                allowed_host_suffixes.add(host[4:])
+            else:
+                allowed_host_suffixes.add(f"www.{host}")
+
+        parsed_allowed = urlparse.urlsplit(allowed_domain if allowed_domain.startswith("http") else f"https://{allowed_domain}")
+        _register_host(parsed_allowed.hostname or allowed_domain.split(":")[0])
+        start_host = urlparse.urlsplit(start_url).hostname
+        _register_host(start_host)
+
+        # Normalize to bare hostnames (without ports)
+        allowed_host_suffixes = {host.split(":")[0] for host in allowed_host_suffixes if host}
+
     if project_label is None:
         reset_counters()
         on_crawler_start()
@@ -575,9 +610,14 @@ async def crawl(
                         "page fetched", url=url, depth=depth, content_length=len(payload), content_type=ctype
                     )
                     await result_queue.put((url, payload or "", ctype, is_html, binary_data))
-                    if is_html and (not allowed_domain or urlparse.urlparse(url).netloc == allowed_domain):
+                    if is_html and (
+                        not allowed_host_suffixes
+                        or _is_allowed_host(url, allowed_host_suffixes)
+                    ):
                         for link in extract_links(payload, url):
                             async with visited_lock:
+                                if allowed_host_suffixes and not _is_allowed_host(link, allowed_host_suffixes):
+                                    continue
                                 if link in visited:
                                     continue
                                 if len(visited) + url_queue.qsize() >= max_pages:
