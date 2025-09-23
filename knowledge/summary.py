@@ -22,6 +22,15 @@ SUMMARY_PROMPT_TEMPLATE = (
     "\nНазвание: {name}\nТекст:\n{body}\n\nОписание:"
 )
 
+IMAGE_CONTEXT_LIMIT = 800
+IMAGE_CAPTION_MAX_LEN = 220
+IMAGE_CAPTION_PROMPT_TEMPLATE = (
+    "Сформулируй лаконичное описание изображения для пересылки в чат Telegram."
+    " Используй одно предложение до 220 символов, без эмодзи и перечислений."
+    " Укажи, что изображено и его контекст."
+    "\nФайл: {name}\nAlt-текст: {alt}\nКонтекст страницы:\n{context}\n\nОписание:"  # noqa: E501
+)
+
 
 async def generate_document_summary(
     name: str,
@@ -69,3 +78,76 @@ async def generate_document_summary(
     if len(summary) > SUMMARY_MAX_LEN:
         summary = summary[: SUMMARY_MAX_LEN - 1].rstrip() + "…"
     return summary
+
+
+def _clean_text_fragment(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _finalize_caption(candidate: str, fallback: str) -> str:
+    cleaned = _clean_text_fragment(candidate).strip("\"'«»")
+    if not cleaned:
+        return fallback
+    if len(cleaned) > IMAGE_CAPTION_MAX_LEN:
+        trimmed = cleaned[: IMAGE_CAPTION_MAX_LEN - 1].rstrip()
+        cleaned = f"{trimmed}…"
+    if cleaned and cleaned[-1] not in ".!?…":
+        cleaned += "."
+    return cleaned
+
+
+async def generate_image_caption(
+    name: str,
+    alt_text: str | None,
+    page_context: str | None,
+    project: Project | None = None,
+) -> str:
+    """Return a concise caption for an image tuned for Telegram delivery."""
+
+    safe_name = name.strip() or "изображение"
+    alt_clean = _clean_text_fragment(alt_text or "")
+    context_clean = _clean_text_fragment(page_context or "")
+    fallback_parts: list[str] = []
+    if alt_clean:
+        fallback_parts.append(alt_clean)
+    fallback_default = f"Изображение «{safe_name}»."
+    fallback = _finalize_caption(" ".join(fallback_parts), fallback_default)
+    if context_clean:
+        context_excerpt = context_clean[:IMAGE_CONTEXT_LIMIT]
+    else:
+        context_excerpt = ""
+
+    if not alt_clean and not context_excerpt:
+        return fallback
+
+    prompt = IMAGE_CAPTION_PROMPT_TEMPLATE.format(
+        name=safe_name,
+        alt=alt_clean or "(нет)",
+        context=context_excerpt or "(контекст не найден)",
+    )
+
+    model_override = None
+    if project and isinstance(project.llm_model, str):
+        trimmed = project.llm_model.strip()
+        if trimmed:
+            model_override = trimmed
+
+    chunks: list[str] = []
+    try:
+        async for token in llm_client.generate(prompt, model=model_override):
+            chunks.append(token)
+            if len("".join(chunks)) >= IMAGE_CAPTION_MAX_LEN + 80:
+                break
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "image_caption_generate_failed",
+            image=safe_name,
+            error=str(exc),
+        )
+        return fallback
+
+    candidate = "".join(chunks)
+    caption = _finalize_caption(candidate, fallback)
+    if len(caption) > 1024:
+        caption = caption[:1023].rstrip()
+    return caption

@@ -300,6 +300,147 @@
       overflow: hidden;
     }
 
+    .kb-section-nav {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--card-border);
+      padding: 4px 0 8px;
+      margin-top: -6px;
+    }
+
+    .kb-tab-button {
+      border: 1px solid var(--input-border);
+      background: rgba(13, 19, 34, 0.7);
+      color: var(--text-muted);
+      padding: 6px 14px;
+      border-radius: 999px;
+      font-size: 13px;
+      letter-spacing: 0.03em;
+      cursor: pointer;
+      transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .kb-tab-button:hover {
+      border-color: rgba(96, 165, 250, 0.55);
+      color: var(--text-primary);
+    }
+
+    .kb-tab-button.active {
+      background: rgba(96, 165, 250, 0.18);
+      border-color: rgba(96, 165, 250, 0.6);
+      color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.25);
+    }
+
+    .kb-tab-button:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.45);
+    }
+
+    .kb-section {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .kb-section.active {
+      display: flex;
+    }
+
+    .kb-meta-line {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .kb-table-wrapper {
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      background: rgba(11, 16, 34, 0.35);
+    }
+
+    .kb-category {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 8px 0 4px;
+    }
+
+    .kb-category + .kb-category {
+      border-top: 1px solid rgba(148, 163, 184, 0.15);
+      padding-top: 18px;
+      margin-top: 8px;
+    }
+
+    .kb-category-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(226, 232, 255, 0.7);
+    }
+
+    .kb-category-header strong {
+      color: var(--text-primary);
+      font-size: 14px;
+      letter-spacing: 0.1em;
+    }
+
+    .kb-auto-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 7px;
+      height: 18px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      background: rgba(96, 165, 250, 0.18);
+      color: #bfdbfe;
+      margin-right: 6px;
+    }
+
+    .kb-auto-badge.pending {
+      animation: pulse-soft 1.6s ease-in-out infinite;
+    }
+
+    .kb-auto-badge.failed {
+      background: rgba(248, 113, 113, 0.18);
+      color: #fecaca;
+      animation: none;
+    }
+
+    .kb-type-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      height: 18px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      background: rgba(96, 165, 250, 0.12);
+      color: #dbeafe;
+      margin-right: 6px;
+    }
+
+    @keyframes pulse-soft {
+      0% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.25); }
+      70% { box-shadow: 0 0 0 6px rgba(96, 165, 250, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(96, 165, 250, 0); }
+    }
+
     .thinking-overlay {
       position: absolute;
       inset: 0;
@@ -1037,6 +1178,11 @@
     <section id="block-knowledge" class="dashboard-stack span-12" data-block-id="knowledge" data-block-group="knowledge">
       <div class="card knowledge-card">
         <b>Knowledge Base</b>
+        <div class="kb-section-nav" role="tablist" aria-label="Управление базой знаний">
+          <button type="button" class="kb-tab-button active" id="kbTabOverview" data-kb-target="overview" role="tab" aria-selected="true" aria-controls="kbSectionOverview">Обзор</button>
+          <button type="button" class="kb-tab-button" id="kbTabUpload" data-kb-target="upload" role="tab" aria-selected="false" aria-controls="kbSectionUpload" tabindex="-1">Загрузка</button>
+          <button type="button" class="kb-tab-button" id="kbTabDocuments" data-kb-target="documents" role="tab" aria-selected="false" aria-controls="kbSectionDocuments" tabindex="-1">Документы</button>
+        </div>
         <div id="kbThinkingOverlay" class="thinking-overlay">
           <div class="thinking-inner">
             <img
@@ -1050,62 +1196,104 @@
             <div class="thinking-preview" id="kbThinkingPreview"></div>
           </div>
         </div>
-        <form id="kbForm" style="margin:8px 0 10px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
-          <label style="flex:1 1 200px;">Проект
-            <input type="text" list="kbProjectList" id="kbProject" placeholder="mmvs" style="width:100%;" readonly>
-            <datalist id="kbProjectList"></datalist>
-          </label>
-          <button type="button" id="kbReloadProjects" title="Обновить список проектов">↻</button>
-          <label style="flex:1 1 240px;">Поиск
-            <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
-          </label>
-          <label>Limit
-            <input type="number" id="kbLimit" min="10" max="1000" value="1000" style="width:100px;">
-          </label>
-          <button type="submit">Обновить</button>
-          <button type="button" id="kbClear">Очистить</button>
-          <span class="muted" id="kbInfo"></span>
-          <span class="muted" id="kbProjectsSummary"></span>
-        </form>
-        <form id="kbAddForm" style="margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px;">
-          <label style="flex:1 1 220px;">Имя
-            <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
-          </label>
-          <label style="flex:1 1 220px;">URL
-            <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
-          </label>
-          <label style="flex:1 1 220px;">Описание
-            <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
-          </label>
-          <label style="flex:1 1 220px;">Файл
-            <input type="file" id="kbNewFile" multiple style="width:100%;">
-          </label>
-          <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
-            Перетащите файлы сюда или нажмите на поле выше
+        <div class="kb-section active" data-kb-section="overview" id="kbSectionOverview" role="tabpanel" aria-labelledby="kbTabOverview">
+          <form id="kbForm" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+            <label style="flex:1 1 200px;">Проект
+              <input type="text" list="kbProjectList" id="kbProject" placeholder="mmvs" style="width:100%;" readonly>
+              <datalist id="kbProjectList"></datalist>
+            </label>
+            <button type="button" id="kbReloadProjects" title="Обновить список проектов">↻</button>
+            <label style="flex:1 1 240px;">Поиск
+              <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
+            </label>
+            <label>Limit
+              <input type="number" id="kbLimit" min="10" max="1000" value="1000" style="width:100px;">
+            </label>
+            <button type="submit">Обновить</button>
+            <button type="button" id="kbClear">Очистить</button>
+          </form>
+          <div class="kb-meta-line">
+            <span class="muted" id="kbInfo"></span>
+            <span class="muted" id="kbProjectsSummary"></span>
           </div>
-          <div id="kbAutoDescription" class="auto-description"></div>
-          <label style="flex:1 1 100%;">Текст
-            <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
-          </label>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button type="submit">Сохранить</button>
-            <button type="button" id="kbResetForm">Сбросить</button>
-            <span class="muted" id="kbAddStatus"></span>
-          </div>
-        </form>
-        <div class="knowledge-actions">
-          <button type="button" id="kbDeduplicate">Очистить дубликаты</button>
-          <button type="button" id="kbClearKnowledge">Очистить базу</button>
-          <span class="muted" id="kbDedupStatus"></span>
-          <span class="muted" id="kbClearStatus"></span>
         </div>
-        <div style="max-height:240px; overflow:auto; border:1px solid #e0e0e0; border-radius:6px;">
-          <table>
-            <thead>
-            <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
-            </thead>
-            <tbody id="kbTable"></tbody>
-          </table>
+        <div class="kb-section" data-kb-section="upload" id="kbSectionUpload" role="tabpanel" aria-labelledby="kbTabUpload" aria-hidden="true">
+          <form id="kbAddForm" style="display:flex; flex-wrap:wrap; gap:10px;">
+            <label style="flex:1 1 220px;">Имя
+              <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
+            </label>
+            <label style="flex:1 1 220px;">URL
+              <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
+            </label>
+            <label style="flex:1 1 220px;">Описание
+              <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
+            </label>
+            <label style="flex:1 1 220px;">Файл
+              <input type="file" id="kbNewFile" multiple style="width:100%;">
+            </label>
+            <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
+              Перетащите файлы сюда или нажмите на поле выше
+            </div>
+            <div id="kbAutoDescription" class="auto-description"></div>
+            <label style="flex:1 1 100%;">Текст
+              <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
+            </label>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button type="submit">Сохранить</button>
+              <button type="button" id="kbResetForm">Сбросить</button>
+              <span class="muted" id="kbAddStatus"></span>
+            </div>
+          </form>
+        </div>
+        <div class="kb-section" data-kb-section="documents" id="kbSectionDocuments" role="tabpanel" aria-labelledby="kbTabDocuments" aria-hidden="true">
+          <div class="knowledge-actions">
+            <button type="button" id="kbDeduplicate">Очистить дубликаты</button>
+            <button type="button" id="kbClearKnowledge">Очистить базу</button>
+            <span class="muted" id="kbDedupStatus"></span>
+            <span class="muted" id="kbClearStatus"></span>
+          </div>
+          <div class="kb-category" data-kb-category="text">
+            <div class="kb-category-header">
+              <strong>Текст</strong>
+              <span class="muted" id="kbCountText">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table>
+                <thead>
+                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                </thead>
+                <tbody id="kbTableText"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="kb-category" data-kb-category="docs">
+            <div class="kb-category-header">
+              <strong>Документы</strong>
+              <span class="muted" id="kbCountDocs">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table>
+                <thead>
+                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                </thead>
+                <tbody id="kbTableDocs"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="kb-category" data-kb-category="images">
+            <div class="kb-category-header">
+              <strong>Фото</strong>
+              <span class="muted" id="kbCountImages">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table>
+                <thead>
+                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                </thead>
+                <tbody id="kbTableImages"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1561,6 +1749,168 @@
     const kbThinkingMessage = document.getElementById('kbThinkingMessage');
     const kbThinkingPreview = document.getElementById('kbThinkingPreview');
     const kbAutoDescription = document.getElementById('kbAutoDescription');
+    const kbTableText = document.getElementById('kbTableText');
+    const kbTableDocs = document.getElementById('kbTableDocs');
+    const kbTableImages = document.getElementById('kbTableImages');
+    const kbCountText = document.getElementById('kbCountText');
+    const kbCountDocs = document.getElementById('kbCountDocs');
+    const kbCountImages = document.getElementById('kbCountImages');
+    const KB_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
+    const KB_TEXT_LIKE_TYPES = new Set(['application/json', 'application/xml', 'text/csv']);
+    const KB_STATUS_PENDING = new Set(['pending_auto_description', 'auto_description_in_progress']);
+
+    const kbTables = {
+      text: { body: kbTableText, counter: kbCountText, empty: 'Текстовые документы отсутствуют' },
+      docs: { body: kbTableDocs, counter: kbCountDocs, empty: 'Файлы не найдены' },
+      images: { body: kbTableImages, counter: kbCountImages, empty: 'Нет изображений' },
+    };
+
+    const getDocCategory = (doc) => {
+      const contentType = String(doc.content_type || doc.contentType || '').toLowerCase();
+      if (contentType.startsWith('image/')) return 'images';
+      if (contentType && contentType.startsWith('text/')) return 'text';
+      if (KB_TEXT_LIKE_TYPES.has(contentType)) return 'text';
+      const name = String(doc.name || '').toLowerCase();
+      if (KB_IMAGE_EXTENSIONS.some((ext) => name.endsWith(ext))) return 'images';
+      if (contentType && !contentType.startsWith('text/')) return 'docs';
+      if (doc.fileId && !contentType) return 'docs';
+      return 'text';
+    };
+
+    const createAutoBadge = (doc) => {
+      const autoPending = doc.autoDescriptionPending === true;
+      const status = String(doc.status || '').toLowerCase();
+      const message = doc.statusMessage || '';
+      if (autoPending || KB_STATUS_PENDING.has(status)) {
+        const badge = document.createElement('span');
+        badge.className = 'kb-auto-badge pending';
+        badge.textContent = 'AI';
+        badge.title = message || 'Описание формируется';
+        badge.setAttribute('aria-label', badge.title);
+        return badge;
+      }
+      if (status === 'auto_description_failed') {
+        const badge = document.createElement('span');
+        badge.className = 'kb-auto-badge failed';
+        badge.textContent = 'AI';
+        badge.title = message || 'Автоописание не удалось';
+        badge.setAttribute('aria-label', badge.title);
+        return badge;
+      }
+      return null;
+    };
+
+    const createTypeBadge = (category) => {
+      if (category === 'text') return null;
+      const badge = document.createElement('span');
+      badge.className = 'kb-type-badge';
+      badge.textContent = category === 'images' ? 'Фото' : 'Файл';
+      return badge;
+    };
+
+    const renderKnowledgeRow = (doc, category) => {
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td');
+      const autoBadge = createAutoBadge(doc);
+      if (autoBadge) nameTd.appendChild(autoBadge);
+      const typeBadge = createTypeBadge(category);
+      if (typeBadge) nameTd.appendChild(typeBadge);
+      nameTd.appendChild(document.createTextNode(doc.name || '–'));
+
+      const descTd = document.createElement('td');
+      descTd.textContent = doc.description || '–';
+
+      const projectTd = document.createElement('td');
+      projectTd.textContent = doc.project || doc.domain || '–';
+
+      const linkTd = document.createElement('td');
+      if (doc.fileId || doc.downloadUrl || doc.url) {
+        const a = document.createElement('a');
+        a.textContent = 'Скачать';
+        const href = doc.downloadUrl || doc.url || `/api/v1/admin/knowledge/documents/${encodeURIComponent(doc.fileId)}`;
+        a.href = href;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        if (doc.name) a.download = doc.name;
+        linkTd.appendChild(a);
+      } else {
+        linkTd.textContent = '—';
+      }
+
+      const actionsTd = document.createElement('td');
+      const editBtn = document.createElement('button');
+      editBtn.type = 'button';
+      editBtn.textContent = 'Редактировать';
+      if (category !== 'text') {
+        editBtn.textContent = 'Описание';
+        editBtn.title = 'Изменить описание и метаданные';
+      }
+      editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
+      actionsTd.appendChild(editBtn);
+
+      tr.append(nameTd, descTd, projectTd, linkTd, actionsTd);
+      return tr;
+    };
+
+    const renderEmptyRow = (tbody, text) => {
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 5;
+      cell.textContent = text;
+      cell.className = 'muted';
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    };
+    const kbNavButtons = Array.from(document.querySelectorAll('[data-kb-target]'));
+    const kbSections = Array.from(document.querySelectorAll('[data-kb-section]'));
+
+    const activateKnowledgeSection = (target) => {
+      if (!target) return;
+      kbSections.forEach((section) => {
+        const matches = section.dataset.kbSection === target;
+        section.classList.toggle('active', matches);
+        if (matches) {
+          section.removeAttribute('aria-hidden');
+        } else {
+          section.setAttribute('aria-hidden', 'true');
+        }
+      });
+      kbNavButtons.forEach((button) => {
+        const matches = button.dataset.kbTarget === target;
+        button.classList.toggle('active', matches);
+        button.setAttribute('aria-selected', matches ? 'true' : 'false');
+        button.setAttribute('tabindex', matches ? '0' : '-1');
+      });
+    };
+
+    if (kbNavButtons.length && kbSections.length) {
+      const defaultTarget = (kbNavButtons.find((btn) => btn.classList.contains('active')) || kbNavButtons[0]).dataset.kbTarget;
+      activateKnowledgeSection(defaultTarget);
+
+      const focusTabByOffset = (currentIndex, delta) => {
+        const total = kbNavButtons.length;
+        const nextIndex = (currentIndex + delta + total) % total;
+        const nextBtn = kbNavButtons[nextIndex];
+        activateKnowledgeSection(nextBtn.dataset.kbTarget);
+        nextBtn.focus();
+      };
+
+      kbNavButtons.forEach((button, index) => {
+        button.addEventListener('click', () => {
+          activateKnowledgeSection(button.dataset.kbTarget);
+          button.focus();
+        });
+        button.addEventListener('keydown', (event) => {
+          if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            focusTabByOffset(index, 1);
+          } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            focusTabByOffset(index, -1);
+          }
+        });
+      });
+    }
 
     const resetKnowledgePreview = () => {
       if (kbThinkingPreview) {
@@ -3129,7 +3479,11 @@
     async function loadKnowledge(){
       if (kbDedupStatus) kbDedupStatus.textContent = '';
       if (!currentProject) {
-        document.getElementById('kbTable').innerHTML = '';
+        Object.values(kbTables).forEach(({ body, counter, empty }) => {
+          body.innerHTML = '';
+          renderEmptyRow(body, 'Выберите проект');
+          if (counter) counter.textContent = '—';
+        });
         document.getElementById('kbInfo').textContent = 'Выберите проект';
         return;
       }
@@ -3148,60 +3502,39 @@
         const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
         if (!resp.ok) throw new Error('knowledge request failed');
         const data = await resp.json();
-        const tbody = document.getElementById('kbTable');
-        tbody.innerHTML = '';
         const docs = data.documents || [];
-        if (!docs.length) {
-          const row = document.createElement('tr');
-          const cell = document.createElement('td');
-          cell.colSpan = 5;
-          cell.textContent = query ? 'Ничего не найдено' : 'Документов нет';
-          row.appendChild(cell);
-          tbody.appendChild(row);
-        } else {
-          for (const doc of docs) {
-            const tr = document.createElement('tr');
-            const nameTd = document.createElement('td');
-            const contentType = (doc.content_type || '').toLowerCase();
-            const isAttachment = contentType && !contentType.startsWith('text/');
-            if (isAttachment) {
-              const badge = document.createElement('span');
-              badge.textContent = 'Файл';
-              badge.style.cssText = 'display:inline-block;padding:2px 6px;border-radius:8px;background:rgba(96,165,250,0.18);color:#bfdbfe;font-size:11px;margin-right:6px;letter-spacing:0.05em;';
-              nameTd.appendChild(badge);
-            }
-            nameTd.appendChild(document.createTextNode(doc.name || '–'));
-            const descTd = document.createElement('td');
-            descTd.textContent = doc.description || '–';
-            const projectTd = document.createElement('td');
-            projectTd.textContent = doc.project || doc.domain || '–';
-            const linkTd = document.createElement('td');
-            const a = document.createElement('a');
-            a.textContent = 'Скачать';
-            const downloadHref = doc.downloadUrl || doc.url || `/api/v1/admin/knowledge/documents/${encodeURIComponent(doc.fileId)}`;
-            a.href = downloadHref;
-            a.target = '_blank';
-            a.rel = 'noopener';
-            if (doc.name) a.download = doc.name;
-            linkTd.appendChild(a);
-            const actionsTd = document.createElement('td');
-            const editBtn = document.createElement('button');
-            editBtn.type = 'button';
-            editBtn.textContent = 'Редактировать';
-            editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
-            if (isAttachment) {
-              editBtn.textContent = 'Описание';
-              editBtn.title = 'Изменить описание и метаданные файла';
-            }
-            actionsTd.appendChild(editBtn);
-            tr.append(nameTd, descTd, projectTd, linkTd, actionsTd);
-            tbody.appendChild(tr);
+        const grouped = { text: [], docs: [], images: [] };
+        docs.forEach((doc) => {
+          const category = getDocCategory(doc);
+          grouped[category].push(doc);
+        });
+
+        Object.entries(kbTables).forEach(([key, cfg]) => {
+          if (!cfg.body) return;
+          cfg.body.innerHTML = '';
+          const items = grouped[key] || [];
+          if (cfg.counter) cfg.counter.textContent = items.length ? String(items.length) : '—';
+          if (!items.length) {
+            const emptyMessage = query ? 'Ничего не найдено' : cfg.empty;
+            renderEmptyRow(cfg.body, emptyMessage);
+            return;
           }
-        }
+          for (const doc of items) {
+            cfg.body.appendChild(renderKnowledgeRow(doc, key));
+          }
+        });
+
         const matched = data.matched ?? docs.length;
         const total = data.total ?? matched;
-        const infoText = `Показано ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}${currentProject ? ` · ${currentProject}` : ''}`;
-        document.getElementById('kbInfo').textContent = infoText;
+        const infoParts = [
+          `Всего: ${docs.length} / ${matched}${total ? ` (всего ${total})` : ''}`,
+          `Текст: ${grouped.text.length}`,
+          `Документы: ${grouped.docs.length}`,
+          `Фото: ${grouped.images.length}`,
+        ];
+        if (currentProject) infoParts.push(`Проект: ${currentProject}`);
+        if (query) infoParts.push(`Фильтр: "${query}"`);
+        document.getElementById('kbInfo').textContent = infoParts.join(' · ');
       } catch (error) {
         document.getElementById('kbInfo').textContent = 'Ошибка загрузки базы знаний';
         console.error(error);
@@ -3377,8 +3710,9 @@
 
       try {
         if (files.length) {
+          lastGeneratedDescription = '';
           let uploaded = 0;
-          let autoDescriptions = 0;
+          let queuedAutoDescriptions = 0;
           overlayVisible = true;
           showKnowledgeThinking(`Загружаем 1/${files.length}…`);
           for (let idx = 0; idx < files.length; idx += 1) {
@@ -3390,7 +3724,7 @@
             if (files.length === 1 && description) fd.append('description', description);
             fd.append('file', file);
             statusLabel.textContent = `Загружаем ${idx + 1}/${files.length}: ${file.name}`;
-            updateKnowledgeThinking(`Генерируем описание для «${file.name}»…`);
+            updateKnowledgeThinking(`Обрабатываем «${file.name}»…`);
             const resp = await fetch('/api/v1/admin/knowledge/upload', { method: 'POST', body: fd });
             if (!resp.ok) {
               const reason = await resp.text();
@@ -3400,17 +3734,22 @@
             }
             const result = await resp.json().catch(() => ({}));
             const generatedDescription = typeof result?.description === 'string' ? result.description : '';
-            if (result?.auto_description) autoDescriptions += 1;
-            if (generatedDescription) {
+            const pendingAuto = result?.auto_description_pending === true;
+            if (pendingAuto) {
+              queuedAutoDescriptions += 1;
+              renderAutoDescription('Описание появится после обработки');
+              updateKnowledgeThinking('Файл добавлен, автоописание в очереди');
+            } else if (generatedDescription) {
               lastGeneratedDescription = generatedDescription;
               showKnowledgeDescriptionPreview(generatedDescription);
               renderAutoDescription(generatedDescription);
               if (files.length === 1) {
                 document.getElementById('kbNewDescription').value = generatedDescription;
               }
+              updateKnowledgeThinking('Описание готово! Обновляем список...');
+            } else {
+              updateKnowledgeThinking('Файл сохранён. Обновляем список...');
             }
-            const nextMessage = generatedDescription ? 'Описание готово! Обновляем список...' : 'Готово! Обновляем список...';
-            updateKnowledgeThinking(nextMessage);
             uploaded += 1;
             if (idx + 1 < files.length) {
               updateKnowledgeThinking(`Обрабатываем ${idx + 2}/${files.length}…`);
@@ -3437,8 +3776,8 @@
             renderAutoDescription(lastGeneratedDescription);
           }
           let resultMsg = `Загружено ${uploaded}/${files.length}`;
-          if (autoDescriptions) {
-            resultMsg += ` · автоописаний: ${autoDescriptions}`;
+          if (queuedAutoDescriptions) {
+            resultMsg += ` · в очереди AI: ${queuedAutoDescriptions}`;
           }
           statusLabel.textContent = resultMsg;
           populateProjectForm(currentProject);
@@ -3450,8 +3789,9 @@
           return;
         }
 
+        lastGeneratedDescription = '';
         overlayVisible = true;
-        showKnowledgeThinking('Генерируем описание…');
+        showKnowledgeThinking('Сохраняем документ…');
         statusLabel.textContent = 'Сохраняем...';
         const resp = await fetch('/api/v1/admin/knowledge', {
           method: 'POST',
@@ -3469,17 +3809,24 @@
           return;
         }
         const result = await resp.json().catch(() => ({}));
+        const pendingAuto = result?.auto_description_pending === true;
         const generatedDescription = typeof result?.description === 'string' ? result.description : '';
-        if (generatedDescription) {
+        if (pendingAuto) {
+          showKnowledgeDescriptionPreview('Описание будет сформировано позже');
+          renderAutoDescription('Описание появится после обработки');
+          statusLabel.textContent = 'Документ сохранён, автоописание в очереди';
+          updateKnowledgeThinking('Документ сохранён. Автоописание запланировано.');
+        } else if (generatedDescription) {
           lastGeneratedDescription = generatedDescription;
           showKnowledgeDescriptionPreview(generatedDescription);
           renderAutoDescription(generatedDescription);
           document.getElementById('kbNewDescription').value = generatedDescription;
+          statusLabel.textContent = 'Описание готово';
+          updateKnowledgeThinking('Описание готово! Обновляем список...');
+        } else {
+          statusLabel.textContent = 'Документ сохранён';
+          updateKnowledgeThinking('Готово! Обновляем список...');
         }
-        const autoNote = result?.auto_description ? ' · автоописание создано' : '';
-        const nextMessage = generatedDescription ? 'Описание готово! Обновляем список...' : 'Готово! Обновляем список...';
-        updateKnowledgeThinking(nextMessage);
-        statusLabel.textContent = `Сохранено${autoNote}`;
         document.getElementById('kbNewName').value = '';
         document.getElementById('kbNewUrl').value = '';
         if (!lastGeneratedDescription) {

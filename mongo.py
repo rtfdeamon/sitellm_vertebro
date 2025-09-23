@@ -232,7 +232,7 @@ class MongoClient:
             cursor = cursor.sort([("score", {"$meta": "textScore"})]).limit(50)
             documents = [Document(**doc) async for doc in cursor]
             # Cache the search results as a list of document dicts
-            docs_data = [doc.model_dump() for doc in documents]
+            docs_data = [doc.model_dump(by_alias=True) for doc in documents]
             await redis.setex(key, 86400, json.dumps(docs_data, ensure_ascii=False))
             logger.info("cache_store", key=key, matched=len(documents))
             return documents
@@ -318,10 +318,11 @@ class MongoClient:
                 file,
             )
             project_key = (project or "default").strip().lower()
+            description_value = "" if description is None else description
             size_bytes = len(file) if isinstance(file, (bytes, bytearray)) else None
             document = Document(
                 name=file_name,
-                description=description or "",
+                description=description_value,
                 fileId=str(f_id),
                 url=url,
                 ts=time.time(),
@@ -476,7 +477,10 @@ class MongoClient:
 
         try:
             payload = content.encode("utf-8")
-            description = description or content.replace("\n", " ").strip()[:200]
+            if description is None:
+                description_value = content.replace("\n", " ").strip()[:200]
+            else:
+                description_value = description
             project_key = (project or "default").strip().lower()
             existing = await self.db[documents_collection].find_one(
                 {"name": name, "project": project_key},
@@ -497,7 +501,7 @@ class MongoClient:
 
             doc = Document(
                 name=name,
-                description=description,
+                description=description_value,
                 fileId=str(file_id),
                 url=url,
                 ts=time.time(),

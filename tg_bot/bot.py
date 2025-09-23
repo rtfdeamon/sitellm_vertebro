@@ -116,6 +116,17 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
     mongo_client: AppMongoClient | None = None
     mongo_documents_collection: str | None = None
 
+    def _trim_caption(value: str | None) -> str | None:
+        if not value:
+            return None
+        trimmed = value.strip()
+        if not trimmed:
+            return None
+        if len(trimmed) > 1024:
+            trimmed = trimmed[:1021].rstrip()
+            trimmed = f"{trimmed}…"
+        return trimmed
+
     async def _get_client() -> httpx.AsyncClient:
         nonlocal http_client
         if http_client is None:
@@ -145,7 +156,8 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
             file_id = attachment.get('file_id') or attachment.get('id')
             content_type = str(attachment.get('content_type') or '').lower()
             description = attachment.get('description')
-            caption = description or name
+            fallback_caption = _trim_caption(name)
+            caption = _trim_caption(description) or fallback_caption
             absolute_url = _resolve_absolute_url(url, base_api_url)
             file_bytes: bytes | None = None
 
@@ -195,7 +207,7 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
                     if content_type.startswith('image/'):
                         await message.answer_photo(media, caption=caption)
                     else:
-                        extra = {"caption": caption} if caption and caption != name else {}
+                        extra = {"caption": caption} if caption and caption != fallback_caption else {}
                         await message.answer_document(media, **extra)
                     continue
 
@@ -204,7 +216,7 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
                     if content_type.startswith('image/'):
                         await message.answer_photo(media, caption=caption)
                     else:
-                        extra = {"caption": caption} if caption and caption != name else {}
+                        extra = {"caption": caption} if caption and caption != fallback_caption else {}
                         await message.answer_document(media, **extra)
                 else:
                     text = f"Документ: {name}"

@@ -127,6 +127,11 @@ class Document(BaseModel):
     project: str | None = None
     source_content_type: str | None = None
     size_bytes: int | None = None
+    status: str | None = None
+    status_message: str | None = Field(default=None, alias="statusMessage")
+    status_updated_at: float | None = Field(default=None, alias="statusUpdatedAt")
+    auto_description_pending: bool | None = Field(default=None, alias="autoDescriptionPending")
+    auto_description_generated_at: float | None = Field(default=None, alias="autoDescriptionGeneratedAt")
 
     model_config = ConfigDict(
         json_schema_extra={

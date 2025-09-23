@@ -40,9 +40,10 @@ from mongo import NotFound
 from pydantic import BaseModel
 
 from core.status import status_dict
-from settings import MongoSettings
+from settings import MongoSettings, get_settings as get_app_settings
 
 logger = structlog.get_logger(__name__)
+app_settings = get_app_settings()
 
 EMOTION_ON_PROMPT = (
     "Отвечай в тёплом, дружелюбном тоне, добавляй уместные эмоции и подходящие эмодзи (не более двух в ответе),"
@@ -121,6 +122,13 @@ _ATTACHMENT_NEGATIONS = {
     "no",
     "неа",
 }
+
+
+def _log_debug_event(message: str, **kwargs) -> None:
+    if app_settings.debug:
+        logger.info(message, **kwargs)
+    else:
+        logger.debug(message, **kwargs)
 
 
 def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
@@ -585,7 +593,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         attachments_payload = _collect_attachments(knowledge_snippets)
         if knowledge_message:
             preset = preset + [{"role": "system", "content": knowledge_message}]
-            logger.info(
+            _log_debug_event(
                 "knowledge_context_attached",
                 session=str(llm_request.session_id),
                 project=project_name,
@@ -607,7 +615,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         prompt_text = project.llm_prompt.strip()
         if prompt_text:
             system_messages.append({"role": "system", "content": prompt_text})
-            logger.info(
+            _log_debug_event(
                 "project_prompt_attached",
                 session=str(llm_request.session_id),
                 project=project_name,
@@ -638,7 +646,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         }
         for item in knowledge_snippets
     ]
-    logger.info(
+    _log_debug_event(
         "llm_prompt_compiled",
         session=str(llm_request.session_id),
         project=project_name,
@@ -747,15 +755,26 @@ async def chat(
 
     effective_model = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
 
-    logger.info(
-        "chat",
-        question=question,
-        project=project_name,
-        emotions=emotions_enabled,
-        session=session_key,
-        debug=send_debug,
-        channel=channel_name,
-    )
+    if app_settings.debug:
+        logger.info(
+            "chat",
+            question=question,
+            project=project_name,
+            emotions=emotions_enabled,
+            session=session_key,
+            debug=send_debug,
+            channel=channel_name,
+        )
+    else:
+        logger.info(
+            "chat",
+            question_chars=len(question or ""),
+            project=project_name,
+            emotions=emotions_enabled,
+            session=session_key,
+            debug=send_debug,
+            channel=channel_name,
+        )
 
     now_ts = time.time()
     await _prune_pending_attachments(request.app, now_ts)
@@ -804,7 +823,7 @@ async def chat(
 
     knowledge_message = _compose_knowledge_message(knowledge_snippets)
     if knowledge_message:
-        logger.info(
+        _log_debug_event(
             "knowledge_context_attached",
             project=project_name,
             mode="stream",
@@ -858,7 +877,7 @@ async def chat(
         }
         for entry in knowledge_snippets[:3]
     ]
-    logger.info(
+    _log_debug_event(
         "llm_prompt_compiled_stream",
         project=project_name,
         emotions=emotions_enabled,

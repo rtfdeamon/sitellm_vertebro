@@ -22,7 +22,7 @@ import re
 import sys
 import time
 import urllib.parse as urlparse
-from typing import AsyncIterator, Callable, Iterable, List, Optional, Set, Tuple
+from typing import Any, AsyncIterator, Callable, Iterable, List, Optional, Set, Tuple
 
 import httpx
 import requests
@@ -39,7 +39,7 @@ import xml.etree.ElementTree as ET
 from bson import ObjectId
 from PIL import Image
 
-from knowledge.summary import generate_document_summary
+from knowledge.summary import generate_document_summary, generate_image_caption
 from knowledge.text import extract_doc_text, extract_docx_text
 from models import Project
 
@@ -237,6 +237,38 @@ NAVIGATION_TOKENS = {
     "страница не найдена",
 }
 
+BREADCRUMB_SEPARATORS = re.compile(r"\s*[>/\\»|-]+\s*")
+NAV_KEYWORDS = {
+    "главная",
+    "контакты",
+    "о компании",
+    "о нас",
+    "услуги",
+    "партнёры",
+    "клиенты",
+    "новости",
+    "карта сайта",
+    "помощь",
+    "faq",
+    "поиск",
+    "support",
+    "docs",
+    "documentation",
+    "download",
+}
+FOOTER_KEYWORDS = {
+    "все права защищены",
+    "all rights reserved",
+    "политика конфиденциальности",
+    "privacy policy",
+    "terms of use",
+    "соглашение",
+    "copyright",
+    "©",
+    "mail",
+    "phone",
+}
+
 RE_CAMEL_CASE = re.compile(r"(?<=[a-zа-яё])(?=[A-ZА-ЯЁ])")
 RE_DIGIT_BOUNDARY = re.compile(r"(?<=[0-9])(?=[A-Za-zА-Яа-яЁё])|(?<=[A-Za-zА-Яа-яЁё])(?=[0-9])")
 
@@ -271,20 +303,63 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
 
 
 def extract_image_links(html: str, base_url: str) -> List[dict[str, str]]:
-    """Extract image URLs with optional alt text from ``html``."""
+    """Extract image URLs (including lazy-loaded variants) from ``html``."""
 
     soup = BeautifulSoup(html, "html.parser")
-    result: list[dict[str, str]] = []
-    for img in soup.find_all("img", src=True):
-        src = (img.get("src") or "").strip()
-        if not src or src.startswith("data:"):
-            continue
-        abs_url = urlparse.urljoin(base_url, src)
-        if not abs_url.lower().startswith(("http://", "https://")):
-            continue
-        alt = (img.get("alt") or img.get("title") or "").strip()
-        result.append({"url": abs_url, "alt": alt})
-    return result
+    found: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _push(raw_url: str | None, alt_text: str | None = None) -> None:
+        if not raw_url:
+            return
+        candidate = raw_url.strip()
+        if not candidate or candidate.startswith("data:"):
+            return
+        absolute = urlparse.urljoin(base_url, candidate)
+        if not absolute.lower().startswith(("http://", "https://")):
+            return
+        absolute = absolute.split("#")[0]
+        if absolute in seen:
+            return
+        alt_clean = (alt_text or "").strip()
+        if not alt_clean:
+            return
+        entry: dict[str, str] = {"url": absolute, "alt": alt_clean}
+        found.append(entry)
+        seen.add(absolute)
+
+    def _iter_src_candidates(img_tag: Any) -> list[str]:
+        candidates: list[str] = []
+        for attr in (
+            "src",
+            "data-src",
+            "data-original",
+            "data-lazy-src",
+            "data-url",
+            "data-preview",
+            "data-small",
+            "data-medium",
+            "data-large",
+        ):
+            value = img_tag.get(attr)
+            if isinstance(value, str):
+                trimmed = value.strip()
+                if trimmed:
+                    candidates.append(trimmed)
+        srcset = img_tag.get("srcset")
+        if isinstance(srcset, str):
+            for item in srcset.split(","):
+                parts = item.strip().split()
+                if parts:
+                    candidates.append(parts[0])
+        return list(dict.fromkeys(candidates))
+
+    for img in soup.find_all("img"):
+        alt_text = img.get("alt") or ""
+        for candidate in _iter_src_candidates(img):
+            _push(candidate, alt_text)
+
+    return found
 
 
 def extract_links(html: str, base_url: str) -> List[str]:
@@ -430,6 +505,41 @@ def clean_text(raw: str) -> str:
     cleaned = "\n".join(lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned
+
+
+def _normalize_for_hash(text: str) -> str:
+    normalized = re.sub(r"\s+", " ", text or "").strip().lower()
+    return normalized
+
+
+def _is_probably_navigation(text: str) -> bool:
+    candidate = text.strip().lower()
+    if not candidate:
+        return True
+    parts = [part.strip() for part in BREADCRUMB_SEPARATORS.split(candidate) if part.strip()]
+    if parts and all(part in NAV_KEYWORDS for part in parts):
+        return True
+    if len(candidate) <= 48 and candidate.count(" ") <= 6:
+        tokens = [token for token in re.split(r"\W+", candidate) if token]
+        if tokens and all(token in NAV_KEYWORDS for token in tokens):
+            return True
+    for marker in FOOTER_KEYWORDS:
+        if marker in candidate and len(candidate) <= 160:
+            return True
+    return False
+
+
+def _should_skip_text_document(text: str) -> bool:
+    normalized = _normalize_for_hash(text)
+    if not normalized:
+        return True
+    if len(normalized) < 60:
+        return True
+    if normalized.count("paragraph") > 12:
+        return True
+    if _is_probably_navigation(normalized):
+        return True
+    return False
 
 
 async def _ensure_playwright():
@@ -856,6 +966,8 @@ def run(
             logger.debug("project_model_load_failed", project=document_project, error=str(exc))
 
         async def _store() -> None:
+            seen_text_hashes: set[str] = set()
+            seen_binary_hashes: set[str] = set()
             img_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
             try:
                 async for (
@@ -905,59 +1017,91 @@ def run(
 
                     filename = _filename_from_url(page_url, suffix=suffix)
 
+                    store_document = True
+                    skip_reason: str | None = None
+                    content_hash: str | None = None
+
                     if is_binary:
+                        payload_bytes = binary_payload or b""
+                        if payload_bytes:
+                            content_hash = hashlib.sha1(payload_bytes).hexdigest()
+                            if content_hash in seen_binary_hashes:
+                                store_document = False
+                                skip_reason = "duplicate_binary"
+                            else:
+                                seen_binary_hashes.add(content_hash)
                         description = await generate_document_summary(filename, text, project_model)
                         if not description.strip() and text:
                             description = text.replace("\n", " ").strip()[:200]
                         if not description.strip():
                             description = f"Документ «{filename}»."
-                        payload_bytes = binary_payload or b""
                     else:
-                        description = text.replace("\n", " ").strip()[:200]
                         payload_source = text if text else raw_payload
-                        payload_bytes = payload_source.encode("utf-8")
+                        payload_bytes = payload_source.encode("utf-8") if isinstance(payload_source, str) else (payload_source or b"")
+                        if _should_skip_text_document(text):
+                            store_document = False
+                            skip_reason = "low_value_text"
+                        else:
+                            canonical = _normalize_for_hash(text)
+                            if canonical:
+                                content_hash = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
+                                if content_hash in seen_text_hashes:
+                                    store_document = False
+                                    skip_reason = "duplicate_text"
+                                else:
+                                    seen_text_hashes.add(content_hash)
+                        description = text.replace("\n", " ").strip()[:200]
 
-                    existing = documents_collection.find_one(
-                        {"url": page_url, "project": document_project},
-                        {"fileId": 1},
-                    )
-                    if existing and existing.get("fileId"):
-                        try:
-                            gridfs.delete(ObjectId(existing["fileId"]))
-                        except Exception:
-                            logger.warning("gridfs_delete_failed", file_id=existing["fileId"])
-
-                    file_id = gridfs.put(
-                        payload_bytes,
-                        filename=filename,
-                        content_type=storage_type,
-                    )
-
-                    doc: dict[str, object] = {
-                        "name": filename,
-                        "description": description,
-                        "fileId": str(file_id),
-                        "url": page_url,
-                        "ts": time.time(),
-                        "content_type": storage_type,
-                        "domain": document_domain,
-                        "project": document_project,
-                        "size_bytes": len(payload_bytes),
-                    }
-                    if source_ct:
-                        doc["source_content_type"] = source_ct
-                    elif is_binary and storage_type != "text/plain":
-                        doc["source_content_type"] = storage_type
-                    elif is_html:
-                        doc["source_content_type"] = "text/html"
-
-                    operations.append(
-                        UpdateOne(
+                    if store_document:
+                        existing = documents_collection.find_one(
                             {"url": page_url, "project": document_project},
-                            {"$set": doc},
-                            upsert=True,
+                            {"fileId": 1},
                         )
-                    )
+                        if existing and existing.get("fileId"):
+                            try:
+                                gridfs.delete(ObjectId(existing["fileId"]))
+                            except Exception:
+                                logger.warning("gridfs_delete_failed", file_id=existing["fileId"])
+
+                        file_id = gridfs.put(
+                            payload_bytes,
+                            filename=filename,
+                            content_type=storage_type,
+                        )
+
+                        doc: dict[str, object] = {
+                            "name": filename,
+                            "description": description,
+                            "fileId": str(file_id),
+                            "url": page_url,
+                            "ts": time.time(),
+                            "content_type": storage_type,
+                            "domain": document_domain,
+                            "project": document_project,
+                            "size_bytes": len(payload_bytes),
+                        }
+                        if source_ct:
+                            doc["source_content_type"] = source_ct
+                        elif is_binary and storage_type != "text/plain":
+                            doc["source_content_type"] = storage_type
+                        elif is_html:
+                            doc["source_content_type"] = "text/html"
+                        if content_hash:
+                            doc["content_hash"] = content_hash
+
+                        operations.append(
+                            UpdateOne(
+                                {"url": page_url, "project": document_project},
+                                {"$set": doc},
+                                upsert=True,
+                            )
+                        )
+                    else:
+                        logger.info(
+                            "knowledge_document_skipped",
+                            url=page_url,
+                            reason=skip_reason or "filtered",
+                        )
 
                     for image_info in image_links:
                         image_url = image_info.get("url") or ""
@@ -979,7 +1123,12 @@ def run(
                         if not compressed or not final_type:
                             continue
                         image_filename = _filename_from_url(image_url, suffix=".jpg")
-                        image_description = image_info.get("alt") or f"Изображение со страницы {page_url}"
+                        image_description = await generate_image_caption(
+                            image_filename,
+                            image_info.get("alt"),
+                            text,
+                            project_model,
+                        )
                         try:
                             image_file_id = gridfs.put(
                                 compressed,

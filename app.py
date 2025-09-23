@@ -44,6 +44,7 @@ from gridfs import GridFS
 from bson import ObjectId
 from retrieval import search as retrieval_search
 from knowledge.summary import generate_document_summary
+from knowledge.tasks import queue_auto_description
 from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
 from update_service.service import (
     DEFAULT_BRANCH as GIT_DEFAULT_BRANCH,
@@ -1595,7 +1596,10 @@ async def admin_knowledge(
             )
             docs_models = [Document(**doc) async for doc in cursor]
 
-        documents = [doc.model_dump() if isinstance(doc, Document) else doc for doc in docs_models]
+        documents = [
+            doc.model_dump(by_alias=True) if isinstance(doc, Document) else doc
+            for doc in docs_models
+        ]
         for doc in documents:
             file_id = doc.get("fileId")
             if file_id:
@@ -1643,11 +1647,16 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
-    auto_description = False
-    description_value = (payload.description or "").strip()
-    if not description_value:
-        description_value = await generate_document_summary(name, payload.content, project)
-        auto_description = True
+    description_input = (payload.description or "").strip()
+    auto_description_pending = False
+    status_message = None
+
+    if description_input:
+        description_value = description_input
+    else:
+        description_value = ""
+        auto_description_pending = True
+        status_message = "Автоописание в очереди"
 
     try:
         domain_value = payload.domain or (project.domain if project else None)
@@ -1660,6 +1669,30 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
             domain=domain_value,
             url=payload.url,
         )
+        await mongo_client.db[collection].update_one(
+            {"fileId": file_id},
+            {
+                "$set": {
+                    "autoDescriptionPending": auto_description_pending,
+                }
+            },
+            upsert=False,
+        )
+        if auto_description_pending:
+            await mongo_client.update_document_status(
+                collection,
+                file_id,
+                "pending_auto_description",
+                status_message,
+            )
+            queue_auto_description(file_id, project_name)
+        else:
+            await mongo_client.update_document_status(
+                collection,
+                file_id,
+                "ready",
+                "Описание задано вручную",
+            )
         if project_name:
             project_payload = Project(
                 name=project.name if project else project_name,
@@ -1692,7 +1725,9 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
         "project": project_name,
         "domain": domain_value,
         "description": description_value,
-        "auto_description": auto_description,
+        "auto_description_pending": auto_description_pending,
+        "status": "pending_auto_description" if auto_description_pending else "ready",
+        "status_message": status_message,
     })
 
 
@@ -1722,25 +1757,15 @@ async def admin_upload_knowledge(
         raise HTTPException(status_code=400, detail="File is empty")
 
     content_type = (file.content_type or "").lower()
-    description_value = (description or "").strip()
-    auto_description = False
-    text_for_summary = ""
-    lower_name = filename.lower()
-    if not description_value:
-        if content_type.startswith("text/") or content_type in {"application/json", "application/xml"}:
-            text_for_summary = payload.decode("utf-8", errors="ignore")
-        elif content_type in PDF_MIME_TYPES or lower_name.endswith(".pdf"):
-            text_for_summary = extract_pdf_text(payload)
-        elif content_type in DOCX_MIME_TYPES or lower_name.endswith(".docx"):
-            text_for_summary = extract_docx_text(payload)
-        elif content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
-            text_for_summary = extract_doc_text(payload)
-        description_value = await generate_document_summary(
-            filename,
-            text_for_summary,
-            project_model,
-        )
-        auto_description = True
+    description_input = (description or "").strip()
+    auto_description_pending = False
+    status_message = None
+    if description_input:
+        description_value = description_input
+    else:
+        description_value = ""
+        auto_description_pending = True
+        status_message = "Автоописание в очереди"
 
     try:
         file_id = await mongo_client.upload_document(
@@ -1759,6 +1784,30 @@ async def admin_upload_knowledge(
             {"$set": {"url": download_url, "content_type": file.content_type}},
             upsert=False,
         )
+        await mongo_client.db[collection].update_one(
+            {"fileId": file_id},
+            {
+                "$set": {
+                    "autoDescriptionPending": auto_description_pending,
+                }
+            },
+            upsert=False,
+        )
+        if auto_description_pending:
+            await mongo_client.update_document_status(
+                collection,
+                file_id,
+                "pending_auto_description",
+                status_message,
+            )
+            queue_auto_description(file_id, project_name)
+        else:
+            await mongo_client.update_document_status(
+                collection,
+                file_id,
+                "ready",
+                "Описание задано вручную",
+            )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
@@ -1773,7 +1822,9 @@ async def admin_upload_knowledge(
             "download_url": download_url,
             "content_type": file.content_type,
             "description": description_value,
-            "auto_description": auto_description,
+            "auto_description_pending": auto_description_pending,
+            "status": "pending_auto_description" if auto_description_pending else "ready",
+            "status_message": status_message,
         }
     )
 
@@ -1844,11 +1895,19 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             "url": url_value,
             "project": project_value,
             "domain": domain_value,
+            "autoDescriptionPending": False,
         }
         await request.state.mongo.db[collection].update_one(
             {"fileId": file_id},
             {"$set": update_doc},
             upsert=False,
+        )
+        status_note = "Автоописание обновлено" if auto_description else "Описание обновлено"
+        await request.state.mongo.update_document_status(
+            collection,
+            file_id,
+            "ready",
+            status_note,
         )
         return ORJSONResponse(
             {
@@ -1857,7 +1916,9 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
                 "project": project_value,
                 "domain": domain_value,
                 "description": description_value,
-                "auto_description": auto_description,
+                "auto_description_pending": False,
+                "status": "ready",
+                "status_message": status_note,
             }
         )
 
@@ -1895,6 +1956,19 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             url=url_value,
         )
 
+    await request.state.mongo.db[collection].update_one(
+        {"fileId": new_file_id},
+        {"$set": {"autoDescriptionPending": False}},
+        upsert=False,
+    )
+    status_note = "Автоописание обновлено" if auto_description else "Описание обновлено"
+    await request.state.mongo.update_document_status(
+        collection,
+        new_file_id,
+        "ready",
+        status_note,
+    )
+
     if project_value:
         existing = await request.state.mongo.get_project(project_value)
         project_payload = Project(
@@ -1927,7 +2001,9 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             "project": project_value,
             "domain": domain_value,
             "description": description_value,
-            "auto_description": auto_description,
+            "auto_description_pending": False,
+            "status": "ready",
+            "status_message": status_note,
         }
     )
 
