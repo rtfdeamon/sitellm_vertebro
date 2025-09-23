@@ -605,13 +605,16 @@ async def text_handler(
             summary_lines.append(f"• модель: {model_name}")
 
         last_debug_event: Dict[str, Any] | None = None
-        debug_events = meta.get('debug')
-        if isinstance(debug_events, list) and debug_events:
-            maybe_last = debug_events[-1]
-            if isinstance(maybe_last, dict):
-                last_debug_event = maybe_last
+        if debug_allowed:
+            debug_events = meta.get('debug')
+            if isinstance(debug_events, list) and debug_events:
+                maybe_last = debug_events[-1]
+                if isinstance(maybe_last, dict):
+                    last_debug_event = maybe_last
 
-        session_label = meta.get('session_id') or (last_debug_event.get('session_id') if last_debug_event else None)
+        session_label = meta.get('session_id')
+        if session_label is None and debug_allowed and last_debug_event:
+            session_label = last_debug_event.get('session_id')
         if session_label:
             summary_lines.append(f"• сессия: {session_label}")
 
@@ -621,7 +624,7 @@ async def text_handler(
             if debug_origin:
                 summary_lines.append(f"• источник отладки: {debug_origin}")
 
-        if last_debug_event:
+        if debug_allowed and last_debug_event:
             sources = last_debug_event.get('knowledge_sources')
             knowledge_count = last_debug_event.get('knowledge_count')
             if isinstance(knowledge_count, int):
