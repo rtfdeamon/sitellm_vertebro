@@ -24,8 +24,10 @@ import structlog
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from starlette.routing import NoMatchFound
@@ -1403,7 +1405,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         del app.state.telegram
         del app.state.max
 
+
+def _ssl_enabled() -> bool:
+    cert = os.getenv("APP_SSL_CERT")
+    key = os.getenv("APP_SSL_KEY")
+    if not cert or not key:
+        return False
+    return os.path.exists(cert) and os.path.exists(key)
+
+
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
+if _ssl_enabled():
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+    app.add_middleware(HTTPSRedirectMiddleware)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(BasicAuthMiddleware)
