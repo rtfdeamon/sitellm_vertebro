@@ -420,6 +420,16 @@ update_env_var() {
   fi
 }
 
+ensure_self_signed_cert() {
+  local target_dir="certs"
+  if ./scripts/generate_self_signed_cert.sh "$target_dir"; then
+    update_env_var APP_SSL_CERT "/certs/server.crt"
+    update_env_var APP_SSL_KEY "/certs/server.key"
+  else
+    echo '[!] Failed to prepare self-signed TLS certificate'
+  fi
+}
+
 update_env_var DOMAIN "$DOMAIN"
 update_env_var CRAWL_START_URL "$CRAWL_START_URL"
 update_env_var PROJECT_NAME "$PROJECT_NAME"
@@ -518,6 +528,8 @@ timestamp=$(date +%Y%m%d%H%M%S)
 mkdir -p deploy-backups
 tar -czf "deploy-backups/${timestamp}.tar.gz" .env compose.yaml
 printf '[✓] Environment saved to deploy-backups/%s.tar.gz\n' "$timestamp"
+
+ensure_self_signed_cert
 
 if ! grep -q "^MONGO_PASSWORD=" .env; then
   echo '[!] MONGO_PASSWORD not found in .env'; exit 1
