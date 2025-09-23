@@ -216,29 +216,12 @@ terminate_port_processes() {
     return 1
   fi
   printf '[!] Port %s is currently in use by PID(s): %s\n' "$port" "$pids"
-  printf '[+] Attempting graceful shutdown of blocking processes...\n'
-  for pid in $pids; do
-    kill "$pid" 2>/dev/null || {
-      if command -v sudo >/dev/null 2>&1; then
-        sudo kill "$pid" 2>/dev/null || true
-      fi
-    }
-  done
+  printf '[+] Waiting up to %s seconds for the owning process to release the port...\n' "$grace"
   if wait_until_port_free "$port" "$grace" 1; then
+    printf '[✓] Port %s released without forcing termination.\n' "$port"
     return 0
   fi
-  printf '[!] Processes still listening on port %s; escalating to SIGKILL...\n' "$port"
-  for pid in $pids; do
-    kill -9 "$pid" 2>/dev/null || {
-      if command -v sudo >/dev/null 2>&1; then
-        sudo kill -9 "$pid" 2>/dev/null || true
-      fi
-    }
-  done
-  if wait_until_port_free "$port" "$((grace + 6))" 1; then
-    return 0
-  fi
-  printf '[✗] Unable to free port %s automatically. Please stop blocking processes and rerun.\n' "$port"
+  printf '[✗] Port %s is still busy. Stop blocking processes manually and rerun.\n' "$port"
   return 1
 }
 
