@@ -128,8 +128,10 @@
     .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
     .toolbar .spacer { flex: 1 1 auto; }
     .toolbar input[type=text] { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; flex: 1 1 280px; }
+    .toolbar select { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; min-width: 120px; }
     .toolbar button { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 6px; cursor: pointer; }
     .toolbar button:hover { border-color: var(--accent); }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
     .status { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
     .dot.ok { background: var(--ok); }
@@ -192,11 +194,11 @@
   </style>
 </head>
 <body>
-  <div class="widget-launcher" id="widgetLauncher" aria-label="Открыть чат">
+  <div class="widget-launcher" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria">
     <div class="launcher-avatar">AI</div>
     <div class="launcher-text">
-      <strong>AI‑помощник</strong>
-      <span>Спросите меня</span>
+      <strong data-i18n="launcherTitle">AI Assistant</strong>
+      <span data-i18n="launcherSubtitle">Ask me anything</span>
     </div>
   </div>
   <div class="chat-backdrop" id="chatBackdrop"></div>
@@ -204,48 +206,49 @@
     <div class="chat-window">
       <div class="chat-header">
         <div>
-          <div class="chat-title">AI‑помощник</div>
-          <div class="chat-subtitle">Готов ответить на ваши вопросы</div>
+          <div class="chat-title" data-i18n="chatTitle">AI Assistant</div>
+          <div class="chat-subtitle" data-i18n="chatSubtitle">Ready to help with your questions</div>
         </div>
-        <button class="chat-close" id="chatClose" aria-label="Закрыть">×</button>
+        <button class="chat-close" id="chatClose" aria-label="Close" data-i18n-aria-label="chatClose">×</button>
       </div>
       <div class="chat-body">
         <div class="container">
           <div class="toolbar">
-            <strong>LLM Chat Widget</strong>
+            <strong data-i18n="toolbarTitle">LLM Chat Widget</strong>
             <span class="spacer"></span>
-            <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" />
-            <button id="saveCfg" class="btn secondary">Save</button>
-            <button id="themeToggle" class="btn secondary" title="Toggle theme">Theme</button>
-            <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText">unknown</span></span>
+            <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" data-i18n-placeholder="basePlaceholder" />
+            <button id="saveCfg" class="btn secondary" data-i18n="saveButton">Save</button>
+            <button id="themeToggle" class="btn secondary" title="Toggle theme" data-i18n="themeButton">Theme</button>
+            <select id="languageSelect" aria-label="Language" data-i18n-aria-label="languageLabel"></select>
+            <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText" data-status-key="unknown">unknown</span></span>
           </div>
 
-          <div id="banner" style="display:none; border:1px solid var(--error); color:#fff; background:#3a1f1f; padding:8px 10px; border-radius:6px; margin:10px 0;">
-            <span id="bannerText">Connection error</span>
-            <button id="bannerClose" class="btn secondary" style="float:right;">Dismiss</button>
+          <div id="banner" style="display:none; border:1px solid var(--error); color:#fff; background:#3a1f1f; padding:8px 10px; border-radius:6px; margin:10px 0;" data-active="false">
+            <span id="bannerText" data-i18n="bannerConnectionError">Connection error</span>
+            <button id="bannerClose" class="btn secondary" style="float:right;" data-i18n="bannerDismiss">Dismiss</button>
           </div>
 
           <div class="project-panel">
             <div>
-              <label for="projectSelect">Project</label>
+              <label for="projectSelect" data-i18n="projectLabel">Project</label>
               <div class="row">
                 <select id="projectSelect" class="grow"></select>
-                <button id="refreshProjects" class="btn secondary" type="button">Reload</button>
+                <button id="refreshProjects" class="btn secondary" type="button" data-i18n="reloadProjects">Reload</button>
               </div>
-              <div class="muted" id="projectInfo"></div>
+              <div class="muted" id="projectInfo">No project selected</div>
             </div>
             <div class="row" style="align-items:center;">
               <label class="checkbox">
                 <input type="checkbox" id="projectDebug">
-                <span>Отладка</span>
+                <span data-i18n="debugLabel">Debug</span>
               </label>
-              <span class="muted" id="projectDebugHint">Показывать расширенные события в чате</span>
+              <span class="muted" id="projectDebugHint">Show extended events in chat</span>
             </div>
             <div>
-              <label for="startPrompt">Стартовый промт</label>
-              <textarea id="startPrompt" placeholder="Стартовый промт проекта"></textarea>
+              <label for="startPrompt" data-i18n="startPromptLabel">Initial prompt</label>
+              <textarea id="startPrompt" placeholder="Project initial prompt" data-i18n-placeholder="startPromptPlaceholder"></textarea>
               <div class="actions">
-                <button id="savePrompt" class="btn secondary" type="button">Save prompt</button>
+                <button id="savePrompt" class="btn secondary" type="button" data-i18n="savePrompt">Save prompt</button>
                 <span id="promptStatus" class="muted"></span>
               </div>
             </div>
@@ -253,10 +256,10 @@
 
           <div id="messages"></div>
           <form id="chat-form">
-            <textarea id="question" placeholder="Ask a question (Shift+Enter = newline)" autocomplete="off"></textarea>
-            <button type="button" id="stop" class="btn secondary" disabled>Stop</button>
-            <button type="submit" id="sendBtn" class="btn">Send</button>
-            <div class="muted">Enter to send • Shift+Enter for newline • <a href="#" id="clear">Clear</a></div>
+            <textarea id="question" placeholder="Ask a question (Shift+Enter = newline)" autocomplete="off" data-i18n-placeholder="questionPlaceholder"></textarea>
+            <button type="button" id="stop" class="btn secondary" disabled data-i18n="stopButton">Stop</button>
+            <button type="submit" id="sendBtn" class="btn" data-i18n="sendButton">Send</button>
+            <div class="muted" id="inputHint"><span id="hintSend">Enter to send</span><span>&nbsp;•&nbsp;</span><span id="hintNewline">Shift+Enter for newline</span><span>&nbsp;•&nbsp;</span><a href="#" id="clear">Clear</a></div>
           </form>
         </div>
       </div>
@@ -285,10 +288,628 @@ const savePromptBtn = document.getElementById('savePrompt');
 const promptStatus = document.getElementById('promptStatus');
 const debugCheckbox = document.getElementById('projectDebug');
 const debugHint = document.getElementById('projectDebugHint');
+const languageSelect = document.getElementById('languageSelect');
+const hintSend = document.getElementById('hintSend');
+const hintNewline = document.getElementById('hintNewline');
+const inputHint = document.getElementById('inputHint');
 const widgetLauncher = document.getElementById('widgetLauncher');
 const chatModal = document.getElementById('chatModal');
 const chatBackdrop = document.getElementById('chatBackdrop');
 const chatClose = document.getElementById('chatClose');
+
+const urlParams = new URLSearchParams(window.location.search);
+const urlProject = (urlParams.get('project') || '').trim().toLowerCase();
+let currentProject = urlProject || (localStorage.getItem('chat_project') || '').trim().toLowerCase();
+const isEmbed = window.self !== window.top || urlParams.get('embed') === '1';
+
+const LANGUAGE_STORAGE_KEY = 'chat_language';
+const FALLBACK_LANGUAGE = 'en';
+const LANGUAGES = {
+  en: {
+    name: 'English',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'AI Assistant',
+      launcherSubtitle: 'Ask me anything',
+      launcherAria: 'Open chat',
+      chatTitle: 'AI Assistant',
+      chatSubtitle: 'Ready to help with your questions',
+      chatClose: 'Close',
+      toolbarTitle: 'LLM Chat Widget',
+      basePlaceholder: 'API base (optional), e.g. http://host:18000',
+      saveButton: 'Save',
+      themeButton: 'Theme',
+      languageLabel: 'Language',
+      statusUnknown: 'unknown',
+      statusOk: 'online',
+      statusOffline: 'offline',
+      bannerConnectionError: 'Connection error',
+      bannerDismiss: 'Dismiss',
+      projectLabel: 'Project',
+      reloadProjects: 'Reload',
+      projectInfoNone: 'No project selected',
+      projectInfoSelected: 'Current project: {project}',
+      debugLabel: 'Debug',
+      debugHintOff: 'Show extended events in chat',
+      debugHintOn: 'Extended events enabled',
+      startPromptLabel: 'Initial prompt',
+      startPromptPlaceholder: 'Project initial prompt',
+      savePrompt: 'Save prompt',
+      questionPlaceholder: 'Ask a question (Shift+Enter = newline)',
+      stopButton: 'Stop',
+      sendButton: 'Send',
+      inputHintSend: 'Enter to send',
+      inputHintNewline: 'Shift+Enter for newline',
+      clearLink: 'Clear',
+      errorLoadProjects: 'Failed to load projects',
+      statusSaving: 'Saving…',
+      statusSaved: 'Saved',
+      statusError: 'Error',
+      errorStreaming: 'Streaming error, see console.',
+      errorNoSSE: 'SSE not supported by this browser.',
+      attachmentLabel: 'Attachment',
+      roleUser: 'user',
+      roleAssistant: 'assistant',
+      roleSystem: 'system',
+      roleDebug: 'debug'
+    }
+  },
+  es: {
+    name: 'Español',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'Asistente de IA',
+      launcherSubtitle: 'Pregunta lo que quieras',
+      launcherAria: 'Abrir chat',
+      chatTitle: 'Asistente de IA',
+      chatSubtitle: 'Listo para ayudarte con tus preguntas',
+      chatClose: 'Cerrar',
+      toolbarTitle: 'Widget de chat LLM',
+      basePlaceholder: 'Base de API (opcional), p. ej. http://host:18000',
+      saveButton: 'Guardar',
+      themeButton: 'Tema',
+      languageLabel: 'Idioma',
+      statusUnknown: 'desconocido',
+      statusOk: 'en línea',
+      statusOffline: 'sin conexión',
+      bannerConnectionError: 'Error de conexión',
+      bannerDismiss: 'Cerrar',
+      projectLabel: 'Proyecto',
+      reloadProjects: 'Actualizar',
+      projectInfoNone: 'Ningún proyecto seleccionado',
+      projectInfoSelected: 'Proyecto actual: {project}',
+      debugLabel: 'Depuración',
+      debugHintOff: 'Mostrar eventos ampliados en el chat',
+      debugHintOn: 'Eventos ampliados activados',
+      startPromptLabel: 'Mensaje inicial',
+      startPromptPlaceholder: 'Mensaje inicial del proyecto',
+      savePrompt: 'Guardar mensaje',
+      questionPlaceholder: 'Haz una pregunta (Mayús+Enter = nueva línea)',
+      stopButton: 'Detener',
+      sendButton: 'Enviar',
+      inputHintSend: 'Enter para enviar',
+      inputHintNewline: 'Mayús+Enter para nueva línea',
+      clearLink: 'Limpiar',
+      errorLoadProjects: 'No se pudieron cargar los proyectos',
+      statusSaving: 'Guardando…',
+      statusSaved: 'Guardado',
+      statusError: 'Error',
+      errorStreaming: 'Error de streaming, revisa la consola.',
+      errorNoSSE: 'Este navegador no admite SSE.',
+      attachmentLabel: 'Adjunto',
+      roleUser: 'usuario',
+      roleAssistant: 'asistente',
+      roleSystem: 'sistema',
+      roleDebug: 'depuración'
+    }
+  },
+  de: {
+    name: 'Deutsch',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'KI-Assistent',
+      launcherSubtitle: 'Frag mich alles',
+      launcherAria: 'Chat öffnen',
+      chatTitle: 'KI-Assistent',
+      chatSubtitle: 'Bereit, deine Fragen zu beantworten',
+      chatClose: 'Schließen',
+      toolbarTitle: 'LLM-Chat-Widget',
+      basePlaceholder: 'API-Basis (optional), z. B. http://host:18000',
+      saveButton: 'Speichern',
+      themeButton: 'Thema',
+      languageLabel: 'Sprache',
+      statusUnknown: 'unbekannt',
+      statusOk: 'online',
+      statusOffline: 'offline',
+      bannerConnectionError: 'Verbindungsfehler',
+      bannerDismiss: 'Schließen',
+      projectLabel: 'Projekt',
+      reloadProjects: 'Aktualisieren',
+      projectInfoNone: 'Kein Projekt ausgewählt',
+      projectInfoSelected: 'Aktuelles Projekt: {project}',
+      debugLabel: 'Debug',
+      debugHintOff: 'Erweiterte Ereignisse im Chat anzeigen',
+      debugHintOn: 'Erweiterte Ereignisse aktiviert',
+      startPromptLabel: 'Start-Prompt',
+      startPromptPlaceholder: 'Start-Prompt des Projekts',
+      savePrompt: 'Prompt speichern',
+      questionPlaceholder: 'Stelle eine Frage (Shift+Enter = neue Zeile)',
+      stopButton: 'Stopp',
+      sendButton: 'Senden',
+      inputHintSend: 'Enter zum Senden',
+      inputHintNewline: 'Shift+Enter für neue Zeile',
+      clearLink: 'Löschen',
+      errorLoadProjects: 'Projekte konnten nicht geladen werden',
+      statusSaving: 'Wird gespeichert…',
+      statusSaved: 'Gespeichert',
+      statusError: 'Fehler',
+      errorStreaming: 'Streaming-Fehler, siehe Konsole.',
+      errorNoSSE: 'Dieser Browser unterstützt kein SSE.',
+      attachmentLabel: 'Anhang',
+      roleUser: 'benutzer',
+      roleAssistant: 'assistent',
+      roleSystem: 'system',
+      roleDebug: 'debug'
+    }
+  },
+  fr: {
+    name: 'Français',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'Assistant IA',
+      launcherSubtitle: 'Posez-moi vos questions',
+      launcherAria: 'Ouvrir le chat',
+      chatTitle: 'Assistant IA',
+      chatSubtitle: 'Prêt à répondre à vos questions',
+      chatClose: 'Fermer',
+      toolbarTitle: 'Widget de chat LLM',
+      basePlaceholder: 'Base API (facultatif), ex. http://host:18000',
+      saveButton: 'Enregistrer',
+      themeButton: 'Thème',
+      languageLabel: 'Langue',
+      statusUnknown: 'inconnu',
+      statusOk: 'en ligne',
+      statusOffline: 'hors ligne',
+      bannerConnectionError: 'Erreur de connexion',
+      bannerDismiss: 'Fermer',
+      projectLabel: 'Projet',
+      reloadProjects: 'Actualiser',
+      projectInfoNone: 'Aucun projet sélectionné',
+      projectInfoSelected: 'Projet actuel : {project}',
+      debugLabel: 'Debug',
+      debugHintOff: 'Afficher les événements étendus dans le chat',
+      debugHintOn: 'Événements étendus activés',
+      startPromptLabel: 'Invite initiale',
+      startPromptPlaceholder: 'Invite initiale du projet',
+      savePrompt: 'Enregistrer l\'invite',
+      questionPlaceholder: 'Posez une question (Maj+Entrée = nouvelle ligne)',
+      stopButton: 'Arrêter',
+      sendButton: 'Envoyer',
+      inputHintSend: 'Entrée pour envoyer',
+      inputHintNewline: 'Maj+Entrée pour nouvelle ligne',
+      clearLink: 'Effacer',
+      errorLoadProjects: 'Impossible de charger les projets',
+      statusSaving: 'Enregistrement…',
+      statusSaved: 'Enregistré',
+      statusError: 'Erreur',
+      errorStreaming: 'Erreur de streaming, voir la console.',
+      errorNoSSE: 'Ce navigateur ne prend pas en charge SSE.',
+      attachmentLabel: 'Pièce jointe',
+      roleUser: 'utilisateur',
+      roleAssistant: 'assistant',
+      roleSystem: 'système',
+      roleDebug: 'debug'
+    }
+  },
+  it: {
+    name: 'Italiano',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'Assistente IA',
+      launcherSubtitle: 'Chiedimi qualsiasi cosa',
+      launcherAria: 'Apri chat',
+      chatTitle: 'Assistente IA',
+      chatSubtitle: 'Pronto ad aiutarti con le tue domande',
+      chatClose: 'Chiudi',
+      toolbarTitle: 'Widget chat LLM',
+      basePlaceholder: 'Base API (opzionale), es. http://host:18000',
+      saveButton: 'Salva',
+      themeButton: 'Tema',
+      languageLabel: 'Lingua',
+      statusUnknown: 'sconosciuto',
+      statusOk: 'online',
+      statusOffline: 'offline',
+      bannerConnectionError: 'Errore di connessione',
+      bannerDismiss: 'Chiudi',
+      projectLabel: 'Progetto',
+      reloadProjects: 'Aggiorna',
+      projectInfoNone: 'Nessun progetto selezionato',
+      projectInfoSelected: 'Progetto corrente: {project}',
+      debugLabel: 'Debug',
+      debugHintOff: 'Mostra eventi estesi nella chat',
+      debugHintOn: 'Eventi estesi attivati',
+      startPromptLabel: 'Prompt iniziale',
+      startPromptPlaceholder: 'Prompt iniziale del progetto',
+      savePrompt: 'Salva prompt',
+      questionPlaceholder: 'Fai una domanda (Shift+Invio = nuova riga)',
+      stopButton: 'Ferma',
+      sendButton: 'Invia',
+      inputHintSend: 'Invio per inviare',
+      inputHintNewline: 'Shift+Invio per nuova riga',
+      clearLink: 'Cancella',
+      errorLoadProjects: 'Impossibile caricare i progetti',
+      statusSaving: 'Salvataggio…',
+      statusSaved: 'Salvato',
+      statusError: 'Errore',
+      errorStreaming: 'Errore di streaming, controlla la console.',
+      errorNoSSE: 'Questo browser non supporta SSE.',
+      attachmentLabel: 'Allegato',
+      roleUser: 'utente',
+      roleAssistant: 'assistente',
+      roleSystem: 'sistema',
+      roleDebug: 'debug'
+    }
+  },
+  pt: {
+    name: 'Português',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'Assistente IA',
+      launcherSubtitle: 'Pergunte qualquer coisa',
+      launcherAria: 'Abrir chat',
+      chatTitle: 'Assistente IA',
+      chatSubtitle: 'Pronto para ajudar com suas dúvidas',
+      chatClose: 'Fechar',
+      toolbarTitle: 'Widget de chat LLM',
+      basePlaceholder: 'Base da API (opcional), ex. http://host:18000',
+      saveButton: 'Salvar',
+      themeButton: 'Tema',
+      languageLabel: 'Idioma',
+      statusUnknown: 'desconhecido',
+      statusOk: 'online',
+      statusOffline: 'offline',
+      bannerConnectionError: 'Erro de conexão',
+      bannerDismiss: 'Fechar',
+      projectLabel: 'Projeto',
+      reloadProjects: 'Recarregar',
+      projectInfoNone: 'Nenhum projeto selecionado',
+      projectInfoSelected: 'Projeto atual: {project}',
+      debugLabel: 'Depuração',
+      debugHintOff: 'Mostrar eventos estendidos no chat',
+      debugHintOn: 'Eventos estendidos ativados',
+      startPromptLabel: 'Prompt inicial',
+      startPromptPlaceholder: 'Prompt inicial do projeto',
+      savePrompt: 'Salvar prompt',
+      questionPlaceholder: 'Faça uma pergunta (Shift+Enter = nova linha)',
+      stopButton: 'Parar',
+      sendButton: 'Enviar',
+      inputHintSend: 'Enter para enviar',
+      inputHintNewline: 'Shift+Enter para nova linha',
+      clearLink: 'Limpar',
+      errorLoadProjects: 'Falha ao carregar projetos',
+      statusSaving: 'Salvando…',
+      statusSaved: 'Salvo',
+      statusError: 'Erro',
+      errorStreaming: 'Erro de streaming, veja o console.',
+      errorNoSSE: 'Este navegador não suporta SSE.',
+      attachmentLabel: 'Anexo',
+      roleUser: 'usuário',
+      roleAssistant: 'assistente',
+      roleSystem: 'sistema',
+      roleDebug: 'depuração'
+    }
+  },
+  ru: {
+    name: 'Русский',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'AI‑помощник',
+      launcherSubtitle: 'Спросите меня о чём угодно',
+      launcherAria: 'Открыть чат',
+      chatTitle: 'AI‑помощник',
+      chatSubtitle: 'Готов ответить на ваши вопросы',
+      chatClose: 'Закрыть',
+      toolbarTitle: 'LLM чат‑виджет',
+      basePlaceholder: 'База API (опционально), например http://host:18000',
+      saveButton: 'Сохранить',
+      themeButton: 'Тема',
+      languageLabel: 'Язык',
+      statusUnknown: 'неизвестно',
+      statusOk: 'в сети',
+      statusOffline: 'не в сети',
+      bannerConnectionError: 'Ошибка подключения',
+      bannerDismiss: 'Закрыть',
+      projectLabel: 'Проект',
+      reloadProjects: 'Обновить',
+      projectInfoNone: 'Проект не выбран',
+      projectInfoSelected: 'Текущий проект: {project}',
+      debugLabel: 'Отладка',
+      debugHintOff: 'Показывать расширенные события в чате',
+      debugHintOn: 'Расширенные события включены',
+      startPromptLabel: 'Стартовый промт',
+      startPromptPlaceholder: 'Стартовый промт проекта',
+      savePrompt: 'Сохранить промт',
+      questionPlaceholder: 'Задайте вопрос (Shift+Enter = новая строка)',
+      stopButton: 'Стоп',
+      sendButton: 'Отправить',
+      inputHintSend: 'Enter — отправить',
+      inputHintNewline: 'Shift+Enter — новая строка',
+      clearLink: 'Очистить',
+      errorLoadProjects: 'Не удалось загрузить проекты',
+      statusSaving: 'Сохранение…',
+      statusSaved: 'Сохранено',
+      statusError: 'Ошибка',
+      errorStreaming: 'Ошибка потоковой передачи, смотрите консоль.',
+      errorNoSSE: 'Этот браузер не поддерживает SSE.',
+      attachmentLabel: 'Вложение',
+      roleUser: 'пользователь',
+      roleAssistant: 'ассистент',
+      roleSystem: 'система',
+      roleDebug: 'отладка'
+    }
+  },
+  zh: {
+    name: '中文',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'AI 助手',
+      launcherSubtitle: '随时向我提问',
+      launcherAria: '打开聊天',
+      chatTitle: 'AI 助手',
+      chatSubtitle: '随时为您解答问题',
+      chatClose: '关闭',
+      toolbarTitle: 'LLM 聊天组件',
+      basePlaceholder: 'API 地址（可选），例如 http://host:18000',
+      saveButton: '保存',
+      themeButton: '主题',
+      languageLabel: '语言',
+      statusUnknown: '未知',
+      statusOk: '在线',
+      statusOffline: '离线',
+      bannerConnectionError: '连接错误',
+      bannerDismiss: '关闭',
+      projectLabel: '项目',
+      reloadProjects: '刷新',
+      projectInfoNone: '未选择项目',
+      projectInfoSelected: '当前项目：{project}',
+      debugLabel: '调试',
+      debugHintOff: '在聊天中显示扩展事件',
+      debugHintOn: '已启用扩展事件',
+      startPromptLabel: '初始提示',
+      startPromptPlaceholder: '项目初始提示',
+      savePrompt: '保存提示',
+      questionPlaceholder: '提问（Shift+Enter = 换行）',
+      stopButton: '停止',
+      sendButton: '发送',
+      inputHintSend: '回车发送',
+      inputHintNewline: 'Shift+Enter 换行',
+      clearLink: '清除',
+      errorLoadProjects: '项目加载失败',
+      statusSaving: '保存中…',
+      statusSaved: '已保存',
+      statusError: '错误',
+      errorStreaming: '流式传输错误，请查看控制台。',
+      errorNoSSE: '此浏览器不支持 SSE。',
+      attachmentLabel: '附件',
+      roleUser: '用户',
+      roleAssistant: '助手',
+      roleSystem: '系统',
+      roleDebug: '调试'
+    }
+  },
+  ja: {
+    name: '日本語',
+    dir: 'ltr',
+    strings: {
+      launcherTitle: 'AIアシスタント',
+      launcherSubtitle: '何でも聞いてください',
+      launcherAria: 'チャットを開く',
+      chatTitle: 'AIアシスタント',
+      chatSubtitle: 'ご質問にお答えします',
+      chatClose: '閉じる',
+      toolbarTitle: 'LLMチャットウィジェット',
+      basePlaceholder: 'APIベース（任意）、例: http://host:18000',
+      saveButton: '保存',
+      themeButton: 'テーマ',
+      languageLabel: '言語',
+      statusUnknown: '不明',
+      statusOk: 'オンライン',
+      statusOffline: 'オフライン',
+      bannerConnectionError: '接続エラー',
+      bannerDismiss: '閉じる',
+      projectLabel: 'プロジェクト',
+      reloadProjects: '再読み込み',
+      projectInfoNone: 'プロジェクトが選択されていません',
+      projectInfoSelected: '現在のプロジェクト: {project}',
+      debugLabel: 'デバッグ',
+      debugHintOff: 'チャットで拡張イベントを表示する',
+      debugHintOn: '拡張イベントが有効です',
+      startPromptLabel: '初期プロンプト',
+      startPromptPlaceholder: 'プロジェクトの初期プロンプト',
+      savePrompt: 'プロンプトを保存',
+      questionPlaceholder: '質問を入力 (Shift+Enter で改行)',
+      stopButton: '停止',
+      sendButton: '送信',
+      inputHintSend: 'Enter で送信',
+      inputHintNewline: 'Shift+Enter で改行',
+      clearLink: 'クリア',
+      errorLoadProjects: 'プロジェクトを読み込めませんでした',
+      statusSaving: '保存中…',
+      statusSaved: '保存しました',
+      statusError: 'エラー',
+      errorStreaming: 'ストリーミングエラー。コンソールを確認してください。',
+      errorNoSSE: 'このブラウザは SSE をサポートしていません。',
+      attachmentLabel: '添付ファイル',
+      roleUser: 'ユーザー',
+      roleAssistant: 'アシスタント',
+      roleSystem: 'システム',
+      roleDebug: 'デバッグ'
+    }
+  },
+  ar: {
+    name: 'العربية',
+    dir: 'rtl',
+    strings: {
+      launcherTitle: 'مساعد الذكاء الاصطناعي',
+      launcherSubtitle: 'اطرح أي سؤال',
+      launcherAria: 'فتح المحادثة',
+      chatTitle: 'مساعد الذكاء الاصطناعي',
+      chatSubtitle: 'جاهز للإجابة عن أسئلتك',
+      chatClose: 'إغلاق',
+      toolbarTitle: 'أداة محادثة LLM',
+      basePlaceholder: 'عنوان الـ API (اختياري)، مثل http://host:18000',
+      saveButton: 'حفظ',
+      themeButton: 'السمة',
+      languageLabel: 'اللغة',
+      statusUnknown: 'غير معروف',
+      statusOk: 'متصل',
+      statusOffline: 'غير متصل',
+      bannerConnectionError: 'خطأ في الاتصال',
+      bannerDismiss: 'إغلاق',
+      projectLabel: 'المشروع',
+      reloadProjects: 'تحديث',
+      projectInfoNone: 'لم يتم اختيار مشروع',
+      projectInfoSelected: 'المشروع الحالي: {project}',
+      debugLabel: 'تصحيح',
+      debugHintOff: 'إظهار الأحداث الموسعة في الدردشة',
+      debugHintOn: 'تم تفعيل الأحداث الموسعة',
+      startPromptLabel: 'المطالبة الابتدائية',
+      startPromptPlaceholder: 'المطالبة الابتدائية للمشروع',
+      savePrompt: 'حفظ المطالبة',
+      questionPlaceholder: 'اكتب سؤالك (Shift+Enter = سطر جديد)',
+      stopButton: 'إيقاف',
+      sendButton: 'إرسال',
+      inputHintSend: 'Enter للإرسال',
+      inputHintNewline: 'Shift+Enter لسطر جديد',
+      clearLink: 'مسح',
+      errorLoadProjects: 'تعذر تحميل المشاريع',
+      statusSaving: 'جارٍ الحفظ…',
+      statusSaved: 'تم الحفظ',
+      statusError: 'خطأ',
+      errorStreaming: 'خطأ في البث، راجع وحدة التحكم.',
+      errorNoSSE: 'هذا المتصفح لا يدعم SSE.',
+      attachmentLabel: 'مرفق',
+      roleUser: 'مستخدم',
+      roleAssistant: 'مساعد',
+      roleSystem: 'نظام',
+      roleDebug: 'تصحيح'
+    }
+  }
+};
+
+let currentLanguage = (() => {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored && LANGUAGES[stored]) {
+      return stored;
+    }
+  } catch {}
+  return FALLBACK_LANGUAGE;
+})();
+
+function t(key) {
+  const lang = LANGUAGES[currentLanguage] || LANGUAGES[FALLBACK_LANGUAGE];
+  return lang.strings[key] ?? LANGUAGES[FALLBACK_LANGUAGE].strings[key] ?? key;
+}
+
+function translateRole(role) {
+  const normalized = String(role || '').toLowerCase();
+  const map = {
+    user: 'roleUser',
+    assistant: 'roleAssistant',
+    system: 'roleSystem',
+    debug: 'roleDebug'
+  };
+  const key = map[normalized];
+  return key ? t(key) : normalized;
+}
+
+function translateStatus(key) {
+  const normalized = String(key || '').toLowerCase();
+  const map = {
+    unknown: 'statusUnknown',
+    ok: 'statusOk',
+    online: 'statusOk',
+    offline: 'statusOffline'
+  };
+  const target = map[normalized];
+  if (target) return t(target);
+  return key;
+}
+
+function populateLanguageOptions() {
+  if (!languageSelect) return;
+  languageSelect.innerHTML = '';
+  Object.entries(LANGUAGES).forEach(([code, cfg]) => {
+    const option = document.createElement('option');
+    option.value = code;
+    option.textContent = cfg.name;
+    languageSelect.appendChild(option);
+  });
+  languageSelect.value = currentLanguage;
+}
+
+function applyLanguage(lang) {
+  if (!LANGUAGES[lang]) lang = FALLBACK_LANGUAGE;
+  currentLanguage = lang;
+  try { localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage); } catch {}
+  const cfg = LANGUAGES[currentLanguage];
+  document.documentElement.lang = currentLanguage;
+  document.documentElement.dir = cfg.dir || 'ltr';
+  if (languageSelect) {
+    languageSelect.value = currentLanguage;
+  }
+
+  document.querySelectorAll('[data-i18n]').forEach((node) => {
+    const key = node.dataset.i18n;
+    node.textContent = t(key);
+  });
+
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+    const key = node.dataset.i18nPlaceholder;
+    node.setAttribute('placeholder', t(key));
+  });
+
+  document.querySelectorAll('[data-i18n-aria-label]').forEach((node) => {
+    const key = node.dataset.i18nAriaLabel;
+    node.setAttribute('aria-label', t(key));
+  });
+
+  if (healthText) {
+    const statusKey = healthText.dataset.statusKey || 'unknown';
+    healthText.textContent = translateStatus(statusKey);
+  }
+
+  if (debugHint) {
+    debugHint.textContent = debugCheckbox.checked ? t('debugHintOn') : t('debugHintOff');
+  }
+
+  if (projectInfo) {
+    projectInfo.textContent = currentProject ? t('projectInfoSelected').replace('{project}', currentProject) : t('projectInfoNone');
+  }
+
+  if (hintSend) hintSend.textContent = t('inputHintSend');
+  if (hintNewline) hintNewline.textContent = t('inputHintNewline');
+  if (clearLink) clearLink.textContent = t('clearLink');
+
+  if (banner && banner.dataset.active !== 'true' && bannerText) {
+    bannerText.textContent = t('bannerConnectionError');
+  }
+
+  document.querySelectorAll('[data-role-key]').forEach((node) => {
+    node.textContent = translateRole(node.dataset.roleKey);
+  });
+}
+
+if (languageSelect) {
+  populateLanguageOptions();
+  languageSelect.addEventListener('change', (event) => {
+    applyLanguage(event.target.value);
+  });
+}
+
+applyLanguage(currentLanguage);
+
 
 const SESSION_STORAGE_KEY = 'chat_session_base';
 let currentSessionBase = (() => {
@@ -336,11 +957,6 @@ let tokenChars = 0;
 let streamingMessageEl = null;
 let projectsCache = {};
 
-const urlParams = new URLSearchParams(window.location.search);
-const urlProject = (urlParams.get('project') || '').trim().toLowerCase();
-let currentProject = urlProject || (localStorage.getItem('chat_project') || '').trim().toLowerCase();
-const isEmbed = window.self !== window.top || urlParams.get('embed') === '1';
-
 if (isEmbed) {
   document.body.classList.add('embed');
 }
@@ -380,11 +996,15 @@ function toggleTheme() {
 
 themeToggle.addEventListener('click', toggleTheme);
 
-function setHealth(ok, text) {
+function setHealth(ok, statusKey) {
   healthDot.classList.remove('ok', 'bad');
   if (ok === true) healthDot.classList.add('ok');
   else if (ok === false) healthDot.classList.add('bad');
-  healthText.textContent = text;
+  const key = typeof statusKey === 'string' && statusKey ? statusKey : 'unknown';
+  if (healthText) {
+    healthText.dataset.statusKey = key;
+    healthText.textContent = translateStatus(key);
+  }
 }
 
 async function pingHealth() {
@@ -435,7 +1055,14 @@ function appendMessage(text, role = 'assistant', meta = {}) {
   const t = new Date();
   const hh = String(t.getHours()).padStart(2, '0');
   const mm = String(t.getMinutes()).padStart(2, '0');
-  head.innerHTML = `<span>${role}</span><span class="time">${hh}:${mm}</span>`;
+  const roleSpan = document.createElement('span');
+  roleSpan.dataset.roleKey = role;
+  roleSpan.textContent = translateRole(role);
+  const timeSpan = document.createElement('span');
+  timeSpan.className = 'time';
+  timeSpan.textContent = `${hh}:${mm}`;
+  head.appendChild(roleSpan);
+  head.appendChild(timeSpan);
   wrapper.appendChild(head);
   const body = document.createElement('div');
   body.className = 'msg-body';
@@ -451,7 +1078,7 @@ function appendMessage(text, role = 'assistant', meta = {}) {
         attEl.classList.add('attachment-image');
         const img = document.createElement('img');
         img.src = att.url;
-        img.alt = att.description || att.name || 'image';
+        img.alt = att.description || att.name || t('attachmentLabel');
         attEl.appendChild(img);
         if (att.description) {
           const caption = document.createElement('div');
@@ -465,7 +1092,7 @@ function appendMessage(text, role = 'assistant', meta = {}) {
         link.href = att.url;
         link.target = '_blank';
         link.rel = 'noopener';
-        link.textContent = att.name || 'Attachment';
+        link.textContent = att.name || t('attachmentLabel');
         attEl.appendChild(link);
         if (att.description) {
           const caption = document.createElement('div');
@@ -508,6 +1135,7 @@ function saveHistory() {
     const history = localStorage.getItem('chat_history');
     if (history) {
       messages.innerHTML = history;
+      applyLanguage(currentLanguage);
     }
   } catch {}
 })();
@@ -543,6 +1171,7 @@ async function loadProjects() {
     updateProjectInfo();
   } catch (error) {
     console.error(error);
+    bannerError(t('errorLoadProjects'));
   }
 }
 
@@ -550,7 +1179,9 @@ function updateProjectInfo() {
   const selected = projectSelect.value || '';
   currentProject = selected;
   try { localStorage.setItem('chat_project', currentProject); } catch {}
-  projectInfo.textContent = currentProject ? `Текущий проект: ${currentProject}` : 'Проект не выбран';
+  if (projectInfo) {
+    projectInfo.textContent = currentProject ? t('projectInfoSelected').replace('{project}', currentProject) : t('projectInfoNone');
+  }
 }
 
 projectSelect.addEventListener('change', () => {
@@ -559,7 +1190,7 @@ projectSelect.addEventListener('change', () => {
 refreshProjectsBtn.addEventListener('click', loadProjects);
 
 debugCheckbox.addEventListener('change', () => {
-  const hint = debugCheckbox.checked ? 'Расширенные события включены' : 'Показывать расширенные события в чате';
+  const hint = debugCheckbox.checked ? t('debugHintOn') : t('debugHintOff');
   debugHint.textContent = hint;
 });
 
@@ -570,7 +1201,7 @@ savePromptBtn.addEventListener('click', async () => {
     name: currentProject,
     llm_prompt: startPromptInput.value,
   };
-  promptStatus.textContent = 'Saving…';
+  promptStatus.textContent = t('statusSaving');
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -578,21 +1209,24 @@ savePromptBtn.addEventListener('click', async () => {
       body: JSON.stringify(payload),
     });
     if (!resp.ok) throw new Error('Failed');
-    promptStatus.textContent = 'Saved';
+    promptStatus.textContent = t('statusSaved');
     setTimeout(() => (promptStatus.textContent = ''), 3000);
   } catch (error) {
     console.error(error);
-    promptStatus.textContent = 'Error';
+    promptStatus.textContent = t('statusError');
   }
 });
 
 function bannerError(message) {
-  bannerText.textContent = message;
+  banner.dataset.active = 'true';
+  bannerText.textContent = message || t('bannerConnectionError');
   banner.style.display = 'block';
 }
 
 bannerClose.addEventListener('click', () => {
   banner.style.display = 'none';
+  banner.dataset.active = 'false';
+  bannerText.textContent = t('bannerConnectionError');
 });
 
 async function sendQuestion(question) {
@@ -619,7 +1253,7 @@ async function sendQuestion(question) {
   try {
     currentES = new EventSource(url, { withCredentials: false });
   } catch (error) {
-    bannerError('SSE not supported by this browser.');
+    bannerError(t('errorNoSSE'));
     setStreamingState(false);
     return;
   }
@@ -672,7 +1306,7 @@ async function sendQuestion(question) {
   currentES.addEventListener('attachment', (event) => {
     try {
       const data = JSON.parse(event.data);
-      appendMessage(data.description || data.name || 'attachment', 'assistant', { attachments: [data] });
+      appendMessage(data.description || data.name || t('attachmentLabel'), 'assistant', { attachments: [data] });
       saveHistory();
     } catch (error) {
       console.error('attachment parse error', error);
@@ -686,7 +1320,7 @@ async function sendQuestion(question) {
 
   currentES.addEventListener('error', (event) => {
     console.error('sse error', event);
-    bannerError('Streaming error, see console.');
+    bannerError(t('errorStreaming'));
     setStreamingState(false);
     currentES?.close();
     streamingMessageEl = null;
