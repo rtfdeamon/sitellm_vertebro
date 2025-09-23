@@ -32,8 +32,17 @@ import structlog
 
 from backend import llm_client
 from backend.settings import settings as backend_settings
+from backend.ollama import (
+    list_installed_models,
+    ollama_available,
+    popular_models_with_size,
+)
 from retrieval import search as retrieval_search
-from crawler.run_crawl import clear_crawler_state, deduplicate_recent_urls
+from crawler.run_crawl import (
+    clear_crawler_state,
+    deduplicate_recent_urls,
+    get_crawler_note,
+)
 
 from models import Document, LLMResponse, LLMRequest, RoleEnum, Project, Attachment
 from mongo import NotFound
@@ -1091,6 +1100,9 @@ async def crawler_status(project: str | None = None) -> dict[str, object]:
     project_label = _normalize_project(project)
     data = status_dict(project_label)
     crawler = data.get("crawler") or {}
+    note = get_crawler_note(project_label)
+    if note:
+        data["notes"] = note
     data.update(
         {
             "queued": crawler.get("queued", 0),

@@ -45,6 +45,7 @@ from models import Project
 
 from observability.logging import configure_logging
 from settings import MongoSettings
+from backend.llm_client import ModelNotFoundError
 
 
 configure_logging()
@@ -126,6 +127,36 @@ def _set(key: str, value, project: str | None = None):
         pass
 
 
+def _delete(key: str, project: str | None = None):
+    try:
+        r.delete(_redis_key(key, project))
+    except Exception:
+        pass
+
+
+def set_crawler_note(message: str | None, project: str | None = None) -> None:
+    note = (message or "").strip()
+    if note:
+        _set("notes", note, project)
+    else:
+        _delete("notes", project)
+
+
+def get_crawler_note(project: str | None = None) -> str | None:
+    try:
+        value = r.get(_redis_key("notes", project))
+    except Exception:
+        return None
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("utf-8", errors="ignore")
+        except Exception:
+            value = value.decode(errors="ignore")
+    return str(value).strip() or None
+
+
 def _push_recent(url: str, limit: int = 20, project: str | None = None) -> None:
     try:
         key = _redis_key("recent_urls", project)
@@ -146,6 +177,7 @@ def reset_counters(project: str | None = None) -> None:
         for key in ("queued", "in_progress", "done", "failed"):
             pipe.set(_redis_key(key, project), 0)
         pipe.delete(_redis_key("recent_urls", project))
+        pipe.delete(_redis_key("notes", project))
         pipe.execute()
     except Exception:
         for key in ("queued", "in_progress", "done", "failed"):
@@ -154,6 +186,7 @@ def reset_counters(project: str | None = None) -> None:
             r.delete(_redis_key("recent_urls", project))
         except Exception:
             pass
+        _delete("notes", project)
 
 
 def clear_crawler_state(project: str | None = None) -> int:
@@ -164,6 +197,7 @@ def clear_crawler_state(project: str | None = None) -> int:
         pipe = r.pipeline()
         for key in ("last_url", "last_run", "started_at"):
             pipe.delete(_redis_key(key, project))
+        pipe.delete(_redis_key("notes", project))
         pipe.execute()
     except Exception:
         for key in ("last_url", "last_run", "started_at"):
@@ -171,6 +205,7 @@ def clear_crawler_state(project: str | None = None) -> int:
                 r.delete(_redis_key(key, project))
             except Exception:
                 pass
+        _delete("notes", project)
     removed = purge_project_progress(project)
     return removed
 
@@ -1657,7 +1692,21 @@ def run(
                     await _shutdown_playwright()
                 await img_client.aclose()
 
-        asyncio.run(_store())
+        abort_note: str | None = None
+        try:
+            asyncio.run(_store())
+        except ModelNotFoundError as exc:
+            abort_note = (
+                "LLM модель недоступна. Проверьте установку в Ollama. "
+                f"Детали: {exc}"
+            )
+            set_crawler_note(abort_note, document_project)
+            logger.error(
+                "crawler_model_missing",
+                project=document_project,
+                model=getattr(exc, "model", None),
+                base=getattr(exc, "base_url", None),
+            )
 
         if operations:
             try:
@@ -1667,7 +1716,10 @@ def run(
             finally:
                 operations.clear()
 
-        logger.info("crawler finished")
+        if abort_note:
+            logger.warning("crawler aborted", reason=abort_note)
+        else:
+            logger.info("crawler finished")
     finally:
         _set("queued", 0, document_project)
         _set("in_progress", 0, document_project)

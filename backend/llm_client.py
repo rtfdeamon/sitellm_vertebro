@@ -25,6 +25,18 @@ RETRY_ATTEMPTS = 3
 RETRY_DELAY = 0.2
 
 
+class ModelNotFoundError(RuntimeError):
+    """Raised when the requested Ollama model is missing on the host."""
+
+    def __init__(self, model: str | None, base_url: str | None, message: str | None = None):
+        details = message or "Модель не найдена в Ollama"
+        target = model or "(не указана)"
+        base = base_url or "(неизвестно)"
+        super().__init__(f"{details}: {target} @ {base}")
+        self.model = model
+        self.base_url = base_url
+
+
 def _http_client_factory(**kwargs):
     return httpx.AsyncClient(**kwargs)
 
@@ -48,7 +60,19 @@ async def generate(prompt: str, *, model: str | None = None) -> AsyncIterator[st
         try:
             async with _http_client_factory(timeout=None) as client:
                 async with client.stream("POST", url, json=payload) as resp:
-                    resp.raise_for_status()
+                    try:
+                        resp.raise_for_status()
+                    except httpx.HTTPStatusError as exc:
+                        status = exc.response.status_code if exc.response else None
+                        if status == 404:
+                            logger.error(
+                                "ollama_model_not_found",
+                                model=model_name,
+                                url=url,
+                                status=status,
+                            )
+                            raise ModelNotFoundError(model_name, OLLAMA_BASE) from exc
+                        raise
                     async for line in resp.aiter_lines():
                         if not line:
                             continue
@@ -63,6 +87,8 @@ async def generate(prompt: str, *, model: str | None = None) -> AsyncIterator[st
                         if data.get("done"):
                             return
             return
+        except ModelNotFoundError:
+            raise
         except Exception as exc:
             last_exc = exc
             logger.warning(

@@ -8,6 +8,7 @@ from typing import Optional
 import structlog
 
 from backend import llm_client
+from backend.llm_client import ModelNotFoundError
 from models import Project
 
 
@@ -64,6 +65,13 @@ async def generate_document_summary(
             chunks.append(token)
             if len("".join(chunks)) >= SUMMARY_MAX_LEN + 80:
                 break
+    except ModelNotFoundError:
+        logger.error(
+            "summary_model_not_found",
+            document=safe_name,
+            model=model_override or llm_client.MODEL_NAME,
+        )
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "summary_generate_failed",
@@ -138,6 +146,13 @@ async def generate_image_caption(
             chunks.append(token)
             if len("".join(chunks)) >= IMAGE_CAPTION_MAX_LEN + 80:
                 break
+    except ModelNotFoundError:
+        logger.error(
+            "image_caption_model_not_found",
+            image=safe_name,
+            model=model_override or llm_client.MODEL_NAME,
+        )
+        raise
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "image_caption_generate_failed",

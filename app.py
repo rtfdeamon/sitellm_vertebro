@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Dict
 from datetime import datetime, timezone, timedelta
 import csv
 import io
@@ -15,7 +15,9 @@ import hmac
 import os
 import time
 import asyncio
+import asyncio.subprocess as asyncio_subprocess
 import urllib.parse as urlparse
+import re
 import httpx
 import structlog
 
@@ -41,6 +43,11 @@ from core.status import status_dict
 from backend.settings import settings as base_settings
 from backend.cache import _get_redis
 from core.build import get_build_info
+from backend.ollama import (
+    list_installed_models,
+    popular_models_with_size,
+    ollama_available,
+)
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
@@ -88,6 +95,9 @@ PROMPT_ROLE_TEMPLATES = {
 }
 
 DEFAULT_PROMPT_ROLE = "friendly_expert"
+OLLAMA_INSTALL_JOBS: Dict[str, Dict[str, Any]] = {}
+OLLAMA_INSTALL_LOCK = asyncio.Lock()
+OLLAMA_PROGRESS_RE = re.compile(r"(\d{1,3})%")
 PROMPT_SAMPLE_CHAR_LIMIT = 4000
 PROMPT_RESPONSE_CHAR_LIMIT = 1800
 PROMPT_FETCH_HEADERS = {
@@ -145,6 +155,158 @@ def _normalize_project(value: str | None) -> str | None:
         candidate = default.strip() if default else ""
     return candidate.lower() or None
 
+
+def _append_limited(buffer: list[str], line: str, *, limit: int = 40) -> None:
+    buffer.append(line)
+    if len(buffer) > limit:
+        del buffer[:-limit]
+
+
+def _extract_progress(line: str) -> float | None:
+    match = OLLAMA_PROGRESS_RE.search(line)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    return max(0.0, min(value, 100.0))
+
+
+async def _snapshot_install_jobs() -> Dict[str, Dict[str, Any]]:
+    async with OLLAMA_INSTALL_LOCK:
+        snapshot: Dict[str, Dict[str, Any]] = {}
+        for model, job in OLLAMA_INSTALL_JOBS.items():
+            snapshot[model] = {
+                "model": job.get("model", model),
+                "status": job.get("status", "unknown"),
+                "progress": job.get("progress"),
+                "last_line": job.get("last_line"),
+                "error": job.get("error"),
+                "started_at": job.get("started_at"),
+                "finished_at": job.get("finished_at"),
+                "log": list(job.get("log", [])[-5:]),
+            }
+        return snapshot
+
+
+async def _run_ollama_install(model: str) -> None:
+    async with OLLAMA_INSTALL_LOCK:
+        job = OLLAMA_INSTALL_JOBS.get(model)
+        if job is None:
+            return
+        job["status"] = "running"
+        job.setdefault("progress", 0.0)
+        job.setdefault("log", [])
+        job.setdefault("stderr", [])
+        job["started_at"] = job.get("started_at") or time.time()
+
+    if not ollama_available():
+        async with OLLAMA_INSTALL_LOCK:
+            job = OLLAMA_INSTALL_JOBS.get(model)
+            if job is not None:
+                job["status"] = "error"
+                job["error"] = "Ollama недоступна на сервере"
+                job["finished_at"] = time.time()
+        return
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ollama",
+            "pull",
+            model,
+            stdout=asyncio_subprocess.PIPE,
+            stderr=asyncio_subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        async with OLLAMA_INSTALL_LOCK:
+            job = OLLAMA_INSTALL_JOBS.get(model)
+            if job is not None:
+                job["status"] = "error"
+                job["error"] = "Команда `ollama` не найдена"
+                job["finished_at"] = time.time()
+        return
+    except Exception as exc:  # noqa: BLE001
+        async with OLLAMA_INSTALL_LOCK:
+            job = OLLAMA_INSTALL_JOBS.get(model)
+            if job is not None:
+                job["status"] = "error"
+                job["error"] = str(exc)
+                job["finished_at"] = time.time()
+        return
+
+    async with OLLAMA_INSTALL_LOCK:
+        job = OLLAMA_INSTALL_JOBS.get(model)
+        if job is not None:
+            job["pid"] = proc.pid
+
+    async def _consume(stream, key: str) -> None:
+        while True:
+            line = await stream.readline()
+            if not line:
+                break
+            text = line.decode("utf-8", errors="ignore").strip()
+            if not text:
+                continue
+            async with OLLAMA_INSTALL_LOCK:
+                job = OLLAMA_INSTALL_JOBS.get(model)
+                if job is None:
+                    continue
+                buffer = job.setdefault(key, [])
+                _append_limited(buffer, text)
+                if key == "log":
+                    job["last_line"] = text
+                    progress = _extract_progress(text)
+                    if progress is not None:
+                        job["progress"] = progress
+
+    await asyncio.gather(
+        _consume(proc.stdout, "log"),
+        _consume(proc.stderr, "stderr"),
+    )
+
+    returncode = await proc.wait()
+    async with OLLAMA_INSTALL_LOCK:
+        job = OLLAMA_INSTALL_JOBS.get(model)
+        if job is None:
+            return
+        job["finished_at"] = time.time()
+        if returncode == 0:
+            job["status"] = "success"
+            job["progress"] = 100.0
+            job.setdefault("log", [])
+            _append_limited(job["log"], "Установка завершена", limit=60)
+        else:
+            job["status"] = "error"
+            job.setdefault("stderr", [])
+            if job.get("stderr"):
+                job["error"] = job["stderr"][-1]
+            else:
+                job["error"] = f"ollama pull завершился с кодом {returncode}"
+
+
+async def _schedule_ollama_install(model: str) -> Dict[str, Any]:
+    normalized = model.strip()
+    if not normalized:
+        raise ValueError("model is required")
+
+    async with OLLAMA_INSTALL_LOCK:
+        existing = OLLAMA_INSTALL_JOBS.get(normalized)
+        if existing and existing.get("status") in {"pending", "running"}:
+            return existing
+        job = {
+            "model": normalized,
+            "status": "pending",
+            "progress": 0.0,
+            "log": [],
+            "stderr": [],
+            "started_at": time.time(),
+            "finished_at": None,
+        }
+        OLLAMA_INSTALL_JOBS[normalized] = job
+
+    asyncio.create_task(_run_ollama_install(normalized))
+    return job
 
 def _get_admin_identity(request: Request) -> AdminIdentity | None:
     identity = getattr(request.state, "admin", None)
@@ -1488,6 +1650,10 @@ class ProjectMaxAction(BaseModel):
     auto_start: bool | None = None
 
 
+class OllamaInstallRequest(BaseModel):
+    model: str
+
+
 @app.get("/api/v1/admin/session", response_class=ORJSONResponse)
 async def admin_session(request: Request) -> ORJSONResponse:
     identity = _require_admin(request)
@@ -2080,6 +2246,59 @@ def admin_llm_models() -> ORJSONResponse:
 
     models = base_settings.get_available_llm_models()
     return ORJSONResponse({"models": models})
+
+
+@app.get("/api/v1/admin/ollama/catalog", response_class=ORJSONResponse)
+async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
+    _require_super_admin(request)
+
+    installed_models = [
+        {
+            "name": model.name,
+            "size_bytes": model.size_bytes,
+            "size_human": model.size_human,
+            "modified_at": model.modified_at,
+            "digest": model.digest,
+        }
+        for model in list_installed_models()
+    ]
+    installed_names = {item["name"] for item in installed_models}
+    popular = popular_models_with_size()
+    for item in popular:
+        item["installed"] = item.get("name") in installed_names
+    jobs = await _snapshot_install_jobs()
+    default_model = installed_models[0]["name"] if installed_models else None
+    return ORJSONResponse(
+        {
+            "available": ollama_available(),
+            "installed": installed_models,
+            "popular": popular,
+            "jobs": jobs,
+            "default_model": default_model,
+        }
+    )
+
+
+@app.post("/api/v1/admin/ollama/install", response_class=ORJSONResponse)
+async def admin_ollama_install(request: Request, payload: "OllamaInstallRequest") -> ORJSONResponse:
+    _require_super_admin(request)
+    model = (payload.model or "").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="model is required")
+
+    try:
+        job = await _schedule_ollama_install(model)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    snapshot = await _snapshot_install_jobs()
+    return ORJSONResponse(
+        {
+            "status": job.get("status"),
+            "model": model,
+            "job": snapshot.get(model),
+        }
+    )
 
 
 @app.get("/api/v1/admin/telegram", response_class=ORJSONResponse)
