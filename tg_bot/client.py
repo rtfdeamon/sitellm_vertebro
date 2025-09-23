@@ -137,7 +137,41 @@ async def rag_answer(
                             elif current_event in ("end", "llm_error"):
                                 continue
                             else:
-                                chunks.append(payload)
+                                text_payload = payload
+                                if payload and payload.startswith("{"):
+                                    try:
+                                        data_obj = json.loads(payload)
+                                    except json.JSONDecodeError:
+                                        text_payload = payload
+                                    else:
+                                        if isinstance(data_obj, dict):
+                                            candidate = data_obj.get("text")
+                                            if isinstance(candidate, str):
+                                                text_payload = candidate
+                                            elif isinstance(candidate, list):
+                                                text_payload = "".join(
+                                                    item for item in candidate if isinstance(item, str)
+                                                )
+                                            elif candidate is None:
+                                                # Some providers wrap partial content inside ``delta`` or ``content``
+                                                # keys; walk known fallbacks before falling back to raw JSON.
+                                                for key in ("delta", "content", "body", "chunk"):
+                                                    value = data_obj.get(key)
+                                                    if isinstance(value, str):
+                                                        text_payload = value
+                                                        break
+                                                    if isinstance(value, list):
+                                                        text_payload = "".join(
+                                                            item for item in value if isinstance(item, str)
+                                                        )
+                                                        if text_payload:
+                                                            break
+                                            extra_meta = data_obj.get("meta")
+                                            if isinstance(extra_meta, dict):
+                                                meta_info.update(extra_meta)
+                                        else:
+                                            text_payload = payload
+                                chunks.append(text_payload)
                     char_count = sum(len(c) for c in chunks)
                     logger.info(
                         "sse_completed",

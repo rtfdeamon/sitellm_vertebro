@@ -115,3 +115,18 @@ def test_rag_answer_debug_parameter(monkeypatch):
     assert store.calls, "Expected store to record at least one request"
     params = store.calls[0][2]["params"]
     assert params.get("debug") == "1"
+
+
+def test_rag_answer_json_payload(monkeypatch):
+    """Token payloads encoded as JSON objects should emit human readable text."""
+    stream = FakeStream([
+        'data: {"text": " Hel", "role": "assistant"}',
+        'data: {"text": "lo", "meta": {"model": "demo"}}',
+    ])
+    fake_httpx.AsyncClient = lambda timeout: FakeClient([stream])
+    fake_safety.safety_check = lambda text: False
+    importlib.reload(client)
+
+    result = asyncio.run(client.rag_answer("hi"))
+    assert result["text"] == " Hello"
+    assert result["meta"].get("model") == "demo"
