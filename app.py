@@ -45,6 +45,7 @@ from core.status import status_dict
 from backend.settings import settings as base_settings
 from backend.cache import _get_redis
 from core.build import get_build_info
+from backend import llm_client
 from backend.ollama import (
     list_installed_models,
     popular_models_with_size,
@@ -3262,6 +3263,46 @@ def _build_prompt_from_role(role: str, url: str, page_text: str) -> tuple[str, s
     return body, role_key, label
 
 
+def _summarize_snippets(text: str, *, limit: int = 5) -> list[str]:
+    chunks = re.split(r"(?<=[.!?…])\s+", text)
+    selections: list[str] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        cleaned = chunk.strip()
+        if not cleaned:
+            continue
+        lowered = cleaned.lower()
+        if lowered in seen:
+            continue
+        seen.add(lowered)
+        if len(cleaned) < 25:
+            continue
+        selections.append(cleaned)
+        if len(selections) >= limit:
+            break
+    if not selections and text:
+        preview = re.sub(r"\s+", " ", text).strip()
+        if preview:
+            selections.append(preview[:240])
+    return selections
+
+
+def _build_prompt_fallback(role_label: str, url: str, page_text: str) -> str | None:
+    snippet_list = _summarize_snippets(page_text, limit=6)
+    if not snippet_list:
+        return None
+    bullets = "\n".join(f"- {item}" for item in snippet_list)
+    guidance = (
+        f"Ты выступаешь в роли {role_label} компании и общаешься на русском языке. "
+        "Держи тёплый, профессиональный тон и помогай пользователю находить ответы.\n"
+        f"Используй сведения с сайта {url}. Если в запросе нет данных из списка, объясни, что информации нет, и предложи способы уточнить вопрос.\n"
+        "Основные факты о компании:\n"
+        f"{bullets}\n\n"
+        "Отвечай кратко и по делу, по возможности добавляй конкретные детали и призывы к действию, оставайся внимательным к контексту пользователя."
+    )
+    return guidance[: PROMPT_RESPONSE_CHAR_LIMIT]
+
+
 async def _purge_vector_entries(file_ids: list[str]) -> None:
     if not file_ids:
         return
@@ -3312,10 +3353,43 @@ async def admin_generate_project_prompt(
                 break
     except Exception as exc:  # noqa: BLE001
         logger.error("prompt_generate_failed", url=normalized_url, error=str(exc))
+        fallback_prompt = _build_prompt_fallback(role_label, normalized_url, page_text)
+        if fallback_prompt:
+            logger.warning(
+                "prompt_generate_fallback_used",
+                url=normalized_url,
+                role=role_key,
+                error=str(exc),
+            )
+            return ORJSONResponse(
+                {
+                    "prompt": fallback_prompt,
+                    "role": role_key,
+                    "role_label": role_label,
+                    "url": normalized_url,
+                    "fallback": True,
+                }
+            )
         raise HTTPException(status_code=502, detail="Не удалось получить ответ модели") from exc
 
     generated = "".join(chunks).strip()
     if not generated:
+        fallback_prompt = _build_prompt_fallback(role_label, normalized_url, page_text)
+        if fallback_prompt:
+            logger.warning(
+                "prompt_generate_empty_result_fallback",
+                url=normalized_url,
+                role=role_key,
+            )
+            return ORJSONResponse(
+                {
+                    "prompt": fallback_prompt,
+                    "role": role_key,
+                    "role_label": role_label,
+                    "url": normalized_url,
+                    "fallback": True,
+                }
+            )
         raise HTTPException(status_code=502, detail="Модель вернула пустой ответ")
 
     return ORJSONResponse(
