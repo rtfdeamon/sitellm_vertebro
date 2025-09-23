@@ -141,20 +141,71 @@ def on_crawler_start(project: str | None = None):
 def reset_counters(project: str | None = None) -> None:
     """Reset queue counters before a new crawl run starts."""
 
-    for key in ("queued", "in_progress", "done", "failed"):
-        _set(key, 0, project)
     try:
-        r.delete(_redis_key("recent_urls", project))
+        pipe = r.pipeline()
+        for key in ("queued", "in_progress", "done", "failed"):
+            pipe.set(_redis_key(key, project), 0)
+        pipe.delete(_redis_key("recent_urls", project))
+        pipe.execute()
     except Exception:
-        pass
+        for key in ("queued", "in_progress", "done", "failed"):
+            _set(key, 0, project)
+        try:
+            r.delete(_redis_key("recent_urls", project))
+        except Exception:
+            pass
 
 
-def clear_crawler_state(project: str | None = None) -> None:
+def clear_crawler_state(project: str | None = None) -> int:
     """Reset counters and recent URLs for the crawler."""
 
     reset_counters(project)
-    _set("last_url", "", project)
-    _set("last_run", "", project)
+    try:
+        pipe = r.pipeline()
+        for key in ("last_url", "last_run", "started_at"):
+            pipe.delete(_redis_key(key, project))
+        pipe.execute()
+    except Exception:
+        for key in ("last_url", "last_run", "started_at"):
+            try:
+                r.delete(_redis_key(key, project))
+            except Exception:
+                pass
+    removed = purge_project_progress(project)
+    return removed
+
+
+def purge_project_progress(project: str | None = None) -> int:
+    """Remove cached crawler progress hashes belonging to ``project``."""
+
+    project_key = (project or "").strip().lower() or None
+    removed = 0
+    try:
+        for raw_key in r.scan_iter(match="crawler:progress:*"):
+            key = raw_key  # redis-py returns bytes
+            include = True
+            if project_key is not None:
+                try:
+                    value = r.hget(key, "project")
+                except Exception:
+                    value = None
+                if value is None:
+                    include = False
+                else:
+                    try:
+                        decoded = value.decode().strip().lower()
+                    except Exception:
+                        decoded = str(value).strip().lower()
+                    include = decoded == project_key
+            if include:
+                try:
+                    r.delete(key)
+                    removed += 1
+                except Exception:
+                    continue
+    except Exception:
+        return removed
+    return removed
 
 
 def deduplicate_recent_urls(project: str | None = None) -> int:
@@ -269,6 +320,77 @@ FOOTER_KEYWORDS = {
     "phone",
 }
 
+# Query parameters that rarely affect page content and can be stripped to reduce noise.
+DEFAULT_DROP_QUERY_PARAMS = {
+    "utm_source",
+    "utm_medium",
+    "utm_campaign",
+    "utm_term",
+    "utm_content",
+    "utm_referrer",
+    "yclid",
+    "ysclid",
+    "gclid",
+    "fbclid",
+    "ga_source",
+    "ga_medium",
+    "ga_campaign",
+    "ga_content",
+    "ga_term",
+    "cmpid",
+    "mc_cid",
+    "mc_eid",
+    "mkt_tok",
+    "msclkid",
+    "icid",
+    "igshid",
+    "pk_campaign",
+    "pk_kwd",
+    "pk_source",
+    "pk_medium",
+    "source",
+    "ref",
+    "referrer",
+    "sr_share",
+    "sr_channel",
+    "campaign",
+    "openstat",
+    "_openstat",
+    "_ga",
+    "_gl",
+    "_gid",
+    "_gac",
+    "zanpid",
+    "wt_mc",
+    "wt_mc_o",
+    "utm_reader",
+    "hsCtaTracking",
+    "fb_action_ids",
+    "fb_action_types",
+    "fb_source",
+    "dclid",
+    "srsltid",
+    "twclid",
+    "ttclid",
+    "ver",
+    "clid",
+    "cid",
+}
+
+_extra_drop = {
+    token.strip().lower()
+    for token in (os.getenv("CRAWL_EXTRA_DROP_PARAMS") or "").split(",")
+    if token.strip()
+}
+DROP_QUERY_PARAMS = DEFAULT_DROP_QUERY_PARAMS | _extra_drop
+
+_essential_params_default = {
+    token.strip().lower()
+    for token in (os.getenv("CRAWL_KEEP_PARAMS") or "p,id,page,q,doc,slug").split(",")
+    if token.strip()
+}
+ESSENTIAL_QUERY_PARAMS = _essential_params_default
+
 RE_CAMEL_CASE = re.compile(r"(?<=[a-zа-яё])(?=[A-ZА-ЯЁ])")
 RE_DIGIT_BOUNDARY = re.compile(r"(?<=[0-9])(?=[A-Za-zА-Яа-яЁё])|(?<=[A-Za-zА-Яа-яЁё])(?=[0-9])")
 
@@ -362,22 +484,38 @@ def extract_image_links(html: str, base_url: str) -> List[dict[str, str]]:
     return found
 
 
-def extract_links(html: str, base_url: str) -> List[str]:
-    """Вытаскивает все <a href="..."> и приводит к абсолютному URL."""
+def extract_links(
+    html: str,
+    base_url: str,
+    *,
+    base_scheme: str = "https",
+    canonical_host: str | None = None,
+    clean_params: set[str] | None = None,
+) -> List[str]:
+    """Extract absolute, normalised links from ``html`` relative to ``base_url``."""
+
     soup = BeautifulSoup(html, "html.parser")
     links: list[str] = []
-    for a in soup.find_all("a", href=True):
-        href: str = a["href"]
-        abs_url: str = urlparse.urljoin(base_url, href)
-        # убираем якоря, query‑параметры можно оставить
-        abs_url = abs_url.split("#")[0]
-        if not abs_url.startswith("http"):
+
+    for anchor in soup.find_all("a", href=True):
+        href: str = anchor["href"]
+        candidate = urlparse.urljoin(base_url, href)
+        candidate = candidate.split("#", 1)[0].strip()
+        if not candidate.lower().startswith(("http://", "https://")):
             continue
-        parsed = urlparse.urlsplit(abs_url)
-        path = parsed.path.lower()
-        if any(path.endswith(ext) for ext in BINARY_EXTENSIONS):
+        normalized = normalize_url(
+            candidate,
+            base_scheme=base_scheme,
+            canonical_host=canonical_host,
+            clean_params=clean_params,
+        )
+        if not normalized:
             continue
-        links.append(abs_url)
+        path_lower = urlparse.urlsplit(normalized).path.lower()
+        if any(path_lower.endswith(ext) for ext in BINARY_EXTENSIONS):
+            continue
+        links.append(normalized)
+
     return links
 
 
@@ -505,6 +643,257 @@ def clean_text(raw: str) -> str:
     cleaned = "\n".join(lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
     return cleaned
+
+
+def normalize_url(
+    raw_url: str,
+    *,
+    base_scheme: str = "https",
+    canonical_host: str | None = None,
+    clean_params: set[str] | None = None,
+) -> str | None:
+    """Return a canonical representation of ``raw_url`` suitable for deduplication."""
+
+    if not raw_url:
+        return None
+
+    candidate = raw_url.strip()
+    if not candidate:
+        return None
+
+    parsed = urlparse.urlsplit(candidate)
+    scheme = (parsed.scheme or base_scheme or "https").lower()
+
+    netloc = parsed.netloc.strip().lower()
+    if not netloc:
+        netloc = (canonical_host or "").strip().lower()
+    if not netloc:
+        return None
+
+    host, sep, port = netloc.partition(":")
+    if not host and sep:
+        host, port = port, ""
+    if canonical_host:
+        canon = canonical_host.strip().lower()
+        if canon.startswith("www."):
+            canon = canon[4:]
+        if host == f"www.{canon}":
+            host = canon
+    if port:
+        if (scheme == "https" and port == "443") or (scheme == "http" and port == "80"):
+            netloc = host
+        else:
+            netloc = f"{host}:{port}"
+    else:
+        netloc = host
+
+    path = parsed.path or ""
+    if path:
+        path = re.sub(r"/{2,}", "/", path)
+    if path.endswith("/") and path not in {"", "/"}:
+        path = path.rstrip("/")
+    if path == "/":
+        path = ""
+
+    drop_params = set(DROP_QUERY_PARAMS)
+    if clean_params:
+        drop_params.update({p.lower() for p in clean_params if p.lower() not in ESSENTIAL_QUERY_PARAMS})
+
+    query_pairs = urlparse.parse_qsl(parsed.query, keep_blank_values=False)
+    filtered_pairs = [
+        (k, v)
+        for k, v in query_pairs
+        if k and k.lower() not in drop_params
+    ]
+    filtered_pairs.sort()
+    query = urlparse.urlencode(filtered_pairs, doseq=True)
+
+    return urlparse.urlunsplit((scheme, netloc, path, query, ""))
+
+
+def _extract_clean_params(robots_body: str) -> set[str]:
+    params: set[str] = set()
+    for line in robots_body.splitlines():
+        stripped = line.strip()
+        if not stripped or not stripped.lower().startswith("clean-param:"):
+            continue
+        payload = stripped.split(":", 1)[1].strip()
+        if not payload:
+            continue
+        # ``Clean-param: a&b /path`` – only capture parameter list before optional path.
+        tokens = payload.replace("&amp", "&").split()
+        if not tokens:
+            continue
+        for item in tokens[0].split("&"):
+            param = item.strip().lower()
+            if param:
+                params.add(param)
+    return params
+
+
+def _extract_sitemap_urls(robots_body: str) -> list[str]:
+    urls: list[str] = []
+    for line in robots_body.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.lower().startswith("sitemap:"):
+            candidate = stripped.split(":", 1)[1].strip()
+            if candidate:
+                urls.append(candidate)
+    return urls
+
+
+async def _load_robot_rules(
+    client: httpx.AsyncClient,
+    *,
+    base_scheme: str,
+    canonical_host: str | None,
+    ignore_robots: bool,
+) -> tuple[robotparser.RobotFileParser | None, set[str], list[str]]:
+    if ignore_robots or not canonical_host:
+        return None, set(), []
+
+    robots_url = urlparse.urlunsplit((base_scheme, canonical_host, "/robots.txt", "", ""))
+    try:
+        resp = await client.get(robots_url, timeout=REQUEST_TIMEOUT, headers=HEADERS)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("robots_fetch_failed", url=robots_url, error=str(exc))
+        return None, set(), []
+
+    if resp.status_code != 200 or not resp.text.strip():
+        return None, set(), []
+
+    body = resp.text
+    parser: robotparser.RobotFileParser | None = robotparser.RobotFileParser()
+    parser.set_url(robots_url)
+    try:
+        parser.parse(body.splitlines())
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("robots_parse_failed", url=robots_url, error=str(exc))
+        parser = None
+
+    clean_params = _extract_clean_params(body)
+    sitemap_urls = _extract_sitemap_urls(body)
+    return parser, clean_params, sitemap_urls
+
+
+def _parse_sitemap_document(xml_text: str) -> tuple[list[str], list[str]]:
+    """Return (urls, nested_sitemaps) contained in ``xml_text``."""
+
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return [], []
+
+    urls: list[str] = []
+    nested: list[str] = []
+
+    tag = root.tag.lower()
+    if tag.endswith("urlset"):
+        for url_el in root.findall(".//{*}url"):
+            loc_el = url_el.find("{*}loc")
+            if loc_el is not None and isinstance(loc_el.text, str):
+                value = loc_el.text.strip()
+                if value:
+                    urls.append(value)
+    elif tag.endswith("sitemapindex"):
+        for sm in root.findall(".//{*}sitemap"):
+            loc_el = sm.find("{*}loc")
+            if loc_el is not None and isinstance(loc_el.text, str):
+                value = loc_el.text.strip()
+                if value:
+                    nested.append(value)
+    else:
+        for loc_el in root.findall(".//{*}loc"):
+            if loc_el is not None and isinstance(loc_el.text, str):
+                value = loc_el.text.strip()
+                if value:
+                    urls.append(value)
+
+    return urls, nested
+
+
+async def _collect_sitemap_urls(
+    client: httpx.AsyncClient,
+    seeds: Iterable[str],
+    *,
+    base_scheme: str,
+    canonical_host: str | None,
+    clean_params: set[str],
+    allowed_host_suffixes: set[str] | None,
+    robot_parser: robotparser.RobotFileParser | None,
+    max_pages: int,
+) -> list[str]:
+    """Fetch sitemap documents recursively and return discovered page URLs."""
+
+    collected: list[str] = []
+    pending: list[str] = list(seeds)
+    seen_sitemaps: set[str] = set()
+    user_agent = HEADERS.get("User-Agent", "*")
+
+    while pending and len(collected) < max_pages:
+        raw_sitemap = pending.pop(0)
+        normalized_sitemap = normalize_url(
+            raw_sitemap,
+            base_scheme=base_scheme,
+            canonical_host=canonical_host,
+            clean_params=None,
+        )
+        if not normalized_sitemap or normalized_sitemap in seen_sitemaps:
+            continue
+        seen_sitemaps.add(normalized_sitemap)
+
+        try:
+            resp = await client.get(normalized_sitemap, timeout=REQUEST_TIMEOUT)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("sitemap_fetch_failed", url=normalized_sitemap, error=str(exc))
+            continue
+
+        if resp.status_code != 200:
+            continue
+
+        urls, nested = _parse_sitemap_document(resp.text)
+        pending.extend(nested)
+
+        for entry in urls:
+            normalized_entry = normalize_url(
+                entry,
+                base_scheme=base_scheme,
+                canonical_host=canonical_host,
+                clean_params=clean_params,
+            )
+            if not normalized_entry:
+                continue
+            if allowed_host_suffixes and not _is_allowed_host(normalized_entry, allowed_host_suffixes):
+                continue
+            if robot_parser and not robot_parser.can_fetch(user_agent, normalized_entry):
+                continue
+            collected.append(normalized_entry)
+            if len(collected) >= max_pages:
+                break
+
+    return collected
+
+
+def _resolve_canonical_host(value: str | None) -> str | None:
+    if not value:
+        return None
+    candidate = value.strip()
+    if not candidate:
+        return None
+    if "//" in candidate:
+        host = urlparse.urlsplit(candidate).hostname
+    else:
+        host = urlparse.urlsplit(f"https://{candidate}").hostname
+    if not host:
+        return None
+    host = host.strip().lower()
+    if host.endswith(":80") or host.endswith(":443"):
+        host = host.rsplit(":", 1)[0]
+    if host.startswith("www."):
+        return host[4:]
+    return host
 
 
 def _normalize_for_hash(text: str) -> str:
@@ -637,6 +1026,7 @@ async def crawl(
     client_factory: Optional[Callable[[], httpx.AsyncClient]] = None,
     concurrency: int = 5,
     project_label: str | None = None,
+    ignore_robots: bool | None = None,
 ) -> AsyncIterator[Tuple[str, str, str, bool, bytes | None]]:
     """Asynchronously crawl a site in BFS order.
 
@@ -652,6 +1042,15 @@ async def crawl(
     result_queue: asyncio.Queue[Tuple[str, str, str, bool, bytes | None]] = asyncio.Queue()
     visited_lock = asyncio.Lock()
     enqueued: Set[str] = set()
+
+    parsed_start = urlparse.urlsplit(start_url)
+    base_scheme = (parsed_start.scheme or "https").lower()
+    start_host = parsed_start.hostname or ""
+    canonical_host = (
+        _resolve_canonical_host(start_host)
+        or _resolve_canonical_host(allowed_domain)
+        or (start_host.strip().lower() if start_host else None)
+    )
 
     allowed_host_suffixes: set[str] | None = None
     if allowed_domain:
@@ -669,24 +1068,33 @@ async def crawl(
             else:
                 allowed_host_suffixes.add(f"www.{host}")
 
-        parsed_allowed = urlparse.urlsplit(allowed_domain if allowed_domain.startswith("http") else f"https://{allowed_domain}")
+        parsed_allowed = urlparse.urlsplit(
+            allowed_domain if allowed_domain.startswith("http") else f"https://{allowed_domain}"
+        )
         _register_host(parsed_allowed.hostname or allowed_domain.split(":")[0])
-        start_host = urlparse.urlsplit(start_url).hostname
-        _register_host(start_host)
+        if start_host:
+            _register_host(start_host)
+        if canonical_host:
+            _register_host(canonical_host)
 
         # Normalize to bare hostnames (without ports)
         allowed_host_suffixes = {host.split(":")[0] for host in allowed_host_suffixes if host}
 
+    ignore_robots = DEFAULT_IGNORE_ROBOTS if ignore_robots is None else ignore_robots
+
+    normalized_seed = normalize_url(
+        start_url,
+        base_scheme=base_scheme,
+        canonical_host=canonical_host,
+        clean_params=None,
+    ) or start_url.strip()
+
     if project_label is None:
-        reset_counters()
+        clear_crawler_state()
         on_crawler_start()
     else:
-        reset_counters(project_label)
+        clear_crawler_state(project_label)
         on_crawler_start(project_label)
-
-    await url_queue.put((start_url, 0))
-    enqueued.add(start_url)
-    _incr("queued", 1, project_label)
 
     def _fallback_fetch(url: str) -> str | None:
         try:
@@ -754,58 +1162,6 @@ async def crawl(
             logger.warning("fetch failed", url=url, error=str(exc))
             return None, None, False, None
 
-    async def _worker(client: httpx.AsyncClient) -> None:
-        while True:
-            url, depth = await url_queue.get()
-            try:
-                async with visited_lock:
-                    if url in visited or depth > max_depth or len(visited) >= max_pages:
-                        enqueued.discard(url)
-                        _incr("queued", -1, project_label)
-                        continue
-                    visited.add(url)
-                try:
-                    with mark_url(url, project_label):
-                        payload, ctype, is_html, binary_data = await asyncio.wait_for(
-                            _fetch_async(client, url),
-                            timeout=PAGE_TIMEOUT,
-                        )
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "fetch timeout",
-                        url=url,
-                        timeout=PAGE_TIMEOUT,
-                    )
-                    continue
-
-                if payload or binary_data:
-                    logger.info(
-                        "page fetched", url=url, depth=depth, content_length=len(payload), content_type=ctype
-                    )
-                    await result_queue.put((url, payload or "", ctype, is_html, binary_data))
-                    if is_html and (
-                        not allowed_host_suffixes
-                        or _is_allowed_host(url, allowed_host_suffixes)
-                    ):
-                        for link in extract_links(payload, url):
-                            async with visited_lock:
-                                if allowed_host_suffixes and not _is_allowed_host(link, allowed_host_suffixes):
-                                    continue
-                                if link in visited:
-                                    continue
-                                if link in enqueued:
-                                    continue
-                                if len(visited) + url_queue.qsize() >= max_pages:
-                                    continue
-                                await url_queue.put((link, depth + 1))
-                                enqueued.add(link)
-                                _incr("queued", 1, project_label)
-                else:
-                    logger.info("page skipped", url=url, reason="non_html_or_error")
-            finally:
-                enqueued.discard(url)
-                url_queue.task_done()
-
     # Create client
     if client_factory is None:
         context = httpx.AsyncClient(
@@ -819,6 +1175,130 @@ async def crawl(
         created_client = True  # ensure context is closed via async context manager
 
     async with context as client:
+        robot_parser, robot_params, robot_sitemaps = await _load_robot_rules(
+            client,
+            base_scheme=base_scheme,
+            canonical_host=canonical_host,
+            ignore_robots=ignore_robots,
+        )
+        clean_params: set[str] = set(robot_params)
+
+        normalized_seed_final = normalize_url(
+            normalized_seed,
+            base_scheme=base_scheme,
+            canonical_host=canonical_host,
+            clean_params=clean_params,
+        ) or normalized_seed
+
+        sitemap_candidates: list[str] = []
+        sitemap_candidates.extend(robot_sitemaps)
+        if DEFAULT_SITEMAP_URL:
+            sitemap_candidates.append(DEFAULT_SITEMAP_URL)
+        if canonical_host:
+            fallback_sitemap = urlparse.urlunsplit(
+                (base_scheme, canonical_host, "/sitemap.xml", "", "")
+            )
+            sitemap_candidates.append(fallback_sitemap)
+
+        dedup_candidates: list[str] = []
+        seen_candidate: set[str] = set()
+        for item in sitemap_candidates:
+            candidate = (item or "").strip()
+            if not candidate or candidate in seen_candidate:
+                continue
+            seen_candidate.add(candidate)
+            dedup_candidates.append(candidate)
+
+        sitemap_seed_urls: list[str] = []
+        if dedup_candidates:
+            sitemap_seed_urls = await _collect_sitemap_urls(
+                client,
+                dedup_candidates,
+                base_scheme=base_scheme,
+                canonical_host=canonical_host,
+                clean_params=clean_params,
+                allowed_host_suffixes=allowed_host_suffixes,
+                robot_parser=robot_parser,
+                max_pages=max_pages,
+            )
+
+        user_agent = HEADERS.get("User-Agent", "*")
+
+        async def enqueue_url(raw: str, depth: int, *, force: bool = False) -> None:
+            normalized = normalize_url(
+                raw,
+                base_scheme=base_scheme,
+                canonical_host=canonical_host,
+                clean_params=clean_params,
+            )
+            if not normalized:
+                return
+            if not force and depth > max_depth:
+                return
+            if allowed_host_suffixes and not _is_allowed_host(normalized, allowed_host_suffixes):
+                if not force:
+                    return
+            if robot_parser and not robot_parser.can_fetch(user_agent, normalized):
+                if not force:
+                    return
+            async with visited_lock:
+                if normalized in visited or normalized in enqueued:
+                    return
+                if not force and len(visited) + url_queue.qsize() >= max_pages:
+                    return
+                await url_queue.put((normalized, depth))
+                enqueued.add(normalized)
+                _incr("queued", 1, project_label)
+
+        await enqueue_url(normalized_seed_final, 0, force=True)
+        for extra_url in sitemap_seed_urls:
+            await enqueue_url(extra_url, 1)
+
+        async def _worker(client: httpx.AsyncClient) -> None:
+            while True:
+                url, depth = await url_queue.get()
+                try:
+                    async with visited_lock:
+                        if url in visited or depth > max_depth or len(visited) >= max_pages:
+                            enqueued.discard(url)
+                            _incr("queued", -1, project_label)
+                            continue
+                        visited.add(url)
+                    try:
+                        with mark_url(url, project_label):
+                            payload, ctype, is_html, binary_data = await asyncio.wait_for(
+                                _fetch_async(client, url),
+                                timeout=PAGE_TIMEOUT,
+                            )
+                    except asyncio.TimeoutError:
+                        logger.warning("fetch timeout", url=url, timeout=PAGE_TIMEOUT)
+                        continue
+
+                    if payload or binary_data:
+                        content_length = len(payload) if payload else len(binary_data or b"")
+                        logger.info(
+                            "page fetched",
+                            url=url,
+                            depth=depth,
+                            content_length=content_length,
+                            content_type=ctype,
+                        )
+                        await result_queue.put((url, payload or "", ctype, is_html, binary_data))
+                        if is_html:
+                            for link in extract_links(
+                                payload,
+                                url,
+                                base_scheme=base_scheme,
+                                canonical_host=canonical_host,
+                                clean_params=clean_params,
+                            ):
+                                await enqueue_url(link, depth + 1)
+                    else:
+                        logger.info("page skipped", url=url, reason="non_html_or_error")
+                finally:
+                    enqueued.discard(url)
+                    url_queue.task_done()
+
         workers = [asyncio.create_task(_worker(client)) for _ in range(concurrency)]
 
         pages = 0
@@ -848,6 +1328,7 @@ def run(
     mongo_uri: str = DEFAULT_MONGO_URI,
     progress_callback: Callable[[str], None] | None = None,
     project_name: str | None = None,
+    ignore_robots: bool | None = None,
 ) -> None:
     """Synchronous entry point that stores crawled pages as plain text.
 
@@ -872,7 +1353,7 @@ def run(
         project=document_project,
     )
 
-    reset_counters(document_project)
+    clear_crawler_state(document_project)
     on_crawler_start(document_project)
 
     mongo_cfg = MongoSettings()
@@ -982,6 +1463,7 @@ def run(
                     max_depth=max_depth,
                     allowed_domain=allowed_domain,
                     project_label=document_project,
+                    ignore_robots=ignore_robots,
                 ):
                     raw_text = html_to_text(raw_payload) if is_html else raw_payload
                     text = clean_text(raw_text) if raw_text else ""

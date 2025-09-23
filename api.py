@@ -1105,8 +1105,8 @@ async def crawler_reset(request: Request, project: str | None = None) -> dict[st
 
     _require_super_admin(request)
     project_label = _normalize_project(project)
-    clear_crawler_state(project_label)
-    return {"status": "reset", "project": project_label}
+    removed = clear_crawler_state(project_label)
+    return {"status": "reset", "project": project_label, "purged_jobs": removed}
 
 
 @crawler_router.post("/deduplicate", status_code=200)

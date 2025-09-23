@@ -1,5 +1,6 @@
 """Celery worker tasks for updating the Redis vector store."""
 
+import re
 import time
 from collections.abc import Generator
 from typing import Dict
@@ -55,6 +56,15 @@ def update_vector_store():
         db = mongo_client[settings.mongo.database]
         documents_collection = db[settings.mongo.documents]
         settings_collection = db[settings.mongo.settings]
+
+        cleanup_stats = prune_knowledge_collection(db, documents_collection)
+        if cleanup_stats["removed"]:
+            logger.info(
+                "knowledge_pruned",
+                removed=cleanup_stats["removed"],
+                duplicates=cleanup_stats["duplicates"],
+                low_value=cleanup_stats["low_value"],
+            )
 
         try:
             documents_collection.create_index("ts", name="documents_ts")
@@ -181,6 +191,111 @@ def get_document_parser() -> DocumentsParser:
         settings.redis.secure,
     )
 
+
+BREADCRUMB_SEPARATORS = re.compile(r"\s*[>/\\»|-]+\s*")
+NAV_KEYWORDS = {
+    "главная",
+    "контакты",
+    "о компании",
+    "о нас",
+    "услуги",
+    "партнёры",
+    "клиенты",
+    "новости",
+    "карта сайта",
+    "help",
+    "support",
+    "docs",
+    "documentation",
+    "download",
+}
+FOOTER_KEYWORDS = {
+    "все права защищены",
+    "all rights reserved",
+    "политика конфиденциальности",
+    "privacy policy",
+    "terms of use",
+    "соглашение",
+    "copyright",
+    "©",
+}
+
+
+def _looks_like_navigation_snippet(text: str) -> bool:
+    candidate = text.strip().lower()
+    if not candidate:
+        return True
+    parts = [part.strip() for part in BREADCRUMB_SEPARATORS.split(candidate) if part.strip()]
+    if parts and all(part in NAV_KEYWORDS for part in parts):
+        return True
+    if len(candidate) <= 60 and candidate.count(" ") <= 6:
+        tokens = [token for token in re.split(r"\W+", candidate) if token]
+        if tokens and all(token in NAV_KEYWORDS for token in tokens):
+            return True
+    for marker in FOOTER_KEYWORDS:
+        if marker in candidate and len(candidate) <= 160:
+            return True
+    return False
+
+
+def _delete_document(collection, gridfs: GridFS, file_id: str) -> None:
+    collection.delete_one({"fileId": file_id})
+    try:
+        gridfs.delete(ObjectId(file_id))
+    except Exception:
+        logger.debug("gridfs_delete_skip", file_id=file_id)
+
+
+def prune_knowledge_collection(db, collection) -> dict[str, int]:
+    """Remove duplicate and low-value knowledge documents before processing."""
+
+    gridfs = GridFS(db)
+    seen_hashes: dict[str, set[str]] = {}
+    removed = duplicates = low_value = 0
+    try:
+        cursor = collection.find(
+            {},
+            {
+                "fileId": 1,
+                "content_hash": 1,
+                "description": 1,
+                "project": 1,
+            },
+        )
+        for doc in cursor:
+            file_id = doc.get("fileId")
+            if not file_id:
+                continue
+            project_key = (doc.get("project") or "default").strip().lower()
+            bucket = seen_hashes.setdefault(project_key, set())
+            content_hash = doc.get("content_hash")
+            description = (doc.get("description") or "").strip()
+
+            if content_hash and content_hash in bucket:
+                _delete_document(collection, gridfs, file_id)
+                duplicates += 1
+                removed += 1
+                continue
+
+            skip_low_value = False
+            if description:
+                if len(description) < 60 or _looks_like_navigation_snippet(description):
+                    skip_low_value = True
+            else:
+                skip_low_value = True
+
+            if skip_low_value:
+                _delete_document(collection, gridfs, file_id)
+                low_value += 1
+                removed += 1
+                continue
+
+            if content_hash:
+                bucket.add(content_hash)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("knowledge_prune_failed", error=str(exc))
+
+    return {"removed": removed, "duplicates": duplicates, "low_value": low_value}
 
 @worker_ready.connect
 def on_startup(*args, **kwargs):

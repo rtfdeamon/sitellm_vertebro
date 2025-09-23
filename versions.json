@@ -1,10 +1,10 @@
 {
   "backend": {
-    "version": 17,
-    "hash": "f88b620ee601da7e8241cecda3ca506ac95aa2b16e738ab33c4d9f136c150676"
+    "version": 20,
+    "hash": "c5d9358b163acc2308f62acdcb49b32f11d5456a73a313471565416289e3860f"
   },
   "telegram": {
-    "version": 9,
-    "hash": "3b2b677800fb7d168162fc84a9ae2b2124cfe272ec11a64ddd63f386fb4dbde6"
+    "version": 10,
+    "hash": "7cbf4a4fe5cc1907de294c5939466d5c57597cfcdee8a8f815bd1d977d518553"
   }
 }
