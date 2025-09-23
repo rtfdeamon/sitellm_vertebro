@@ -159,6 +159,89 @@ wait_for_port_release() {
   return 1
 }
 
+wait_until_port_free() {
+  local port="$1"
+  local timeout="${2:-15}"
+  local interval="${3:-1}"
+  if ! [[ "$timeout" =~ ^[0-9]+$ ]] || [ "$timeout" -le 0 ]; then
+    timeout=5
+  fi
+  if ! [[ "$interval" =~ ^[0-9]+$ ]] || [ "$interval" -le 0 ]; then
+    interval=1
+  fi
+  local end_ts=$(( $(date +%s) + timeout ))
+  while [ "$(date +%s)" -lt "$end_ts" ]; do
+    if is_port_free "$port"; then
+      return 0
+    fi
+    sleep "$interval"
+  done
+  if is_port_free "$port"; then
+    return 0
+  fi
+  return 1
+}
+
+listening_pids_for_port() {
+  local port="$1"
+  local pids=""
+  if command -v lsof >/dev/null 2>&1; then
+    pids=$(lsof -ti TCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
+    if [ -z "$pids" ] && command -v sudo >/dev/null 2>&1; then
+      pids=$(sudo lsof -ti TCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
+    fi
+  fi
+  if [ -z "$pids" ] && command -v fuser >/dev/null 2>&1; then
+    pids=$(fuser -n tcp "$port" 2>/dev/null | tr -s ' ' '\n' | sort -u)
+    if [ -z "$pids" ] && command -v sudo >/dev/null 2>&1; then
+      pids=$(sudo fuser -n tcp "$port" 2>/dev/null | tr -s ' ' '\n' | sort -u)
+    fi
+  fi
+  if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
+    pids=$(ss -lntp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print $NF}' | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | sort -u)
+  fi
+  echo "$pids"
+}
+
+terminate_port_processes() {
+  local port="$1"
+  local grace="${2:-12}"
+  if is_port_free "$port"; then
+    return 0
+  fi
+  local pids
+  pids=$(listening_pids_for_port "$port")
+  if [ -z "$pids" ]; then
+    printf '[!] Port %s is busy but owning process could not be determined.\n' "$port"
+    return 1
+  fi
+  printf '[!] Port %s is currently in use by PID(s): %s\n' "$port" "$pids"
+  printf '[+] Attempting graceful shutdown of blocking processes...\n'
+  for pid in $pids; do
+    kill "$pid" 2>/dev/null || {
+      if command -v sudo >/dev/null 2>&1; then
+        sudo kill "$pid" 2>/dev/null || true
+      fi
+    }
+  done
+  if wait_until_port_free "$port" "$grace" 1; then
+    return 0
+  fi
+  printf '[!] Processes still listening on port %s; escalating to SIGKILL...\n' "$port"
+  for pid in $pids; do
+    kill -9 "$pid" 2>/dev/null || {
+      if command -v sudo >/dev/null 2>&1; then
+        sudo kill -9 "$pid" 2>/dev/null || true
+      fi
+    }
+  done
+  if wait_until_port_free "$port" "$((grace + 6))" 1; then
+    return 0
+  fi
+  printf '[✗] Unable to free port %s automatically. Please stop blocking processes and rerun.\n' "$port"
+  return 1
+}
+
 pick_free_port() {
   local start="$1"; local max_scan=100; local p="$start"
   wait_for_port_release "$start" >/dev/null 2>&1 || true
@@ -380,7 +463,28 @@ export MONGO_URI
 update_env_var MONGO_URI "$MONGO_URI"
 update_env_var USE_GPU "$USE_GPU"
 update_env_var GRAFANA_PASSWORD "$GRAFANA_PASS"
-APP_PORT_HOST=$(pick_free_port "${HOST_APP_PORT:-18000}")
+
+APP_PORT_CANDIDATE="${HOST_APP_PORT:-}"
+if [ -z "$APP_PORT_CANDIDATE" ] && [ -f .env ]; then
+  APP_PORT_CANDIDATE=$(awk -F= '/^HOST_APP_PORT=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+fi
+APP_PORT_CANDIDATE=${APP_PORT_CANDIDATE:-18000}
+
+if ! is_port_free "$APP_PORT_CANDIDATE"; then
+  printf '[!] Port %s is currently in use. Attempting to free it for the application...\n' "$APP_PORT_CANDIDATE"
+  if ! terminate_port_processes "$APP_PORT_CANDIDATE" 18; then
+    echo '[✗] Failed to free the main application port automatically. Stop conflicting service and rerun.'
+    exit 1
+  fi
+  printf '[✓] Port %s successfully freed.\n' "$APP_PORT_CANDIDATE"
+fi
+
+if ! wait_until_port_free "$APP_PORT_CANDIDATE" 5; then
+  printf '[✗] Port %s did not become available in time.\n' "$APP_PORT_CANDIDATE"
+  exit 1
+fi
+
+APP_PORT_HOST="$APP_PORT_CANDIDATE"
 MONGO_PORT_HOST=$(pick_free_port "${HOST_MONGO_PORT:-27027}")
 REDIS_PORT_HOST=$(pick_free_port "${HOST_REDIS_PORT:-16379}")
 # Ensure HTTP/GRPC ports do not collide even if .env reuses the same value.

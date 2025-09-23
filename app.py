@@ -26,7 +26,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from starlette.routing import NoMatchFound
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, PlainTextResponse
 
 from observability.logging import configure_logging, get_recent_logs
 from observability.metrics import MetricsMiddleware, metrics_app
@@ -160,6 +160,19 @@ def _resolve_admin_project(
     if required and not normalized:
         raise HTTPException(status_code=400, detail="Project identifier is required")
     return normalized
+
+
+def _admin_logout_response(request: Request) -> PlainTextResponse:
+    identity = _get_admin_identity(request)
+    if identity:
+        logger.info(
+            "admin_logout",
+            username=identity.username,
+            is_super=identity.is_super,
+        )
+    response = PlainTextResponse("Logged out", status_code=401)
+    response.headers["WWW-Authenticate"] = 'Basic realm="admin"'
+    return response
 
 
 def _project_response(project: Project) -> dict[str, Any]:
@@ -1322,6 +1335,16 @@ def status(domain: str | None = None, project: str | None = None) -> dict[str, o
     """Return aggregated crawler and database status."""
     chosen = project or domain
     return status_dict(_normalize_project(chosen))
+
+
+@app.post("/api/v1/admin/logout", response_class=PlainTextResponse, include_in_schema=False)
+async def admin_logout(request: Request) -> PlainTextResponse:
+    return _admin_logout_response(request)
+
+
+@app.get("/api/v1/admin/logout", response_class=PlainTextResponse, include_in_schema=False)
+async def admin_logout_get(request: Request) -> PlainTextResponse:
+    return _admin_logout_response(request)
 
 
 @app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
