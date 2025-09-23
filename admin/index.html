@@ -1554,13 +1554,14 @@
     resetCrawlerProgress();
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const launchMsg = document.getElementById('launchMsg');
       const payload = {
         start_url: document.getElementById('url').value,
         max_depth: Number(document.getElementById('depth').value),
         max_pages: Number(document.getElementById('pages').value),
       };
       if (!currentProject) {
-        document.getElementById('launchMsg').textContent = 'Выберите проект';
+        launchMsg.textContent = 'Выберите проект';
         return;
       }
       payload.project = currentProject;
@@ -1568,19 +1569,28 @@
       if (crawlDomain) {
         payload.domain = crawlDomain;
       }
-      const res = await fetch('/api/v1/crawler/run', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(payload),
-      });
-      document.getElementById('launchMsg').textContent = res.ok ? 'Запущено' : 'Не удалось запустить';
+      try {
+        const res = await fetch('/api/v1/crawler/run', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload),
+        });
+        launchMsg.textContent = res.ok ? 'Запущено' : 'Не удалось запустить';
+      } catch (error) {
+        console.error('crawler_start_failed', error);
+        launchMsg.textContent = 'Ошибка запуска краулера';
+      }
     });
 
     stopBtn.addEventListener('click', async () => {
+      const launchMsg = document.getElementById('launchMsg');
       try {
         const r = await fetch('/api/v1/crawler/stop', { method: 'POST' });
-        document.getElementById('launchMsg').textContent = r.ok ? 'Останавливаем…' : 'Не удалось остановить';
-      } catch {}
+        launchMsg.textContent = r.ok ? 'Останавливаем…' : 'Не удалось остановить';
+      } catch (error) {
+        console.error('crawler_stop_failed', error);
+        launchMsg.textContent = 'Ошибка остановки';
+      }
     });
 
     if (crawlerLogsBtn) {
@@ -2020,13 +2030,10 @@
     const summaryCrawlerCard = document.getElementById('summaryCrawlerCard');
     const summaryCrawlerEl = document.getElementById('summaryCrawler');
     const summaryCrawlerMeta = document.getElementById('summaryCrawlerMeta');
-    const summaryPerfCard = document.getElementById('summaryPerfCard');
     const summaryPerfEl = document.getElementById('summaryPerf');
     const summaryPerfMeta = document.getElementById('summaryPerfMeta');
-    const summaryLLMCard = document.getElementById('summaryLLMCard');
     const summaryPromptEl = document.getElementById('summaryPrompt');
     const summaryPromptDocs = document.getElementById('summaryPromptDocs');
-    const summaryBuildCard = document.getElementById('summaryBuildCard');
     const summaryBuildEl = document.getElementById('summaryBuild');
     const summaryBuildMeta = document.getElementById('summaryBuildMeta');
     const kbDedupBtn = document.getElementById('kbDeduplicate');
@@ -3242,9 +3249,14 @@
     }
     projectRefreshBtn.addEventListener('click', async () => {
       setProjectStatus('Обновляем…', 1500);
-      await fetchProjects();
-      await fetchProjectStorage();
-      populateProjectForm(currentProject);
+      try {
+        await fetchProjects();
+        await fetchProjectStorage();
+        populateProjectForm(currentProject);
+      } catch (error) {
+        console.error('project_refresh_failed', error);
+        setProjectStatus('Ошибка обновления списка проектов', 3000);
+      }
     });
     projectModalClose.addEventListener('click', hideProjectModal);
     projectModalCancel.addEventListener('click', hideProjectModal);
@@ -4382,11 +4394,16 @@
     document.getElementById('kbForm').addEventListener('submit', (e)=>{ e.preventDefault(); loadKnowledge(); });
     document.getElementById('kbClear').addEventListener('click', ()=>{ document.getElementById('kbSearch').value=''; loadKnowledge(); });
     document.getElementById('kbReloadProjects').addEventListener('click', async ()=>{
-      await loadProjectsList();
-      await fetchProjects();
-      await fetchProjectStorage();
-      loadKnowledge();
-      populateProjectForm(currentProject);
+      try {
+        await loadProjectsList();
+        await fetchProjects();
+        await fetchProjectStorage();
+        await loadKnowledge();
+        populateProjectForm(currentProject);
+      } catch (error) {
+        console.error('kb_reload_projects_failed', error);
+        document.getElementById('kbInfo').textContent = 'Не удалось обновить список проектов';
+      }
     });
     document.getElementById('kbAddForm').addEventListener('submit', saveKnowledge);
     document.getElementById('kbResetForm').addEventListener('click', () => {
@@ -5253,16 +5270,29 @@
       const base = document.getElementById('ollamaBase').value.trim();
       const model = document.getElementById('ollamaModel').value.trim();
       const payload = { ollama_base: base || null, model: model || null };
-      const r = await fetch('/api/v1/llm/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-      document.getElementById('pingRes').textContent = r.ok ? 'Saved' : 'Save failed';
+      try {
+        const r = await fetch('/api/v1/llm/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        document.getElementById('pingRes').textContent = r.ok ? 'Saved' : 'Save failed';
+      } catch (error) {
+        console.error('llm_config_save_failed', error);
+        document.getElementById('pingRes').textContent = 'Save failed';
+      }
       pollLLM();
     });
     document.getElementById('pingLLM').addEventListener('click', async () => {
-      const r = await fetch('/api/v1/llm/ping');
-      if (!r.ok) { document.getElementById('pingRes').textContent = 'Ping failed'; return; }
-      const j = await r.json();
-      if (!j.enabled) document.getElementById('pingRes').textContent = 'Disabled';
-      else document.getElementById('pingRes').textContent = j.reachable ? 'Reachable' : ('Unreachable' + (j.error ? `: ${j.error}` : ''));
+      try {
+        const r = await fetch('/api/v1/llm/ping');
+        if (!r.ok) {
+          document.getElementById('pingRes').textContent = 'Ping failed';
+          return;
+        }
+        const j = await r.json();
+        if (!j.enabled) document.getElementById('pingRes').textContent = 'Disabled';
+        else document.getElementById('pingRes').textContent = j.reachable ? 'Reachable' : ('Unreachable' + (j.error ? `: ${j.error}` : ''));
+      } catch (error) {
+        console.error('llm_ping_failed', error);
+        document.getElementById('pingRes').textContent = 'Ping failed';
+      }
     });
 
     document.getElementById('copyLogs').addEventListener('click', async () => {
