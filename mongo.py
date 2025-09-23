@@ -669,13 +669,112 @@ class MongoClient:
             logger.error("mongo_upsert_project_failed", project=data.get("name"), error=str(exc))
             raise
 
-    async def delete_project(self, domain: str) -> None:
+    async def delete_project(
+        self,
+        domain: str,
+        *,
+        documents_collection: str,
+        contexts_collection: str,
+        stats_collection: str | None = None,
+    ) -> dict[str, int]:
+        """Remove project metadata, knowledge documents and related data."""
+
+        project_key = (domain or "").strip().lower()
+        summary = {
+            "documents": 0,
+            "files": 0,
+            "contexts": 0,
+            "stats": 0,
+            "projects": 0,
+        }
+
+        if not project_key:
+            return summary
+
+        # Collect knowledge documents for the project and remove them together
+        doc_query = {
+            "$or": [
+                {"project": project_key},
+                {"domain": project_key},
+            ]
+        }
+
+        file_ids: list[str] = []
+        orphan_ids: list[ObjectId] = []
         try:
-            await self.db[self.projects_collection].delete_one({"name": domain})
-            await self.db[self.projects_collection].delete_one({"domain": domain})
+            cursor = self.db[documents_collection].find(doc_query, {"fileId": 1, "_id": 1})
+            async for doc in cursor:
+                file_id = doc.get("fileId")
+                if file_id:
+                    file_ids.append(str(file_id))
+                else:
+                    oid = doc.get("_id")
+                    if isinstance(oid, ObjectId):
+                        orphan_ids.append(oid)
         except Exception as exc:
-            logger.error("mongo_delete_project_failed", project=domain, error=str(exc))
+            logger.error("mongo_list_project_documents_failed", project=project_key, error=str(exc))
             raise
+
+        for file_id in file_ids:
+            try:
+                await self.delete_document(documents_collection, file_id)
+                summary["documents"] += 1
+                summary["files"] += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "mongo_delete_project_document_failed",
+                    project=project_key,
+                    file_id=file_id,
+                    error=str(exc),
+                )
+
+        if orphan_ids:
+            try:
+                result = await self.db[documents_collection].delete_many({"_id": {"$in": orphan_ids}})
+                summary["documents"] += int(result.deleted_count or 0)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "mongo_delete_project_orphans_failed",
+                    project=project_key,
+                    error=str(exc),
+                )
+
+        # Delete chat contexts linked to the project
+        try:
+            result = await self.db[contexts_collection].delete_many({"project": project_key})
+            summary["contexts"] = int(result.deleted_count or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "mongo_delete_project_contexts_failed",
+                project=project_key,
+                error=str(exc),
+            )
+
+        # Remove request statistics for the project
+        stats_coll = stats_collection or self.stats_collection
+        try:
+            result = await self.db[stats_coll].delete_many({"project": project_key})
+            summary["stats"] = int(result.deleted_count or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "mongo_delete_project_stats_failed",
+                project=project_key,
+                error=str(exc),
+            )
+
+        # Finally remove the project metadata entries
+        try:
+            projects_removed = 0
+            for field in ("name", "domain"):
+                result = await self.db[self.projects_collection].delete_many({field: project_key})
+                projects_removed += int(result.deleted_count or 0)
+            summary["projects"] = projects_removed
+        except Exception as exc:
+            logger.error("mongo_delete_project_failed", project=project_key, error=str(exc))
+            raise
+
+        summary["file_ids"] = file_ids
+        return summary
 
     async def get_project(self, domain: str) -> Project | None:
         try:

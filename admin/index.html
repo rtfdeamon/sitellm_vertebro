@@ -146,6 +146,37 @@
 
     .knowledge-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 
+    .prompt-ai-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+
+    .prompt-ai-controls select {
+      min-width: 200px;
+    }
+
+    .prompt-ai-status {
+      min-width: 160px;
+    }
+
+    .prompt-ai-controls button {
+      background: rgba(96, 165, 250, 0.15);
+      border: 1px solid rgba(96, 165, 250, 0.45);
+      border-radius: 10px;
+      color: #e2e8ff;
+      padding: 8px 16px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+
+    .prompt-ai-controls button:hover {
+      background: rgba(96, 165, 250, 0.25);
+      border-color: rgba(96, 165, 250, 0.75);
+    }
+
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
@@ -1071,6 +1102,11 @@
           <label style="flex:1 1 100%;">Стартовый промпт
             <textarea id="projectPrompt" rows="3" placeholder="Укажите инструкцию для модели" style="width:100%; resize:vertical;"></textarea>
           </label>
+          <div class="prompt-ai-controls" style="flex:1 1 100%;">
+            <select id="projectPromptRole"></select>
+            <button type="button" id="projectPromptAi">AI‑сгенерировать</button>
+            <span class="muted prompt-ai-status" id="projectPromptAiStatus">—</span>
+          </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
               <input type="checkbox" id="projectEmotions" checked>
@@ -1403,6 +1439,11 @@
           <label>Стартовый промпт
             <textarea id="projectModalPrompt" rows="4" placeholder="Опишите инструкцию для модели"></textarea>
           </label>
+          <div class="prompt-ai-controls">
+            <select id="projectModalPromptRole"></select>
+            <button type="button" id="projectModalPromptAi">AI‑сгенерировать</button>
+            <span class="muted prompt-ai-status" id="projectModalPromptAiStatus">—</span>
+          </div>
           <label>Админ логин
             <input type="text" id="projectModalAdminUsername" placeholder="project_admin">
           </label>
@@ -1614,6 +1655,9 @@
     const projectTitleInput = document.getElementById('projectTitle');
     const projectModelInput = document.getElementById('projectModel');
     const projectPromptInput = document.getElementById('projectPrompt');
+    const projectPromptRoleSelect = document.getElementById('projectPromptRole');
+    const projectPromptAiBtn = document.getElementById('projectPromptAi');
+    const projectPromptAiStatus = document.getElementById('projectPromptAiStatus');
     const projectEmotionsInput = document.getElementById('projectEmotions');
     const projectDebugInput = document.getElementById('projectDebug');
     const projectDebugHint = document.getElementById('projectDebugHint');
@@ -1650,10 +1694,164 @@
     const autoUpdateCard = document.querySelector('.update-service-card');
     const autoUpdateEndpoints = ['/api/v1/admin/update/service'];
     let activeAutoUpdateEndpoint = null;
+    const PROMPT_AI_ROLES = [
+      {
+        value: 'friendly_expert',
+        label: 'Дружелюбный эксперт',
+        hint: 'Тёплый тон, поддержка клиента и забота о его задачах.',
+      },
+      {
+        value: 'formal_consultant',
+        label: 'Формальный консультант',
+        hint: 'Деловой стиль общения, акцент на фактах и регламентах.',
+      },
+      {
+        value: 'sales_manager',
+        label: 'Активный менеджер',
+        hint: 'Фокус на выгодах продукта и мягких продажах.',
+      },
+    ];
     const setKnowledgeServiceControlsDisabled = (disabled) => {
       if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
       if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
       if (knowledgeServiceRefresh) knowledgeServiceRefresh.disabled = disabled;
+    };
+
+    const ensurePromptRoleOptions = (select) => {
+      if (!select || select.options.length) return;
+      PROMPT_AI_ROLES.forEach((role) => {
+        const option = document.createElement('option');
+        option.value = role.value;
+        option.textContent = role.label;
+        if (role.hint) option.title = role.hint;
+        select.appendChild(option);
+      });
+      if (PROMPT_AI_ROLES.length) {
+        select.value = PROMPT_AI_ROLES[0].value;
+      }
+    };
+
+    const buildTargetUrl = (raw) => {
+      if (!raw) return null;
+      let candidate = String(raw).trim();
+      if (!candidate) return null;
+      if (!/^https?:\/\//i.test(candidate)) {
+        candidate = `https://${candidate}`;
+      }
+      try {
+        const parsed = new URL(candidate);
+        if (!parsed.hostname) return null;
+        if (!parsed.pathname) parsed.pathname = '/';
+        return parsed.toString();
+      } catch (error) {
+        return null;
+      }
+    };
+
+    const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, status }) => {
+      if (!textarea || !domainInput || !button || !status || !roleSelect) {
+        return null;
+      }
+
+      ensurePromptRoleOptions(roleSelect);
+      let controller = null;
+      let generating = false;
+
+      const setStatus = (message, timeoutMs = 0) => {
+        status.textContent = message || '—';
+        if (timeoutMs > 0) {
+          const expected = status.textContent;
+          setTimeout(() => {
+            if (status.textContent === expected) {
+              status.textContent = '—';
+            }
+          }, timeoutMs);
+        }
+      };
+
+      const stopGeneration = (message) => {
+        if (controller) {
+          controller.abort();
+        }
+        controller = null;
+        generating = false;
+        button.disabled = false;
+        roleSelect.disabled = false;
+        if (message) {
+          setStatus(message, 3500);
+        }
+      };
+
+      textarea.addEventListener('input', () => {
+        if (generating) {
+          stopGeneration('Остановлено: ввод пользователя');
+        }
+      });
+
+      button.addEventListener('click', async () => {
+        const pageUrl = buildTargetUrl(domainInput.value || projectDomainInput?.value || '');
+        if (!pageUrl) {
+          setStatus('Укажите корректный домен или URL', 4000);
+          return;
+        }
+        const role = roleSelect.value || PROMPT_AI_ROLES[0]?.value || null;
+
+        if (controller) {
+          controller.abort();
+        }
+        controller = new AbortController();
+        generating = true;
+        button.disabled = true;
+        roleSelect.disabled = true;
+        setStatus('Генерируем…');
+
+        try {
+          const response = await fetch('/api/v1/admin/projects/prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: pageUrl, role }),
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            let detail = `HTTP ${response.status}`;
+            try {
+              const data = await response.json();
+              if (data?.detail) detail = data.detail;
+            } catch (error) {
+              /* ignore */
+            }
+            throw new Error(detail);
+          }
+          const data = await response.json();
+          const prompt = (data?.prompt || '').trim();
+          if (!prompt) {
+            setStatus('Модель вернула пустой результат', 4000);
+          } else {
+            textarea.value = prompt;
+            textarea.dispatchEvent(new Event('input', { bubbles: true }));
+            setStatus('Промт готов', 3500);
+          }
+        } catch (error) {
+          if (error?.name === 'AbortError') {
+            setStatus('Остановлено', 3000);
+          } else {
+            console.error('prompt_ai_failed', error);
+            setStatus(`Ошибка: ${error?.message || 'не удалось'}`, 4500);
+          }
+        } finally {
+          if (controller) {
+            controller = null;
+          }
+          generating = false;
+          button.disabled = false;
+          roleSelect.disabled = false;
+        }
+      });
+
+      return {
+        abort: () => stopGeneration(),
+        reset: () => setStatus('—'),
+      };
     };
 
     const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
@@ -1672,12 +1870,20 @@
         const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
         if (modalAdminLogin) modalAdminLogin.style.display = 'none';
         if (modalAdminPass) modalAdminPass.style.display = 'none';
+        if (projectPromptAiBtn) projectPromptAiBtn.disabled = true;
+        if (projectPromptRoleSelect) projectPromptRoleSelect.disabled = true;
+        if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = true;
+        if (projectModalPromptRole) projectModalPromptRole.disabled = true;
       } else {
         setKnowledgeServiceControlsDisabled(false);
         const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
         const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
         if (modalAdminLogin) modalAdminLogin.style.display = '';
         if (modalAdminPass) modalAdminPass.style.display = '';
+        if (projectPromptAiBtn) projectPromptAiBtn.disabled = false;
+        if (projectPromptRoleSelect) projectPromptRoleSelect.disabled = false;
+        if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = false;
+        if (projectModalPromptRole) projectModalPromptRole.disabled = false;
       }
     };
 
@@ -1723,6 +1929,13 @@
     const projectModalDomain = document.getElementById('projectModalDomain');
     const projectModalModel = document.getElementById('projectModalModel');
     const projectModalPrompt = document.getElementById('projectModalPrompt');
+    const projectModalPromptRole = document.getElementById('projectModalPromptRole');
+    const projectModalPromptAiBtn = document.getElementById('projectModalPromptAi');
+    const projectModalPromptAiStatus = document.getElementById('projectModalPromptAiStatus');
+    ensurePromptRoleOptions(projectPromptRoleSelect);
+    ensurePromptRoleOptions(projectModalPromptRole);
+    if (projectPromptAiStatus) projectPromptAiStatus.textContent = '—';
+    if (projectModalPromptAiStatus) projectModalPromptAiStatus.textContent = '—';
     const projectModalEmotions = document.getElementById('projectModalEmotions');
     const projectModalAdminUsername = document.getElementById('projectModalAdminUsername');
     const projectModalAdminPassword = document.getElementById('projectModalAdminPassword');
@@ -3065,11 +3278,21 @@
     });
 
     function resetProjectModal() {
+      if (modalPromptAiHandler && typeof modalPromptAiHandler.reset === 'function') {
+        modalPromptAiHandler.reset();
+      }
       projectModalName.value = '';
       projectModalTitle.value = '';
       projectModalDomain.value = '';
       projectModalModel.value = LLM_MODEL_OPTIONS[0]?.value || '';
       projectModalPrompt.value = '';
+      if (projectModalPromptRole) {
+        ensurePromptRoleOptions(projectModalPromptRole);
+        projectModalPromptRole.value = PROMPT_AI_ROLES[0]?.value || '';
+      }
+      if (projectModalPromptAiStatus) {
+        projectModalPromptAiStatus.textContent = '—';
+      }
       if (projectModalEmotions) projectModalEmotions.checked = true;
        if (projectModalAdminUsername) projectModalAdminUsername.value = '';
        if (projectModalAdminPassword) projectModalAdminPassword.value = '';
@@ -3083,6 +3306,9 @@
     }
 
     function hideProjectModal() {
+      if (modalPromptAiHandler && typeof modalPromptAiHandler.abort === 'function') {
+        modalPromptAiHandler.abort();
+      }
       projectModalBackdrop.classList.remove('show');
     }
 
@@ -4504,6 +4730,9 @@
     resetProjectMaxUI();
 
     function populateProjectForm(projectName){
+      if (mainPromptAiHandler && typeof mainPromptAiHandler.abort === 'function') {
+        mainPromptAiHandler.abort();
+      }
       const normalized = (projectName || '').trim().toLowerCase();
       const project = projectsCache[normalized] || null;
       if (startUrlInput) {
@@ -4520,6 +4749,11 @@
       projectDomainInput.value = project?.domain || '';
       populateModelOptions(project?.llm_model || '');
       projectPromptInput.value = project?.llm_prompt || '';
+      if (projectPromptRoleSelect) ensurePromptRoleOptions(projectPromptRoleSelect);
+      if (projectPromptAiStatus) projectPromptAiStatus.textContent = '—';
+      if (mainPromptAiHandler && typeof mainPromptAiHandler.reset === 'function') {
+        mainPromptAiHandler.reset();
+      }
       if (projectEmotionsInput) {
         const enabled = project?.llm_emotions_enabled !== false;
         projectEmotionsInput.checked = enabled;
@@ -4773,6 +5007,7 @@
           setProjectStatus('Не удалось удалить', 4000);
           return;
         }
+        const payload = await resp.json().catch(() => ({}));
         delete projectsCache[toDelete];
         currentProject = '';
         await fetchProjects();
@@ -4780,7 +5015,13 @@
         await fetchProjectStorage();
         document.getElementById('kbTable').innerHTML = '';
         document.getElementById('kbInfo').textContent = '';
-        setProjectStatus('Удалено', 2000);
+        const removed = payload?.removed || {};
+        const parts = [];
+        if (typeof removed.documents === 'number') parts.push(`документов: ${removed.documents}`);
+        if (typeof removed.files === 'number') parts.push(`файлов: ${removed.files}`);
+        if (typeof removed.contexts === 'number') parts.push(`контекстов: ${removed.contexts}`);
+        if (typeof removed.stats === 'number') parts.push(`записей статистики: ${removed.stats}`);
+        setProjectStatus(parts.length ? `Удалено (${parts.join(', ')})` : 'Удалено', 4000);
       } catch (error) {
         console.error(error);
         setProjectStatus('Ошибка удаления', 4000);
@@ -4832,6 +5073,33 @@
     if (autoUpdateRun) {
       autoUpdateRun.addEventListener('click', () => runAutoUpdateNow(autoUpdateDeploy ? autoUpdateDeploy.checked : true));
     }
+
+    const promptAiHandlers = [];
+    const mainPromptAiHandler = initPromptAiControls({
+      textarea: projectPromptInput,
+      domainInput: projectDomainInput,
+      roleSelect: projectPromptRoleSelect,
+      button: projectPromptAiBtn,
+      status: projectPromptAiStatus,
+    });
+    if (mainPromptAiHandler) promptAiHandlers.push(mainPromptAiHandler);
+
+    const modalPromptAiHandler = initPromptAiControls({
+      textarea: projectModalPrompt,
+      domainInput: projectModalDomain,
+      roleSelect: projectModalPromptRole,
+      button: projectModalPromptAiBtn,
+      status: projectModalPromptAiStatus,
+    });
+    if (modalPromptAiHandler) promptAiHandlers.push(modalPromptAiHandler);
+
+    window.addEventListener('beforeunload', () => {
+      promptAiHandlers.forEach((handler) => {
+        if (handler && typeof handler.abort === 'function') {
+          handler.abort();
+        }
+      });
+    });
 
     initLayoutReordering();
 

@@ -16,6 +16,8 @@ import hmac
 import os
 import time
 import asyncio
+import urllib.parse as urlparse
+import httpx
 import structlog
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -27,6 +29,7 @@ from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse
 from starlette.routing import NoMatchFound
 from fastapi.responses import ORJSONResponse, PlainTextResponse
+from bs4 import BeautifulSoup
 
 from observability.logging import configure_logging, get_recent_logs
 from observability.metrics import MetricsMiddleware, metrics_app
@@ -67,6 +70,39 @@ settings = Settings()
 logger = structlog.get_logger(__name__)
 
 BUILD_INFO = get_build_info()
+
+PROMPT_ROLE_TEMPLATES = {
+    "friendly_expert": {
+        "label": "Дружелюбный эксперт",
+        "instruction": (
+            "Выступай дружелюбным экспертом компании: общайся приветливо, поддерживай клиента,"
+            " подсказывай решения и действуй в интересах пользователя, сохраняя эмпатию."
+        ),
+    },
+    "formal_consultant": {
+        "label": "Формальный консультант",
+        "instruction": (
+            "Держи официальный, деловой стиль: давай точные формулировки, опирайся на факты и регламенты,"
+            " избегай разговорных оборотов и лишних эмоций."
+        ),
+    },
+    "sales_manager": {
+        "label": "Активный менеджер",
+        "instruction": (
+            "Работай как проактивный менеджер по продукту: подчеркивай выгоды, предлагай релевантные услуги"
+            " и мягко направляй собеседника к целевым действиям."
+        ),
+    },
+}
+
+DEFAULT_PROMPT_ROLE = "friendly_expert"
+PROMPT_SAMPLE_CHAR_LIMIT = 4000
+PROMPT_RESPONSE_CHAR_LIMIT = 1800
+PROMPT_FETCH_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (compatible; SiteLLM-PromptBuilder/1.0; +https://example.com)"
+    )
+}
 
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD_HASH = os.getenv(
@@ -1416,6 +1452,11 @@ class GitUpdateConfig(BaseModel):
 
 class GitUpdateRun(BaseModel):
     force_deploy: bool | None = None
+
+
+class PromptGenerationRequest(BaseModel):
+    url: str
+    role: str | None = None
 
 
 async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
@@ -3018,21 +3059,164 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
     return ORJSONResponse(_project_response(project))
 
 
-@app.delete("/api/v1/admin/projects/{domain}", status_code=204)
-async def admin_delete_project(request: Request, domain: str) -> Response:
+@app.delete("/api/v1/admin/projects/{domain}", response_class=ORJSONResponse)
+async def admin_delete_project(request: Request, domain: str) -> ORJSONResponse:
     _require_super_admin(request)
     domain_value = _normalize_project(domain)
     if not domain_value:
         raise HTTPException(status_code=400, detail="name is required")
     mongo_client = _get_mongo_client(request)
-    await mongo_client.delete_project(domain_value)
+    mongo_cfg = MongoSettings()
+    documents_collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    contexts_collection = getattr(request.state, "contexts_collection", mongo_cfg.contexts)
+    summary = await mongo_client.delete_project(
+        domain_value,
+        documents_collection=documents_collection,
+        contexts_collection=contexts_collection,
+        stats_collection=mongo_client.stats_collection,
+    )
+    file_ids = summary.pop("file_ids", [])
+    await _purge_vector_entries(file_ids)
     hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
     if isinstance(hub, TelegramHub):
         await hub.stop_project(domain_value, forget_sessions=True)
     max_hub: MaxHub | None = getattr(request.app.state, "max", None)
     if isinstance(max_hub, MaxHub):
         await max_hub.stop_project(domain_value, forget_sessions=True)
-    return Response(status_code=204)
+    return ORJSONResponse({"status": "deleted", "project": domain_value, "removed": summary})
+
+
+def _normalize_source_url(raw: str) -> str:
+    candidate = (raw or "").strip()
+    if not candidate:
+        raise ValueError("URL is required")
+    if not urlparse.urlsplit(candidate).scheme:
+        candidate = f"https://{candidate}"
+    parsed = urlparse.urlsplit(candidate)
+    if not parsed.netloc:
+        raise ValueError("Invalid URL")
+    path = parsed.path or "/"
+    return urlparse.urlunsplit((parsed.scheme or "https", parsed.netloc, path, parsed.query, ""))
+
+
+def _extract_page_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "template", "svg"]):
+        tag.decompose()
+    text = soup.get_text(separator="\n")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    combined = " ".join(lines)
+    if len(combined) > PROMPT_SAMPLE_CHAR_LIMIT:
+        return combined[:PROMPT_SAMPLE_CHAR_LIMIT]
+    return combined
+
+
+async def _download_page_text(url: str) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=PROMPT_FETCH_HEADERS) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=exc.response.status_code, detail="Не удалось загрузить страницу") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Не удалось подключиться к сайту") from exc
+
+    content_type = (response.headers.get("content-type") or "").lower()
+    if "text/html" not in content_type:
+        raise HTTPException(status_code=400, detail="URL не содержит HTML-страницу")
+
+    text = _extract_page_text(response.text or "")
+    if not text:
+        raise HTTPException(status_code=400, detail="Не удалось извлечь текст со страницы")
+    return text
+
+
+def _build_prompt_from_role(role: str, url: str, page_text: str) -> tuple[str, str, str]:
+    role_key = (role or DEFAULT_PROMPT_ROLE).strip().lower() or DEFAULT_PROMPT_ROLE
+    role_meta = PROMPT_ROLE_TEMPLATES.get(role_key, PROMPT_ROLE_TEMPLATES[DEFAULT_PROMPT_ROLE])
+    instruction = role_meta["instruction"]
+    label = role_meta["label"]
+    snippet = page_text.strip()
+    snippet_block = f'"""{snippet}"""' if snippet else ""
+
+    body = (
+        f"{instruction}\n\n"
+        "Ты создаёшь системный промт для ассистента, который отвечает пользователям от имени компании. "
+        "Сформулируй чёткие указания о стиле общения, компетенциях, ограничениях и типичных задачах. "
+        "Если в тексте есть сведения о продуктах, услугах, ценностях или контактах, включи их в промт.\n\n"
+        f"URL страницы: {url}\n"
+        f"Роль ассистента: {label}.\n\n"
+        "Контент главной страницы (усечён до ключевых фрагментов):\n"
+        f"{snippet_block}\n\n"
+        "Верни только готовый системный промт на русском языке без пояснений и служебных префиксов."
+    )
+    return body, role_key, label
+
+
+async def _purge_vector_entries(file_ids: list[str]) -> None:
+    if not file_ids:
+        return
+    index_name = settings.redis.vector
+    if not index_name:
+        return
+    try:
+        redis_client = _get_redis()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("vector_cleanup_unavailable", error=str(exc))
+        return
+
+    for file_id in file_ids:
+        doc_id = str(file_id)
+        try:
+            await redis_client.execute_command("FT.DEL", index_name, doc_id)
+        except Exception:  # noqa: BLE001
+            try:
+                await redis_client.execute_command("FT.DEL", index_name, f"doc:{doc_id}")
+            except Exception:
+                logger.debug("vector_entry_delete_failed", doc_id=doc_id)
+        for key in (doc_id, f"doc:{doc_id}"):
+            try:
+                await redis_client.delete(key)
+            except Exception:
+                continue
+
+
+@app.post("/api/v1/admin/projects/prompt", response_class=ORJSONResponse)
+async def admin_generate_project_prompt(
+    request: Request,
+    payload: PromptGenerationRequest,
+) -> ORJSONResponse:
+    _require_super_admin(request)
+    try:
+        normalized_url = _normalize_source_url(payload.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    page_text = await _download_page_text(normalized_url)
+    prompt_body, role_key, role_label = _build_prompt_from_role(payload.role or DEFAULT_PROMPT_ROLE, normalized_url, page_text)
+
+    chunks: list[str] = []
+    try:
+        async for token in llm_client.generate(prompt_body):
+            chunks.append(token)
+            if len("".join(chunks)) >= PROMPT_RESPONSE_CHAR_LIMIT:
+                break
+    except Exception as exc:  # noqa: BLE001
+        logger.error("prompt_generate_failed", url=normalized_url, error=str(exc))
+        raise HTTPException(status_code=502, detail="Не удалось получить ответ модели") from exc
+
+    generated = "".join(chunks).strip()
+    if not generated:
+        raise HTTPException(status_code=502, detail="Модель вернула пустой ответ")
+
+    return ORJSONResponse(
+        {
+            "prompt": generated,
+            "role": role_key,
+            "role_label": role_label,
+            "url": normalized_url,
+        }
+    )
 
 
 @app.get("/api/v1/admin/projects/{domain}/test", response_class=ORJSONResponse)
