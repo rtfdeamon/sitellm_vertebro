@@ -683,9 +683,15 @@ for i in $(seq 1 "$attempts"); do
   printf '  - attempt %s/%s: ' "$i" "$attempts"
   if output=$("${COMPOSE_CMD[@]}" exec -T app sh -lc '
 set +e
-urls="http://127.0.0.1:${APP_PORT:-8000}/healthz http://127.0.0.1:${APP_PORT:-8000}/health http://127.0.0.1:${APP_PORT:-8000}/"
+scheme="http"
+curl_opts='--max-time 4 --fail --silent --show-error -o /dev/null'
+if [ -n "${APP_SSL_CERT:-}" ] && [ -n "${APP_SSL_KEY:-}" ]; then
+  scheme="https"
+  curl_opts="-k $curl_opts"
+fi
+urls="${scheme}://127.0.0.1:${APP_PORT:-8000}/healthz ${scheme}://127.0.0.1:${APP_PORT:-8000}/health ${scheme}://127.0.0.1:${APP_PORT:-8000}/"
 for url in $urls; do
-  if curl --max-time 4 --fail --silent --show-error -o /dev/null "$url"; then
+  if curl $curl_opts "$url"; then
     printf "%s\n" "$url"
     exit 0
   fi
