@@ -1826,7 +1826,11 @@
     const applySessionPermissions = () => {
       if (!adminSession.is_super) {
         if (projectAddBtn) projectAddBtn.style.display = 'none';
-        if (projectDeleteBtn) projectDeleteBtn.style.display = 'none';
+        const hasProjects = Array.isArray(adminSession.projects) && adminSession.projects.length > 0;
+        if (projectDeleteBtn) {
+          projectDeleteBtn.style.display = hasProjects ? '' : 'none';
+          projectDeleteBtn.disabled = !hasProjects;
+        }
         if (knowledgeServiceCard) knowledgeServiceCard.style.display = 'none';
         const promptsCard = document.querySelector('.prompts-card');
         if (promptsCard) promptsCard.style.display = 'none';
@@ -1837,24 +1841,28 @@
         const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
         if (modalAdminLogin) modalAdminLogin.style.display = 'none';
         if (modalAdminPass) modalAdminPass.style.display = 'none';
-      if (projectPromptAiBtn) projectPromptAiBtn.disabled = true;
-      if (projectPromptRoleSelect) projectPromptRoleSelect.disabled = true;
-      if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = true;
-      if (projectModalPromptRole) projectModalPromptRole.disabled = true;
-      if (ollamaCatalog) ollamaCatalog.classList.remove('show');
-    } else {
-      setKnowledgeServiceControlsDisabled(false);
-      const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
-      const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
-      if (modalAdminLogin) modalAdminLogin.style.display = '';
-      if (modalAdminPass) modalAdminPass.style.display = '';
-      if (projectPromptAiBtn) projectPromptAiBtn.disabled = false;
-      if (projectPromptRoleSelect) projectPromptRoleSelect.disabled = false;
-      if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = false;
-      if (projectModalPromptRole) projectModalPromptRole.disabled = false;
-      if (ollamaCatalog) ollamaCatalog.classList.add('show');
-    }
-  };
+        if (projectPromptAiBtn) projectPromptAiBtn.disabled = true;
+        if (projectPromptRoleSelect) projectPromptRoleSelect.disabled = true;
+        if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = true;
+        if (projectModalPromptRole) projectModalPromptRole.disabled = true;
+        if (ollamaCatalog) ollamaCatalog.classList.remove('show');
+      } else {
+        setKnowledgeServiceControlsDisabled(false);
+        const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
+        const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
+        if (modalAdminLogin) modalAdminLogin.style.display = '';
+        if (modalAdminPass) modalAdminPass.style.display = '';
+        if (projectPromptAiBtn) projectPromptAiBtn.disabled = false;
+        if (projectPromptRoleSelect) projectPromptRoleSelect.disabled = false;
+        if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = false;
+        if (projectModalPromptRole) projectModalPromptRole.disabled = false;
+        if (projectDeleteBtn) {
+          projectDeleteBtn.style.display = '';
+          projectDeleteBtn.disabled = false;
+        }
+        if (ollamaCatalog) ollamaCatalog.classList.add('show');
+      }
+    };
 
     async function fetchSession() {
       try {
@@ -4884,6 +4892,9 @@
       projectSelect.value = currentProject;
       updateProjectInputs();
       projectPromptSaveBtn.disabled = !project;
+      if (projectDeleteBtn) {
+        projectDeleteBtn.disabled = !project;
+      }
       refreshProjectWidgetUI();
       loadProjectTelegramStatus(currentProject);
       loadProjectMaxStatus(currentProject);
@@ -5065,6 +5076,7 @@
         if (typeof removed.contexts === 'number') parts.push(`контекстов: ${removed.contexts}`);
         if (typeof removed.stats === 'number') parts.push(`записей статистики: ${removed.stats}`);
         setProjectStatus(parts.length ? `Удалено (${parts.join(', ')})` : 'Удалено', 4000);
+        applySessionPermissions();
       } catch (error) {
         console.error(error);
         setProjectStatus('Ошибка удаления', 4000);

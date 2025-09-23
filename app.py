@@ -3152,10 +3152,14 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
 
 @app.delete("/api/v1/admin/projects/{domain}", response_class=ORJSONResponse)
 async def admin_delete_project(request: Request, domain: str) -> ORJSONResponse:
-    _require_super_admin(request)
+    identity = _require_admin(request)
     domain_value = _normalize_project(domain)
     if not domain_value:
         raise HTTPException(status_code=400, detail="name is required")
+    if not identity.is_super:
+        allowed = {proj.strip().lower() for proj in identity.projects if proj}
+        if domain_value not in allowed:
+            raise HTTPException(status_code=403, detail="Access to project is forbidden")
     mongo_client = _get_mongo_client(request)
     mongo_cfg = MongoSettings()
     documents_collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
