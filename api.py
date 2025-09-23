@@ -41,6 +41,7 @@ from pydantic import BaseModel
 
 from core.status import status_dict
 from settings import MongoSettings, get_settings as get_app_settings
+from core.build import get_build_info
 
 logger = structlog.get_logger(__name__)
 app_settings = get_app_settings()
@@ -893,6 +894,15 @@ async def chat(
 
     async def event_stream():
         nonlocal stream_chars, error_message
+        build_info = get_build_info()
+        build_payload = {
+            key: build_info.get(key)
+            for key in ("version", "revision", "built_at", "built_at_iso")
+            if build_info.get(key) is not None
+        }
+        components = build_info.get("components")
+        if components:
+            build_payload["components"] = components
         try:
             meta_payload = {
                 "emotions_enabled": emotions_enabled,
@@ -902,6 +912,8 @@ async def chat(
                 "attachments_pending": planned_attachments_count,
                 "model": effective_model,
             }
+            if build_payload:
+                meta_payload["build"] = build_payload
             yield "event: meta\n"
             yield f"data: {json.dumps(meta_payload, ensure_ascii=False)}\n\n"
             if send_debug:
@@ -923,6 +935,8 @@ async def chat(
                     "total_knowledge_chars": total_knowledge_chars,
                     "ts": time.time(),
                 }
+                if build_payload:
+                    debug_start_payload["build"] = build_payload
                 yield "event: debug\n"
                 yield f"data: {json.dumps(debug_start_payload, ensure_ascii=False)}\n\n"
             if attachments_payload:
@@ -953,6 +967,8 @@ async def chat(
                     "emotions_enabled": emotions_enabled,
                     "ts": time.time(),
                 }
+                if build_payload:
+                    debug_summary_payload["build"] = build_payload
                 yield "event: debug\n"
                 yield f"data: {json.dumps(debug_summary_payload, ensure_ascii=False)}\n\n"
             # Signal the client that stream has completed

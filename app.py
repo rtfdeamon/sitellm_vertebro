@@ -38,6 +38,7 @@ from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
 from backend.cache import _get_redis
+from core.build import get_build_info
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
@@ -64,6 +65,8 @@ configure_logging()
 
 settings = Settings()
 logger = structlog.get_logger(__name__)
+
+BUILD_INFO = get_build_info()
 
 ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD_HASH = os.getenv(
@@ -1507,7 +1510,10 @@ async def _git_update_run_impl(request: Request, payload: GitUpdateRun) -> ORJSO
 
     service = GitAutoUpdateService()
     try:
-        result = await service.run_once(force_deploy=payload.force_deploy)
+        result = await service.run_once(
+            force_deploy=payload.force_deploy,
+            force_run=True,
+        )
     finally:
         await service.shutdown()
     return ORJSONResponse({"status": "ok", "result": result})
@@ -3112,6 +3118,17 @@ def sysinfo() -> dict[str, object]:
         "python": platform.python_version(),
         "timestamp": time.time(),
     }
+
+    build_info = dict(get_build_info())
+    info.update(
+        {
+            "build": build_info,
+            "build_version": build_info.get("version"),
+            "build_revision": build_info.get("revision"),
+            "build_time": build_info.get("built_at"),
+            "build_time_iso": build_info.get("built_at_iso"),
+        }
+    )
 
     try:
         import psutil  # type: ignore

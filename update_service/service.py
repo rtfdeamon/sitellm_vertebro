@@ -71,7 +71,12 @@ class GitAutoUpdateService:
             await self._merge_setting({"running": False, "last_seen_ts": time.time(), "message": "Сервис остановлен"})
             await self.shutdown()
 
-    async def run_once(self, *, force_deploy: bool | None = None) -> Dict[str, Any]:
+    async def run_once(
+        self,
+        *,
+        force_deploy: bool | None = None,
+        force_run: bool = False,
+    ) -> Dict[str, Any]:
         """Perform a single update check (optionally forcing deployment)."""
 
         config = await self._load_config()
@@ -79,7 +84,7 @@ class GitAutoUpdateService:
             config.auto_deploy = bool(force_deploy)
 
         now = time.time()
-        if not config.enabled:
+        if not config.enabled and not force_run:
             await self._merge_setting(
                 {
                     "enabled": False,
@@ -97,7 +102,7 @@ class GitAutoUpdateService:
         updates = await asyncio.to_thread(self._check_and_update, config)
         updates.update(
             {
-                "enabled": True,
+                "enabled": config.enabled,
                 "running": True,
                 "remote": config.remote,
                 "branch": config.branch,

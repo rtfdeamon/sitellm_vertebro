@@ -943,6 +943,12 @@
       <div class="prompt-preview" id="summaryPrompt">История запросов появится здесь</div>
       <div class="prompt-docs" id="summaryPromptDocs"></div>
     </div>
+    <div class="overview-card" id="summaryBuildCard">
+      <div class="overview-pulse"></div>
+      <h2>Сборка</h2>
+      <strong id="summaryBuild">—</strong>
+      <div class="overview-meta" id="summaryBuildMeta">—</div>
+    </div>
   </div>
 
   <div class="dashboard-grid">
@@ -1331,37 +1337,30 @@
         </div>
       </div>
       <div class="card update-service-card">
-        <b>Автообновление из GitHub</b>
-        <div class="muted">Следит за веткой репозитория и при необходимости подтягивает обновления с опциональным деплоем.</div>
-        <label class="inline-checkbox">
-          <input type="checkbox" id="autoUpdateToggle">
-          <span>Включить автообновление</span>
-        </label>
+        <b>Обновление из Git</b>
+        <div class="muted">Проверяет свежие коммиты в выбранной ветке и по запросу запускает деплой.</div>
         <label>Remote URL
-          <input type="url" id="autoUpdateRepoUrl" placeholder="https://github.com/company/project.git">
+          <input type="url" id="updateRepoUrl" placeholder="https://github.com/company/project.git">
         </label>
         <label>Имя remote
-          <input type="text" id="autoUpdateRemote" placeholder="origin">
+          <input type="text" id="updateRemote" placeholder="origin">
         </label>
         <label>Ветка
-          <input type="text" id="autoUpdateBranch" placeholder="main">
-        </label>
-        <label>Интервал проверки (секунды)
-          <input type="number" id="autoUpdateInterval" min="60" step="30" value="300">
+          <input type="text" id="updateBranch" placeholder="main">
         </label>
         <label class="inline-checkbox">
-          <input type="checkbox" id="autoUpdateDeploy">
-          <span>Автоматически выполнять deploy после обновления</span>
+          <input type="checkbox" id="updateDeploy">
+          <span>После проверки сразу выполнять deploy</span>
         </label>
         <label>Команда деплоя
-          <input type="text" id="autoUpdateCommand" placeholder="./deploy_project.sh">
+          <input type="text" id="updateCommand" placeholder="./deploy_project.sh">
         </label>
         <div class="update-service-actions">
-          <button type="button" id="autoUpdateSave">Сохранить</button>
-          <button type="button" id="autoUpdateRefresh">Обновить статус</button>
-          <button type="button" id="autoUpdateRun">Проверить сейчас</button>
+          <button type="button" id="updateSave">Сохранить конфигурацию</button>
+          <button type="button" id="updateCheck">Проверить обновления</button>
+          <button type="button" id="updateRun">Обновить и задеплоить</button>
         </div>
-        <span class="muted" id="autoUpdateStatus">—</span>
+        <span class="muted" id="updateStatus">—</span>
       </div>
       <div class="card prompts-card">
         <b>LLM Prompts</b>
@@ -1639,17 +1638,15 @@
       '/api/v1/knowledge/service',
     ];
     let activeKnowledgeServiceEndpoint = null;
-    const autoUpdateToggle = document.getElementById('autoUpdateToggle');
-    const autoUpdateRepoUrl = document.getElementById('autoUpdateRepoUrl');
-    const autoUpdateRemote = document.getElementById('autoUpdateRemote');
-    const autoUpdateBranch = document.getElementById('autoUpdateBranch');
-    const autoUpdateInterval = document.getElementById('autoUpdateInterval');
-    const autoUpdateDeploy = document.getElementById('autoUpdateDeploy');
-    const autoUpdateCommand = document.getElementById('autoUpdateCommand');
-    const autoUpdateSave = document.getElementById('autoUpdateSave');
-    const autoUpdateRefresh = document.getElementById('autoUpdateRefresh');
-    const autoUpdateRun = document.getElementById('autoUpdateRun');
-    const autoUpdateStatus = document.getElementById('autoUpdateStatus');
+    const autoUpdateRepoUrl = document.getElementById('updateRepoUrl');
+    const autoUpdateRemote = document.getElementById('updateRemote');
+    const autoUpdateBranch = document.getElementById('updateBranch');
+    const autoUpdateDeploy = document.getElementById('updateDeploy');
+    const autoUpdateCommand = document.getElementById('updateCommand');
+    const autoUpdateSave = document.getElementById('updateSave');
+    const autoUpdateRefresh = document.getElementById('updateCheck');
+    const autoUpdateRun = document.getElementById('updateRun');
+    const autoUpdateStatus = document.getElementById('updateStatus');
     const autoUpdateCard = document.querySelector('.update-service-card');
     const autoUpdateEndpoints = ['/api/v1/admin/update/service'];
     let activeAutoUpdateEndpoint = null;
@@ -1794,6 +1791,9 @@
     const summaryLLMCard = document.getElementById('summaryLLMCard');
     const summaryPromptEl = document.getElementById('summaryPrompt');
     const summaryPromptDocs = document.getElementById('summaryPromptDocs');
+    const summaryBuildCard = document.getElementById('summaryBuildCard');
+    const summaryBuildEl = document.getElementById('summaryBuild');
+    const summaryBuildMeta = document.getElementById('summaryBuildMeta');
     const kbDedupBtn = document.getElementById('kbDeduplicate');
     const kbDedupStatus = document.getElementById('kbDedupStatus');
     const kbClearBtn = document.getElementById('kbClearKnowledge');
@@ -2035,6 +2035,7 @@
       project: '',
       crawler: '',
       perf: '',
+      build: '',
       prompt: '',
     };
 
@@ -2287,7 +2288,7 @@
     }
 
     const setAutoUpdateControlsDisabled = (disabled) => {
-      [autoUpdateToggle, autoUpdateRepoUrl, autoUpdateRemote, autoUpdateBranch, autoUpdateInterval,
+      [autoUpdateRepoUrl, autoUpdateRemote, autoUpdateBranch,
         autoUpdateDeploy, autoUpdateCommand, autoUpdateSave, autoUpdateRefresh, autoUpdateRun]
         .filter(Boolean)
         .forEach((el) => { el.disabled = disabled; });
@@ -2296,18 +2297,15 @@
     const renderAutoUpdateStatus = (data) => {
       if (!autoUpdateStatus) return;
       const bits = [];
-      const message = data?.message || (data?.enabled ? 'Автообновление включено' : 'Автообновление выключено');
-      bits.push(message);
-      if (typeof data?.running === 'boolean') {
-        bits.push(data.running ? 'Сервис активен' : 'Сервис остановлен');
-      }
+      if (data?.repo_url) bits.push(`Репозиторий: ${data.repo_url}`);
+      if (data?.branch) bits.push(`Ветка: ${data.branch}`);
       if (typeof data?.update_available === 'boolean') {
-        bits.push(data.update_available ? 'Обновление доступно' : 'Обновлений нет');
+        bits.push(data.update_available ? 'Есть новые коммиты' : 'Новых коммитов нет');
       }
-      if (data?.local_commit) bits.push(`Локальный коммит: ${data.local_commit.slice(0, 8)}`);
-      if (data?.remote_commit) bits.push(`Удалённый коммит: ${data.remote_commit.slice(0, 8)}`);
-      if (data?.last_update_ts) bits.push(`Последнее обновление: ${formatTimestamp(data.last_update_ts)}`);
+      if (data?.local_commit) bits.push(`Локальный: ${data.local_commit.slice(0, 8)}`);
+      if (data?.remote_commit) bits.push(`Удалённый: ${data.remote_commit.slice(0, 8)}`);
       if (data?.last_check_ts) bits.push(`Проверка: ${formatTimestamp(data.last_check_ts)}`);
+      if (data?.last_update_ts) bits.push(`Обновление: ${formatTimestamp(data.last_update_ts)}`);
       if (data?.last_error) bits.push(`Ошибка: ${data.last_error}`);
       autoUpdateStatus.textContent = bits.join(' • ') || '—';
     };
@@ -2340,7 +2338,7 @@
     }
 
     async function fetchAutoUpdateStatus(triggerPulse = false) {
-      if (!autoUpdateToggle || !autoUpdateStatus) return;
+      if (!autoUpdateStatus) return;
       if (!adminSession.is_super) {
         autoUpdateStatus.textContent = 'Недоступно для вашего доступа';
         setAutoUpdateControlsDisabled(true);
@@ -2351,11 +2349,9 @@
       try {
         const data = await callAutoUpdateService('', 'GET');
         if (data) {
-          autoUpdateToggle.checked = !!data.enabled;
           if (autoUpdateRepoUrl) autoUpdateRepoUrl.value = data.repo_url || '';
           if (autoUpdateRemote) autoUpdateRemote.value = data.remote || '';
           if (autoUpdateBranch) autoUpdateBranch.value = data.branch || '';
-          if (autoUpdateInterval) autoUpdateInterval.value = data.poll_interval_seconds ?? 300;
           if (autoUpdateDeploy) autoUpdateDeploy.checked = !!data.auto_deploy;
           if (autoUpdateCommand) autoUpdateCommand.value = data.deploy_command || '';
           renderAutoUpdateStatus(data);
@@ -2378,16 +2374,15 @@
     }
 
     async function saveAutoUpdateState() {
-      if (!autoUpdateToggle || !adminSession.is_super) return;
+      if (!adminSession.is_super) return;
       autoUpdateStatus.textContent = 'Сохраняем…';
       setAutoUpdateControlsDisabled(true);
       try {
         const payload = {
-          enabled: autoUpdateToggle.checked,
+          enabled: false,
           repo_url: autoUpdateRepoUrl?.value || null,
           remote: autoUpdateRemote?.value || null,
           branch: autoUpdateBranch?.value || null,
-          poll_interval_seconds: Number(autoUpdateInterval?.value || 0) || null,
           auto_deploy: autoUpdateDeploy?.checked ?? null,
           deploy_command: autoUpdateCommand?.value || null,
         };
@@ -2408,15 +2403,18 @@
 
     async function runAutoUpdateNow(forceDeploy = false) {
       if (!adminSession.is_super || !autoUpdateStatus) return;
-      autoUpdateStatus.textContent = 'Выполняем обновление…';
+      autoUpdateStatus.textContent = forceDeploy ? 'Обновляем репозиторий…' : 'Проверяем обновления…';
       setAutoUpdateControlsDisabled(true);
       try {
-        const payload = { force_deploy: forceDeploy || undefined };
+        const payload = { force_deploy: Boolean(forceDeploy) };
         const data = await callAutoUpdateService('/run', 'POST', payload);
         if (data?.result) {
           renderAutoUpdateStatus(data.result);
+          if (!forceDeploy && data.result.update_available === false) {
+            autoUpdateStatus.textContent = 'Обновление не требуется';
+          }
         } else {
-          autoUpdateStatus.textContent = 'Проверка завершена';
+          autoUpdateStatus.textContent = forceDeploy ? 'Обновление выполнено' : 'Проверка завершена';
         }
         await fetchAutoUpdateStatus(true);
       } catch (error) {
@@ -2941,6 +2939,18 @@
       pulseCard(summaryPerfCard);
     }
 
+    function setSummaryBuild(main, meta) {
+      if (!summaryBuildEl || !summaryBuildMeta) return;
+      const display = main || '—';
+      const metaText = meta || '';
+      const signature = `${display}::${metaText}`;
+      if (summaryState.build === signature) return;
+      summaryState.build = signature;
+      summaryBuildEl.textContent = display;
+      summaryBuildMeta.textContent = metaText || '—';
+      pulseCard(summaryBuildCard);
+    }
+
     function setSummaryPrompt(text, docs, meta) {
       const display = text || 'История запросов появится здесь';
       const docsList = Array.isArray(docs) ? docs.join('|') : '';
@@ -3459,6 +3469,47 @@
           gpuDisplay && gpuDisplay !== '—' ? `GPU: ${gpuDisplay.split('\n')[0]}` : '',
         ].filter(Boolean);
         setSummaryPerf(cpuDisplay, perfLines.join('\n'));
+
+        const build = j.build || {};
+        const rawVersion = build.version && build.version !== 'unknown' ? String(build.version) : '';
+        let buildTitle = rawVersion ? `v${rawVersion}` : '—';
+        const shortRev = build.revision ? String(build.revision).slice(0, 8) : '';
+        if (shortRev) {
+          buildTitle = buildTitle !== '—' ? `${buildTitle} · ${shortRev}` : shortRev;
+        }
+
+        let builtAtSeconds = null;
+        if (typeof build.built_at === 'number' && Number.isFinite(build.built_at)) {
+          builtAtSeconds = build.built_at;
+        } else if (typeof build.built_at_iso === 'string') {
+          const parsedIso = Date.parse(build.built_at_iso);
+          if (!Number.isNaN(parsedIso)) {
+            builtAtSeconds = parsedIso / 1000;
+          }
+        }
+
+        const buildMetaLines = [];
+        if (builtAtSeconds !== null) {
+          const formatted = formatTimestamp(builtAtSeconds);
+          if (formatted && formatted !== '—') {
+            buildMetaLines.push(`Собрано: ${formatted}`);
+          }
+        }
+
+        if (build.components && typeof build.components === 'object') {
+          const componentEntries = Object.entries(build.components).slice(0, 3);
+          for (const [name, payload] of componentEntries) {
+            if (!payload || typeof payload !== 'object') continue;
+            const compVersion = payload.version ? `v${payload.version}` : '';
+            const compRevision = payload.revision ? String(payload.revision).slice(0, 8) : '';
+            const parts = [compVersion, compRevision].filter(Boolean);
+            if (parts.length) {
+              buildMetaLines.push(`${name}: ${parts.join(' · ')}`);
+            }
+          }
+        }
+
+        setSummaryBuild(buildTitle, buildMetaLines.join('\n') || '—');
       } catch {}
     }
 
@@ -4776,10 +4827,10 @@
       autoUpdateSave.addEventListener('click', saveAutoUpdateState);
     }
     if (autoUpdateRefresh) {
-      autoUpdateRefresh.addEventListener('click', () => fetchAutoUpdateStatus(true));
+      autoUpdateRefresh.addEventListener('click', () => runAutoUpdateNow(false));
     }
     if (autoUpdateRun) {
-      autoUpdateRun.addEventListener('click', () => runAutoUpdateNow());
+      autoUpdateRun.addEventListener('click', () => runAutoUpdateNow(autoUpdateDeploy ? autoUpdateDeploy.checked : true));
     }
 
     initLayoutReordering();
