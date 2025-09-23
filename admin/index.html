@@ -837,6 +837,14 @@
       box-shadow: 0 30px 60px rgba(8, 12, 24, 0.45);
       backdrop-filter: blur(28px);
       color: var(--text-primary);
+      overflow: hidden;
+    }
+
+    .modal form {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .modal-header,
@@ -859,6 +867,8 @@
       overflow-y: auto;
       display: grid;
       gap: 12px;
+      flex: 1 1 auto;
+      min-height: 0;
     }
 
     .modal-body textarea { min-height: 180px; resize: vertical; }
