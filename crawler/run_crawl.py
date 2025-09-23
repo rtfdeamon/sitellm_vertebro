@@ -1449,6 +1449,7 @@ def run(
         async def _store() -> None:
             seen_text_hashes: set[str] = set()
             seen_binary_hashes: set[str] = set()
+            downloaded_images: set[str] = set()
             img_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
             try:
                 async for (

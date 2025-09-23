@@ -647,32 +647,6 @@
     .stats-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .knowledge-service-card { display: flex; flex-direction: column; gap: 10px; }
     .knowledge-service-card b { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
-    .update-service-card { display: flex; flex-direction: column; gap: 10px; }
-    .update-service-card b { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
-    .update-service-card label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
-    .update-service-card input[type=text],
-    .update-service-card input[type=url],
-    .update-service-card input[type=number] {
-      background: rgba(15, 23, 42, 0.6);
-      border: 1px solid rgba(99, 102, 241, 0.25);
-      color: var(--text-primary);
-      border-radius: 8px;
-      padding: 8px 10px;
-      font-size: 13px;
-    }
-    .update-service-card .inline-checkbox {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-      color: var(--text-primary);
-    }
-    .update-service-card .update-service-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      align-items: center;
-    }
     .reorder-mode .dashboard-grid section[data-block-id] {
       cursor: grab;
       outline: 1px dashed rgba(96, 165, 250, 0.45);
@@ -1372,32 +1346,6 @@
           <span class="muted" id="knowledgeServiceStatus">—</span>
         </div>
       </div>
-      <div class="card update-service-card">
-        <b>Обновление из Git</b>
-        <div class="muted">Проверяет свежие коммиты в выбранной ветке и по запросу запускает деплой.</div>
-        <label>Remote URL
-          <input type="url" id="updateRepoUrl" placeholder="https://github.com/company/project.git">
-        </label>
-        <label>Имя remote
-          <input type="text" id="updateRemote" placeholder="origin">
-        </label>
-        <label>Ветка
-          <input type="text" id="updateBranch" placeholder="main">
-        </label>
-        <label class="inline-checkbox">
-          <input type="checkbox" id="updateDeploy">
-          <span>После проверки сразу выполнять deploy</span>
-        </label>
-        <label>Команда деплоя
-          <input type="text" id="updateCommand" placeholder="./deploy_project.sh">
-        </label>
-        <div class="update-service-actions">
-          <button type="button" id="updateSave">Сохранить конфигурацию</button>
-          <button type="button" id="updateCheck">Проверить обновления</button>
-          <button type="button" id="updateRun">Обновить и задеплоить</button>
-        </div>
-        <span class="muted" id="updateStatus">—</span>
-      </div>
       <div class="card prompts-card">
         <b>LLM Prompts</b>
         <div class="muted">Последние запросы (с учётом базы знаний)</div>
@@ -1682,18 +1630,6 @@
       '/api/v1/knowledge/service',
     ];
     let activeKnowledgeServiceEndpoint = null;
-    const autoUpdateRepoUrl = document.getElementById('updateRepoUrl');
-    const autoUpdateRemote = document.getElementById('updateRemote');
-    const autoUpdateBranch = document.getElementById('updateBranch');
-    const autoUpdateDeploy = document.getElementById('updateDeploy');
-    const autoUpdateCommand = document.getElementById('updateCommand');
-    const autoUpdateSave = document.getElementById('updateSave');
-    const autoUpdateRefresh = document.getElementById('updateCheck');
-    const autoUpdateRun = document.getElementById('updateRun');
-    const autoUpdateStatus = document.getElementById('updateStatus');
-    const autoUpdateCard = document.querySelector('.update-service-card');
-    const autoUpdateEndpoints = ['/api/v1/admin/update/service'];
-    let activeAutoUpdateEndpoint = null;
     const PROMPT_AI_ROLES = [
       {
         value: 'friendly_expert',
@@ -2497,148 +2433,6 @@
         }
       } finally {
         setKnowledgeServiceControlsDisabled(false);
-      }
-    }
-
-    const setAutoUpdateControlsDisabled = (disabled) => {
-      [autoUpdateRepoUrl, autoUpdateRemote, autoUpdateBranch,
-        autoUpdateDeploy, autoUpdateCommand, autoUpdateSave, autoUpdateRefresh, autoUpdateRun]
-        .filter(Boolean)
-        .forEach((el) => { el.disabled = disabled; });
-    };
-
-    const renderAutoUpdateStatus = (data) => {
-      if (!autoUpdateStatus) return;
-      const bits = [];
-      if (data?.repo_url) bits.push(`Репозиторий: ${data.repo_url}`);
-      if (data?.branch) bits.push(`Ветка: ${data.branch}`);
-      if (typeof data?.update_available === 'boolean') {
-        bits.push(data.update_available ? 'Есть новые коммиты' : 'Новых коммитов нет');
-      }
-      if (data?.local_commit) bits.push(`Локальный: ${data.local_commit.slice(0, 8)}`);
-      if (data?.remote_commit) bits.push(`Удалённый: ${data.remote_commit.slice(0, 8)}`);
-      if (data?.last_check_ts) bits.push(`Проверка: ${formatTimestamp(data.last_check_ts)}`);
-      if (data?.last_update_ts) bits.push(`Обновление: ${formatTimestamp(data.last_update_ts)}`);
-      if (data?.last_error) bits.push(`Ошибка: ${data.last_error}`);
-      autoUpdateStatus.textContent = bits.join(' • ') || '—';
-    };
-
-    async function callAutoUpdateService(path = '', method = 'GET', payload = null) {
-      const endpointBase = activeAutoUpdateEndpoint || autoUpdateEndpoints[0];
-      const url = `${endpointBase}${path}`;
-      const headers = { Accept: 'application/json' };
-      let body;
-      if (method !== 'GET' && payload !== null) {
-        headers['Content-Type'] = 'application/json';
-        body = JSON.stringify(payload);
-      }
-      const resp = await fetch(url, { method, headers, body, credentials: 'same-origin' });
-      if (resp.status === 404) {
-        const err = new Error('not_found');
-        err.status = 404;
-        throw err;
-      }
-      if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      if (method === 'GET' || resp.headers.get('Content-Type')?.includes('application/json')) {
-        const data = await resp.json();
-        activeAutoUpdateEndpoint = endpointBase;
-        return data;
-      }
-      activeAutoUpdateEndpoint = endpointBase;
-      return null;
-    }
-
-    async function fetchAutoUpdateStatus(triggerPulse = false) {
-      if (!autoUpdateStatus) return;
-      if (!adminSession.is_super) {
-        autoUpdateStatus.textContent = 'Недоступно для вашего доступа';
-        setAutoUpdateControlsDisabled(true);
-        return;
-      }
-      autoUpdateStatus.textContent = 'Загружаем…';
-      setAutoUpdateControlsDisabled(true);
-      try {
-        const data = await callAutoUpdateService('', 'GET');
-        if (data) {
-          if (autoUpdateRepoUrl) autoUpdateRepoUrl.value = data.repo_url || '';
-          if (autoUpdateRemote) autoUpdateRemote.value = data.remote || '';
-          if (autoUpdateBranch) autoUpdateBranch.value = data.branch || '';
-          if (autoUpdateDeploy) autoUpdateDeploy.checked = !!data.auto_deploy;
-          if (autoUpdateCommand) autoUpdateCommand.value = data.deploy_command || '';
-          renderAutoUpdateStatus(data);
-          if (triggerPulse && autoUpdateCard) {
-            pulseCard(autoUpdateCard);
-          }
-        } else {
-          autoUpdateStatus.textContent = 'Нет данных';
-        }
-      } catch (error) {
-        console.error('git_auto_update_status_failed', error);
-        if (error?.message === 'not_found') {
-          autoUpdateStatus.textContent = 'Сервис недоступен (обновите backend)';
-        } else {
-          autoUpdateStatus.textContent = 'Не удалось получить статус';
-        }
-      } finally {
-        setAutoUpdateControlsDisabled(false);
-      }
-    }
-
-    async function saveAutoUpdateState() {
-      if (!adminSession.is_super) return;
-      autoUpdateStatus.textContent = 'Сохраняем…';
-      setAutoUpdateControlsDisabled(true);
-      try {
-        const payload = {
-          enabled: false,
-          repo_url: autoUpdateRepoUrl?.value || null,
-          remote: autoUpdateRemote?.value || null,
-          branch: autoUpdateBranch?.value || null,
-          auto_deploy: autoUpdateDeploy?.checked ?? null,
-          deploy_command: autoUpdateCommand?.value || null,
-        };
-        await callAutoUpdateService('', 'POST', payload);
-        autoUpdateStatus.textContent = 'Сохранено';
-        await fetchAutoUpdateStatus(true);
-      } catch (error) {
-        console.error('git_auto_update_save_failed', error);
-        if (error?.message === 'not_found') {
-          autoUpdateStatus.textContent = 'Сервис недоступен (обновите backend)';
-        } else {
-          autoUpdateStatus.textContent = 'Ошибка сохранения';
-        }
-      } finally {
-        setAutoUpdateControlsDisabled(false);
-      }
-    }
-
-    async function runAutoUpdateNow(forceDeploy = false) {
-      if (!adminSession.is_super || !autoUpdateStatus) return;
-      autoUpdateStatus.textContent = forceDeploy ? 'Обновляем репозиторий…' : 'Проверяем обновления…';
-      setAutoUpdateControlsDisabled(true);
-      try {
-        const payload = { force_deploy: Boolean(forceDeploy) };
-        const data = await callAutoUpdateService('/run', 'POST', payload);
-        if (data?.result) {
-          renderAutoUpdateStatus(data.result);
-          if (!forceDeploy && data.result.update_available === false) {
-            autoUpdateStatus.textContent = 'Обновление не требуется';
-          }
-        } else {
-          autoUpdateStatus.textContent = forceDeploy ? 'Обновление выполнено' : 'Проверка завершена';
-        }
-        await fetchAutoUpdateStatus(true);
-      } catch (error) {
-        console.error('git_auto_update_run_failed', error);
-        if (error?.message === 'not_found') {
-          autoUpdateStatus.textContent = 'Сервис недоступен (обновите backend)';
-        } else {
-          autoUpdateStatus.textContent = 'Ошибка выполнения';
-        }
-      } finally {
-        setAutoUpdateControlsDisabled(false);
       }
     }
 
@@ -3803,9 +3597,6 @@
       pollLLM();
       pollSys();
       pollLogs();
-      if (adminSession.is_super) {
-        fetchAutoUpdateStatus();
-      }
     }
     tick();
     setInterval(tick, 3000);
@@ -5064,15 +4855,6 @@
     if (crawlerDedupBtn) {
       crawlerDedupBtn.addEventListener('click', () => performCrawlerAction('/deduplicate', 'Дубликаты удалены'));
     }
-    if (autoUpdateSave) {
-      autoUpdateSave.addEventListener('click', saveAutoUpdateState);
-    }
-    if (autoUpdateRefresh) {
-      autoUpdateRefresh.addEventListener('click', () => runAutoUpdateNow(false));
-    }
-    if (autoUpdateRun) {
-      autoUpdateRun.addEventListener('click', () => runAutoUpdateNow(autoUpdateDeploy ? autoUpdateDeploy.checked : true));
-    }
 
     const promptAiHandlers = [];
     const mainPromptAiHandler = initPromptAiControls({
@@ -5116,7 +4898,6 @@
       await loadRequestStats();
       if (adminSession.is_super) {
         await fetchKnowledgeServiceStatus();
-        await fetchAutoUpdateStatus();
       }
       if (currentProject) {
         populateProjectForm(currentProject);
