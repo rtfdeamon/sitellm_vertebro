@@ -647,6 +647,13 @@
     .stats-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .knowledge-service-card { display: flex; flex-direction: column; gap: 10px; }
     .knowledge-service-card b { text-transform: uppercase; letter-spacing: 0.08em; font-size: 13px; }
+    .project-danger { margin-top: 16px; padding: 14px; border-radius: 14px; border: 1px solid rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.12); display: none; flex-direction: column; gap: 10px; }
+    .project-danger.show { display: flex; }
+    .project-danger strong { text-transform: uppercase; letter-spacing: 0.08em; font-size: 12px; color: #fecaca; }
+    .project-danger p { margin: 0; font-size: 12px; color: rgba(254, 202, 202, 0.9); }
+    .project-delete-btn { align-self: flex-start; padding: 8px 14px; border-radius: 10px; border: 1px solid rgba(239, 68, 68, 0.6); background: rgba(239, 68, 68, 0.25); color: #fee2e2; font-weight: 600; cursor: pointer; }
+    .project-delete-btn:hover:not([disabled]) { background: rgba(239, 68, 68, 0.35); }
+    .project-delete-btn[disabled] { opacity: 0.6; cursor: not-allowed; }
     .ollama-catalog { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(99, 102, 241, 0.25); display: none; flex-direction: column; gap: 8px; }
     .ollama-catalog.show { display: flex; }
     .ollama-catalog-header { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
@@ -1125,10 +1132,17 @@
           <div style="display:flex; gap:10px; align-items:center;">
             <button type="submit">Сохранить</button>
             <button type="button" id="projectPromptSave">Сохранить промпт</button>
-            <button type="button" id="projectDelete">Удалить</button>
             <button type="button" id="projectTest">Тест</button>
           </div>
         </form>
+        <div class="project-danger" id="projectDangerZone">
+          <div>
+            <strong>Опасная зона</strong>
+            <p>Удаление проекта безвозвратно очищает документы, файлы, контексты и статистику. Действие нельзя отменить.</p>
+          </div>
+          <button type="button" id="projectDelete" class="project-delete-btn" disabled>Удалить проект</button>
+          <span class="muted" id="projectDeleteInfo">Выберите проект, чтобы увидеть объём данных.</span>
+        </div>
         <div class="project-extensions" style="display:flex; flex-wrap:wrap; gap:16px; margin-top:16px;">
           <div class="project-telegram" style="flex:1 1 260px; min-width:240px;">
             <b style="display:block; margin-bottom:8px;">Telegram бот</b>
@@ -1824,6 +1838,8 @@
     const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
     const applySessionPermissions = () => {
+      const promptsCard = document.querySelector('.prompts-card');
+      const logsCard = document.querySelector('.logs-card');
       if (!adminSession.is_super) {
         if (projectAddBtn) projectAddBtn.style.display = 'none';
         const hasProjects = Array.isArray(adminSession.projects) && adminSession.projects.length > 0;
@@ -1831,10 +1847,15 @@
           projectDeleteBtn.style.display = hasProjects ? '' : 'none';
           projectDeleteBtn.disabled = !hasProjects;
         }
+        if (projectDangerZone) {
+          projectDangerZone.classList.toggle('show', hasProjects);
+        }
+        if (summaryPerfCard) summaryPerfCard.style.display = 'none';
+        if (summaryLLMCard) summaryLLMCard.style.display = 'none';
+        if (summaryBuildCard) summaryBuildCard.style.display = 'none';
+        if (llmSection) llmSection.style.display = 'none';
         if (knowledgeServiceCard) knowledgeServiceCard.style.display = 'none';
-        const promptsCard = document.querySelector('.prompts-card');
         if (promptsCard) promptsCard.style.display = 'none';
-        const logsCard = document.querySelector('.logs-card');
         if (logsCard) logsCard.style.display = 'none';
         setKnowledgeServiceControlsDisabled(true);
         const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
@@ -1860,6 +1881,15 @@
           projectDeleteBtn.style.display = '';
           projectDeleteBtn.disabled = false;
         }
+        if (projectDangerZone) {
+          projectDangerZone.classList.add('show');
+        }
+        if (summaryPerfCard) summaryPerfCard.style.display = '';
+        if (summaryLLMCard) summaryLLMCard.style.display = '';
+        if (summaryBuildCard) summaryBuildCard.style.display = '';
+        if (llmSection) llmSection.style.display = '';
+        if (promptsCard) promptsCard.style.display = '';
+        if (logsCard) logsCard.style.display = '';
         if (ollamaCatalog) ollamaCatalog.classList.add('show');
       }
     };
@@ -1894,6 +1924,12 @@
     const projectWidgetLink = document.getElementById('projectWidgetLink');
     const projectWidgetCopyBtn = document.getElementById('projectWidgetCopy');
     const projectWidgetMessage = document.getElementById('projectWidgetMessage');
+    const projectDangerZone = document.getElementById('projectDangerZone');
+    const projectDeleteInfo = document.getElementById('projectDeleteInfo');
+    const summaryPerfCard = document.getElementById('summaryPerfCard');
+    const summaryLLMCard = document.getElementById('summaryLLMCard');
+    const summaryBuildCard = document.getElementById('summaryBuildCard');
+    const llmSection = document.getElementById('block-llm');
     const crawlerProjectLabel = document.getElementById('crawlerProject');
     const llmModelDatalist = document.getElementById('llmModelOptions');
     const ollamaCatalog = document.getElementById('ollamaCatalog');
@@ -3051,6 +3087,7 @@
         if (!resp.ok) throw new Error(await resp.text());
         const data = await resp.json();
         projectStorageCache = data.projects || {};
+        updateProjectDeleteInfo(currentProject);
       } catch (error) {
         console.error(error);
       }
@@ -3121,6 +3158,36 @@
           llmModelDatalist.appendChild(option);
         }
       }
+    }
+
+    function updateProjectDeleteInfo(projectKey) {
+      if (!projectDeleteBtn || !projectDeleteInfo) return;
+      const normalized = (projectKey || '').trim().toLowerCase();
+      if (!normalized) {
+        projectDeleteBtn.disabled = true;
+        projectDeleteInfo.textContent = 'Выберите проект, чтобы удалить его данные.';
+        if (projectDangerZone) projectDangerZone.classList.remove('show');
+        return;
+      }
+      if (projectDangerZone && !projectDangerZone.classList.contains('show')) {
+        projectDangerZone.classList.add('show');
+      }
+      const storage = projectStorageCache[normalized] || null;
+      const infoParts = [];
+      if (storage) {
+        const docCount = Number(storage.document_count || 0);
+        const binaryBytes = Number(storage.binary_bytes || 0);
+        const ctxCount = Number(storage.context_count || 0);
+        const redisKeys = Number(storage.redis_keys || 0);
+        if (docCount > 0) infoParts.push(`документов: ${docCount}`);
+        if (binaryBytes > 0) infoParts.push(`файлы: ${formatBytesOptional(binaryBytes)}`);
+        if (ctxCount > 0) infoParts.push(`контекстов: ${ctxCount}`);
+        if (redisKeys > 0) infoParts.push(`Redis ключей: ${redisKeys}`);
+      }
+      projectDeleteInfo.textContent = infoParts.length
+        ? `Будет удалено → ${infoParts.join(' · ')}`
+        : 'Данные проекта не найдены. Удаление очистит только настройки.';
+      projectDeleteBtn.disabled = false;
     }
 
     populateModelOptions('');
@@ -4895,6 +4962,7 @@
       if (projectDeleteBtn) {
         projectDeleteBtn.disabled = !project;
       }
+      updateProjectDeleteInfo(currentProject);
       refreshProjectWidgetUI();
       loadProjectTelegramStatus(currentProject);
       loadProjectMaxStatus(currentProject);
@@ -5077,6 +5145,7 @@
         if (typeof removed.stats === 'number') parts.push(`записей статистики: ${removed.stats}`);
         setProjectStatus(parts.length ? `Удалено (${parts.join(', ')})` : 'Удалено', 4000);
         applySessionPermissions();
+        updateProjectDeleteInfo(currentProject);
       } catch (error) {
         console.error(error);
         setProjectStatus('Ошибка удаления', 4000);
