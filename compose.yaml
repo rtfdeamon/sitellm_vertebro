@@ -110,11 +110,13 @@ services:
       APP_PORT: "8000"
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
       CRAWL_START_URL: ${CRAWL_START_URL:-https://mmvs.ru}
+      DOMAIN: ${DOMAIN:-}
       # If you run Ollama on the host, this points containers to it
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       PYTHONPATH: /app
       APP_SSL_CERT: ${APP_SSL_CERT:-/certs/server.crt}
       APP_SSL_KEY: ${APP_SSL_KEY:-/certs/server.key}
+      APP_ENABLE_TLS: ${APP_ENABLE_TLS:-0}
     volumes:
       - ./data/hf:/root/.cache/huggingface
       - ./certs:/certs:ro

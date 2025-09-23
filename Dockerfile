@@ -66,7 +66,7 @@ COPY --from=build /usr/local /usr/local
 COPY --from=build /src /app
 RUN python -m compileall -q /app
 WORKDIR /app
-RUN chmod +x scripts/start_uvicorn.sh
+RUN chmod +x scripts/healthcheck.sh scripts/start_uvicorn.sh
 
 # Мягкие настройки для слабых CPU/ноутбуков
 ENV PYTHONUNBUFFERED=1 \
@@ -81,6 +81,6 @@ ENV PYTHONUNBUFFERED=1 \
 
 # Лёгкая проверка живости API (без внешних зависимостей)
 HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=10 \
-  CMD curl -fsS http://127.0.0.1:${PORT}/healthz || exit 1
+  CMD scripts/healthcheck.sh
 
 CMD ["scripts/start_uvicorn.sh"]

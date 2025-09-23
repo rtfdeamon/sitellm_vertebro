@@ -166,6 +166,8 @@ class Project(BaseModel):
     telegram_auto_start: bool | None = None
     max_token: str | None = None
     max_auto_start: bool | None = None
+    vk_token: str | None = None
+    vk_auto_start: bool | None = None
     widget_url: str | None = None
     debug_enabled: bool | None = None
 
@@ -182,6 +184,7 @@ class Project(BaseModel):
                 "debug_enabled": False,
                 "telegram_auto_start": False,
                 "max_auto_start": False,
+                "vk_auto_start": False,
                 "widget_url": "https://example.com/widget?project=mmvs",
             }
         }

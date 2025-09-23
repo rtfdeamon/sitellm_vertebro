@@ -1188,6 +1188,23 @@
               <span class="muted" id="projectMaxMessage"></span>
             </div>
           </div>
+          <div class="project-vk" style="flex:1 1 260px; min-width:240px;">
+            <b style="display:block; margin-bottom:8px;">VK бот</b>
+            <label style="display:block; margin-bottom:8px;">Access Token
+              <input type="password" id="projectVkToken" placeholder="Введите токен" style="width:100%;">
+            </label>
+            <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+              <input type="checkbox" id="projectVkAutoStart"> Автозапуск при старте
+            </label>
+            <div>Status: <span id="projectVkStatus">—</span></div>
+            <div class="muted" id="projectVkInfo"></div>
+            <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <button type="button" id="projectVkSave">Сохранить</button>
+              <button type="button" id="projectVkStart">Запустить</button>
+              <button type="button" id="projectVkStop">Остановить</button>
+              <span class="muted" id="projectVkMessage"></span>
+            </div>
+          </div>
           <div class="project-widget" style="flex:1 1 260px; min-width:240px;">
             <b style="display:block; margin-bottom:8px;">Виджет</b>
             <label style="display:block; margin-bottom:8px;">Ссылка на виджет
@@ -1549,6 +1566,14 @@
     const projectMaxSaveBtn = document.getElementById('projectMaxSave');
     const projectMaxStartBtn = document.getElementById('projectMaxStart');
     const projectMaxStopBtn = document.getElementById('projectMaxStop');
+    const projectVkTokenInput = document.getElementById('projectVkToken');
+    const projectVkAutoStart = document.getElementById('projectVkAutoStart');
+    const projectVkStatus = document.getElementById('projectVkStatus');
+    const projectVkInfo = document.getElementById('projectVkInfo');
+    const projectVkMessage = document.getElementById('projectVkMessage');
+    const projectVkSaveBtn = document.getElementById('projectVkSave');
+    const projectVkStartBtn = document.getElementById('projectVkStart');
+    const projectVkStopBtn = document.getElementById('projectVkStop');
     const statsCanvas = document.getElementById('statsCanvas');
     const statsTooltip = document.getElementById('statsTooltip');
     const statsEmpty = document.getElementById('statsEmpty');
@@ -4771,6 +4796,148 @@
     if (projectMaxStartBtn) projectMaxStartBtn.addEventListener('click', startProjectMax);
     if (projectMaxStopBtn) projectMaxStopBtn.addEventListener('click', stopProjectMax);
 
+    function applyProjectVkState(data, projectName) {
+      const running = data ? !!data.running : false;
+      if (projectVkStatus) projectVkStatus.textContent = data ? (running ? 'работает' : 'остановлен') : '—';
+      if (projectVkInfo) {
+        if (!projectName) {
+          projectVkInfo.textContent = 'Выберите проект';
+        } else if (data) {
+          const bits = [];
+          bits.push(data.token_set ? 'Токен настроен' : 'Токен не указан');
+          if (data.token_preview) bits.push(`ID: ${data.token_preview}`);
+          if (running) bits.push('бот запущен');
+          if (data.last_error) bits.push(`Ошибка: ${data.last_error}`);
+          projectVkInfo.textContent = bits.join(' • ');
+        } else {
+          projectVkInfo.textContent = 'Нет данных';
+        }
+      }
+      if (projectVkAutoStart && data) {
+        projectVkAutoStart.checked = !!data.auto_start;
+      } else if (projectVkAutoStart && !projectName) {
+        projectVkAutoStart.checked = false;
+      }
+      if (projectVkStartBtn) projectVkStartBtn.disabled = !projectName || running;
+      if (projectVkStopBtn) projectVkStopBtn.disabled = !projectName || !running;
+      if (projectVkSaveBtn) projectVkSaveBtn.disabled = !projectName;
+      if (projectVkTokenInput) projectVkTokenInput.disabled = !projectName;
+      if (projectVkAutoStart) projectVkAutoStart.disabled = !projectName;
+    }
+
+    function resetProjectVkUI() {
+      applyProjectVkState(null, '');
+      if (projectVkStatus) projectVkStatus.textContent = '—';
+      if (projectVkInfo) projectVkInfo.textContent = 'Выберите проект';
+      if (projectVkMessage) projectVkMessage.textContent = '';
+      if (projectVkTokenInput) projectVkTokenInput.value = '';
+    }
+
+    async function loadProjectVkStatus(projectName) {
+      if (!projectName) {
+        resetProjectVkUI();
+        return;
+      }
+      if (projectVkMessage) projectVkMessage.textContent = 'Обновляем...';
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(projectName)}/vk`);
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        applyProjectVkState(data, projectName);
+        if (projectVkMessage) projectVkMessage.textContent = '';
+      } catch (error) {
+        console.error(error);
+        if (projectVkStatus) projectVkStatus.textContent = 'ошибка';
+        if (projectVkMessage) projectVkMessage.textContent = 'Не удалось получить статус';
+        applyProjectVkState(null, projectName);
+        if (projectVkStartBtn) projectVkStartBtn.disabled = !projectName;
+      }
+    }
+
+    async function saveProjectVkConfig() {
+      if (!currentProject) {
+        if (projectVkMessage) projectVkMessage.textContent = 'Выберите проект';
+        return;
+      }
+      if (projectVkMessage) projectVkMessage.textContent = 'Сохраняем...';
+      const payload = {
+        token: projectVkTokenInput && projectVkTokenInput.value ? projectVkTokenInput.value : null,
+        auto_start: projectVkAutoStart ? projectVkAutoStart.checked : false,
+      };
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/vk/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (projectVkTokenInput) projectVkTokenInput.value = '';
+        if (projectVkMessage) projectVkMessage.textContent = 'Сохранено';
+        await loadProjectVkStatus(currentProject);
+      } catch (error) {
+        console.error(error);
+        if (projectVkMessage) projectVkMessage.textContent = 'Ошибка сохранения';
+      }
+    }
+
+    async function startProjectVk() {
+      if (!currentProject) {
+        if (projectVkMessage) projectVkMessage.textContent = 'Выберите проект';
+        return;
+      }
+      if (projectVkMessage) projectVkMessage.textContent = 'Запускаем...';
+      const payload = {};
+      if (projectVkTokenInput && projectVkTokenInput.value) {
+        payload.token = projectVkTokenInput.value;
+      }
+      if (projectVkAutoStart) {
+        payload.auto_start = projectVkAutoStart.checked;
+      }
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/vk/start`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (projectVkTokenInput) projectVkTokenInput.value = '';
+        if (projectVkMessage) projectVkMessage.textContent = 'Бот запущен';
+        await loadProjectVkStatus(currentProject);
+      } catch (error) {
+        console.error(error);
+        if (projectVkMessage) projectVkMessage.textContent = 'Ошибка запуска';
+      }
+    }
+
+    async function stopProjectVk() {
+      if (!currentProject) {
+        if (projectVkMessage) projectVkMessage.textContent = 'Выберите проект';
+        return;
+      }
+      if (projectVkMessage) projectVkMessage.textContent = 'Останавливаем...';
+      const payload = {};
+      if (projectVkAutoStart) {
+        payload.auto_start = projectVkAutoStart.checked;
+      }
+      try {
+        const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/vk/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (projectVkMessage) projectVkMessage.textContent = 'Бот остановлен';
+        await loadProjectVkStatus(currentProject);
+      } catch (error) {
+        console.error(error);
+        if (projectVkMessage) projectVkMessage.textContent = 'Ошибка остановки';
+      }
+    }
+
+    if (projectVkSaveBtn) projectVkSaveBtn.addEventListener('click', saveProjectVkConfig);
+    if (projectVkStartBtn) projectVkStartBtn.addEventListener('click', startProjectVk);
+    if (projectVkStopBtn) projectVkStopBtn.addEventListener('click', stopProjectVk);
+
     if (statsRefreshBtn) statsRefreshBtn.addEventListener('click', loadRequestStats);
     if (statsExportBtn) statsExportBtn.addEventListener('click', exportRequestStats);
 
@@ -4873,6 +5040,7 @@
     refreshProjectWidgetUI();
     resetProjectTelegramUI();
     resetProjectMaxUI();
+    resetProjectVkUI();
 
     function populateProjectForm(projectName){
       if (mainPromptAiHandler && typeof mainPromptAiHandler.abort === 'function') {
@@ -4888,6 +5056,8 @@
       if (projectTelegramTokenInput) projectTelegramTokenInput.value = '';
       if (projectMaxMessage) projectMaxMessage.textContent = '';
       if (projectMaxTokenInput) projectMaxTokenInput.value = '';
+      if (projectVkMessage) projectVkMessage.textContent = '';
+      if (projectVkTokenInput) projectVkTokenInput.value = '';
       projectNameInput.value = project ? project.name : normalized;
       projectNameInput.readOnly = !adminSession.is_super;
       projectTitleInput.value = project?.title || '';
@@ -4926,6 +5096,9 @@
       }
       if (projectMaxAutoStart) {
         projectMaxAutoStart.checked = !!project?.max_auto_start;
+      }
+      if (projectVkAutoStart) {
+        projectVkAutoStart.checked = !!project?.vk_auto_start;
       }
       if (projectAdminSection) {
         projectAdminSection.style.display = project ? 'flex' : 'none';
@@ -4993,6 +5166,7 @@
       refreshProjectWidgetUI();
       loadProjectTelegramStatus(currentProject);
       loadProjectMaxStatus(currentProject);
+      loadProjectVkStatus(currentProject);
       loadRequestStats();
       if (currentProject) {
         localStorage.setItem('admin_project', currentProject);

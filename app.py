@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any, Dict
+import random
 from datetime import datetime, timezone, timedelta
 import csv
 import io
@@ -60,6 +61,7 @@ from knowledge.summary import generate_document_summary
 from knowledge.tasks import queue_auto_description
 from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
 from max_bot.config import get_settings as get_max_settings
+from vk_bot.config import get_settings as get_vk_settings
 import redis
 import requests
 from pydantic import BaseModel
@@ -376,9 +378,11 @@ def _project_response(project: Project) -> dict[str, Any]:
     data.pop("admin_password_hash", None)
     data.pop("telegram_token", None)
     data.pop("max_token", None)
+    data.pop("vk_token", None)
     data["admin_password_set"] = bool(project.admin_password_hash)
     data["telegram_token_set"] = bool(project.telegram_token)
     data["max_token_set"] = bool(project.max_token)
+    data["vk_token_set"] = bool(project.vk_token)
     return data
 
 
@@ -489,6 +493,27 @@ def _project_max_payload(
         "token_set": bool(token_value),
         "token_preview": _build_token_preview(token_value),
         "auto_start": bool(project.max_auto_start) if project.max_auto_start is not None else False,
+        "last_error": last_error,
+    }
+
+
+def _project_vk_payload(
+    project: Project,
+    controller: "VkHub | None" = None,
+) -> dict[str, Any]:
+    token_value = (
+        project.vk_token.strip() or None
+        if isinstance(project.vk_token, str)
+        else None
+    )
+    running = controller.is_project_running(project.name) if controller else False
+    last_error = controller.get_last_error(project.name) if controller else None
+    return {
+        "project": project.name,
+        "running": running,
+        "token_set": bool(token_value),
+        "token_preview": _build_token_preview(token_value),
+        "auto_start": bool(project.vk_auto_start) if project.vk_auto_start is not None else False,
         "last_error": last_error,
     }
 
@@ -1211,6 +1236,638 @@ class MaxHub:
         return runner
 
 
+class VkRunner:
+    """Long-polling task for a VK messenger bot token."""
+
+    def __init__(self, project: str, token: str, hub: "VkHub") -> None:
+        self.project = project
+        self.token = token
+        self._hub = hub
+        self._task: asyncio.Task | None = None
+        self._settings = get_vk_settings()
+        self._longpoll_key: str | None = None
+        self._longpoll_server: str | None = None
+        self._longpoll_ts: str | None = None
+
+    @property
+    def is_running(self) -> bool:
+        return self._task is not None and not self._task.done()
+
+    async def start(self) -> None:
+        if self.is_running:
+            return
+        loop = asyncio.get_running_loop()
+        self._task = loop.create_task(self._run())
+        self._hub._errors.pop(self.project, None)
+        logger.info("vk_runner_started", project=self.project)
+
+    async def stop(self) -> None:
+        if not self._task:
+            return
+        self._task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._task
+        self._task = None
+        self._reset_longpoll()
+
+    def _reset_longpoll(self) -> None:
+        self._longpoll_key = None
+        self._longpoll_server = None
+        self._longpoll_ts = None
+
+    async def _run(self) -> None:
+        import httpx
+
+        from tg_bot.client import rag_answer
+
+        timeout = httpx.Timeout(
+            connect=self._settings.request_timeout,
+            read=self._settings.request_timeout + self._settings.long_poll_wait + 10,
+            write=self._settings.request_timeout,
+            pool=self._settings.request_timeout,
+        )
+
+        async with httpx.AsyncClient(timeout=timeout) as api_client, httpx.AsyncClient(
+            timeout=self._settings.request_timeout
+        ) as transfer_client:
+            while True:
+                try:
+                    await self._ensure_longpoll(api_client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("vk_longpoll_init_failed", project=self.project, error=str(exc))
+                    self._hub._errors[self.project] = f"longpoll_init: {exc}"
+                    await asyncio.sleep(self._settings.retry_delay_seconds)
+                    continue
+
+                try:
+                    payload = await self._poll_longpoll(api_client)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("vk_longpoll_request_failed", project=self.project, error=str(exc))
+                    self._hub._errors[self.project] = f"longpoll: {exc}"
+                    await asyncio.sleep(self._settings.retry_delay_seconds)
+                    self._reset_longpoll()
+                    continue
+
+                if not payload:
+                    await asyncio.sleep(self._settings.idle_sleep_seconds)
+                    continue
+
+                failed = payload.get("failed")
+                if failed:
+                    if failed == 1:
+                        self._longpoll_ts = payload.get("ts") or self._longpoll_ts
+                    elif failed in {2, 3}:
+                        self._reset_longpoll()
+                    else:
+                        logger.debug(
+                            "vk_longpoll_failed_code",
+                            project=self.project,
+                            failed=failed,
+                        )
+                        await asyncio.sleep(self._settings.retry_delay_seconds)
+                    continue
+
+                if payload.get("ts"):
+                    self._longpoll_ts = payload.get("ts")
+
+                updates = payload.get("updates") or []
+                if not updates:
+                    self._hub._errors.pop(self.project, None)
+                    continue
+
+                for update in updates:
+                    if self._task is None or self._task.cancelled():
+                        return
+                    try:
+                        await self._handle_update(update, api_client, transfer_client, rag_answer)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("vk_update_failed", project=self.project, error=str(exc))
+                        self._hub._errors[self.project] = str(exc)
+                        await asyncio.sleep(self._settings.retry_delay_seconds)
+                        break
+                else:
+                    self._hub._errors.pop(self.project, None)
+
+    async def _ensure_longpoll(self, client) -> None:
+        if self._longpoll_key and self._longpoll_server and self._longpoll_ts:
+            return
+        response = await self._api_call(client, "groups.getLongPollServer")
+        key = response.get("key")
+        server = response.get("server")
+        ts = response.get("ts")
+        if not key or not server or not ts:
+            raise RuntimeError("invalid long poll payload")
+        self._longpoll_key = str(key)
+        self._longpoll_server = str(server)
+        self._longpoll_ts = str(ts)
+
+    async def _poll_longpoll(self, client) -> dict[str, Any] | None:
+        if not (self._longpoll_server and self._longpoll_key and self._longpoll_ts):
+            return None
+        params = {
+            "act": "a_check",
+            "key": self._longpoll_key,
+            "ts": self._longpoll_ts,
+            "wait": max(1, int(self._settings.long_poll_wait)),
+            "mode": int(self._settings.long_poll_mode),
+            "version": int(self._settings.long_poll_version),
+        }
+        url = self._longpoll_server
+        if not url.startswith(("http://", "https://")):
+            url = f"https://{url}"
+        response = await client.get(url, params=params)
+        response.raise_for_status()
+        try:
+            return response.json()
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"invalid long poll response: {exc}") from exc
+
+    async def _handle_update(
+        self,
+        update: dict[str, Any] | None,
+        api_client,
+        transfer_client,
+        rag_answer_fn,
+    ) -> None:
+        if not isinstance(update, dict):
+            return
+        update_type = str(update.get("type") or "").lower()
+        if update_type != "message_new":
+            logger.debug(
+                "vk_update_ignored",
+                project=self.project,
+                update_type=update_type,
+            )
+            return
+
+        obj = update.get("object") or {}
+        message = obj.get("message") or {}
+        if int(message.get("out") or 0) == 1:
+            return
+
+        text = (message.get("text") or "").strip()
+        if not text:
+            return
+
+        peer_id = message.get("peer_id")
+        if peer_id is None:
+            return
+
+        session_key = self._session_key(message)
+        session_id: str | None = None
+        if session_key:
+            session_uuid = await self._hub.get_or_create_session(self.project, session_key)
+            session_id = str(session_uuid)
+
+        try:
+            answer = await rag_answer_fn(
+                text,
+                project=self.project,
+                session_id=session_id,
+                channel="vk",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("vk_answer_failed", project=self.project, error=str(exc))
+            self._hub._errors[self.project] = f"answer_error: {exc}"
+            return
+
+        response_text = str(answer.get("text") or "").strip()
+        attachments = answer.get("attachments") or []
+        fallback_blocks: list[str] = []
+        attachment_handles: list[str] = []
+
+        if attachments:
+            handles, fallbacks = await self._prepare_vk_attachments(
+                attachments,
+                api_client,
+                transfer_client,
+                peer_id,
+            )
+            attachment_handles.extend(handles)
+            fallback_blocks.extend(fallbacks)
+
+        if fallback_blocks:
+            block = "\n\n".join(fallback_blocks)
+            response_text = f"{response_text}\n\n{block}" if response_text else block
+
+        response_text = self._clip_text(response_text)
+        if not response_text and not attachment_handles:
+            return
+
+        await self._send_message(api_client, peer_id, response_text, attachment_handles)
+
+    def _session_key(self, message: dict[str, Any]) -> str | None:
+        peer_id = message.get("peer_id")
+        try:
+            peer = int(peer_id) if peer_id is not None else None
+        except (TypeError, ValueError):
+            peer = None
+        if peer is None:
+            return None
+        if peer >= 2_000_000_000:
+            return f"chat:{peer}"
+        from_id = message.get("from_id")
+        try:
+            sender = int(from_id) if from_id is not None else peer
+        except (TypeError, ValueError):
+            sender = peer
+        return f"user:{sender}"
+
+    def _clip_text(self, text: str) -> str:
+        value = text.strip()
+        if len(value) > 3900:
+            value = value[:3897].rstrip() + "…"
+        return value
+
+    async def _send_message(
+        self,
+        client,
+        peer_id: int | str,
+        text: str | None,
+        attachments: list[str],
+    ) -> None:
+        params: dict[str, Any] = {
+            "peer_id": peer_id,
+            "random_id": random.randint(1, 2**31 - 1),
+        }
+        if text:
+            params["message"] = text
+            if self._settings.disable_link_preview:
+                params["dont_parse_links"] = 1
+        if attachments:
+            params["attachment"] = ",".join(attachments)
+        try:
+            await self._api_call(client, "messages.send", params, http_method="POST")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("vk_send_failed", project=self.project, error=str(exc))
+            self._hub._errors[self.project] = f"send_error: {exc}"
+
+    async def _prepare_vk_attachments(
+        self,
+        attachments: list[dict[str, Any]],
+        api_client,
+        transfer_client,
+        peer_id: int | str,
+    ) -> tuple[list[str], list[str]]:
+        prepared: list[str] = []
+        fallbacks: list[str] = []
+        for idx, attachment in enumerate(attachments, start=1):
+            try:
+                handle = await self._prepare_single_attachment(
+                    attachment,
+                    api_client,
+                    transfer_client,
+                    peer_id,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("vk_attachment_prepare_failed", project=self.project, error=str(exc))
+                handle = None
+            if handle:
+                prepared.append(handle)
+            else:
+                fallback = self._attachment_fallback_text(attachment, idx)
+                if fallback:
+                    fallbacks.append(fallback)
+        return prepared, fallbacks
+
+    async def _prepare_single_attachment(
+        self,
+        attachment: dict[str, Any],
+        api_client,
+        transfer_client,
+        peer_id: int | str,
+    ) -> str | None:
+        name = str(attachment.get("name") or attachment.get("title") or "attachment")
+        description = attachment.get("description")
+        content_type = str(attachment.get("content_type") or "")
+        file_bytes: bytes | None = None
+
+        file_id = attachment.get("file_id") or attachment.get("id")
+        if file_id:
+            try:
+                doc_meta, payload = await self._hub._mongo.get_document_with_content(
+                    self._hub._mongo.documents_collection,
+                    file_id,
+                )
+                file_bytes = payload
+                if not content_type:
+                    content_type = str(doc_meta.get("content_type") or "")
+            except NotFound:
+                file_bytes = None
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("vk_attachment_mongo_failed", project=self.project, error=str(exc))
+
+        if file_bytes is None:
+            download_url = attachment.get("download_url") or attachment.get("url")
+            if download_url and str(download_url).lower().startswith("http"):
+                try:
+                    response = await transfer_client.get(download_url)
+                    response.raise_for_status()
+                    file_bytes = response.content
+                    if not content_type:
+                        content_type = str(response.headers.get("content-type") or "")
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "vk_attachment_download_failed",
+                        project=self.project,
+                        error=str(exc),
+                        url=download_url,
+                    )
+                    file_bytes = None
+            else:
+                return None
+
+        if not file_bytes:
+            return None
+
+        upload_type = self._detect_upload_type(content_type)
+
+        if upload_type == "photo":
+            upload_info = await self._api_call(
+                api_client,
+                "photos.getMessagesUploadServer",
+                params={"peer_id": peer_id},
+            )
+            upload_url = upload_info.get("upload_url")
+            if not upload_url:
+                return None
+            files = {
+                "file": (name, file_bytes, content_type or "image/jpeg"),
+            }
+            response = await transfer_client.post(upload_url, files=files)
+            response.raise_for_status()
+            try:
+                upload_payload = response.json()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("vk_photo_upload_decode_failed", project=self.project, error=str(exc))
+                return None
+
+            saved = await self._api_call(
+                api_client,
+                "photos.saveMessagesPhoto",
+                params={
+                    "photo": upload_payload.get("photo"),
+                    "server": upload_payload.get("server"),
+                    "hash": upload_payload.get("hash"),
+                },
+                http_method="POST",
+            )
+            photo_info: dict[str, Any] | None
+            if isinstance(saved, list) and saved:
+                photo_info = saved[0]
+            elif isinstance(saved, dict):
+                photo_info = saved
+            else:
+                photo_info = None
+            if not isinstance(photo_info, dict):
+                return None
+            owner_id = photo_info.get("owner_id")
+            media_id = photo_info.get("id")
+            access_key = photo_info.get("access_key")
+            if owner_id is None or media_id is None:
+                return None
+            handle = f"photo{owner_id}_{media_id}"
+            if access_key:
+                handle = f"{handle}_{access_key}"
+            return handle
+
+        upload_info = await self._api_call(api_client, "docs.getMessagesUploadServer")
+        upload_url = upload_info.get("upload_url")
+        if not upload_url:
+            return None
+
+        files = {
+            "file": (name, file_bytes, content_type or "application/octet-stream"),
+        }
+        response = await transfer_client.post(upload_url, files=files)
+        response.raise_for_status()
+        try:
+            upload_payload = response.json()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("vk_doc_upload_decode_failed", project=self.project, error=str(exc))
+            return None
+
+        file_field = upload_payload.get("file")
+        if not file_field:
+            return None
+
+        saved = await self._api_call(
+            api_client,
+            "docs.save",
+            params={"file": file_field},
+            http_method="POST",
+        )
+        if isinstance(saved, list) and saved:
+            doc_info = saved[0]
+            if isinstance(doc_info, dict) and "doc" in doc_info:
+                doc_info = doc_info.get("doc")
+        elif isinstance(saved, dict) and "doc" in saved:
+            doc_info = saved.get("doc")
+        else:
+            doc_info = saved
+        if not isinstance(doc_info, dict):
+            return None
+        owner_id = doc_info.get("owner_id")
+        media_id = doc_info.get("id")
+        access_key = doc_info.get("access_key")
+        if owner_id is None or media_id is None:
+            return None
+        handle = f"doc{owner_id}_{media_id}"
+        if access_key:
+            handle = f"{handle}_{access_key}"
+        return handle
+
+    def _detect_upload_type(self, content_type: str) -> str:
+        lowered = (content_type or "").lower()
+        if lowered.startswith("image/"):
+            return "photo"
+        return "doc"
+
+    def _attachment_fallback_text(self, attachment: dict[str, Any], index: int) -> str | None:
+        name = str(attachment.get("name") or attachment.get("title") or f"Документ {index}")
+        description = attachment.get("description")
+        download = attachment.get("download_url") or attachment.get("url")
+        lines = [f"{index}. {name}"]
+        if description:
+            lines.append(str(description))
+        if download:
+            lines.append(str(download))
+        return "\n".join(lines)
+
+    async def _api_call(
+        self,
+        client,
+        method: str,
+        params: dict[str, Any] | None = None,
+        *,
+        http_method: str = "GET",
+    ) -> dict[str, Any]:
+        base_url = f"{self._settings.base_url()}/method/{method}"
+        query: dict[str, Any] = {
+            "access_token": self.token,
+            "v": self._settings.api_version,
+        }
+        if params:
+            for key, value in params.items():
+                if value is not None:
+                    query[key] = value
+        response = await client.request(http_method, base_url, params=query)
+        response.raise_for_status()
+        try:
+            payload = response.json()
+        except Exception as exc:  # noqa: BLE001
+            raise RuntimeError(f"invalid VK response: {exc}") from exc
+        if "error" in payload:
+            error = payload.get("error", {})
+            code = error.get("error_code")
+            message = error.get("error_msg")
+            raise RuntimeError(f"VK API error {code}: {message}")
+        result = payload.get("response")
+        if result is None:
+            return {}
+        return result
+
+
+class VkHub:
+    """Manage VK bot runners per project."""
+
+    def __init__(self, mongo: MongoClient) -> None:
+        self._mongo = mongo
+        self._runners: dict[str, VkRunner] = {}
+        self._sessions: dict[str, dict[str, UUID]] = {}
+        self._errors: dict[str, str] = {}
+        self._lock = asyncio.Lock()
+
+    @property
+    def is_any_running(self) -> bool:
+        return any(runner.is_running for runner in self._runners.values())
+
+    def is_project_running(self, project: str | None) -> bool:
+        if not project:
+            return False
+        runner = self._runners.get(project)
+        return runner.is_running if runner else False
+
+    def get_last_error(self, project: str) -> str | None:
+        return self._errors.get(project)
+
+    async def get_or_create_session(self, project: str, user_key: str) -> UUID:
+        async with self._lock:
+            sessions = self._sessions.setdefault(project, {})
+            session = sessions.get(user_key)
+            if session is None:
+                session = uuid4()
+                sessions[user_key] = session
+            return session
+
+    async def stop_all(self) -> None:
+        async with self._lock:
+            runners = list(self._runners.values())
+            self._runners.clear()
+            self._sessions.clear()
+            self._errors.clear()
+        await asyncio.gather(*(runner.stop() for runner in runners), return_exceptions=True)
+
+    async def refresh(self) -> None:
+        projects = await self._mongo.list_projects()
+        known = {p.name for p in projects}
+        for project in projects:
+            try:
+                await self.ensure_runner(project)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("vk_autostart_failed", project=project.name, error=str(exc))
+        stale = set(self._runners) - known
+        for project_name in stale:
+            await self.stop_project(project_name, forget_sessions=True)
+
+    async def ensure_runner(self, project: Project) -> None:
+        token = (
+            project.vk_token.strip() or None
+            if isinstance(project.vk_token, str)
+            else None
+        )
+        auto_start = bool(project.vk_auto_start)
+        if not token:
+            await self.stop_project(project.name)
+            return
+        runner = await self._get_or_create_runner(project.name, token)
+        if auto_start:
+            try:
+                await runner.start()
+                logger.info("vk_autostart_success", project=project.name)
+            except Exception:
+                async with self._lock:
+                    self._runners.pop(project.name, None)
+                raise
+        else:
+            await runner.stop()
+
+    async def start_project(self, project: Project, *, auto_start: bool | None = None) -> None:
+        token = (
+            project.vk_token.strip() or None
+            if isinstance(project.vk_token, str)
+            else None
+        )
+        if not token:
+            raise HTTPException(status_code=400, detail="VK token is not configured")
+        runner = await self._get_or_create_runner(project.name, token)
+        try:
+            await runner.start()
+            logger.info("vk_runner_manual_start", project=project.name)
+        except Exception as exc:  # noqa: BLE001
+            async with self._lock:
+                self._runners.pop(project.name, None)
+            raise HTTPException(status_code=400, detail=f"Failed to start VK bot: {exc}") from exc
+        if auto_start is not None:
+            project.vk_auto_start = auto_start
+            await self._mongo.upsert_project(project)
+
+    async def stop_project(
+        self,
+        project_name: str,
+        *,
+        auto_start: bool | None = None,
+        forget_sessions: bool = False,
+    ) -> None:
+        async with self._lock:
+            runner = self._runners.pop(project_name, None)
+            self._errors.pop(project_name, None)
+            if forget_sessions:
+                self._sessions.pop(project_name, None)
+        if runner:
+            logger.info("vk_runner_stopping", project=project_name)
+            await runner.stop()
+        if auto_start is not None:
+            project = await self._mongo.get_project(project_name)
+            if project:
+                project.vk_auto_start = auto_start
+                await self._mongo.upsert_project(project)
+
+    async def _get_or_create_runner(self, project: str, token: str) -> VkRunner:
+        async with self._lock:
+            runner = self._runners.get(project)
+            if runner:
+                if runner.token != token:
+                    await runner.stop()
+                    runner = None
+            if runner is None:
+                runner = VkRunner(project, token, self)
+                self._runners[project] = runner
+            else:
+                runner.token = token
+        return runner
+
+
 async def _get_project_context(
     request: Request,
     project_name: str | None,
@@ -1362,9 +2019,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
 
     telegram_hub = TelegramHub(mongo_client)
     max_hub = MaxHub(mongo_client)
+    vk_hub = VkHub(mongo_client)
 
     app.state.telegram = telegram_hub
     app.state.max = max_hub
+    app.state.vk = vk_hub
     app.state.mongo = mongo_client
     app.state.contexts_collection = contexts_collection
     app.state.context_presets_collection = context_presets_collection
@@ -1381,6 +2040,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         await max_hub.refresh()
     except Exception as exc:  # noqa: BLE001
         logger.warning("max_hub_refresh_failed", error=str(exc))
+    try:
+        await vk_hub.refresh()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("vk_hub_refresh_failed", error=str(exc))
 
     yield {
         "llm": llm,
@@ -1396,6 +2059,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         await telegram_hub.stop_all()
     with suppress(Exception):
         await max_hub.stop_all()
+    with suppress(Exception):
+        await vk_hub.stop_all()
     mongo_client.client.close()
     qdrant_client.close()
     with suppress(AttributeError):
@@ -1405,6 +2070,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         del app.state.documents_collection
         del app.state.telegram
         del app.state.max
+        del app.state.vk
 
 
 def _ssl_enabled() -> bool:
@@ -1665,6 +2331,25 @@ class ProjectMaxAction(BaseModel):
     auto_start: bool | None = None
 
 
+class VkConfig(BaseModel):
+    token: str | None = None
+    auto_start: bool | None = None
+
+
+class VkAction(BaseModel):
+    token: str | None = None
+
+
+class ProjectVkConfig(BaseModel):
+    token: str | None = None
+    auto_start: bool | None = None
+
+
+class ProjectVkAction(BaseModel):
+    token: str | None = None
+    auto_start: bool | None = None
+
+
 class OllamaInstallRequest(BaseModel):
     model: str
 
@@ -1696,6 +2381,8 @@ class ProjectCreate(BaseModel):
     telegram_auto_start: bool | None = None
     max_token: str | None = None
     max_auto_start: bool | None = None
+    vk_token: str | None = None
+    vk_auto_start: bool | None = None
     widget_url: str | None = None
 
 
@@ -1848,6 +2535,8 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
                 telegram_auto_start=project.telegram_auto_start if project else None,
                 max_token=project.max_token if project else None,
                 max_auto_start=project.max_auto_start if project else None,
+                vk_token=project.vk_token if project else None,
+                vk_auto_start=project.vk_auto_start if project else None,
                 widget_url=project.widget_url if project else None,
                 debug_enabled=project.debug_enabled if project and project.debug_enabled is not None else None,
             )
@@ -2125,6 +2814,8 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             telegram_auto_start=existing.telegram_auto_start if existing else None,
             max_token=existing.max_token if existing else None,
             max_auto_start=existing.max_auto_start if existing else None,
+            vk_token=existing.vk_token if existing else None,
+            vk_auto_start=existing.vk_auto_start if existing else None,
             widget_url=existing.widget_url if existing else None,
         )
         saved_project = await request.state.mongo.upsert_project(project_payload)
@@ -2134,6 +2825,9 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
         max_hub: MaxHub | None = getattr(request.app.state, "max", None)
         if isinstance(max_hub, MaxHub):
             await max_hub.ensure_runner(saved_project)
+        vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+        if isinstance(vk_hub, VkHub):
+            await vk_hub.ensure_runner(saved_project)
 
     return ORJSONResponse(
         {
@@ -2472,6 +3166,83 @@ async def max_stop(request: Request) -> ORJSONResponse:
     return ORJSONResponse({"running": False})
 
 
+@app.get("/api/v1/admin/vk", response_class=ORJSONResponse)
+async def vk_status(request: Request) -> ORJSONResponse:
+    _require_super_admin(request)
+    hub: VkHub = request.app.state.vk
+    mongo_client = _get_mongo_client(request)
+    default_project = _normalize_project(None)
+    project: Project | None = None
+    if default_project:
+        project = await mongo_client.get_project(default_project)
+    token_value = (
+        project.vk_token.strip() if project and isinstance(project.vk_token, str) else None
+    )
+    response = {
+        "project": default_project,
+        "running": hub.is_project_running(default_project),
+        "token_set": bool(token_value),
+        "token_preview": _build_token_preview(token_value),
+        "auto_start": bool(project.vk_auto_start) if project and project.vk_auto_start is not None else False,
+        "last_error": hub.get_last_error(default_project) if default_project else None,
+    }
+    return ORJSONResponse(response)
+
+
+@app.post("/api/v1/admin/vk/config", response_class=ORJSONResponse)
+async def vk_config(request: Request, payload: VkConfig) -> ORJSONResponse:
+    _require_super_admin(request)
+    hub: VkHub = request.app.state.vk
+    mongo_client = _get_mongo_client(request)
+    default_project = _normalize_project(None)
+    if not default_project:
+        raise HTTPException(status_code=400, detail="Default project is not configured")
+
+    existing = await mongo_client.get_project(default_project)
+    data = existing.model_dump() if existing else {"name": default_project}
+    if payload.token is not None:
+        value = payload.token.strip()
+        data["vk_token"] = value or None
+    if payload.auto_start is not None:
+        data["vk_auto_start"] = bool(payload.auto_start)
+
+    project = Project(**data)
+    saved = await mongo_client.upsert_project(project)
+    await hub.ensure_runner(saved)
+    return ORJSONResponse({"ok": True})
+
+
+@app.post("/api/v1/admin/vk/start", response_class=ORJSONResponse)
+async def vk_start(request: Request, payload: VkAction) -> ORJSONResponse:
+    _require_super_admin(request)
+    hub: VkHub = request.app.state.vk
+    mongo_client = _get_mongo_client(request)
+    default_project = _normalize_project(None)
+    if not default_project:
+        raise HTTPException(status_code=400, detail="Default project is not configured")
+
+    existing = await mongo_client.get_project(default_project)
+    data = existing.model_dump() if existing else {"name": default_project}
+    token_value = payload.token.strip() if isinstance(payload.token, str) else None
+    if token_value:
+        data["vk_token"] = token_value
+    project = Project(**data)
+    saved = await mongo_client.upsert_project(project)
+    await hub.start_project(saved)
+    return ORJSONResponse({"running": True})
+
+
+@app.post("/api/v1/admin/vk/stop", response_class=ORJSONResponse)
+async def vk_stop(request: Request) -> ORJSONResponse:
+    _require_super_admin(request)
+    hub: VkHub = request.app.state.vk
+    default_project = _normalize_project(None)
+    if not default_project:
+        raise HTTPException(status_code=400, detail="Default project is not configured")
+    await hub.stop_project(default_project)
+    return ORJSONResponse({"running": False})
+
+
 @app.get("/api/v1/admin/projects/{project}/telegram", response_class=ORJSONResponse)
 async def admin_project_telegram_status(project: str, request: Request) -> ORJSONResponse:
     project_name = _resolve_admin_project(request, project, required=True)
@@ -2531,7 +3302,10 @@ async def admin_project_telegram_config(
         telegram_auto_start=auto_start_value,
         max_token=existing.max_token,
         max_auto_start=existing.max_auto_start,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
+        debug_enabled=existing.debug_enabled,
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -2541,6 +3315,9 @@ async def admin_project_telegram_config(
     max_hub: MaxHub | None = getattr(request.app.state, "max", None)
     if isinstance(max_hub, MaxHub):
         await max_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
     return ORJSONResponse(response)
 
 
@@ -2596,7 +3373,10 @@ async def admin_project_telegram_start(
         telegram_auto_start=auto_start_value,
         max_token=existing.max_token,
         max_auto_start=existing.max_auto_start,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
+        debug_enabled=existing.debug_enabled,
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -2606,6 +3386,9 @@ async def admin_project_telegram_start(
     max_hub: MaxHub | None = getattr(request.app.state, "max", None)
     if isinstance(max_hub, MaxHub):
         await max_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
     return ORJSONResponse(response)
 
 
@@ -2646,6 +3429,8 @@ async def admin_project_telegram_stop(
         admin_password_hash=existing.admin_password_hash,
         max_token=existing.max_token,
         max_auto_start=existing.max_auto_start,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
         debug_enabled=existing.debug_enabled,
     )
 
@@ -2656,6 +3441,9 @@ async def admin_project_telegram_stop(
     max_hub: MaxHub | None = getattr(request.app.state, "max", None)
     if isinstance(max_hub, MaxHub):
         await max_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
     return ORJSONResponse(response)
 
 
@@ -2718,6 +3506,8 @@ async def admin_project_max_config(
         telegram_auto_start=existing.telegram_auto_start,
         max_token=token_value,
         max_auto_start=auto_start_value,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
     )
@@ -2729,6 +3519,9 @@ async def admin_project_max_config(
     telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
     if isinstance(telegram_hub, TelegramHub):
         await telegram_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
     return ORJSONResponse(response)
 
 
@@ -2784,6 +3577,8 @@ async def admin_project_max_start(
         telegram_auto_start=existing.telegram_auto_start,
         max_token=token_value,
         max_auto_start=auto_start_value,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
     )
@@ -2795,6 +3590,9 @@ async def admin_project_max_start(
     telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
     if isinstance(telegram_hub, TelegramHub):
         await telegram_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
     return ORJSONResponse(response)
 
 
@@ -2832,6 +3630,8 @@ async def admin_project_max_stop(
         telegram_auto_start=existing.telegram_auto_start,
         max_token=existing.max_token,
         max_auto_start=auto_start_value,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         admin_username=existing.admin_username,
         admin_password_hash=existing.admin_password_hash,
@@ -2845,6 +3645,213 @@ async def admin_project_max_stop(
     telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
     if isinstance(telegram_hub, TelegramHub):
         await telegram_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
+    return ORJSONResponse(response)
+
+
+@app.get("/api/v1/admin/projects/{project}/vk", response_class=ORJSONResponse)
+async def admin_project_vk_status(project: str, request: Request) -> ORJSONResponse:
+    project_name = _resolve_admin_project(request, project, required=True)
+    mongo_client = _get_mongo_client(request)
+
+    existing = await mongo_client.get_project(project_name)
+    if not existing:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    hub: VkHub = request.app.state.vk
+    payload = _project_vk_payload(existing, hub)
+    return ORJSONResponse(payload)
+
+
+@app.post("/api/v1/admin/projects/{project}/vk/config", response_class=ORJSONResponse)
+async def admin_project_vk_config(
+    project: str,
+    request: Request,
+    payload: ProjectVkConfig,
+) -> ORJSONResponse:
+    project_name = _resolve_admin_project(request, project, required=True)
+    mongo_client = _get_mongo_client(request)
+
+    existing = await mongo_client.get_project(project_name)
+    if not existing:
+        existing = Project(name=project_name)
+
+    provided_fields = getattr(payload, "model_fields_set", set())
+
+    if "token" in provided_fields:
+        if isinstance(payload.token, str):
+            token_value = payload.token.strip() or None
+        else:
+            token_value = None
+    else:
+        token_value = existing.vk_token
+
+    if "auto_start" in provided_fields:
+        auto_start_value = (
+            bool(payload.auto_start)
+            if payload.auto_start is not None
+            else None
+        )
+    else:
+        auto_start_value = existing.vk_auto_start
+
+    project_payload = Project(
+        name=project_name,
+        title=existing.title,
+        domain=existing.domain,
+        admin_username=existing.admin_username,
+        admin_password_hash=existing.admin_password_hash,
+        llm_model=existing.llm_model,
+        llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
+        telegram_token=existing.telegram_token,
+        telegram_auto_start=existing.telegram_auto_start,
+        max_token=existing.max_token,
+        max_auto_start=existing.max_auto_start,
+        vk_token=token_value,
+        vk_auto_start=auto_start_value,
+        widget_url=existing.widget_url,
+        debug_enabled=existing.debug_enabled,
+    )
+
+    saved = await mongo_client.upsert_project(project_payload)
+    hub: VkHub = request.app.state.vk
+    await hub.ensure_runner(saved)
+    response = _project_vk_payload(saved, hub)
+    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
+    if isinstance(telegram_hub, TelegramHub):
+        await telegram_hub.ensure_runner(saved)
+    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
+    if isinstance(max_hub, MaxHub):
+        await max_hub.ensure_runner(saved)
+    return ORJSONResponse(response)
+
+
+@app.post("/api/v1/admin/projects/{project}/vk/start", response_class=ORJSONResponse)
+async def admin_project_vk_start(
+    project: str,
+    request: Request,
+    payload: ProjectVkAction,
+) -> ORJSONResponse:
+    project_name = _resolve_admin_project(request, project, required=True)
+    mongo_client = _get_mongo_client(request)
+
+    existing = await mongo_client.get_project(project_name)
+    if not existing:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    provided_fields = getattr(payload, "model_fields_set", set())
+
+    if "token" in provided_fields:
+        if isinstance(payload.token, str):
+            token_value = payload.token.strip() or None
+        else:
+            token_value = None
+    else:
+        token_value = (
+            existing.vk_token.strip() or None
+            if isinstance(existing.vk_token, str)
+            else None
+        )
+
+    if not token_value:
+        raise HTTPException(status_code=400, detail="VK token is not configured")
+
+    if "auto_start" in provided_fields:
+        auto_start_value = (
+            bool(payload.auto_start)
+            if payload.auto_start is not None
+            else None
+        )
+    else:
+        auto_start_value = existing.vk_auto_start
+
+    project_payload = Project(
+        name=existing.name,
+        title=existing.title,
+        domain=existing.domain,
+        admin_username=existing.admin_username,
+        admin_password_hash=existing.admin_password_hash,
+        llm_model=existing.llm_model,
+        llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
+        telegram_token=existing.telegram_token,
+        telegram_auto_start=existing.telegram_auto_start,
+        max_token=existing.max_token,
+        max_auto_start=existing.max_auto_start,
+        vk_token=token_value,
+        vk_auto_start=auto_start_value,
+        widget_url=existing.widget_url,
+        debug_enabled=existing.debug_enabled,
+    )
+
+    saved = await mongo_client.upsert_project(project_payload)
+    hub: VkHub = request.app.state.vk
+    await hub.start_project(saved, auto_start=auto_start_value if "auto_start" in provided_fields else None)
+    response = _project_vk_payload(saved, hub)
+    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
+    if isinstance(telegram_hub, TelegramHub):
+        await telegram_hub.ensure_runner(saved)
+    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
+    if isinstance(max_hub, MaxHub):
+        await max_hub.ensure_runner(saved)
+    return ORJSONResponse(response)
+
+
+@app.post("/api/v1/admin/projects/{project}/vk/stop", response_class=ORJSONResponse)
+async def admin_project_vk_stop(
+    project: str,
+    request: Request,
+    payload: ProjectVkAction | None = None,
+) -> ORJSONResponse:
+    project_name = _resolve_admin_project(request, project, required=True)
+    mongo_client = _get_mongo_client(request)
+
+    existing = await mongo_client.get_project(project_name)
+    if not existing:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    provided_fields = getattr(payload, "model_fields_set", set()) if payload else set()
+    if payload and "auto_start" in provided_fields:
+        auto_start_value = (
+            bool(payload.auto_start)
+            if payload.auto_start is not None
+            else None
+        )
+    else:
+        auto_start_value = existing.vk_auto_start
+
+    project_payload = Project(
+        name=existing.name,
+        title=existing.title,
+        domain=existing.domain,
+        llm_model=existing.llm_model,
+        llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
+        telegram_token=existing.telegram_token,
+        telegram_auto_start=existing.telegram_auto_start,
+        max_token=existing.max_token,
+        max_auto_start=existing.max_auto_start,
+        vk_token=existing.vk_token,
+        vk_auto_start=auto_start_value,
+        widget_url=existing.widget_url,
+        admin_username=existing.admin_username,
+        admin_password_hash=existing.admin_password_hash,
+        debug_enabled=existing.debug_enabled,
+    )
+
+    saved = await mongo_client.upsert_project(project_payload)
+    hub: VkHub = request.app.state.vk
+    await hub.stop_project(saved.name, auto_start=auto_start_value if payload and "auto_start" in provided_fields else None)
+    response = _project_vk_payload(saved, hub)
+    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
+    if isinstance(telegram_hub, TelegramHub):
+        await telegram_hub.ensure_runner(saved)
+    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
+    if isinstance(max_hub, MaxHub):
+        await max_hub.ensure_runner(saved)
     return ORJSONResponse(response)
 
 
@@ -3101,6 +4108,23 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
     else:
         max_auto_start_value = existing.max_auto_start if existing else None
 
+    if "vk_token" in provided_fields:
+        if isinstance(payload.vk_token, str):
+            vk_token_value = payload.vk_token.strip() or None
+        else:
+            vk_token_value = None
+    else:
+        vk_token_value = existing.vk_token if existing else None
+
+    if "vk_auto_start" in provided_fields:
+        vk_auto_start_value = (
+            bool(payload.vk_auto_start)
+            if payload.vk_auto_start is not None
+            else None
+        )
+    else:
+        vk_auto_start_value = existing.vk_auto_start if existing else None
+
     if "widget_url" in provided_fields:
         if isinstance(payload.widget_url, str):
             widget_url_value = payload.widget_url.strip() or None
@@ -3153,6 +4177,8 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,
         max_auto_start=max_auto_start_value,
+        vk_token=vk_token_value,
+        vk_auto_start=vk_auto_start_value,
         widget_url=widget_url_value,
     )
     project = await mongo_client.upsert_project(project)
@@ -3162,6 +4188,9 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
     max_hub: MaxHub | None = getattr(request.app.state, "max", None)
     if isinstance(max_hub, MaxHub):
         await max_hub.ensure_runner(project)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(project)
     return ORJSONResponse(_project_response(project))
 
 
@@ -3193,6 +4222,9 @@ async def admin_delete_project(request: Request, domain: str) -> ORJSONResponse:
     max_hub: MaxHub | None = getattr(request.app.state, "max", None)
     if isinstance(max_hub, MaxHub):
         await max_hub.stop_project(domain_value, forget_sessions=True)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.stop_project(domain_value, forget_sessions=True)
     return ORJSONResponse({"status": "deleted", "project": domain_value, "removed": summary})
 
 

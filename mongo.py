@@ -585,7 +585,7 @@ class MongoClient:
             data["admin_password_hash"] = admin_password_hash.strip() or None
         else:
             data["admin_password_hash"] = None
-        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "max_token", "widget_url"):
+        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "max_token", "vk_token", "widget_url"):
             value = data.get(field)
             if isinstance(value, str):
                 stripped = value.strip()
@@ -616,7 +616,7 @@ class MongoClient:
             data["debug_enabled"] = False
         else:
             data["debug_enabled"] = bool(debug_value)
-        for field in ("telegram_auto_start", "max_auto_start"):
+        for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             auto_value = data.get(field)
             if isinstance(auto_value, str):
                 lowered = auto_value.strip().lower()
@@ -648,10 +648,10 @@ class MongoClient:
         data["name"] = str(data["name"]).strip().lower()
         if data.get("admin_username"):
             data["admin_username"] = str(data["admin_username"]).strip().lower() or None
-        for field in ("telegram_token", "max_token"):
+        for field in ("telegram_token", "max_token", "vk_token"):
             if data.get(field):
                 data[field] = str(data[field]).strip() or None
-        for field in ("telegram_auto_start", "max_auto_start"):
+        for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             if field in data and data[field] is not None:
                 data[field] = bool(data[field])
         try:

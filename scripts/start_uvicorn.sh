@@ -7,14 +7,32 @@ WORKERS=${APP_WORKERS:-${UVICORN_WORKERS:-1}}
 KEEP_ALIVE=${APP_TIMEOUT_KEEP_ALIVE:-30}
 CERT=${APP_SSL_CERT:-}
 KEY=${APP_SSL_KEY:-}
+ENABLE_TLS_RAW=${APP_ENABLE_TLS:-}
+
+case "${ENABLE_TLS_RAW,,}" in
+  1|true|yes)
+    ENABLE_TLS=1
+    ;;
+  *)
+    ENABLE_TLS=0
+    ;;
+esac
+
+if [[ $ENABLE_TLS -eq 0 && -n "${DOMAIN:-}" ]]; then
+  ENABLE_TLS=1
+fi
 
 cmd=(uvicorn app:app --host "$HOST" --port "$PORT" --workers "$WORKERS" --timeout-keep-alive "$KEEP_ALIVE")
 
-if [[ -n "$CERT" && -n "$KEY" && -f "$CERT" && -f "$KEY" ]]; then
-  echo "[start_uvicorn] Enabling TLS with cert: $CERT"
-  cmd+=(--ssl-certfile "$CERT" --ssl-keyfile "$KEY")
+if [[ $ENABLE_TLS -eq 1 ]]; then
+  if [[ -n "$CERT" && -n "$KEY" && -f "$CERT" && -f "$KEY" ]]; then
+    echo "[start_uvicorn] TLS enabled (cert: $CERT)"
+    cmd+=(--ssl-certfile "$CERT" --ssl-keyfile "$KEY")
+  else
+    echo "[start_uvicorn] TLS requested but certificate missing; falling back to HTTP" >&2
+  fi
 else
-  echo "[start_uvicorn] TLS disabled (certificate not found or APP_SSL_CERT/KEY unset)" >&2
+  echo "[start_uvicorn] TLS disabled for localhost access"
 fi
 
 exec "${cmd[@]}"

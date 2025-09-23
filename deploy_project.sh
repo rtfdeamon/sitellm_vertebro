@@ -506,6 +506,36 @@ update_env_var HOST_QDRANT_HTTP_PORT "$QDRANT_HTTP_HOST"
 update_env_var HOST_QDRANT_GRPC_PORT "$QDRANT_GRPC_HOST"
 update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
 
+TLS_ENABLED_RAW=${APP_ENABLE_TLS:-}
+if [ -z "$TLS_ENABLED_RAW" ] && [ -f .env ]; then
+  TLS_ENABLED_RAW=$(awk -F= '/^APP_ENABLE_TLS=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+fi
+
+if [ -z "$TLS_ENABLED_RAW" ]; then
+  if [ -n "$DOMAIN" ]; then
+    TLS_ENABLED_RAW="1"
+  else
+    TLS_ENABLED_RAW="0"
+  fi
+fi
+
+case "$TLS_ENABLED_RAW" in
+  1|true|TRUE|yes|YES)
+    TLS_ENABLED_RAW="1"
+    ;;
+  *)
+    TLS_ENABLED_RAW="0"
+    ;;
+esac
+
+update_env_var APP_ENABLE_TLS "$TLS_ENABLED_RAW"
+if [ "$TLS_ENABLED_RAW" = "1" ]; then
+  ensure_self_signed_cert
+else
+  update_env_var APP_SSL_CERT ""
+  update_env_var APP_SSL_KEY ""
+fi
+
 # ---------------------------------------------------------------------------
 # Decide whether local LLM (llama-cpp/torch) is needed
 # If an external model backend is configured (MODEL_BASE_URL) or Ollama base
