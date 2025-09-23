@@ -954,7 +954,12 @@ async def chat(
                     yield f"data: {json.dumps(att, ensure_ascii=False)}\n\n"
             async for token in llm_client.generate(prompt_base, model=model_override):
                 stream_chars += len(token)
-                yield f"data: {token}\n\n"
+                payload = {
+                    "text": token,
+                    "role": "assistant",
+                    "meta": {},
+                }
+                yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
         except Exception as exc:  # keep connection graceful for the widget
             logger.warning("sse_generate_failed", error=str(exc))
             error_message = str(exc)
