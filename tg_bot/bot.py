@@ -16,8 +16,17 @@ import structlog
 
 from .config import get_settings
 from .client import rag_answer
-from settings import MongoSettings
-from mongo import MongoClient as AppMongoClient, NotFound
+
+try:  # pragma: no cover - optional dependency inside slim container
+    from settings import MongoSettings
+    from mongo import MongoClient as AppMongoClient, NotFound
+except ModuleNotFoundError:  # pragma: no cover - degrade gracefully when unavailable
+    MongoSettings = None  # type: ignore[assignment]
+    AppMongoClient = None  # type: ignore[assignment]
+
+    class NotFound(Exception):  # type: ignore[assignment]
+        """Fallback placeholder when mongo module is not bundled."""
+
 
 logger = structlog.get_logger(__name__)
 
@@ -135,6 +144,8 @@ async def _send_attachments(message: types.Message, attachments: List[Dict[str, 
 
     async def _get_mongo() -> Tuple[AppMongoClient, str]:
         nonlocal mongo_client, mongo_documents_collection
+        if MongoSettings is None or AppMongoClient is None:
+            raise RuntimeError("mongo_support_unavailable")
         if mongo_client is None:
             cfg = MongoSettings()
             mongo_client = AppMongoClient(

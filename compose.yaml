@@ -170,6 +170,8 @@ services:
     depends_on:
       app:
         condition: service_started
+    volumes:
+      - ./certs:/certs:ro
     healthcheck:
       <<: *health_defaults
       test:

@@ -69,10 +69,21 @@ async def rag_answer(
     path = path.rstrip("/") + "/chat"
     target_url = urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
     delay = 0.5
+    if settings.backend_verify_ssl:
+        if settings.backend_ca_path:
+            verify_option: Any = str(settings.backend_ca_path)
+        else:
+            verify_option = True
+    else:
+        verify_option = False
+
     for attempt in range(3):
         try:
             logger.info("request", attempt=attempt + 1, url=target_url)
-            async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+            async with httpx.AsyncClient(
+                timeout=settings.request_timeout,
+                verify=verify_option,
+            ) as client:
                 async with client.stream(
                     "GET",
                     target_url,

@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     project: str = "default"
     api_base_url: AnyUrl = "http://app:8000"
     backend_url: AnyUrl = "http://app:8000/api/v1/llm/chat"
+    backend_verify_ssl: bool = True
+    backend_ca_path: str | None = None
     status_url: AnyUrl | None = None
     project_sync_interval: int = 30
     request_timeout: int = 30
