@@ -68,6 +68,65 @@ from pydantic import BaseModel
 from uuid import uuid4, UUID
 
 
+_ATTACH_POSITIVE_REPLIES = {
+    "да",
+    "давай",
+    "ок",
+    "хочу",
+    "конечно",
+    "ага",
+    "отправь",
+    "да пожалуйста",
+    "да, отправь",
+    "да отправь",
+    "yes",
+    "yep",
+    "sure",
+    "send",
+    "please send",
+}
+
+_ATTACH_NEGATIVE_REPLIES = {
+    "нет",
+    "не надо",
+    "не нужно",
+    "пока нет",
+    "нет, спасибо",
+    "no",
+    "not now",
+}
+
+
+def _format_attachment_preview_lines(attachments: list[dict[str, Any]]) -> list[str]:
+    lines: list[str] = []
+    for idx, attachment in enumerate(attachments, 1):
+        name = str(
+            attachment.get("name")
+            or attachment.get("title")
+            or attachment.get("filename")
+            or f"Документ {idx}"
+        )
+        description = attachment.get("description")
+        if isinstance(description, str):
+            description = description.strip()
+        else:
+            description = ""
+        if description and len(description) > 120:
+            description = description[:117].rstrip() + "…"
+        download = (
+            attachment.get("download_url")
+            or attachment.get("url")
+            or attachment.get("link")
+        )
+        parts = [f"{idx}. {name}"]
+        if description:
+            parts.append(description)
+        if download:
+            parts.append(str(download))
+        lines.append(" — ".join(parts))
+    return lines
+
+
 configure_logging()
 
 settings = Settings()
@@ -865,6 +924,34 @@ class MaxRunner:
             session_uuid = await self._hub.get_or_create_session(self.project, session_key)
             session_id = str(session_uuid)
 
+        recipient = message.get("recipient") or {}
+        normalized_text = text.lower()
+        if session_key:
+            pending = await self._hub.get_pending_attachments(self.project, session_key)
+            if pending and normalized_text:
+                if normalized_text in _ATTACH_POSITIVE_REPLIES:
+                    await self._hub.clear_pending_attachments(self.project, session_key)
+                    await self._send_message(
+                        client,
+                        recipient,
+                        {"text": "📎 Отправляю материалы."},
+                    )
+                    await self._deliver_pending_attachments(
+                        client,
+                        recipient,
+                        pending.get("attachments", []),
+                    )
+                    return
+                if normalized_text in _ATTACH_NEGATIVE_REPLIES:
+                    await self._hub.clear_pending_attachments(self.project, session_key)
+                    await self._send_message(
+                        client,
+                        recipient,
+                        {"text": "Понял, документы отправлять не буду."},
+                    )
+                    return
+                await self._hub.clear_pending_attachments(self.project, session_key)
+
         try:
             answer = await rag_answer_fn(
                 text,
@@ -881,21 +968,45 @@ class MaxRunner:
         attachments = answer.get("attachments") or []
         fallback_blocks: list[str] = []
         attachment_messages: list[dict[str, Any]] = []
+        confirm_prompt: str | None = None
 
         if attachments:
-            import httpx
+            if session_key:
+                await self._hub.set_pending_attachments(
+                    self.project,
+                    session_key,
+                    {"attachments": attachments},
+                )
+                preview_lines = _format_attachment_preview_lines(attachments)
+                if preview_lines:
+                    preview_block = "\n".join(preview_lines)
+                    confirm_prompt = (
+                        "📎 Нашёл полезные материалы:\n"
+                        f"{preview_block}\n"
+                        "Отправить документы? Ответьте «да» или «нет»."
+                    )
+                else:
+                    confirm_prompt = "📎 У меня есть документы по теме. Отправить их? Ответьте «да» или «нет»."
+            else:
+                import httpx
 
-            async with httpx.AsyncClient(timeout=self._settings.request_timeout) as download_client:
-                prepared, fallbacks = await self._prepare_max_attachments(attachments, client, download_client)
-                attachment_messages = prepared
-                fallback_blocks.extend(fallbacks)
+                async with httpx.AsyncClient(timeout=self._settings.request_timeout) as download_client:
+                    prepared, fallbacks = await self._prepare_max_attachments(
+                        attachments,
+                        client,
+                        download_client,
+                    )
+                    attachment_messages = prepared
+                    fallback_blocks.extend(fallbacks)
 
         if fallback_blocks:
             block = "\n\n".join(fallback_blocks)
             response_text = f"{response_text}\n\n{block}" if response_text else block
 
+        if confirm_prompt:
+            response_text = f"{response_text}\n\n{confirm_prompt}" if response_text else confirm_prompt
+
         response_text = self._clip_text(response_text)
-        recipient = message.get("recipient") or {}
 
         if response_text:
             await self._send_message(client, recipient, {"text": response_text})
@@ -1105,6 +1216,51 @@ class MaxRunner:
             lines.append(str(download))
         return "\n".join(lines)
 
+    async def _deliver_pending_attachments(
+        self,
+        api_client,
+        transfer_client,
+        peer_id: int | str,
+        attachments: list[dict[str, Any]],
+    ) -> None:
+        if not attachments:
+            return
+        handles, fallbacks = await self._prepare_vk_attachments(
+            attachments,
+            api_client,
+            transfer_client,
+            peer_id,
+        )
+        if handles:
+            await self._send_message(api_client, peer_id, None, handles)
+        if fallbacks:
+            await self._send_message(api_client, peer_id, "\n".join(fallbacks), [])
+
+    async def _deliver_pending_attachments(
+        self,
+        api_client,
+        recipient: dict[str, Any],
+        attachments: list[dict[str, Any]],
+    ) -> None:
+        if not attachments:
+            return
+        import httpx
+
+        async with httpx.AsyncClient(timeout=self._settings.request_timeout) as download_client:
+            prepared, fallbacks = await self._prepare_max_attachments(
+                attachments,
+                api_client,
+                download_client,
+            )
+        for item in prepared:
+            await self._send_message(api_client, recipient, item)
+        if fallbacks:
+            await self._send_message(
+                api_client,
+                recipient,
+                {"text": "\n".join(fallbacks)},
+            )
+
 
 class MaxHub:
     """Manage MAX bot runners per project."""
@@ -1114,6 +1270,7 @@ class MaxHub:
         self._runners: dict[str, MaxRunner] = {}
         self._sessions: dict[str, dict[str, UUID]] = {}
         self._errors: dict[str, str] = {}
+        self._pending: dict[str, dict[str, dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -1144,6 +1301,7 @@ class MaxHub:
             self._runners.clear()
             self._sessions.clear()
             self._errors.clear()
+            self._pending.clear()
         await asyncio.gather(*(runner.stop() for runner in runners), return_exceptions=True)
 
     async def refresh(self) -> None:
@@ -1212,6 +1370,7 @@ class MaxHub:
             self._errors.pop(project_name, None)
             if forget_sessions:
                 self._sessions.pop(project_name, None)
+                self._pending.pop(project_name, None)
         if runner:
             logger.info("max_runner_stopping", project=project_name)
             await runner.stop()
@@ -1234,6 +1393,32 @@ class MaxHub:
             else:
                 runner.token = token
         return runner
+
+    async def set_pending_attachments(
+        self,
+        project: str,
+        session_key: str,
+        payload: dict[str, Any],
+    ) -> None:
+        async with self._lock:
+            project_map = self._pending.setdefault(project, {})
+            project_map[session_key] = payload
+
+    async def get_pending_attachments(
+        self,
+        project: str,
+        session_key: str,
+    ) -> dict[str, Any] | None:
+        async with self._lock:
+            return (self._pending.get(project) or {}).get(session_key)
+
+    async def clear_pending_attachments(self, project: str, session_key: str) -> None:
+        async with self._lock:
+            project_map = self._pending.get(project)
+            if project_map and session_key in project_map:
+                project_map.pop(session_key, None)
+                if not project_map:
+                    self._pending.pop(project, None)
 
 
 class VkRunner:
@@ -1441,26 +1626,45 @@ class VkRunner:
         attachments = answer.get("attachments") or []
         fallback_blocks: list[str] = []
         attachment_handles: list[str] = []
+        confirm_prompt: str | None = None
 
         if attachments:
-            handles, fallbacks = await self._prepare_vk_attachments(
-                attachments,
-                api_client,
-                transfer_client,
-                peer_id,
-            )
-            attachment_handles.extend(handles)
-            fallback_blocks.extend(fallbacks)
+            if session_key:
+                await self._hub.set_pending_attachments(
+                    self.project,
+                    session_key,
+                    {"attachments": attachments},
+                )
+                preview_lines = _format_attachment_preview_lines(attachments)
+                if preview_lines:
+                    preview_block = "\n".join(preview_lines)
+                    confirm_prompt = (
+                        "📎 Нашёл полезные материалы:\n"
+                        f"{preview_block}\n"
+                        "Отправить документы? Ответьте «да» или «нет»."
+                    )
+            else:
+                handles, fallbacks = await self._prepare_vk_attachments(
+                    attachments,
+                    api_client,
+                    transfer_client,
+                    peer_id,
+                )
+                attachment_handles.extend(handles)
+                fallback_blocks.extend(fallbacks)
 
         if fallback_blocks:
             block = "\n\n".join(fallback_blocks)
             response_text = f"{response_text}\n\n{block}" if response_text else block
 
+        if confirm_prompt:
+            response_text = f"{response_text}\n\n{confirm_prompt}" if response_text else confirm_prompt
+
         response_text = self._clip_text(response_text)
         if not response_text and not attachment_handles:
             return
 
-        await self._send_message(api_client, peer_id, response_text, attachment_handles)
+        await self._send_message(api_client, peer_id, response_text or None, attachment_handles)
 
     def _session_key(self, message: dict[str, Any]) -> str | None:
         peer_id = message.get("peer_id")
@@ -1746,6 +1950,7 @@ class VkHub:
         self._runners: dict[str, VkRunner] = {}
         self._sessions: dict[str, dict[str, UUID]] = {}
         self._errors: dict[str, str] = {}
+        self._pending: dict[str, dict[str, dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
 
     @property
@@ -1776,6 +1981,7 @@ class VkHub:
             self._runners.clear()
             self._sessions.clear()
             self._errors.clear()
+            self._pending.clear()
         await asyncio.gather(*(runner.stop() for runner in runners), return_exceptions=True)
 
     async def refresh(self) -> None:
@@ -1844,6 +2050,7 @@ class VkHub:
             self._errors.pop(project_name, None)
             if forget_sessions:
                 self._sessions.pop(project_name, None)
+                self._pending.pop(project_name, None)
         if runner:
             logger.info("vk_runner_stopping", project=project_name)
             await runner.stop()
@@ -1866,6 +2073,32 @@ class VkHub:
             else:
                 runner.token = token
         return runner
+
+    async def set_pending_attachments(
+        self,
+        project: str,
+        session_key: str,
+        payload: dict[str, Any],
+    ) -> None:
+        async with self._lock:
+            project_map = self._pending.setdefault(project, {})
+            project_map[session_key] = payload
+
+    async def get_pending_attachments(
+        self,
+        project: str,
+        session_key: str,
+    ) -> dict[str, Any] | None:
+        async with self._lock:
+            return (self._pending.get(project) or {}).get(session_key)
+
+    async def clear_pending_attachments(self, project: str, session_key: str) -> None:
+        async with self._lock:
+            project_map = self._pending.get(project)
+            if project_map and session_key in project_map:
+                project_map.pop(session_key, None)
+                if not project_map:
+                    self._pending.pop(project, None)
 
 
 async def _get_project_context(

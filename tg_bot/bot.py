@@ -592,59 +592,56 @@ async def text_handler(
             for chunk in chunks:
                 await message.answer(chunk)
 
-        summary_lines: List[str] = [
-            "✅ Ответ получен",
-            f"• символов: {len(answer_text)} (SSE: {meta.get('chars', '—')})",
-            f"• вложений: {len(attachments)}",
-            f"• SSE строк: {meta.get('lines', '—')}",
-            f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
-        ]
-
-        model_name = meta.get('model')
-        if model_name:
-            summary_lines.append(f"• модель: {model_name}")
-
-        last_debug_event: Dict[str, Any] | None = None
         if debug_allowed:
+            summary_lines: List[str] = [
+                "✅ Ответ получен",
+                f"• символов: {len(answer_text)} (SSE: {meta.get('chars', '—')})",
+                f"• вложений: {len(attachments)}",
+                f"• SSE строк: {meta.get('lines', '—')}",
+                f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
+            ]
+
+            model_name = meta.get('model')
+            if model_name:
+                summary_lines.append(f"• модель: {model_name}")
+
+            last_debug_event: Dict[str, Any] | None = None
             debug_events = meta.get('debug')
             if isinstance(debug_events, list) and debug_events:
                 maybe_last = debug_events[-1]
                 if isinstance(maybe_last, dict):
                     last_debug_event = maybe_last
 
-        session_label = meta.get('session_id')
-        if session_label is None and debug_allowed and last_debug_event:
-            session_label = last_debug_event.get('session_id')
-        if session_label:
-            summary_lines.append(f"• сессия: {session_label}")
+            session_label = meta.get('session_id') or (last_debug_event.get('session_id') if last_debug_event else None)
+            if session_label:
+                summary_lines.append(f"• сессия: {session_label}")
 
-        if debug_allowed:
             summary_lines.append("• отладка: включена")
             debug_origin = meta.get('debug_origin') or (last_debug_event.get('debug_origin') if last_debug_event else None)
             if debug_origin:
                 summary_lines.append(f"• источник отладки: {debug_origin}")
 
-        if debug_allowed and last_debug_event:
-            sources = last_debug_event.get('knowledge_sources')
-            knowledge_count = last_debug_event.get('knowledge_count')
-            if isinstance(knowledge_count, int):
-                if isinstance(sources, dict) and sources:
-                    formatted_sources = ", ".join(f"{k}:{v}" for k, v in sources.items())
-                    summary_lines.append(f"• знания: {knowledge_count} ({formatted_sources})")
-                else:
-                    summary_lines.append(f"• знания: {knowledge_count}")
-            debug_origin = last_debug_event.get('debug_origin') or meta.get('debug_origin')
-            if debug_origin:
-                summary_lines.append(f"• отладка: {debug_origin}")
-            error_text = last_debug_event.get('error')
-            if error_text:
-                summary_lines.append(f"• ошибка: {error_text}")
+            if last_debug_event:
+                sources = last_debug_event.get('knowledge_sources')
+                knowledge_count = last_debug_event.get('knowledge_count')
+                if isinstance(knowledge_count, int):
+                    if isinstance(sources, dict) and sources:
+                        formatted_sources = ", ".join(f"{k}:{v}" for k, v in sources.items())
+                        summary_lines.append(f"• знания: {knowledge_count} ({formatted_sources})")
+                    else:
+                        summary_lines.append(f"• знания: {knowledge_count}")
+                debug_origin = last_debug_event.get('debug_origin') or meta.get('debug_origin')
+                if debug_origin:
+                    summary_lines.append(f"• отладка: {debug_origin}")
+                error_text = last_debug_event.get('error')
+                if error_text:
+                    summary_lines.append(f"• ошибка: {error_text}")
 
-        await message.answer(
-            "\n".join(summary_lines)
-            if (answer_text or attachments)
-            else "ℹ️ Бэкенд не вернул текста или вложений"
-        )
+            await message.answer(
+                "\n".join(summary_lines)
+                if (answer_text or attachments)
+                else "ℹ️ Бэкенд не вернул текста или вложений"
+            )
     finally:
         stop_typing.set()
         with suppress(asyncio.CancelledError):
