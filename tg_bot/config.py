@@ -27,7 +27,8 @@ class Settings(BaseSettings):
     def resolve_status_url(self) -> str:
         if self.status_url:
             return str(self.status_url)
-        return f"{self.api_base_url}/status"
+        base = str(self.api_base_url).rstrip('/')
+        return f"{base}/status"
 
 
 @lru_cache(maxsize=1)
