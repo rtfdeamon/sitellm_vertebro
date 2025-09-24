@@ -540,15 +540,15 @@ async def text_handler(
         features = await _get_project_features(project)
         emotions_enabled = features.get("emotions_enabled", True)
         debug_allowed = features.get("debug_enabled", False)
-        request_lines = [
-            "🛰️ Отправляю запрос бэкенду",
-            f"• проект: {project or '—'}",
-            f"• endpoint: {backend_hint}",
-            f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
-        ]
         if debug_allowed:
-            request_lines.append("• отладка: включена")
-        await message.answer("\n".join(request_lines))
+            request_lines = [
+                "🛰️ Отправляю запрос бэкенду",
+                f"• проект: {project or '—'}",
+                f"• endpoint: {backend_hint}",
+                f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
+                "• отладка: включена",
+            ]
+            await message.answer("\n".join(request_lines))
         try:
             response = await rag_answer(
                 message.text or "",

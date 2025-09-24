@@ -1120,9 +1120,9 @@
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
               <input type="checkbox" id="projectDebug">
-              Отладка (SSE события)
+              Отладка (служебные сообщения)
             </label>
-            <span class="muted" id="projectDebugHint">Включите, чтобы получать технические сообщения.</span>
+            <span class="muted" id="projectDebugHint">Включите, чтобы перед ответом в Telegram приходила служебная справка (endpoint, эмоции и т. п.).</span>
           </div>
           <div id="projectAdminSection" style="flex:1 1 100%; display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;">
             <label style="flex:1 1 200px;">Админ логин
@@ -5020,8 +5020,8 @@
     const refreshDebugHint = (enabled) => {
       if (!projectDebugHint) return;
       projectDebugHint.textContent = enabled
-        ? 'Отладка включена: в чат будут уходить дополнительные события.'
-        : 'Отладка отключена.';
+        ? 'Перед каждым ответом бот отправит служебную справку о запросе.'
+        : 'Служебная справка перед ответом отключена.';
     };
 
     if (projectEmotionsInput) {
