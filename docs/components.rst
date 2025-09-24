@@ -29,7 +29,9 @@ Crawler pipeline
 Located in ``crawler/`` and ``backend/crawler_reporting.py``.
 
 * ``run_crawl.py`` – async BFS crawler with PDF/HTML extraction, text
-  cleaning, deduplication and Mongo/GridFS writes.
+  cleaning, queue deduplication and Mongo/GridFS writes.  Before workers
+  start fetching pages the pending queue is normalised to ensure duplicate
+  URLs are removed, keeping the crawl budget focused on unique content.
 * ``tasks.py`` – Celery entry point that runs ``run_crawl`` and, upon
   completion, triggers ``worker.update_vector_store`` to synchronise the
   embeddings.
@@ -64,7 +66,10 @@ User interfaces
 ---------------
 
 * ``admin/`` – operations console with project switcher, crawler controls,
-  knowledge browser, logs, and status cards.
+  knowledge browser, logs, and status cards.  Ships with a 10-language UI
+  selector (English, Español, Deutsch, Français, Italiano, Português,
+  Русский, 中文, 日本語, العربية) so deployments can localise the interface
+  without additional builds.
 * ``widget/`` – embeddable chat widget that streams token responses from
   ``/api/v1/llm/chat``.
 * ``tg_bot/`` – Telegram bot built on Aiogram; started and monitored through
