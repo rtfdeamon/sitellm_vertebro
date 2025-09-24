@@ -16,11 +16,6 @@ from typing import Any, Dict, Optional
 
 from pymongo import MongoClient
 from redis import Redis
-from qdrant_client import QdrantClient
-try:  # Newer qdrant-client
-    from qdrant_client.http.exceptions import UnexpectedResponse
-except Exception:  # pragma: no cover - fallback type
-    UnexpectedResponse = Exception  # type: ignore
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -28,9 +23,6 @@ logger = structlog.get_logger(__name__)
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 MONGO_DB = os.getenv("MONGO_DB") or os.getenv("MONGO_DATABASE", "app")
-QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", "6333"))
-QDRANT_COLL = os.getenv("QDRANT_COLLECTION", "documents")
 TARGET_DOCS = int(os.getenv("TARGET_DOCS", "1000"))
 
 def _redis_key(name: str, project: str | None = None) -> str:
@@ -165,34 +157,8 @@ def get_status(domain: str | None = None) -> Status:
         mongo_docs = 0
         last_crawl_ts = None
 
-    # Qdrant
+    # Qdrant stats are not collected because the collection is managed externally
     points = 0
-    try:
-        qc = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=0.3)
-        info = qc.get_collection(QDRANT_COLL)
-        points = getattr(info, "vectors_count", 0) or 0
-    except UnexpectedResponse as exc:
-        # 404 Not Found — коллекция ещё не создана: не шумим в логах
-        if "Not found" in str(exc) or "404" in str(exc):
-            points = 0
-        else:  # реальные ошибки продолжаем логировать
-            logger.warning(
-                "qdrant connection failed",
-                host=QDRANT_HOST,
-                port=QDRANT_PORT,
-                collection=QDRANT_COLL,
-                error=str(exc),
-            )
-            points = 0
-    except Exception as exc:
-        logger.warning(
-            "qdrant connection failed",
-            host=QDRANT_HOST,
-            port=QDRANT_PORT,
-            collection=QDRANT_COLL,
-            error=str(exc),
-        )
-        points = 0
 
     total_now = max(mongo_docs, points)
     target = max(TARGET_DOCS, 1)

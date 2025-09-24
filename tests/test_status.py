@@ -43,26 +43,12 @@ class MongoStub:
         return DB()
 
 
-class QdrantStub:
-    def __init__(self, *a, **k):
-        pass
-
-    def get_collection(self, coll):
-        class Info:
-            vectors_count = 0
-
-        return Info()
-
-
-@pytest.mark.parametrize("service", ["redis", "mongo", "qdrant"])
+@pytest.mark.parametrize("service", ["redis", "mongo"])
 def test_status_logs_when_service_unavailable(monkeypatch, service):
     monkeypatch.setenv("REDIS_HOST", "redis-test")
     monkeypatch.setenv("REDIS_PORT", "1234")
     monkeypatch.setenv("MONGO_URI", "mongodb://mongotest:27017")
     monkeypatch.setenv("MONGO_DB", "dbtest")
-    monkeypatch.setenv("QDRANT_HOST", "qdranttest")
-    monkeypatch.setenv("QDRANT_PORT", "4321")
-    monkeypatch.setenv("QDRANT_COLLECTION", "colltest")
 
     fake_pymongo = types.ModuleType("pymongo")
     fake_pymongo.MongoClient = object
@@ -71,10 +57,6 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
     fake_redis_mod = types.ModuleType("redis")
     fake_redis_mod.Redis = object
     sys.modules["redis"] = fake_redis_mod
-
-    fake_qdrant_mod = types.ModuleType("qdrant_client")
-    fake_qdrant_mod.QdrantClient = object
-    sys.modules["qdrant_client"] = fake_qdrant_mod
 
     import core.status as status
     importlib.reload(status)
@@ -89,7 +71,6 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
 
         monkeypatch.setattr(status, "Redis", FailRedis)
         monkeypatch.setattr(status, "MongoClient", MongoStub)
-        monkeypatch.setattr(status, "QdrantClient", QdrantStub)
     elif service == "mongo":
         monkeypatch.setattr(status, "Redis", RedisStub)
         class FailMongo:
@@ -97,15 +78,6 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
                 raise RuntimeError("mongo down")
 
         monkeypatch.setattr(status, "MongoClient", FailMongo)
-        monkeypatch.setattr(status, "QdrantClient", QdrantStub)
-    else:  # qdrant
-        monkeypatch.setattr(status, "Redis", RedisStub)
-        monkeypatch.setattr(status, "MongoClient", MongoStub)
-        class FailQdrant:
-            def __init__(self, *a, **k):
-                raise RuntimeError("qdrant down")
-
-        monkeypatch.setattr(status, "QdrantClient", FailQdrant)
 
     result = status.status_dict()
 
@@ -127,12 +99,6 @@ def test_status_logs_when_service_unavailable(monkeypatch, service):
     elif service == "mongo":
         kwargs = find_warning("uri", "mongodb://mongotest:27017")
         assert kwargs.get("db") == "dbtest"
-    else:
-        kwargs = find_warning("host", "qdranttest")
-        assert kwargs.get("port") == 4321
-        assert kwargs.get("collection") == "colltest"
-
-
 def test_status_contains_last_crawl(monkeypatch):
     fake_pymongo = types.ModuleType("pymongo")
     fake_pymongo.MongoClient = object
@@ -142,15 +108,10 @@ def test_status_contains_last_crawl(monkeypatch):
     fake_redis_mod.Redis = object
     sys.modules["redis"] = fake_redis_mod
 
-    fake_qdrant_mod = types.ModuleType("qdrant_client")
-    fake_qdrant_mod.QdrantClient = object
-    sys.modules["qdrant_client"] = fake_qdrant_mod
-
     import core.status as status
     importlib.reload(status)
 
     monkeypatch.setattr(status, "Redis", RedisStub)
-    monkeypatch.setattr(status, "QdrantClient", QdrantStub)
 
     class MongoWithDoc:
         def __init__(self, *a, **k):
