@@ -139,11 +139,13 @@ def test_status_handler():
             calls["url"] = (url, kwargs)
             return FakeResp()
 
-    fake_httpx.AsyncClient = lambda timeout=None: FakeClient()
+    fake_httpx.AsyncClient = lambda timeout=None, verify=True: FakeClient()
     bot_mod.get_settings = lambda: types.SimpleNamespace(
         api_base_url="http://api",
         backend_url="http://api",
         request_timeout=1,
+        backend_verify_ssl=True,
+        backend_ca_path=None,
         resolve_status_url=lambda: "http://api/status",
     )
     msg = FakeMessage("/status")

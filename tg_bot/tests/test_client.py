@@ -26,7 +26,7 @@ sys.modules["httpx"] = fake_httpx
 
 fake_config = types.ModuleType("tg_bot.config")
 fake_config.get_settings = lambda: types.SimpleNamespace(
-    backend_url="http://backend", request_timeout=10
+    backend_url="http://backend", request_timeout=10, backend_verify_ssl=True, backend_ca_path=None
 )
 sys.modules["tg_bot.config"] = fake_config
 
@@ -82,7 +82,7 @@ class FakeClient:
 def test_rag_answer_success(monkeypatch):
     """Successful request should concatenate SSE data."""
     stream = FakeStream(["data: foo", "data: bar"])
-    fake_httpx.AsyncClient = lambda timeout: FakeClient([stream])
+    fake_httpx.AsyncClient = lambda timeout, verify=True: FakeClient([stream])
     importlib.reload(client)
 
     result = asyncio.run(client.rag_answer("hi"))
@@ -94,7 +94,7 @@ def test_rag_answer_success(monkeypatch):
 def test_rag_answer_safety(monkeypatch):
     """safety_check triggers ValueError."""
     stream = FakeStream(["data: bad"])
-    fake_httpx.AsyncClient = lambda timeout: FakeClient([stream])
+    fake_httpx.AsyncClient = lambda timeout, verify=True: FakeClient([stream])
     fake_safety.safety_check = lambda text: True
     importlib.reload(client)
 
@@ -106,7 +106,7 @@ def test_rag_answer_debug_parameter(monkeypatch):
     """Explicit debug flag must be forwarded as query parameter."""
     stream = FakeStream(["data: ok"])
     store = FakeClient([stream])
-    fake_httpx.AsyncClient = lambda timeout: store
+    fake_httpx.AsyncClient = lambda timeout, verify=True: store
     fake_safety.safety_check = lambda text: False
     importlib.reload(client)
 
@@ -123,7 +123,7 @@ def test_rag_answer_json_payload(monkeypatch):
         'data: {"text": " Hel", "role": "assistant"}',
         'data: {"text": "lo", "meta": {"model": "demo"}}',
     ])
-    fake_httpx.AsyncClient = lambda timeout: FakeClient([stream])
+    fake_httpx.AsyncClient = lambda timeout, verify=True: FakeClient([stream])
     fake_safety.safety_check = lambda text: False
     importlib.reload(client)
 

@@ -715,7 +715,15 @@ async def status_handler(
     """Return crawler and DB status from the API."""
     settings = get_settings()
     try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+        if settings.backend_verify_ssl:
+            if getattr(settings, "backend_ca_path", None):
+                verify_option: Any = str(settings.backend_ca_path)
+            else:
+                verify_option = True
+        else:
+            verify_option = False
+
+        async with httpx.AsyncClient(timeout=settings.request_timeout, verify=verify_option) as client:
             resp = await client.get(settings.resolve_status_url(), params={"project": project})
         resp.raise_for_status()
         data = resp.json()
