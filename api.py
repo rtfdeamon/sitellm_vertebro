@@ -1114,6 +1114,7 @@ async def crawler_status(project: str | None = None) -> dict[str, object]:
             "in_progress": crawler.get("in_progress", 0),
             "done": crawler.get("done", 0),
             "failed": crawler.get("failed", 0),
+            "remaining": crawler.get("remaining", max(0, crawler.get("queued", 0) + crawler.get("in_progress", 0))),
             "recent_urls": crawler.get("recent_urls") or [],
             "last_url": crawler.get("last_url"),
         }
@@ -1126,6 +1127,7 @@ async def crawler_status(project: str | None = None) -> dict[str, object]:
         in_progress=data.get("in_progress"),
         done=data.get("done"),
         failed=data.get("failed"),
+        remaining=data.get("remaining"),
         last_url=data.get("last_url"),
         notes=data.get("notes"),
     )

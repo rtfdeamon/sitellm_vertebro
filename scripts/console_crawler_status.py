@@ -12,6 +12,7 @@ def render(rows):
     t = Table(title="Crawler status", box=box.SIMPLE_HEAVY)
     t.add_column("Job")
     t.add_column("Queued")
+    t.add_column("Remaining")
     t.add_column("Fetched")
     t.add_column("Parsed")
     t.add_column("Indexed")
@@ -22,6 +23,7 @@ def render(rows):
         t.add_row(
             key.split(":")[-1],
             str(d.get("queued", 0)),
+            str(d.get("remaining", int(d.get("queued", 0)) + int(d.get("in_progress", 0)))),
             str(d.get("fetched", 0)),
             str(d.get("parsed", 0)),
             str(d.get("indexed", 0)),

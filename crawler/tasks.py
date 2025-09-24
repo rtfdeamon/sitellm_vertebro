@@ -32,9 +32,13 @@ def start_crawl(
     progress = CrawlerProgress(job_id=job_id, project=project)
     reporter.update(progress)
 
-    def on_progress(page_url: str) -> None:
+    def on_progress(page_url: str, counters: dict[str, int] | None = None) -> None:
         progress.fetched += 1
         progress.last_url = page_url
+        if counters:
+            progress.queued = counters.get("queued", progress.queued)
+            progress.errors = counters.get("failed", progress.errors)
+            progress.remaining = counters.get("remaining", progress.queued)
         reporter.update(progress)
 
     run(
@@ -55,5 +59,6 @@ def start_crawl(
         logger.warning("vector_store_refresh_failed", error=str(exc))
 
     progress.done = True
+    progress.remaining = 0
     reporter.update(progress)
     return job_id

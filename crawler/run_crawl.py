@@ -134,6 +134,32 @@ def _delete(key: str, project: str | None = None):
         pass
 
 
+def get_crawler_counters(project: str | None = None) -> dict[str, int]:
+    """Return current crawler queue counters for the given project."""
+
+    def _safe_int(value: Any) -> int:
+        try:
+            return int(value or 0)
+        except Exception:
+            return 0
+
+    try:
+        queued = _safe_int(r.get(_redis_key("queued", project)))
+        in_progress = _safe_int(r.get(_redis_key("in_progress", project)))
+        done = _safe_int(r.get(_redis_key("done", project)))
+        failed = _safe_int(r.get(_redis_key("failed", project)))
+    except Exception:
+        queued = in_progress = done = failed = 0
+    remaining = max(queued + in_progress, 0)
+    return {
+        "queued": queued,
+        "in_progress": in_progress,
+        "done": done,
+        "failed": failed,
+        "remaining": remaining,
+    }
+
+
 def set_crawler_note(message: str | None, project: str | None = None) -> None:
     note = (message or "").strip()
     if note:
@@ -1361,7 +1387,7 @@ def run(
     max_depth: int = DEFAULT_MAX_DEPTH,
     domain: str | None = None,
     mongo_uri: str = DEFAULT_MONGO_URI,
-    progress_callback: Callable[[str], None] | None = None,
+    progress_callback: Callable[[str, dict[str, int]], None] | None = None,
     project_name: str | None = None,
     ignore_robots: bool | None = None,
 ) -> None:
@@ -1372,6 +1398,10 @@ def run(
     project_name:
         Logical project identifier used to label stored documents. Falls back
         to the allowed domain when not provided.
+    progress_callback:
+        Optional callable invoked for every processed URL with the URL itself
+        and the current Redis counters (queued, in_progress, done, failed,
+        remaining).
     """
 
     parsed = urlparse.urlsplit(start_url)
@@ -1513,7 +1543,7 @@ def run(
                     if not text and not is_binary and not image_links:
                         logger.info("empty_page", url=page_url)
                         if progress_callback:
-                            progress_callback(page_url)
+                            progress_callback(page_url, get_crawler_counters(document_project))
                         continue
 
                     if is_binary:
@@ -1678,7 +1708,7 @@ def run(
                         )
 
                     if progress_callback:
-                        progress_callback(page_url)
+                        progress_callback(page_url, get_crawler_counters(document_project))
 
                     if len(operations) >= BATCH_SIZE:
                         try:

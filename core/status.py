@@ -49,6 +49,7 @@ class CrawlerStats:
     last_url: Optional[str] = None
     started_at: Optional[float] = None
     recent_urls: Optional[list[str]] = None
+    remaining: int = 0
 
 
 @dataclass
@@ -203,10 +204,21 @@ def get_status(domain: str | None = None) -> Status:
         datetime.utcfromtimestamp(last_crawl_ts).isoformat() if last_crawl_ts else None
     )
 
+    remaining = max(q + p, 0)
+
     return Status(
         ok=ok,
         ts=time.time(),
-        crawler=CrawlerStats(q, p, d, f, last_url, started_at if started_at > 0 else None, recent_urls),
+        crawler=CrawlerStats(
+            queued=q,
+            in_progress=p,
+            done=d,
+            failed=f,
+            last_url=last_url,
+            started_at=started_at if started_at > 0 else None,
+            recent_urls=recent_urls,
+            remaining=remaining,
+        ),
         db=DbStats(mongo_docs, points, target, fill_percent),
         last_crawl_ts=last_crawl_ts,
         last_crawl_iso=last_crawl_iso,

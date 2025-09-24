@@ -115,10 +115,12 @@ def test_status_handler():
                 "crawler": {
                     "main": {
                         "queued": 1,
+                        "in_progress": 2,
                         "fetched": 2,
                         "parsed": 3,
                         "indexed": 4,
                         "errors": 0,
+                        "remaining": 3,
                     }
                 },
             }
@@ -152,7 +154,7 @@ def test_status_handler():
         "• users: 1\n"
         "• qdrant_points: 2\n\n"
         "<b>Crawler</b>\n"
-        "• main: queued=1 fetched=2 parsed=3 indexed=4 errors=0"
+        "• main: queued=1 left=3 fetched=2 parsed=3 indexed=4 errors=0"
     )
     assert msg.sent == [expected]
 

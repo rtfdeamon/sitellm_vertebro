@@ -726,10 +726,51 @@ async def status_handler(
             text.append(f"• {k}: {v}")
         text.append(f"• qdrant_points: {qpts}")
         text.append("\n<b>Crawler</b>")
-        for k, v in data.get("crawler", {}).items():
+        crawler_data = data.get("crawler") or {}
+        if crawler_data and all(isinstance(v, dict) for v in crawler_data.values()):
+            items = crawler_data.items()
+        else:
+            items = []
+            if crawler_data:
+                items.append((project or "main", crawler_data))
+            elif any(key in data for key in ("queued", "in_progress", "done", "failed")):
+                items.append(
+                    (
+                        project or "main",
+                        {
+                            "queued": data.get("queued", 0),
+                            "in_progress": data.get("in_progress", 0),
+                            "parsed": data.get("parsed", 0),
+                            "indexed": data.get("indexed", 0),
+                            "errors": data.get("failed", 0),
+                            "remaining": data.get("remaining"),
+                        },
+                    )
+                )
+        if not items:
+            items = [(project or "main", {})]
+        for name, counters in items:
+            if not isinstance(counters, dict):
+                continue
+            queued = counters.get("queued", 0)
+            fetched = counters.get("fetched", data.get("done", 0))
+            parsed = counters.get("parsed", 0)
+            indexed = counters.get("indexed", 0)
+            errors = counters.get("errors", counters.get("failed", 0))
+            remaining = counters.get("remaining")
+            if remaining is None:
+                remaining = queued + counters.get("in_progress", data.get("in_progress", 0))
             text.append(
-                f"• {k}: queued={v.get('queued',0)} fetched={v.get('fetched',0)} "
-                f"parsed={v.get('parsed',0)} indexed={v.get('indexed',0)} errors={v.get('errors',0)}"
+                "• {name}: queued={queued} left={remaining} "
+                "fetched={fetched} parsed={parsed} indexed={indexed} errors={errors}".format(
+                    name=name,
+                    queued=queued,
+                    remaining=max(int(remaining), 0),
+                    fetched=fetched,
+                    parsed=parsed,
+                    indexed=indexed,
+                    errors=errors,
+                )
             )
         await message.answer("\n".join(text), parse_mode="HTML")
     except Exception as e:

@@ -37,6 +37,7 @@ class CrawlerProgress:
     last_url: Optional[str] = None
     done: bool = False
     project: Optional[str] = None
+    remaining: int = 0
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert progress to a plain dict for JSON/Redis."""
