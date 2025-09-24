@@ -1285,6 +1285,38 @@ async def crawl(
 
         user_agent = HEADERS.get("User-Agent", "*")
 
+        def prune_pending_queue() -> int:
+            """Deduplicate the pending URL queue before workers start."""
+
+            if url_queue.empty():
+                enqueued.clear()
+                return 0
+
+            unique_items: list[tuple[str, int]] = []
+            seen_urls: set[str] = set()
+            removed = 0
+
+            while True:
+                try:
+                    url, depth = url_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                url_queue.task_done()
+                if url in seen_urls:
+                    removed += 1
+                    _incr("queued", -1, project_label)
+                    continue
+                seen_urls.add(url)
+                unique_items.append((url, depth))
+
+            enqueued.clear()
+
+            for url, depth in unique_items:
+                enqueued.add(url)
+                url_queue.put_nowait((url, depth))
+
+            return removed
+
         async def enqueue_url(raw: str, depth: int, *, force: bool = False) -> None:
             normalized = normalize_url(
                 raw,
@@ -1314,6 +1346,15 @@ async def crawl(
         await enqueue_url(normalized_seed_final, 0, force=True)
         for extra_url in sitemap_seed_urls:
             await enqueue_url(extra_url, 1)
+
+        removed_initial_duplicates = prune_pending_queue()
+        if removed_initial_duplicates:
+            logger.info(
+                "crawl_queue_deduplicated",
+                removed=removed_initial_duplicates,
+                stage="initial_seed",
+                project=project_label,
+            )
 
         async def _worker(client: httpx.AsyncClient) -> None:
             while True:

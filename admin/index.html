@@ -82,6 +82,22 @@
       background: rgba(96, 165, 250, 0.2);
       color: #f8fafc;
     }
+    .page-header-actions select {
+      background: rgba(17, 24, 39, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 999px;
+      color: var(--text-primary);
+      padding: 8px 14px;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      min-width: 140px;
+      cursor: pointer;
+    }
+    .page-header-actions select:focus {
+      outline: none;
+      border-color: rgba(96, 165, 250, 0.65);
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+    }
 
     h1 {
       margin: 0;
@@ -942,13 +958,14 @@
   <div class="page-shell">
     <div class="page-header">
       <div>
-        <span class="pill">Operations</span>
-        <h1>Crawler Control Panel</h1>
-        <p class="page-subtitle">Управление краулингом, базой знаний и окружением в едином окне</p>
+        <span class="pill" data-i18n="pillOperations">Operations</span>
+        <h1 data-i18n="headerTitle">Crawler Control Panel</h1>
+        <p class="page-subtitle" data-i18n="headerSubtitle">Управление краулингом, базой знаний и окружением в едином окне</p>
       </div>
       <div class="page-header-actions">
-        <button type="button" id="toggleLayoutOrdering">Упорядочить блоки</button>
-        <button type="button" id="adminLogout">Выйти</button>
+        <select id="adminLanguage" aria-label="Language" data-i18n-aria-label="languageLabel"></select>
+        <button type="button" id="toggleLayoutOrdering" data-i18n="buttonReorder">Упорядочить блоки</button>
+        <button type="button" id="adminLogout" data-i18n="buttonLogout">Выйти</button>
       </div>
     </div>
 
@@ -988,11 +1005,11 @@
   <div class="dashboard-grid">
     <section id="block-projects" class="dashboard-stack span-3" data-block-id="projects" data-block-group="overview">
       <div class="card project-switch-card">
-        <b>Projects</b>
+        <b data-i18n="cardProjectsTitle">Projects</b>
         <select id="projectSelect" size="6"></select>
         <div class="project-switch-actions">
-          <button type="button" id="projectAdd">Добавить проект</button>
-          <button type="button" id="projectRefresh">Обновить список</button>
+          <button type="button" id="projectAdd" data-i18n="buttonAddProject">Добавить проект</button>
+          <button type="button" id="projectRefresh" data-i18n="buttonRefreshProjects">Обновить список</button>
         </div>
         <span class="muted" id="projectStatus"></span>
         <datalist id="llmModelOptions"></datalist>
@@ -1001,46 +1018,46 @@
 
     <section id="block-status" class="dashboard-stack span-9 status-tiles" data-block-id="status" data-block-group="overview">
       <div class="card status-card">
-        <b>Статус краулера</b>
-        <div>Queued: <span id="queued">0</span></div>
-        <div>In progress: <span id="in_progress">0</span></div>
-        <div>Done: <span id="done">0</span></div>
-        <div>Failed: <span id="failed">0</span></div>
-        <div class="muted" id="last_crawl">Last: –</div>
-        <div class="muted">Project: <span id="crawlerProject">—</span></div>
+        <b data-i18n="crawlerStatusTitle">Статус краулера</b>
+        <div data-i18n-wrapper="crawlerQueued">Queued: <span data-i18n-value id="queued">0</span></div>
+        <div data-i18n-wrapper="crawlerInProgress">In progress: <span data-i18n-value id="in_progress">0</span></div>
+        <div data-i18n-wrapper="crawlerDone">Done: <span data-i18n-value id="done">0</span></div>
+        <div data-i18n-wrapper="crawlerFailed">Failed: <span data-i18n-value id="failed">0</span></div>
+        <div class="muted" data-i18n-wrapper="crawlerLast" id="last_crawl">Last: <span data-i18n-value>–</span></div>
+        <div class="muted" data-i18n-wrapper="crawlerProjectLabel">Project: <span data-i18n-value id="crawlerProject">—</span></div>
         <div>
           <details>
-            <summary>Последние URL</summary>
+            <summary data-i18n="crawlerLastUrls">Последние URL</summary>
             <ol id="recent_urls" style="margin-top:6px;"></ol>
           </details>
         </div>
       </div>
       <div class="card status-card">
-        <b>Сервисы</b>
-        <div>Mongo: <span id="mongo" class="bad">down</span></div>
-        <div>Redis: <span id="redis" class="bad">down</span></div>
-        <div>Qdrant: <span id="qdrant" class="bad">down</span></div>
-        <div>Status: <span id="overall">degraded</span></div>
+        <b data-i18n="servicesTitle">Сервисы</b>
+        <div data-i18n-wrapper="serviceMongo">Mongo: <span id="mongo" class="bad" data-i18n-value>down</span></div>
+        <div data-i18n-wrapper="serviceRedis">Redis: <span id="redis" class="bad" data-i18n-value>down</span></div>
+        <div data-i18n-wrapper="serviceQdrant">Qdrant: <span id="qdrant" class="bad" data-i18n-value>down</span></div>
+        <div data-i18n-wrapper="serviceOverall">Status: <span id="overall" data-i18n-value>degraded</span></div>
       </div>
       <div class="card status-card">
-        <b>Ресурсы</b>
-        <div>CPU (app): <span id="cpu">–</span></div>
-        <div>CPU (sys): <span id="cpuSys">–</span></div>
-        <div>RAM: <span id="ram">–</span></div>
-        <div>RSS: <span id="rss">–</span></div>
-        <div style="white-space:pre-line;">GPU: <span id="gpu">–</span></div>
-        <div>Python: <span id="pyver">–</span></div>
+        <b data-i18n="resourcesTitle">Ресурсы</b>
+        <div data-i18n-wrapper="resourceCpuApp">CPU (app): <span id="cpu" data-i18n-value>–</span></div>
+        <div data-i18n-wrapper="resourceCpuSys">CPU (sys): <span id="cpuSys" data-i18n-value>–</span></div>
+        <div data-i18n-wrapper="resourceRam">RAM: <span id="ram" data-i18n-value>–</span></div>
+        <div data-i18n-wrapper="resourceRss">RSS: <span id="rss" data-i18n-value>–</span></div>
+        <div style="white-space:pre-line;" data-i18n-wrapper="resourceGpu">GPU: <span id="gpu" data-i18n-value>–</span></div>
+        <div data-i18n-wrapper="resourcePython">Python: <span id="pyver" data-i18n-value>–</span></div>
       </div>
     </section>
 
-    <h2 class="section-title span-all">Управление</h2>
+    <h2 class="section-title span-all" data-i18n="manageSection">Управление</h2>
 
     <section id="block-crawler" class="dashboard-stack span-4" data-block-id="crawler" data-block-group="manage">
       <div class="card control-card">
         <div class="crawler-header">
-          <b>Запуск краулера</b>
+          <b data-i18n="crawlerLaunchTitle">Запуск краулера</b>
           <div class="crawler-logs-buttons">
-            <button type="button" id="crawlerLogsBtn" class="icon-button" title="Показать логи">?</button>
+            <button type="button" id="crawlerLogsBtn" class="icon-button" title="Показать логи" data-i18n-title="crawlerLogsTooltip">?</button>
           </div>
         </div>
         <div class="crawler-progress" id="crawlerProgress">
@@ -1054,34 +1071,34 @@
           <div class="crawler-progress-note" id="crawlerProgressNote"></div>
         </div>
         <form id="crawler-form" style="margin-top:4px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
-          <label style="flex:1 1 200px;">Start URL
+          <label style="flex:1 1 200px;" data-i18n="crawlerStartUrl">Start URL
             <input type="url" id="url" placeholder="https://example.com" required style="width:100%;">
           </label>
-          <label>Depth
+          <label data-i18n="crawlerDepth">Depth
             <input type="number" id="depth" min="1" value="2" style="width:80px;">
           </label>
-          <label>Pages
+          <label data-i18n="crawlerPages">Pages
             <input type="number" id="pages" min="1" value="100" style="width:80px;">
           </label>
-          <button type="submit">Запустить</button>
-          <button type="button" id="stopBtn">Остановить</button>
+          <button type="submit" data-i18n="crawlerStartButton">Запустить</button>
+          <button type="button" id="stopBtn" data-i18n="crawlerStopButton">Остановить</button>
           <span id="launchMsg" class="muted"></span>
         </form>
         <div class="crawler-actions">
-          <button type="button" id="crawlerResetBtn">Сбросить счётчики</button>
-          <button type="button" id="crawlerDedupBtn">Убрать дубликаты URL</button>
+          <button type="button" id="crawlerResetBtn" data-i18n="crawlerResetButton">Сбросить счётчики</button>
+          <button type="button" id="crawlerDedupBtn" data-i18n="crawlerDedupButton">Убрать дубликаты URL</button>
           <span class="muted" id="crawlerActionStatus"></span>
         </div>
         <div class="crawler-logs" id="crawlerLogsPanel">
           <div class="crawler-logs-header">
-            <span>Логи краулера</span>
+            <span data-i18n="crawlerLogsHeader">Crawler logs</span>
             <div class="crawler-logs-buttons">
-              <button type="button" id="crawlerLogsCopy" class="icon-button" title="Скопировать">⧉</button>
-              <button type="button" id="crawlerLogsRefresh" class="icon-button" title="Обновить">↻</button>
-              <button type="button" id="crawlerLogsClose" class="icon-button" title="Скрыть">×</button>
+              <button type="button" id="crawlerLogsCopy" class="icon-button" title="Скопировать" data-i18n-title="crawlerLogsCopy">⧉</button>
+              <button type="button" id="crawlerLogsRefresh" class="icon-button" title="Обновить" data-i18n-title="crawlerLogsRefresh">↻</button>
+              <button type="button" id="crawlerLogsClose" class="icon-button" title="Скрыть" data-i18n-title="crawlerLogsHide">×</button>
             </div>
           </div>
-          <pre id="crawlerLogsOutput" class="crawler-logs-output">Логи будут загружены по запросу.</pre>
+          <pre id="crawlerLogsOutput" class="crawler-logs-output" data-i18n="crawlerLogsEmpty">Логи будут загружены по запросу.</pre>
         </div>
       </div>
     </section>
@@ -1522,6 +1539,7 @@
   </div>
 
   <script>
+    const languageSelect = document.getElementById('adminLanguage');
     const form = document.getElementById('crawler-form');
     const stopBtn = document.getElementById('stopBtn');
     const crawlerProgressFill = document.getElementById('crawlerProgressFill');
@@ -1581,6 +1599,948 @@
     const statsSubtitle = document.getElementById('statsSubtitle');
     const statsRefreshBtn = document.getElementById('statsRefresh');
     const statsExportBtn = document.getElementById('statsExport');
+
+    const LANGUAGE_STORAGE_KEY = 'admin_language';
+    const FALLBACK_LANGUAGE = 'en';
+
+    const BASE_STRINGS = {
+      pillOperations: 'Operations',
+      headerTitle: 'Crawler Control Panel',
+      headerSubtitle: 'Manage crawling, knowledge base, and infrastructure in one dashboard',
+      buttonReorder: 'Reorder blocks',
+      buttonReorderDone: 'Done',
+      buttonLogout: 'Log out',
+      languageLabel: 'Language',
+      overviewProjectTitle: 'Project',
+      overviewProjectMeta: 'No project selected',
+      overviewCrawlerTitle: 'Crawler',
+      overviewResourcesTitle: 'Resources',
+      overviewLLMTitle: 'LLM insights',
+      overviewLLMEmpty: 'Recent prompts will appear here',
+      overviewBuildTitle: 'Build',
+      cardProjectsTitle: 'Projects',
+      buttonAddProject: 'Add project',
+      buttonRefreshProjects: 'Refresh list',
+      crawlerStatusTitle: 'Crawler status',
+      crawlerQueued: 'Queued: {value}',
+      crawlerInProgress: 'In progress: {value}',
+      crawlerDone: 'Done: {value}',
+      crawlerFailed: 'Failed: {value}',
+      crawlerLast: 'Last: {value}',
+      crawlerProjectLabel: 'Project: {value}',
+      crawlerLastUrls: 'Recent URLs',
+      servicesTitle: 'Services',
+      serviceMongo: 'Mongo: {value}',
+      serviceRedis: 'Redis: {value}',
+      serviceQdrant: 'Qdrant: {value}',
+      serviceOverall: 'Status: {value}',
+      resourcesTitle: 'Resources',
+      resourceCpuApp: 'CPU (app): {value}',
+      resourceCpuSys: 'CPU (sys): {value}',
+      resourceRam: 'RAM: {value}',
+      resourceRss: 'RSS: {value}',
+      resourceGpu: 'GPU: {value}',
+      resourcePython: 'Python: {value}',
+      manageSection: 'Management',
+      crawlerLaunchTitle: 'Crawler launch',
+      crawlerLogsTooltip: 'Show logs',
+      crawlerLogsHeader: 'Crawler logs',
+      crawlerLogsCopy: 'Copy',
+      crawlerLogsRefresh: 'Refresh',
+      crawlerLogsHide: 'Hide',
+      crawlerLogsEmpty: 'Logs will be fetched on demand.',
+      crawlerSelectProject: 'Select a project',
+      crawlerLaunched: 'Started',
+      crawlerLaunchFailed: 'Failed to start',
+      crawlerStartError: 'Crawler start error',
+      crawlerStopping: 'Stopping…',
+      crawlerStopFailed: 'Failed to stop',
+      crawlerStopError: 'Crawler stop error',
+      crawlerActionReset: 'Counters reset',
+      crawlerActionDedup: 'Duplicates removed',
+      crawlerActionNoData: 'Nothing to copy',
+      crawlerActionProcessing: 'Working…',
+      crawlerActionExecuteError: 'Failed to execute action',
+      crawlerStartButton: 'Start',
+      crawlerStopButton: 'Stop',
+      crawlerResetButton: 'Reset counters',
+      crawlerDedupButton: 'Remove duplicate URLs',
+      crawlerStartUrl: 'Start URL',
+      crawlerDepth: 'Depth',
+      crawlerPages: 'Pages',
+      promptAiStart: 'Generating…',
+      promptAiReady: 'Prompt ready',
+      promptAiStopped: 'Stopped',
+      promptAiError: 'Error: {message}',
+      promptAiInvalidDomain: 'Specify a valid domain or URL',
+      promptAiEmpty: 'Model returned empty result',
+      genericFailed: 'failed',
+      logoutProgress: 'Signing out…',
+      logCopyEmpty: 'Nothing to copy',
+      logCopySuccess: 'Logs copied',
+      logCopyError: 'Failed to copy',
+      knowledgeServiceUnavailable: 'Service unavailable for your access level',
+      knowledgeServiceLoading: 'Loading…',
+      knowledgeServiceNoData: 'No data',
+      knowledgeServiceUpgrade: 'Service unavailable (update backend)',
+      knowledgeServiceFetchError: 'Failed to fetch status',
+      knowledgeServiceSaving: 'Saving…',
+      knowledgeServiceSaved: 'Saved',
+      knowledgeServiceSaveError: 'Save failed'
+    };
+
+    function createLanguage(name, dir, overrides = {}) {
+      return { name, dir, strings: { ...BASE_STRINGS, ...overrides } };
+    }
+
+    const LANGUAGES = {
+      en: createLanguage('English', 'ltr'),
+      es: createLanguage('Español', 'ltr', {
+        pillOperations: 'Operaciones',
+        headerTitle: 'Panel de control del rastreador',
+        headerSubtitle: 'Gestiona el rastreo, la base de conocimiento y la infraestructura desde un solo panel',
+        buttonReorder: 'Reordenar bloques',
+        buttonReorderDone: 'Listo',
+        buttonLogout: 'Cerrar sesión',
+        languageLabel: 'Idioma',
+        overviewProjectTitle: 'Proyecto',
+        overviewProjectMeta: 'Sin proyecto seleccionado',
+        overviewCrawlerTitle: 'Rastreo',
+        overviewResourcesTitle: 'Recursos',
+        overviewLLMTitle: 'Información del LLM',
+        overviewLLMEmpty: 'Los prompts recientes aparecerán aquí',
+        overviewBuildTitle: 'Versión',
+        cardProjectsTitle: 'Proyectos',
+        buttonAddProject: 'Añadir proyecto',
+        buttonRefreshProjects: 'Actualizar lista',
+        crawlerStatusTitle: 'Estado del rastreador',
+        crawlerQueued: 'En cola: {value}',
+        crawlerInProgress: 'En progreso: {value}',
+        crawlerDone: 'Completadas: {value}',
+        crawlerFailed: 'Fallidas: {value}',
+        crawlerLast: 'Último: {value}',
+        crawlerProjectLabel: 'Proyecto: {value}',
+        crawlerLastUrls: 'Últimas URL',
+        servicesTitle: 'Servicios',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'Estado: {value}',
+        resourcesTitle: 'Recursos',
+        resourceCpuApp: 'CPU (app): {value}',
+        resourceCpuSys: 'CPU (sistema): {value}',
+        resourceRam: 'RAM: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: 'Gestión',
+        crawlerLaunchTitle: 'Inicio del rastreador',
+        crawlerLogsTooltip: 'Mostrar registros',
+        crawlerLogsHeader: 'Registros del rastreador',
+        crawlerLogsCopy: 'Copiar',
+        crawlerLogsRefresh: 'Actualizar',
+        crawlerLogsHide: 'Ocultar',
+        crawlerLogsEmpty: 'Los registros se cargarán bajo demanda.',
+        crawlerSelectProject: 'Selecciona un proyecto',
+        crawlerLaunched: 'Iniciado',
+        crawlerLaunchFailed: 'No se pudo iniciar',
+        crawlerStartError: 'Error al iniciar el rastreador',
+        crawlerStopping: 'Deteniendo…',
+        crawlerStopFailed: 'No se pudo detener',
+        crawlerStopError: 'Error al detener el rastreador',
+        crawlerActionReset: 'Contadores reiniciados',
+        crawlerActionDedup: 'Duplicados eliminados',
+        crawlerActionNoData: 'Nada que copiar',
+        crawlerActionProcessing: 'Trabajando…',
+        crawlerActionExecuteError: 'Error al ejecutar la acción',
+        crawlerStartButton: 'Iniciar',
+        crawlerStopButton: 'Detener',
+        crawlerResetButton: 'Reiniciar contadores',
+        crawlerDedupButton: 'Eliminar URL duplicadas',
+        crawlerStartUrl: 'URL inicial',
+        crawlerDepth: 'Profundidad',
+        crawlerPages: 'Páginas',
+        promptAiStart: 'Generando…',
+        promptAiReady: 'Prompt listo',
+        promptAiStopped: 'Detenido',
+        promptAiError: 'Error: {message}',
+        promptAiInvalidDomain: 'Especifica un dominio o URL válido',
+        promptAiEmpty: 'El modelo devolvió un resultado vacío',
+        genericFailed: 'falló',
+        logoutProgress: 'Cerrando sesión…',
+        logCopyEmpty: 'Nada que copiar',
+        logCopySuccess: 'Registros copiados',
+        logCopyError: 'No se pudo copiar',
+        knowledgeServiceUnavailable: 'Servicio no disponible para tu nivel de acceso',
+        knowledgeServiceLoading: 'Cargando…',
+        knowledgeServiceNoData: 'Sin datos',
+        knowledgeServiceUpgrade: 'Servicio no disponible (actualiza el backend)',
+        knowledgeServiceFetchError: 'Error al obtener el estado',
+        knowledgeServiceSaving: 'Guardando…',
+        knowledgeServiceSaved: 'Guardado',
+        knowledgeServiceSaveError: 'Error al guardar'
+      }),
+      de: createLanguage('Deutsch', 'ltr', {
+        pillOperations: 'Betrieb',
+        headerTitle: 'Crawler-Steuerzentrale',
+        headerSubtitle: 'Verwalte Crawling, Wissensbasis und Infrastruktur in einem Dashboard',
+        buttonReorder: 'Blöcke neu ordnen',
+        buttonReorderDone: 'Fertig',
+        buttonLogout: 'Abmelden',
+        languageLabel: 'Sprache',
+        overviewProjectTitle: 'Projekt',
+        overviewProjectMeta: 'Kein Projekt ausgewählt',
+        overviewCrawlerTitle: 'Crawler',
+        overviewResourcesTitle: 'Ressourcen',
+        overviewLLMTitle: 'LLM-Einblicke',
+        overviewLLMEmpty: 'Aktuelle Prompts erscheinen hier',
+        overviewBuildTitle: 'Build',
+        cardProjectsTitle: 'Projekte',
+        buttonAddProject: 'Projekt hinzufügen',
+        buttonRefreshProjects: 'Liste aktualisieren',
+        crawlerStatusTitle: 'Crawler-Status',
+        crawlerQueued: 'In Warteschlange: {value}',
+        crawlerInProgress: 'In Arbeit: {value}',
+        crawlerDone: 'Fertig: {value}',
+        crawlerFailed: 'Fehlgeschlagen: {value}',
+        crawlerLast: 'Zuletzt: {value}',
+        crawlerProjectLabel: 'Projekt: {value}',
+        crawlerLastUrls: 'Neueste URLs',
+        servicesTitle: 'Dienste',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'Status: {value}',
+        resourcesTitle: 'Ressourcen',
+        resourceCpuApp: 'CPU (App): {value}',
+        resourceCpuSys: 'CPU (System): {value}',
+        resourceRam: 'RAM: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: 'Verwaltung',
+        crawlerLaunchTitle: 'Crawler-Start',
+        crawlerLogsTooltip: 'Protokolle anzeigen',
+        crawlerLogsHeader: 'Crawler-Protokolle',
+        crawlerLogsCopy: 'Kopieren',
+        crawlerLogsRefresh: 'Aktualisieren',
+        crawlerLogsHide: 'Ausblenden',
+        crawlerLogsEmpty: 'Protokolle werden bei Bedarf geladen.',
+        crawlerSelectProject: 'Projekt auswählen',
+        crawlerLaunched: 'Gestartet',
+        crawlerLaunchFailed: 'Start fehlgeschlagen',
+        crawlerStartError: 'Crawler-Startfehler',
+        crawlerStopping: 'Wird gestoppt…',
+        crawlerStopFailed: 'Stopp fehlgeschlagen',
+        crawlerStopError: 'Crawler-Stoppfehler',
+        crawlerActionReset: 'Zähler zurückgesetzt',
+        crawlerActionDedup: 'Duplikate entfernt',
+        crawlerActionNoData: 'Nichts zu kopieren',
+        crawlerActionProcessing: 'In Arbeit…',
+        crawlerActionExecuteError: 'Aktion konnte nicht ausgeführt werden',
+        crawlerStartButton: 'Starten',
+        crawlerStopButton: 'Stoppen',
+        crawlerResetButton: 'Zähler zurücksetzen',
+        crawlerDedupButton: 'Doppelte URLs entfernen',
+        crawlerStartUrl: 'Start-URL',
+        crawlerDepth: 'Tiefe',
+        crawlerPages: 'Seiten',
+        promptAiStart: 'Generiere…',
+        promptAiReady: 'Prompt bereit',
+        promptAiStopped: 'Gestoppt',
+        promptAiError: 'Fehler: {message}',
+        promptAiInvalidDomain: 'Gib eine gültige Domain oder URL an',
+        promptAiEmpty: 'Modell gab ein leeres Ergebnis zurück',
+        genericFailed: 'fehlgeschlagen',
+        logoutProgress: 'Abmelden…',
+        logCopyEmpty: 'Nichts zu kopieren',
+        logCopySuccess: 'Protokolle kopiert',
+        logCopyError: 'Kopieren fehlgeschlagen',
+        knowledgeServiceUnavailable: 'Dienst für deine Zugriffsstufe nicht verfügbar',
+        knowledgeServiceLoading: 'Lädt…',
+        knowledgeServiceNoData: 'Keine Daten',
+        knowledgeServiceUpgrade: 'Dienst nicht verfügbar (Backend aktualisieren)',
+        knowledgeServiceFetchError: 'Status konnte nicht abgerufen werden',
+        knowledgeServiceSaving: 'Speichern…',
+        knowledgeServiceSaved: 'Gespeichert',
+        knowledgeServiceSaveError: 'Speichern fehlgeschlagen'
+      }),
+      fr: createLanguage('Français', 'ltr', {
+        pillOperations: 'Opérations',
+        headerTitle: 'Panneau de contrôle du crawler',
+        headerSubtitle: 'Gérez le crawling, la base de connaissances et l’infrastructure depuis un seul tableau de bord',
+        buttonReorder: 'Réorganiser les blocs',
+        buttonReorderDone: 'Terminé',
+        buttonLogout: 'Déconnexion',
+        languageLabel: 'Langue',
+        overviewProjectTitle: 'Projet',
+        overviewProjectMeta: 'Aucun projet sélectionné',
+        overviewCrawlerTitle: 'Crawler',
+        overviewResourcesTitle: 'Ressources',
+        overviewLLMTitle: 'Aperçus LLM',
+        overviewLLMEmpty: 'Les invites récentes apparaîtront ici',
+        overviewBuildTitle: 'Version',
+        cardProjectsTitle: 'Projets',
+        buttonAddProject: 'Ajouter un projet',
+        buttonRefreshProjects: 'Actualiser la liste',
+        crawlerStatusTitle: 'Statut du crawler',
+        crawlerQueued: 'En file d’attente : {value}',
+        crawlerInProgress: 'En cours : {value}',
+        crawlerDone: 'Terminé : {value}',
+        crawlerFailed: 'Échecs : {value}',
+        crawlerLast: 'Dernier : {value}',
+        crawlerProjectLabel: 'Projet : {value}',
+        crawlerLastUrls: 'Dernières URL',
+        servicesTitle: 'Services',
+        serviceMongo: 'Mongo : {value}',
+        serviceRedis: 'Redis : {value}',
+        serviceQdrant: 'Qdrant : {value}',
+        serviceOverall: 'Statut : {value}',
+        resourcesTitle: 'Ressources',
+        resourceCpuApp: 'CPU (app) : {value}',
+        resourceCpuSys: 'CPU (système) : {value}',
+        resourceRam: 'RAM : {value}',
+        resourceRss: 'RSS : {value}',
+        resourceGpu: 'GPU : {value}',
+        resourcePython: 'Python : {value}',
+        manageSection: 'Gestion',
+        crawlerLaunchTitle: 'Lancement du crawler',
+        crawlerLogsTooltip: 'Afficher les journaux',
+        crawlerLogsHeader: 'Journaux du crawler',
+        crawlerLogsCopy: 'Copier',
+        crawlerLogsRefresh: 'Actualiser',
+        crawlerLogsHide: 'Masquer',
+        crawlerLogsEmpty: 'Les journaux seront chargés à la demande.',
+        crawlerSelectProject: 'Sélectionnez un projet',
+        crawlerLaunched: 'Démarré',
+        crawlerLaunchFailed: 'Échec du démarrage',
+        crawlerStartError: 'Erreur de démarrage du crawler',
+        crawlerStopping: 'Arrêt…',
+        crawlerStopFailed: 'Échec de l’arrêt',
+        crawlerStopError: 'Erreur d’arrêt du crawler',
+        crawlerActionReset: 'Compteurs réinitialisés',
+        crawlerActionDedup: 'Doublons supprimés',
+        crawlerActionNoData: 'Rien à copier',
+        crawlerActionProcessing: 'Traitement…',
+        crawlerActionExecuteError: 'Impossible d’exécuter l’action',
+        crawlerStartButton: 'Démarrer',
+        crawlerStopButton: 'Arrêter',
+        crawlerResetButton: 'Réinitialiser les compteurs',
+        crawlerDedupButton: 'Supprimer les URL dupliquées',
+        crawlerStartUrl: 'URL de départ',
+        crawlerDepth: 'Profondeur',
+        crawlerPages: 'Pages',
+        promptAiStart: 'Génération…',
+        promptAiReady: 'Invite prête',
+        promptAiStopped: 'Arrêté',
+        promptAiError: 'Erreur : {message}',
+        promptAiInvalidDomain: 'Indiquez un domaine ou une URL valide',
+        promptAiEmpty: 'Le modèle a renvoyé un résultat vide',
+        genericFailed: 'échec',
+        logoutProgress: 'Déconnexion…',
+        logCopyEmpty: 'Rien à copier',
+        logCopySuccess: 'Journaux copiés',
+        logCopyError: 'Copie impossible',
+        knowledgeServiceUnavailable: 'Service indisponible pour votre niveau d’accès',
+        knowledgeServiceLoading: 'Chargement…',
+        knowledgeServiceNoData: 'Aucune donnée',
+        knowledgeServiceUpgrade: 'Service indisponible (mettez à jour le backend)',
+        knowledgeServiceFetchError: 'Échec de récupération du statut',
+        knowledgeServiceSaving: 'Enregistrement…',
+        knowledgeServiceSaved: 'Enregistré',
+        knowledgeServiceSaveError: 'Échec de l’enregistrement'
+      }),
+      it: createLanguage('Italiano', 'ltr', {
+        pillOperations: 'Operazioni',
+        headerTitle: 'Pannello di controllo del crawler',
+        headerSubtitle: 'Gestisci crawling, base di conoscenza e infrastruttura da un’unica dashboard',
+        buttonReorder: 'Riordina blocchi',
+        buttonReorderDone: 'Fine',
+        buttonLogout: 'Esci',
+        languageLabel: 'Lingua',
+        overviewProjectTitle: 'Progetto',
+        overviewProjectMeta: 'Nessun progetto selezionato',
+        overviewCrawlerTitle: 'Crawler',
+        overviewResourcesTitle: 'Risorse',
+        overviewLLMTitle: 'Approfondimenti LLM',
+        overviewLLMEmpty: 'I prompt recenti appariranno qui',
+        overviewBuildTitle: 'Build',
+        cardProjectsTitle: 'Progetti',
+        buttonAddProject: 'Aggiungi progetto',
+        buttonRefreshProjects: 'Aggiorna elenco',
+        crawlerStatusTitle: 'Stato del crawler',
+        crawlerQueued: 'In coda: {value}',
+        crawlerInProgress: 'In esecuzione: {value}',
+        crawlerDone: 'Completati: {value}',
+        crawlerFailed: 'Non riusciti: {value}',
+        crawlerLast: 'Ultimo: {value}',
+        crawlerProjectLabel: 'Progetto: {value}',
+        crawlerLastUrls: 'Ultimi URL',
+        servicesTitle: 'Servizi',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'Stato: {value}',
+        resourcesTitle: 'Risorse',
+        resourceCpuApp: 'CPU (app): {value}',
+        resourceCpuSys: 'CPU (sistema): {value}',
+        resourceRam: 'RAM: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: 'Gestione',
+        crawlerLaunchTitle: 'Avvio crawler',
+        crawlerLogsTooltip: 'Mostra log',
+        crawlerLogsHeader: 'Log del crawler',
+        crawlerLogsCopy: 'Copia',
+        crawlerLogsRefresh: 'Aggiorna',
+        crawlerLogsHide: 'Nascondi',
+        crawlerLogsEmpty: 'I log verranno caricati su richiesta.',
+        crawlerSelectProject: 'Seleziona un progetto',
+        crawlerLaunched: 'Avviato',
+        crawlerLaunchFailed: 'Avvio non riuscito',
+        crawlerStartError: 'Errore di avvio del crawler',
+        crawlerStopping: 'Arresto…',
+        crawlerStopFailed: 'Arresto non riuscito',
+        crawlerStopError: 'Errore di arresto del crawler',
+        crawlerActionReset: 'Contatori azzerati',
+        crawlerActionDedup: 'Duplicati rimossi',
+        crawlerActionNoData: 'Niente da copiare',
+        crawlerActionProcessing: 'Elaborazione…',
+        crawlerActionExecuteError: 'Impossibile eseguire l’azione',
+        crawlerStartButton: 'Avvia',
+        crawlerStopButton: 'Ferma',
+        crawlerResetButton: 'Azzera contatori',
+        crawlerDedupButton: 'Rimuovi URL duplicati',
+        crawlerStartUrl: 'URL iniziale',
+        crawlerDepth: 'Profondità',
+        crawlerPages: 'Pagine',
+        promptAiStart: 'Generazione…',
+        promptAiReady: 'Prompt pronto',
+        promptAiStopped: 'Interrotto',
+        promptAiError: 'Errore: {message}',
+        promptAiInvalidDomain: 'Specifica un dominio o URL valido',
+        promptAiEmpty: 'Il modello ha restituito un risultato vuoto',
+        genericFailed: 'non riuscito',
+        logoutProgress: 'Disconnessione…',
+        logCopyEmpty: 'Niente da copiare',
+        logCopySuccess: 'Log copiati',
+        logCopyError: 'Copia non riuscita',
+        knowledgeServiceUnavailable: 'Servizio non disponibile per il tuo livello di accesso',
+        knowledgeServiceLoading: 'Caricamento…',
+        knowledgeServiceNoData: 'Nessun dato',
+        knowledgeServiceUpgrade: 'Servizio non disponibile (aggiorna il backend)',
+        knowledgeServiceFetchError: 'Impossibile ottenere lo stato',
+        knowledgeServiceSaving: 'Salvataggio…',
+        knowledgeServiceSaved: 'Salvato',
+        knowledgeServiceSaveError: 'Errore durante il salvataggio'
+      }),
+      pt: createLanguage('Português', 'ltr', {
+        pillOperations: 'Operações',
+        headerTitle: 'Painel de controle do crawler',
+        headerSubtitle: 'Gerencie o rastreamento, a base de conhecimento e a infraestrutura em um único painel',
+        buttonReorder: 'Reordenar blocos',
+        buttonReorderDone: 'Concluído',
+        buttonLogout: 'Sair',
+        languageLabel: 'Idioma',
+        overviewProjectTitle: 'Projeto',
+        overviewProjectMeta: 'Nenhum projeto selecionado',
+        overviewCrawlerTitle: 'Crawler',
+        overviewResourcesTitle: 'Recursos',
+        overviewLLMTitle: 'Insights do LLM',
+        overviewLLMEmpty: 'Os prompts recentes aparecerão aqui',
+        overviewBuildTitle: 'Build',
+        cardProjectsTitle: 'Projetos',
+        buttonAddProject: 'Adicionar projeto',
+        buttonRefreshProjects: 'Atualizar lista',
+        crawlerStatusTitle: 'Status do crawler',
+        crawlerQueued: 'Na fila: {value}',
+        crawlerInProgress: 'Em andamento: {value}',
+        crawlerDone: 'Concluídos: {value}',
+        crawlerFailed: 'Falhas: {value}',
+        crawlerLast: 'Último: {value}',
+        crawlerProjectLabel: 'Projeto: {value}',
+        crawlerLastUrls: 'Últimas URLs',
+        servicesTitle: 'Serviços',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'Status: {value}',
+        resourcesTitle: 'Recursos',
+        resourceCpuApp: 'CPU (app): {value}',
+        resourceCpuSys: 'CPU (sistema): {value}',
+        resourceRam: 'RAM: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: 'Gestão',
+        crawlerLaunchTitle: 'Inicialização do crawler',
+        crawlerLogsTooltip: 'Mostrar logs',
+        crawlerLogsHeader: 'Logs do crawler',
+        crawlerLogsCopy: 'Copiar',
+        crawlerLogsRefresh: 'Atualizar',
+        crawlerLogsHide: 'Ocultar',
+        crawlerLogsEmpty: 'Os logs serão carregados sob demanda.',
+        crawlerSelectProject: 'Selecione um projeto',
+        crawlerLaunched: 'Iniciado',
+        crawlerLaunchFailed: 'Falha ao iniciar',
+        crawlerStartError: 'Erro ao iniciar o crawler',
+        crawlerStopping: 'Parando…',
+        crawlerStopFailed: 'Falha ao parar',
+        crawlerStopError: 'Erro ao parar o crawler',
+        crawlerActionReset: 'Contadores redefinidos',
+        crawlerActionDedup: 'Duplicatas removidas',
+        crawlerActionNoData: 'Nada para copiar',
+        crawlerActionProcessing: 'Processando…',
+        crawlerActionExecuteError: 'Falha ao executar ação',
+        crawlerStartButton: 'Iniciar',
+        crawlerStopButton: 'Parar',
+        crawlerResetButton: 'Redefinir contadores',
+        crawlerDedupButton: 'Remover URLs duplicadas',
+        crawlerStartUrl: 'URL inicial',
+        crawlerDepth: 'Profundidade',
+        crawlerPages: 'Páginas',
+        promptAiStart: 'Gerando…',
+        promptAiReady: 'Prompt pronto',
+        promptAiStopped: 'Parado',
+        promptAiError: 'Erro: {message}',
+        promptAiInvalidDomain: 'Informe um domínio ou URL válido',
+        promptAiEmpty: 'O modelo retornou um resultado vazio',
+        genericFailed: 'falhou',
+        logoutProgress: 'Saindo…',
+        logCopyEmpty: 'Nada para copiar',
+        logCopySuccess: 'Logs copiados',
+        logCopyError: 'Falha ao copiar',
+        knowledgeServiceUnavailable: 'Serviço indisponível para o seu nível de acesso',
+        knowledgeServiceLoading: 'Carregando…',
+        knowledgeServiceNoData: 'Sem dados',
+        knowledgeServiceUpgrade: 'Serviço indisponível (atualize o backend)',
+        knowledgeServiceFetchError: 'Falha ao obter status',
+        knowledgeServiceSaving: 'Salvando…',
+        knowledgeServiceSaved: 'Salvo',
+        knowledgeServiceSaveError: 'Erro ao salvar'
+      }),
+      ru: createLanguage('Русский', 'ltr', {
+        pillOperations: 'Операции',
+        headerTitle: 'Панель управления краулером',
+        headerSubtitle: 'Управляйте краулингом, базой знаний и окружением в одном окне',
+        buttonReorder: 'Упорядочить блоки',
+        buttonReorderDone: 'Готово',
+        buttonLogout: 'Выйти',
+        languageLabel: 'Язык',
+        overviewProjectTitle: 'Проект',
+        overviewProjectMeta: 'Нет выбранного проекта',
+        overviewCrawlerTitle: 'Краулинг',
+        overviewResourcesTitle: 'Ресурсы',
+        overviewLLMTitle: 'LLM мысли',
+        overviewLLMEmpty: 'История запросов появится здесь',
+        overviewBuildTitle: 'Сборка',
+        cardProjectsTitle: 'Проекты',
+        buttonAddProject: 'Добавить проект',
+        buttonRefreshProjects: 'Обновить список',
+        crawlerStatusTitle: 'Статус краулера',
+        crawlerQueued: 'В очереди: {value}',
+        crawlerInProgress: 'В работе: {value}',
+        crawlerDone: 'Готово: {value}',
+        crawlerFailed: 'Ошибок: {value}',
+        crawlerLast: 'Последний: {value}',
+        crawlerProjectLabel: 'Проект: {value}',
+        crawlerLastUrls: 'Последние URL',
+        servicesTitle: 'Сервисы',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'Статус: {value}',
+        resourcesTitle: 'Ресурсы',
+        resourceCpuApp: 'CPU (приложение): {value}',
+        resourceCpuSys: 'CPU (система): {value}',
+        resourceRam: 'RAM: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: 'Управление',
+        crawlerLaunchTitle: 'Запуск краулера',
+        crawlerLogsTooltip: 'Показать логи',
+        crawlerLogsHeader: 'Логи краулера',
+        crawlerLogsCopy: 'Скопировать',
+        crawlerLogsRefresh: 'Обновить',
+        crawlerLogsHide: 'Скрыть',
+        crawlerLogsEmpty: 'Логи будут загружены по запросу.',
+        crawlerSelectProject: 'Выберите проект',
+        crawlerLaunched: 'Запущено',
+        crawlerLaunchFailed: 'Не удалось запустить',
+        crawlerStartError: 'Ошибка запуска краулера',
+        crawlerStopping: 'Останавливаем…',
+        crawlerStopFailed: 'Не удалось остановить',
+        crawlerStopError: 'Ошибка остановки',
+        crawlerActionReset: 'Счётчики сброшены',
+        crawlerActionDedup: 'Дубликаты удалены',
+        crawlerActionNoData: 'Нет данных для копирования',
+        crawlerActionProcessing: 'Выполняем…',
+        crawlerActionExecuteError: 'Ошибка выполнения действия',
+        crawlerStartButton: 'Запустить',
+        crawlerStopButton: 'Остановить',
+        crawlerResetButton: 'Сбросить счётчики',
+        crawlerDedupButton: 'Убрать дубликаты URL',
+        crawlerStartUrl: 'Стартовый URL',
+        crawlerDepth: 'Глубина',
+        crawlerPages: 'Страницы',
+        promptAiStart: 'Генерируем…',
+        promptAiReady: 'Промт готов',
+        promptAiStopped: 'Остановлено',
+        promptAiError: 'Ошибка: {message}',
+        promptAiInvalidDomain: 'Укажите корректный домен или URL',
+        promptAiEmpty: 'Модель вернула пустой результат',
+        genericFailed: 'не удалось',
+        logoutProgress: 'Выходим…',
+        logCopyEmpty: 'Нет данных для копирования',
+        logCopySuccess: 'Логи скопированы',
+        logCopyError: 'Не удалось скопировать',
+        knowledgeServiceUnavailable: 'Сервис недоступен для вашего доступа',
+        knowledgeServiceLoading: 'Загружаем…',
+        knowledgeServiceNoData: 'Нет данных',
+        knowledgeServiceUpgrade: 'Сервис недоступен (обновите backend)',
+        knowledgeServiceFetchError: 'Не удалось получить статус',
+        knowledgeServiceSaving: 'Сохраняем…',
+        knowledgeServiceSaved: 'Сохранено',
+        knowledgeServiceSaveError: 'Ошибка сохранения'
+      }),
+      zh: createLanguage('中文', 'ltr', {
+        pillOperations: '运维',
+        headerTitle: '爬虫控制面板',
+        headerSubtitle: '在一个仪表盘中管理爬取、知识库和基础设施',
+        buttonReorder: '重新排列模块',
+        buttonReorderDone: '完成',
+        buttonLogout: '退出',
+        languageLabel: '语言',
+        overviewProjectTitle: '项目',
+        overviewProjectMeta: '未选择项目',
+        overviewCrawlerTitle: '爬虫',
+        overviewResourcesTitle: '资源',
+        overviewLLMTitle: 'LLM 洞察',
+        overviewLLMEmpty: '最近的提示词将显示在这里',
+        overviewBuildTitle: '构建',
+        cardProjectsTitle: '项目',
+        buttonAddProject: '添加项目',
+        buttonRefreshProjects: '刷新列表',
+        crawlerStatusTitle: '爬虫状态',
+        crawlerQueued: '排队：{value}',
+        crawlerInProgress: '处理中：{value}',
+        crawlerDone: '完成：{value}',
+        crawlerFailed: '失败：{value}',
+        crawlerLast: '最近：{value}',
+        crawlerProjectLabel: '项目：{value}',
+        crawlerLastUrls: '最新 URL',
+        servicesTitle: '服务',
+        serviceMongo: 'Mongo：{value}',
+        serviceRedis: 'Redis：{value}',
+        serviceQdrant: 'Qdrant：{value}',
+        serviceOverall: '状态：{value}',
+        resourcesTitle: '资源',
+        resourceCpuApp: 'CPU（应用）：{value}',
+        resourceCpuSys: 'CPU（系统）：{value}',
+        resourceRam: '内存：{value}',
+        resourceRss: 'RSS：{value}',
+        resourceGpu: 'GPU：{value}',
+        resourcePython: 'Python：{value}',
+        manageSection: '管理',
+        crawlerLaunchTitle: '启动爬虫',
+        crawlerLogsTooltip: '查看日志',
+        crawlerLogsHeader: '爬虫日志',
+        crawlerLogsCopy: '复制',
+        crawlerLogsRefresh: '刷新',
+        crawlerLogsHide: '隐藏',
+        crawlerLogsEmpty: '日志将按需加载。',
+        crawlerSelectProject: '选择项目',
+        crawlerLaunched: '已启动',
+        crawlerLaunchFailed: '启动失败',
+        crawlerStartError: '爬虫启动错误',
+        crawlerStopping: '正在停止…',
+        crawlerStopFailed: '停止失败',
+        crawlerStopError: '爬虫停止错误',
+        crawlerActionReset: '计数已重置',
+        crawlerActionDedup: '已移除重复项',
+        crawlerActionNoData: '没有可复制的内容',
+        crawlerActionProcessing: '处理中…',
+        crawlerActionExecuteError: '执行操作失败',
+        crawlerStartButton: '启动',
+        crawlerStopButton: '停止',
+        crawlerResetButton: '重置计数',
+        crawlerDedupButton: '移除重复 URL',
+        crawlerStartUrl: '起始 URL',
+        crawlerDepth: '深度',
+        crawlerPages: '页面',
+        promptAiStart: '正在生成…',
+        promptAiReady: '提示词已就绪',
+        promptAiStopped: '已停止',
+        promptAiError: '错误：{message}',
+        promptAiInvalidDomain: '请指定有效的域名或 URL',
+        promptAiEmpty: '模型返回了空结果',
+        genericFailed: '失败',
+        logoutProgress: '正在退出…',
+        logCopyEmpty: '没有可复制的内容',
+        logCopySuccess: '日志已复制',
+        logCopyError: '复制失败',
+        knowledgeServiceUnavailable: '当前权限无法使用该服务',
+        knowledgeServiceLoading: '加载中…',
+        knowledgeServiceNoData: '暂无数据',
+        knowledgeServiceUpgrade: '服务不可用（请更新后端）',
+        knowledgeServiceFetchError: '获取状态失败',
+        knowledgeServiceSaving: '保存中…',
+        knowledgeServiceSaved: '已保存',
+        knowledgeServiceSaveError: '保存失败'
+      }),
+      ja: createLanguage('日本語', 'ltr', {
+        pillOperations: '運用',
+        headerTitle: 'クローラー管理パネル',
+        headerSubtitle: 'クロール、ナレッジベース、インフラをひとつのダッシュボードで管理',
+        buttonReorder: 'ブロックを並べ替え',
+        buttonReorderDone: '完了',
+        buttonLogout: 'ログアウト',
+        languageLabel: '言語',
+        overviewProjectTitle: 'プロジェクト',
+        overviewProjectMeta: 'プロジェクトが選択されていません',
+        overviewCrawlerTitle: 'クローラー',
+        overviewResourcesTitle: 'リソース',
+        overviewLLMTitle: 'LLM インサイト',
+        overviewLLMEmpty: '最近のプロンプトがここに表示されます',
+        overviewBuildTitle: 'ビルド',
+        cardProjectsTitle: 'プロジェクト',
+        buttonAddProject: 'プロジェクトを追加',
+        buttonRefreshProjects: 'リストを更新',
+        crawlerStatusTitle: 'クローラーの状況',
+        crawlerQueued: '待機中: {value}',
+        crawlerInProgress: '実行中: {value}',
+        crawlerDone: '完了: {value}',
+        crawlerFailed: '失敗: {value}',
+        crawlerLast: '最新: {value}',
+        crawlerProjectLabel: 'プロジェクト: {value}',
+        crawlerLastUrls: '最新の URL',
+        servicesTitle: 'サービス',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'ステータス: {value}',
+        resourcesTitle: 'リソース',
+        resourceCpuApp: 'CPU (アプリ): {value}',
+        resourceCpuSys: 'CPU (システム): {value}',
+        resourceRam: 'RAM: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: '管理',
+        crawlerLaunchTitle: 'クローラーの起動',
+        crawlerLogsTooltip: 'ログを表示',
+        crawlerLogsHeader: 'クローラーログ',
+        crawlerLogsCopy: 'コピー',
+        crawlerLogsRefresh: '更新',
+        crawlerLogsHide: '非表示',
+        crawlerLogsEmpty: 'ログは必要に応じて読み込まれます。',
+        crawlerSelectProject: 'プロジェクトを選択',
+        crawlerLaunched: '開始しました',
+        crawlerLaunchFailed: '開始に失敗しました',
+        crawlerStartError: 'クローラー起動エラー',
+        crawlerStopping: '停止しています…',
+        crawlerStopFailed: '停止に失敗しました',
+        crawlerStopError: 'クローラー停止エラー',
+        crawlerActionReset: 'カウンターをリセットしました',
+        crawlerActionDedup: '重複を削除しました',
+        crawlerActionNoData: 'コピーするものがありません',
+        crawlerActionProcessing: '処理中…',
+        crawlerActionExecuteError: '操作の実行に失敗しました',
+        crawlerStartButton: '開始',
+        crawlerStopButton: '停止',
+        crawlerResetButton: 'カウンターをリセット',
+        crawlerDedupButton: '重複 URL を削除',
+        crawlerStartUrl: '開始 URL',
+        crawlerDepth: '深さ',
+        crawlerPages: 'ページ',
+        promptAiStart: '生成中…',
+        promptAiReady: 'プロンプトの準備完了',
+        promptAiStopped: '停止しました',
+        promptAiError: 'エラー: {message}',
+        promptAiInvalidDomain: '有効なドメインまたは URL を指定してください',
+        promptAiEmpty: 'モデルが空の結果を返しました',
+        genericFailed: '失敗',
+        logoutProgress: 'ログアウト中…',
+        logCopyEmpty: 'コピーするものがありません',
+        logCopySuccess: 'ログをコピーしました',
+        logCopyError: 'コピーに失敗しました',
+        knowledgeServiceUnavailable: 'このアクセスレベルでは利用できません',
+        knowledgeServiceLoading: '読み込み中…',
+        knowledgeServiceNoData: 'データがありません',
+        knowledgeServiceUpgrade: 'サービスを利用できません（バックエンドを更新してください）',
+        knowledgeServiceFetchError: 'ステータスの取得に失敗しました',
+        knowledgeServiceSaving: '保存中…',
+        knowledgeServiceSaved: '保存しました',
+        knowledgeServiceSaveError: '保存に失敗しました'
+      }),
+      ar: createLanguage('العربية', 'rtl', {
+        pillOperations: 'العمليات',
+        headerTitle: 'لوحة تحكم الزاحف',
+        headerSubtitle: 'إدارة الزحف وقاعدة المعرفة والبنية التحتية من لوحة واحدة',
+        buttonReorder: 'إعادة ترتيب البلوكات',
+        buttonReorderDone: 'تم',
+        buttonLogout: 'تسجيل الخروج',
+        languageLabel: 'اللغة',
+        overviewProjectTitle: 'المشروع',
+        overviewProjectMeta: 'لا يوجد مشروع محدد',
+        overviewCrawlerTitle: 'الزاحف',
+        overviewResourcesTitle: 'الموارد',
+        overviewLLMTitle: 'رؤى LLM',
+        overviewLLMEmpty: 'ستظهر المطالبات الأخيرة هنا',
+        overviewBuildTitle: 'البناء',
+        cardProjectsTitle: 'المشاريع',
+        buttonAddProject: 'إضافة مشروع',
+        buttonRefreshProjects: 'تحديث القائمة',
+        crawlerStatusTitle: 'حالة الزاحف',
+        crawlerQueued: 'في الانتظار: {value}',
+        crawlerInProgress: 'قيد التنفيذ: {value}',
+        crawlerDone: 'مكتمل: {value}',
+        crawlerFailed: 'فشل: {value}',
+        crawlerLast: 'الأحدث: {value}',
+        crawlerProjectLabel: 'المشروع: {value}',
+        crawlerLastUrls: 'أحدث الروابط',
+        servicesTitle: 'الخدمات',
+        serviceMongo: 'Mongo: {value}',
+        serviceRedis: 'Redis: {value}',
+        serviceQdrant: 'Qdrant: {value}',
+        serviceOverall: 'الحالة: {value}',
+        resourcesTitle: 'الموارد',
+        resourceCpuApp: 'CPU (تطبيق): {value}',
+        resourceCpuSys: 'CPU (نظام): {value}',
+        resourceRam: 'الذاكرة: {value}',
+        resourceRss: 'RSS: {value}',
+        resourceGpu: 'GPU: {value}',
+        resourcePython: 'Python: {value}',
+        manageSection: 'الإدارة',
+        crawlerLaunchTitle: 'تشغيل الزاحف',
+        crawlerLogsTooltip: 'عرض السجلات',
+        crawlerLogsHeader: 'سجلات الزاحف',
+        crawlerLogsCopy: 'نسخ',
+        crawlerLogsRefresh: 'تحديث',
+        crawlerLogsHide: 'إخفاء',
+        crawlerLogsEmpty: 'سيتم تحميل السجلات عند الطلب.',
+        crawlerSelectProject: 'اختر مشروعًا',
+        crawlerLaunched: 'تم البدء',
+        crawlerLaunchFailed: 'فشل البدء',
+        crawlerStartError: 'خطأ في تشغيل الزاحف',
+        crawlerStopping: 'يتم الإيقاف…',
+        crawlerStopFailed: 'فشل الإيقاف',
+        crawlerStopError: 'خطأ في إيقاف الزاحف',
+        crawlerActionReset: 'تمت إعادة تعيين العدادات',
+        crawlerActionDedup: 'تمت إزالة التكرارات',
+        crawlerActionNoData: 'لا شيء للنسخ',
+        crawlerActionProcessing: 'جارٍ التنفيذ…',
+        crawlerActionExecuteError: 'فشل تنفيذ الإجراء',
+        crawlerStartButton: 'ابدأ',
+        crawlerStopButton: 'إيقاف',
+        crawlerResetButton: 'إعادة تعيين العدادات',
+        crawlerDedupButton: 'إزالة الروابط المكررة',
+        crawlerStartUrl: 'رابط البداية',
+        crawlerDepth: 'العمق',
+        crawlerPages: 'الصفحات',
+        promptAiStart: 'جاري التوليد…',
+        promptAiReady: 'المطالبة جاهزة',
+        promptAiStopped: 'تم الإيقاف',
+        promptAiError: 'خطأ: {message}',
+        promptAiInvalidDomain: 'يرجى تحديد نطاق أو رابط صالح',
+        promptAiEmpty: 'أعاد النموذج نتيجة فارغة',
+        genericFailed: 'فشل',
+        logoutProgress: 'جارٍ تسجيل الخروج…',
+        logCopyEmpty: 'لا شيء للنسخ',
+        logCopySuccess: 'تم نسخ السجلات',
+        logCopyError: 'تعذر النسخ',
+        knowledgeServiceUnavailable: 'الخدمة غير متاحة لمستوى وصولك',
+        knowledgeServiceLoading: 'جارٍ التحميل…',
+        knowledgeServiceNoData: 'لا توجد بيانات',
+        knowledgeServiceUpgrade: 'الخدمة غير متاحة (يرجى تحديث الخلفية)',
+        knowledgeServiceFetchError: 'تعذر جلب الحالة',
+        knowledgeServiceSaving: 'جارٍ الحفظ…',
+        knowledgeServiceSaved: 'تم الحفظ',
+        knowledgeServiceSaveError: 'فشل الحفظ'
+      })
+    };
+
+    let currentLanguage = (() => {
+      try {
+        const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+        if (stored && LANGUAGES[stored]) {
+          return stored;
+        }
+      } catch {}
+      return FALLBACK_LANGUAGE;
+    })();
+
+    function t(key, params = {}) {
+      const dict = LANGUAGES[currentLanguage]?.strings || LANGUAGES[FALLBACK_LANGUAGE].strings;
+      const template = dict[key] ?? LANGUAGES[FALLBACK_LANGUAGE].strings[key] ?? key;
+      return template.replace(/\{(\w+)\}/g, (_, token) => {
+        if (token in params) {
+          return String(params[token]);
+        }
+        return '';
+      });
+    }
+
+    function applyLanguage(lang) {
+      if (!LANGUAGES[lang]) lang = FALLBACK_LANGUAGE;
+      currentLanguage = lang;
+      try { localStorage.setItem(LANGUAGE_STORAGE_KEY, currentLanguage); } catch {}
+      const cfg = LANGUAGES[currentLanguage];
+      document.documentElement.lang = currentLanguage;
+      document.documentElement.dir = cfg.dir || 'ltr';
+
+      if (languageSelect) {
+        languageSelect.innerHTML = '';
+        Object.entries(LANGUAGES).forEach(([code, meta]) => {
+          const option = document.createElement('option');
+          option.value = code;
+          option.textContent = meta.name;
+          if (code === currentLanguage) option.selected = true;
+          languageSelect.appendChild(option);
+        });
+      }
+
+      document.querySelectorAll('[data-i18n]').forEach((node) => {
+        const key = node.dataset.i18n;
+        node.textContent = t(key);
+      });
+
+      document.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+        const key = node.dataset.i18nPlaceholder;
+        node.setAttribute('placeholder', t(key));
+      });
+
+      document.querySelectorAll('[data-i18n-aria-label]').forEach((node) => {
+        const key = node.dataset.i18nAriaLabel;
+        node.setAttribute('aria-label', t(key));
+      });
+
+      document.querySelectorAll('[data-i18n-wrapper]').forEach((node) => {
+        const key = node.dataset.i18nWrapper;
+        const valueNode = node.querySelector('[data-i18n-value]');
+        const valueText = valueNode ? valueNode.textContent : '';
+        const placeholder = '__VALUE_PLACEHOLDER__';
+        const html = t(key, { value: placeholder });
+        const id = valueNode?.id;
+        const className = valueNode?.className;
+        node.innerHTML = html.replace(placeholder, `<span data-i18n-value>${valueText}</span>`);
+        const newValueNode = node.querySelector('[data-i18n-value]');
+        if (newValueNode) {
+          if (id) newValueNode.id = id;
+          if (className) newValueNode.className = className;
+        }
+      });
+    }
+
+    if (languageSelect) {
+      languageSelect.addEventListener('change', (event) => {
+        applyLanguage(event.target.value);
+      });
+    }
+
+    applyLanguage(currentLanguage);
     const STATS_DAYS = 14;
     let projectStorageCache = {};
     const CRAWLER_LOG_REFRESH_INTERVAL = 5000;
@@ -1644,7 +2604,7 @@
       crawlerLogsCopy.addEventListener('click', async () => {
         const text = crawlerLogsOutput?.textContent || '';
         if (!text.trim()) {
-          setCrawlerActionStatus('Нет данных для копирования', 2000);
+          setCrawlerActionStatus(t('crawlerActionNoData'), 2000);
           return;
         }
         try {
@@ -1659,13 +2619,13 @@
             selection.addRange(range);
             const legacyOk = document.execCommand('copy');
             selection.removeAllRanges();
-            if (!legacyOk) throw new Error('exec_command_failed');
-          }
-          setCrawlerActionStatus('Логи скопированы', 2000);
-        } catch (error) {
-          console.error('crawler_logs_copy_failed', error);
-          setCrawlerActionStatus('Не удалось скопировать', 3000);
+          if (!legacyOk) throw new Error('exec_command_failed');
         }
+        setCrawlerActionStatus(t('logCopySuccess'), 2000);
+      } catch (error) {
+        console.error('crawler_logs_copy_failed', error);
+        setCrawlerActionStatus(t('logCopyError'), 3000);
+      }
       });
     }
     document.addEventListener('keydown', (event) => {
@@ -1817,7 +2777,7 @@
       button.addEventListener('click', async () => {
         const pageUrl = buildTargetUrl(domainInput.value || projectDomainInput?.value || '');
         if (!pageUrl) {
-          setStatus('Укажите корректный домен или URL', 4000);
+          setStatus(t('promptAiInvalidDomain'), 4000);
           return;
         }
         const role = roleSelect.value || PROMPT_AI_ROLES[0]?.value || null;
@@ -1829,7 +2789,7 @@
         generating = true;
         button.disabled = true;
         roleSelect.disabled = true;
-        setStatus('Генерируем…');
+        setStatus(t('promptAiStart'));
 
         try {
           const response = await fetch('/api/v1/admin/projects/prompt', {
@@ -1851,18 +2811,19 @@
           const data = await response.json();
           const prompt = (data?.prompt || '').trim();
           if (!prompt) {
-            setStatus('Модель вернула пустой результат', 4000);
+            setStatus(t('promptAiEmpty'), 4000);
           } else {
             textarea.value = prompt;
             textarea.dispatchEvent(new Event('input', { bubbles: true }));
-            setStatus('Промт готов', 3500);
+            setStatus(t('promptAiReady'), 3500);
           }
         } catch (error) {
           if (error?.name === 'AbortError') {
-            setStatus('Остановлено', 3000);
+            setStatus(t('promptAiStopped'), 3000);
           } else {
             console.error('prompt_ai_failed', error);
-            setStatus(`Ошибка: ${error?.message || 'не удалось'}`, 4500);
+            const msg = error?.message || t('genericFailed');
+            setStatus(t('promptAiError', { message: msg }), 4500);
           }
         } finally {
           if (controller) {
@@ -2024,7 +2985,7 @@
     async function performAdminLogout() {
       if (logoutButton) {
         logoutButton.disabled = true;
-        logoutButton.textContent = 'Выходим…';
+        logoutButton.textContent = t('logoutProgress');
       }
       try {
         await fetch('/api/v1/admin/logout', {
@@ -2511,11 +3472,11 @@
     async function fetchKnowledgeServiceStatus(triggerPulse = false) {
       if (!knowledgeServiceToggle) return;
       if (!adminSession.is_super) {
-        knowledgeServiceStatus.textContent = 'Недоступно для вашего доступа';
+        knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
         setKnowledgeServiceControlsDisabled(true);
         return;
       }
-      knowledgeServiceStatus.textContent = 'Загружаем…';
+      knowledgeServiceStatus.textContent = t('knowledgeServiceLoading');
       setKnowledgeServiceControlsDisabled(true);
       try {
         const data = await callKnowledgeService('GET');
@@ -2526,14 +3487,14 @@
             pulseCard(knowledgeServiceCard);
           }
         } else {
-          knowledgeServiceStatus.textContent = 'Нет данных';
+          knowledgeServiceStatus.textContent = t('knowledgeServiceNoData');
         }
       } catch (error) {
         console.error('knowledge_service_status_failed', error);
         if (error?.message === 'not_found') {
-          knowledgeServiceStatus.textContent = 'Сервис недоступен (обновите backend)';
+          knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
         } else {
-          knowledgeServiceStatus.textContent = 'Не удалось получить статус';
+          knowledgeServiceStatus.textContent = t('knowledgeServiceFetchError');
         }
       } finally {
         setKnowledgeServiceControlsDisabled(false);
@@ -2543,21 +3504,21 @@
     async function saveKnowledgeServiceState() {
       if (!knowledgeServiceToggle) return;
       if (!adminSession.is_super) return;
-      knowledgeServiceStatus.textContent = 'Сохраняем…';
+      knowledgeServiceStatus.textContent = t('knowledgeServiceSaving');
       setKnowledgeServiceControlsDisabled(true);
       try {
         const payload = {
           enabled: knowledgeServiceToggle.checked,
         };
         await callKnowledgeService('POST', payload);
-        knowledgeServiceStatus.textContent = 'Сохранено';
+        knowledgeServiceStatus.textContent = t('knowledgeServiceSaved');
         await fetchKnowledgeServiceStatus(true);
       } catch (error) {
         console.error('knowledge_service_save_failed', error);
         if (error?.message === 'not_found') {
-          knowledgeServiceStatus.textContent = 'Сервис недоступен (обновите backend)';
+          knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
         } else {
-          knowledgeServiceStatus.textContent = 'Ошибка сохранения';
+          knowledgeServiceStatus.textContent = t('knowledgeServiceSaveError');
         }
       } finally {
         setKnowledgeServiceControlsDisabled(false);
@@ -2686,7 +3647,7 @@
       const applyMode = (enabled) => {
         isReorderMode = enabled;
         document.body.classList.toggle('reorder-mode', enabled);
-        toggleButton.textContent = enabled ? 'Готово' : 'Упорядочить блоки';
+        toggleButton.textContent = enabled ? t('buttonReorderDone') : t('buttonReorder');
         toggleButton.setAttribute('aria-pressed', enabled ? 'true' : 'false');
         if (!enabled) {
           clearDropHighlights();
@@ -3683,10 +4644,10 @@
 
     async function performCrawlerAction(path, successMessage) {
       if (!currentProject) {
-        setCrawlerActionStatus('Выберите проект', 2500);
+        setCrawlerActionStatus(t('crawlerSelectProject'), 2500);
         return;
       }
-      setCrawlerActionStatus('Выполняем…', 0);
+      setCrawlerActionStatus(t('crawlerActionProcessing'), 0);
       try {
         const resp = await fetch(buildCrawlerActionUrl(path), { method: 'POST' });
         if (!resp.ok) {
@@ -3698,7 +4659,7 @@
         await refreshCrawlerLogs(true);
       } catch (error) {
         console.error('crawler_action_failed', error);
-        setCrawlerActionStatus('Ошибка выполнения действия', 3000);
+        setCrawlerActionStatus(t('crawlerActionExecuteError'), 3000);
       }
     }
 
