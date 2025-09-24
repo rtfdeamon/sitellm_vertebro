@@ -44,12 +44,12 @@
     a { color: var(--accent); }
 
     .page-shell {
-      width: min(1680px, calc(100% - 64px));
+      width: min(1680px, 100%);
       margin: 0 auto;
-      padding: 40px clamp(20px, 6vw, 64px) 56px;
+      padding: clamp(28px, 5vw, 56px) clamp(18px, 6vw, 64px) clamp(48px, 7vw, 72px);
       display: flex;
       flex-direction: column;
-      gap: 32px;
+      gap: clamp(24px, 4vw, 40px);
     }
 
     .page-header {
@@ -110,7 +110,7 @@
     .dashboard-grid {
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 24px;
+      gap: clamp(16px, 2.5vw, 28px);
       align-items: stretch;
     }
 
@@ -135,6 +135,167 @@
     }
 
     .status-tiles > .card { height: 100%; }
+
+    .status-card.status-combined {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: clamp(20px, 4vw, 28px);
+    }
+
+    .status-combined-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .status-combined-header b {
+      font-size: clamp(16px, 2.2vw, 20px);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .status-groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: clamp(14px, 2vw, 20px);
+    }
+
+    .status-group {
+      background: rgba(13, 19, 34, 0.62);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 16px;
+      padding: 16px 18px 18px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .status-group:hover {
+      border-color: rgba(96, 165, 250, 0.45);
+      box-shadow: 0 12px 24px rgba(8, 12, 24, 0.35);
+    }
+
+    .status-group summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(226, 232, 255, 0.78);
+      list-style: none;
+    }
+
+    .status-group summary::-webkit-details-marker { display: none; }
+    .status-group summary::after {
+      content: '';
+      width: 10px;
+      height: 10px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      transform: rotate(-45deg);
+      transition: transform 0.2s ease;
+    }
+
+    .status-group[open] summary { color: #f8fafc; }
+    .status-group[open] summary::after { transform: rotate(45deg); }
+
+    .status-list {
+      margin: 14px 0 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .status-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      font-size: 13px;
+      color: rgba(226, 232, 255, 0.9);
+    }
+
+    .status-label { color: rgba(226, 232, 255, 0.75); }
+
+    .status-value {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      min-width: 64px;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+
+    .status-value > span {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(148, 163, 184, 0.36);
+      background: rgba(15, 23, 42, 0.6);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      min-width: 72px;
+    }
+
+    .status-value > span.good {
+      border-color: rgba(74, 222, 128, 0.5);
+      background: rgba(34, 197, 94, 0.18);
+      color: #bbf7d0;
+    }
+
+    .status-value > span.bad {
+      border-color: rgba(248, 113, 113, 0.5);
+      background: rgba(248, 113, 113, 0.18);
+      color: #fecaca;
+    }
+
+    .status-meta {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      width: 100%;
+    }
+
+    .status-meta-line { font-size: 12px; color: var(--text-muted); }
+
+    .status-nested {
+      width: 100%;
+      padding: 0;
+    }
+
+    .status-nested summary {
+      list-style: none;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(148, 163, 184, 0.9);
+    }
+
+    .status-nested summary::-webkit-details-marker { display: none; }
+
+    .status-nested[open] summary { color: rgba(226, 232, 255, 0.85); }
+
+    #recent_urls {
+      margin: 10px 0 0 0;
+      padding-left: 18px;
+      max-height: 160px;
+      overflow-y: auto;
+      color: rgba(226, 232, 255, 0.85);
+    }
+
+    #recent_urls li { margin-bottom: 4px; }
+
+    #gpu { white-space: pre-line; }
 
     .section-title {
       margin: 4px 0;
@@ -910,6 +1071,7 @@
       .span-4 { grid-column: span 4; }
       .span-3 { grid-column: span 4; }
       .span-12 { grid-column: span 8; }
+      .status-groups { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
     }
 
     @media (max-width: 1080px) {
@@ -921,11 +1083,19 @@
       .span-4,
       .span-3 { grid-column: span 4; }
       .span-12 { grid-column: span 4; }
+      .status-card.status-combined { padding: 20px; }
+      .status-group { padding: 14px 16px; }
+      .status-list li { font-size: 12px; }
+    }
+
+    @media (max-width: 960px) {
+      .page-header { flex-direction: column; align-items: flex-start; gap: 18px; }
+      .status-combined-header { flex-direction: column; align-items: flex-start; gap: 6px; }
+      .status-value { min-width: auto; }
     }
 
     @media (max-width: 720px) {
-      .page-shell { padding: 32px 18px 56px; }
-      .page-header { flex-direction: column; align-items: flex-start; }
+      .page-shell { padding: 28px 18px 48px; }
       .overview-banner { grid-template-columns: 1fr; }
       .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
       .span-9,
@@ -935,6 +1105,11 @@
       .span-4,
       .span-3,
       .span-12 { grid-column: span 1; }
+      .status-card.status-combined { padding: 18px; }
+      .status-group { padding: 12px 14px; }
+      .status-list { gap: 8px; }
+      .status-list li { flex-wrap: wrap; }
+      .status-value { justify-content: flex-start; }
     }
   </style>
   </head>
@@ -1000,38 +1175,178 @@
     </section>
 
     <section id="block-status" class="dashboard-stack span-9 status-tiles" data-block-id="status" data-block-group="overview">
-      <div class="card status-card">
-        <b>Статус краулера</b>
-        <div>Queued: <span id="queued">0</span></div>
-        <div>In progress: <span id="in_progress">0</span></div>
-        <div>Done: <span id="done">0</span></div>
-        <div>Failed: <span id="failed">0</span></div>
-        <div class="muted" id="last_crawl">Last: –</div>
-        <div class="muted">Project: <span id="crawlerProject">—</span></div>
-        <div>
-          <details>
-            <summary>Последние URL</summary>
-            <ol id="recent_urls" style="margin-top:6px;"></ol>
+      <div class="card status-card status-combined">
+        <div class="status-combined-header">
+          <b>Мониторинг</b>
+          <span class="muted">Состояние краулера, сервисов и ресурсов</span>
+        </div>
+        <div class="status-groups">
+          <details class="status-group" open>
+            <summary>Статус краулера</summary>
+            <ul class="status-list">
+              <li><span class="status-label">Queued</span><span class="status-value" id="queued">0</span></li>
+              <li><span class="status-label">In progress</span><span class="status-value" id="in_progress">0</span></li>
+              <li><span class="status-label">Done</span><span class="status-value" id="done">0</span></li>
+              <li><span class="status-label">Failed</span><span class="status-value" id="failed">0</span></li>
+              <li class="status-meta"><div class="status-meta-line muted" id="last_crawl">Last: –</div></li>
+              <li class="status-meta"><div class="status-meta-line muted">Project: <span id="crawlerProject">—</span></div></li>
+              <li class="status-meta">
+                <details class="status-nested">
+                  <summary>Последние URL</summary>
+                  <ol id="recent_urls"></ol>
+                </details>
+              </li>
+            </ul>
+          </details>
+          <details class="status-group">
+            <summary>Сервисы</summary>
+            <ul class="status-list">
+              <li><span class="status-label">Mongo</span><span class="status-value"><span id="mongo" class="bad">down</span></span></li>
+              <li><span class="status-label">Redis</span><span class="status-value"><span id="redis" class="bad">down</span></span></li>
+              <li><span class="status-label">Qdrant</span><span class="status-value"><span id="qdrant" class="bad">down</span></span></li>
+              <li><span class="status-label">Status</span><span class="status-value" id="overall">degraded</span></li>
+            </ul>
+          </details>
+          <details class="status-group">
+            <summary>Ресурсы</summary>
+            <ul class="status-list">
+              <li><span class="status-label">CPU (app)</span><span class="status-value" id="cpu">–</span></li>
+              <li><span class="status-label">CPU (sys)</span><span class="status-value" id="cpuSys">–</span></li>
+              <li><span class="status-label">RAM</span><span class="status-value" id="ram">–</span></li>
+              <li><span class="status-label">RSS</span><span class="status-value" id="rss">–</span></li>
+              <li><span class="status-label">GPU</span><span class="status-value" id="gpu">–</span></li>
+              <li><span class="status-label">Python</span><span class="status-value" id="pyver">–</span></li>
+            </ul>
           </details>
         </div>
       </div>
-      <div class="card status-card">
-        <b>Сервисы</b>
-        <div>Mongo: <span id="mongo" class="bad">down</span></div>
-        <div>Redis: <span id="redis" class="bad">down</span></div>
-        <div>Qdrant: <span id="qdrant" class="bad">down</span></div>
-        <div>Status: <span id="overall">degraded</span></div>
-      </div>
-      <div class="card status-card">
-        <b>Ресурсы</b>
-        <div>CPU (app): <span id="cpu">–</span></div>
-        <div>CPU (sys): <span id="cpuSys">–</span></div>
-        <div>RAM: <span id="ram">–</span></div>
-        <div>RSS: <span id="rss">–</span></div>
-        <div style="white-space:pre-line;">GPU: <span id="gpu">–</span></div>
-        <div>Python: <span id="pyver">–</span></div>
+    </section>
+
+    <h2 class="section-title span-all">База знаний</h2>
+
+    <section id="block-knowledge" class="dashboard-stack span-12" data-block-id="knowledge" data-block-group="knowledge">
+      <div class="card knowledge-card">
+        <b>Knowledge Base</b>
+        <div class="kb-section-nav" role="tablist" aria-label="Управление базой знаний">
+          <button type="button" class="kb-tab-button active" id="kbTabOverview" data-kb-target="overview" role="tab" aria-selected="true" aria-controls="kbSectionOverview">Обзор</button>
+          <button type="button" class="kb-tab-button" id="kbTabUpload" data-kb-target="upload" role="tab" aria-selected="false" aria-controls="kbSectionUpload" tabindex="-1">Загрузка</button>
+          <button type="button" class="kb-tab-button" id="kbTabDocuments" data-kb-target="documents" role="tab" aria-selected="false" aria-controls="kbSectionDocuments" tabindex="-1">Документы</button>
+        </div>
+        <div id="kbThinkingOverlay" class="thinking-overlay">
+          <div class="thinking-inner">
+            <img
+              src="data:image/svg+xml;utf8,%3Csvg%20width%3D%22180%22%20height%3D%22140%22%20viewBox%3D%220%200%20180%20140%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22grad%22%20x1%3D%220%22%20x2%3D%221%22%20y1%3D%220%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2360a5fa%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2250%25%22%20stop-color%3D%22%237c3aed%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23f97316%22/%3E%0A%20%20%20%20%3C/linearGradient%3E%0A%20%20%20%20%3Cfilter%20id%3D%22blur%22%20x%3D%22-20%25%22%20y%3D%22-20%25%22%20width%3D%22140%25%22%20height%3D%22140%25%22%3E%0A%20%20%20%20%20%20%3CfeGaussianBlur%20stdDeviation%3D%2218%22/%3E%0A%20%20%20%20%3C/filter%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%2250%22%20cy%3D%2270%22%20r%3D%2240%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.65%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22110%22%20cy%3D%2250%22%20r%3D%2230%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.45%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%2295%22%20r%3D%2236%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.55%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Cpath%20d%3D%22M52%2036c26%200%2048%2020%2048%2045s-22%2045-48%2045-48-20-48-45%2022-45%2048-45zm0%2016c-18%200-32%2013-32%2029s14%2029%2032%2029%2032-13%2032-29-14-29-32-29z%22%20fill%3D%22%23111827%22%20opacity%3D%220.72%22/%3E%0A%20%20%3Cpath%20d%3D%22M116%2028c16%200%2028%2012%2028%2028s-12%2028-28%2028-28-12-28-28%2012-28%2028-28z%22%20fill%3D%22%231e293b%22%20opacity%3D%220.7%22/%3E%0A%20%20%3Ccircle%20cx%3D%22104%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Ccircle%20cx%3D%22128%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Cpath%20d%3D%22M112%2072c5%206%2013%206%2018%200%22%20stroke%3D%22%23a855f7%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22/%3E%0A%3C/svg%3E"
+              alt="Идёт генерация описания"
+              class="thinking-illustration"
+            >
+            <div class="thinking-spinner"></div>
+            <div class="thinking-caption" id="kbThinkingCaption">Генерируем описание…</div>
+            <div class="thinking-subtitle" id="kbThinkingMessage">Это может занять несколько секунд.</div>
+            <div class="thinking-preview" id="kbThinkingPreview"></div>
+          </div>
+        </div>
+        <div class="kb-section active" data-kb-section="overview" id="kbSectionOverview" role="tabpanel" aria-labelledby="kbTabOverview">
+          <form id="kbForm" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+            <label style="flex:1 1 200px;">Проект
+              <input type="text" list="kbProjectList" id="kbProject" placeholder="mmvs" style="width:100%;" readonly>
+              <datalist id="kbProjectList"></datalist>
+            </label>
+            <button type="button" id="kbReloadProjects" title="Обновить список проектов">↻</button>
+            <label style="flex:1 1 240px;">Поиск
+              <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
+            </label>
+            <label>Limit
+              <input type="number" id="kbLimit" min="10" max="1000" value="1000" style="width:100px;">
+            </label>
+            <button type="submit">Обновить</button>
+            <button type="button" id="kbClear">Очистить</button>
+          </form>
+          <div class="kb-meta-line">
+            <span class="muted" id="kbInfo"></span>
+            <span class="muted" id="kbProjectsSummary"></span>
+          </div>
+        </div>
+        <div class="kb-section" data-kb-section="upload" id="kbSectionUpload" role="tabpanel" aria-labelledby="kbTabUpload" aria-hidden="true">
+          <form id="kbAddForm" style="display:flex; flex-wrap:wrap; gap:10px;">
+            <label style="flex:1 1 220px;">Имя
+              <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
+            </label>
+            <label style="flex:1 1 220px;">URL
+              <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
+            </label>
+            <label style="flex:1 1 220px;">Описание
+              <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
+            </label>
+            <label style="flex:1 1 220px;">Файл
+              <input type="file" id="kbNewFile" multiple style="width:100%;">
+            </label>
+            <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
+              Перетащите файлы сюда или нажмите на поле выше
+            </div>
+            <div id="kbAutoDescription" class="auto-description"></div>
+            <label style="flex:1 1 100%;">Текст
+              <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
+            </label>
+            <div style="display:flex; gap:10px; align-items:center;">
+              <button type="submit">Сохранить</button>
+              <button type="button" id="kbResetForm">Сбросить</button>
+              <span class="muted" id="kbAddStatus"></span>
+            </div>
+          </form>
+        </div>
+        <div class="kb-section" data-kb-section="documents" id="kbSectionDocuments" role="tabpanel" aria-labelledby="kbTabDocuments" aria-hidden="true">
+          <div class="knowledge-actions">
+            <button type="button" id="kbDeduplicate">Очистить дубликаты</button>
+            <button type="button" id="kbClearKnowledge">Очистить базу</button>
+            <span class="muted" id="kbDedupStatus"></span>
+            <span class="muted" id="kbClearStatus"></span>
+          </div>
+          <div class="kb-category" data-kb-category="text">
+            <div class="kb-category-header">
+              <strong>Текст</strong>
+              <span class="muted" id="kbCountText">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table>
+                <thead>
+                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                </thead>
+                <tbody id="kbTableText"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="kb-category" data-kb-category="docs">
+            <div class="kb-category-header">
+              <strong>Документы</strong>
+              <span class="muted" id="kbCountDocs">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table>
+                <thead>
+                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                </thead>
+                <tbody id="kbTableDocs"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="kb-category" data-kb-category="images">
+            <div class="kb-category-header">
+              <strong>Фото</strong>
+              <span class="muted" id="kbCountImages">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table>
+                <thead>
+                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                </thead>
+                <tbody id="kbTableImages"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
+
 
     <h2 class="section-title span-all">Управление</h2>
 
@@ -1279,130 +1594,6 @@
       </div>
     </section>
 
-    <h2 class="section-title span-all">База знаний</h2>
-
-    <section id="block-knowledge" class="dashboard-stack span-12" data-block-id="knowledge" data-block-group="knowledge">
-      <div class="card knowledge-card">
-        <b>Knowledge Base</b>
-        <div class="kb-section-nav" role="tablist" aria-label="Управление базой знаний">
-          <button type="button" class="kb-tab-button active" id="kbTabOverview" data-kb-target="overview" role="tab" aria-selected="true" aria-controls="kbSectionOverview">Обзор</button>
-          <button type="button" class="kb-tab-button" id="kbTabUpload" data-kb-target="upload" role="tab" aria-selected="false" aria-controls="kbSectionUpload" tabindex="-1">Загрузка</button>
-          <button type="button" class="kb-tab-button" id="kbTabDocuments" data-kb-target="documents" role="tab" aria-selected="false" aria-controls="kbSectionDocuments" tabindex="-1">Документы</button>
-        </div>
-        <div id="kbThinkingOverlay" class="thinking-overlay">
-          <div class="thinking-inner">
-            <img
-              src="data:image/svg+xml;utf8,%3Csvg%20width%3D%22180%22%20height%3D%22140%22%20viewBox%3D%220%200%20180%20140%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22grad%22%20x1%3D%220%22%20x2%3D%221%22%20y1%3D%220%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2360a5fa%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2250%25%22%20stop-color%3D%22%237c3aed%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23f97316%22/%3E%0A%20%20%20%20%3C/linearGradient%3E%0A%20%20%20%20%3Cfilter%20id%3D%22blur%22%20x%3D%22-20%25%22%20y%3D%22-20%25%22%20width%3D%22140%25%22%20height%3D%22140%25%22%3E%0A%20%20%20%20%20%20%3CfeGaussianBlur%20stdDeviation%3D%2218%22/%3E%0A%20%20%20%20%3C/filter%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%2250%22%20cy%3D%2270%22%20r%3D%2240%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.65%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22110%22%20cy%3D%2250%22%20r%3D%2230%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.45%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%2295%22%20r%3D%2236%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.55%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Cpath%20d%3D%22M52%2036c26%200%2048%2020%2048%2045s-22%2045-48%2045-48-20-48-45%2022-45%2048-45zm0%2016c-18%200-32%2013-32%2029s14%2029%2032%2029%2032-13%2032-29-14-29-32-29z%22%20fill%3D%22%23111827%22%20opacity%3D%220.72%22/%3E%0A%20%20%3Cpath%20d%3D%22M116%2028c16%200%2028%2012%2028%2028s-12%2028-28%2028-28-12-28-28%2012-28%2028-28z%22%20fill%3D%22%231e293b%22%20opacity%3D%220.7%22/%3E%0A%20%20%3Ccircle%20cx%3D%22104%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Ccircle%20cx%3D%22128%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Cpath%20d%3D%22M112%2072c5%206%2013%206%2018%200%22%20stroke%3D%22%23a855f7%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22/%3E%0A%3C/svg%3E"
-              alt="Идёт генерация описания"
-              class="thinking-illustration"
-            >
-            <div class="thinking-spinner"></div>
-            <div class="thinking-caption" id="kbThinkingCaption">Генерируем описание…</div>
-            <div class="thinking-subtitle" id="kbThinkingMessage">Это может занять несколько секунд.</div>
-            <div class="thinking-preview" id="kbThinkingPreview"></div>
-          </div>
-        </div>
-        <div class="kb-section active" data-kb-section="overview" id="kbSectionOverview" role="tabpanel" aria-labelledby="kbTabOverview">
-          <form id="kbForm" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
-            <label style="flex:1 1 200px;">Проект
-              <input type="text" list="kbProjectList" id="kbProject" placeholder="mmvs" style="width:100%;" readonly>
-              <datalist id="kbProjectList"></datalist>
-            </label>
-            <button type="button" id="kbReloadProjects" title="Обновить список проектов">↻</button>
-            <label style="flex:1 1 240px;">Поиск
-              <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
-            </label>
-            <label>Limit
-              <input type="number" id="kbLimit" min="10" max="1000" value="1000" style="width:100px;">
-            </label>
-            <button type="submit">Обновить</button>
-            <button type="button" id="kbClear">Очистить</button>
-          </form>
-          <div class="kb-meta-line">
-            <span class="muted" id="kbInfo"></span>
-            <span class="muted" id="kbProjectsSummary"></span>
-          </div>
-        </div>
-        <div class="kb-section" data-kb-section="upload" id="kbSectionUpload" role="tabpanel" aria-labelledby="kbTabUpload" aria-hidden="true">
-          <form id="kbAddForm" style="display:flex; flex-wrap:wrap; gap:10px;">
-            <label style="flex:1 1 220px;">Имя
-              <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
-            </label>
-            <label style="flex:1 1 220px;">URL
-              <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
-            </label>
-            <label style="flex:1 1 220px;">Описание
-              <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
-            </label>
-            <label style="flex:1 1 220px;">Файл
-              <input type="file" id="kbNewFile" multiple style="width:100%;">
-            </label>
-            <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
-              Перетащите файлы сюда или нажмите на поле выше
-            </div>
-            <div id="kbAutoDescription" class="auto-description"></div>
-            <label style="flex:1 1 100%;">Текст
-              <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
-            </label>
-            <div style="display:flex; gap:10px; align-items:center;">
-              <button type="submit">Сохранить</button>
-              <button type="button" id="kbResetForm">Сбросить</button>
-              <span class="muted" id="kbAddStatus"></span>
-            </div>
-          </form>
-        </div>
-        <div class="kb-section" data-kb-section="documents" id="kbSectionDocuments" role="tabpanel" aria-labelledby="kbTabDocuments" aria-hidden="true">
-          <div class="knowledge-actions">
-            <button type="button" id="kbDeduplicate">Очистить дубликаты</button>
-            <button type="button" id="kbClearKnowledge">Очистить базу</button>
-            <span class="muted" id="kbDedupStatus"></span>
-            <span class="muted" id="kbClearStatus"></span>
-          </div>
-          <div class="kb-category" data-kb-category="text">
-            <div class="kb-category-header">
-              <strong>Текст</strong>
-              <span class="muted" id="kbCountText">—</span>
-            </div>
-            <div class="kb-table-wrapper">
-              <table>
-                <thead>
-                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
-                </thead>
-                <tbody id="kbTableText"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="kb-category" data-kb-category="docs">
-            <div class="kb-category-header">
-              <strong>Документы</strong>
-              <span class="muted" id="kbCountDocs">—</span>
-            </div>
-            <div class="kb-table-wrapper">
-              <table>
-                <thead>
-                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
-                </thead>
-                <tbody id="kbTableDocs"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="kb-category" data-kb-category="images">
-            <div class="kb-category-header">
-              <strong>Фото</strong>
-              <span class="muted" id="kbCountImages">—</span>
-            </div>
-            <div class="kb-table-wrapper">
-              <table>
-                <thead>
-                <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
-                </thead>
-                <tbody id="kbTableImages"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
 
     <section id="block-knowledge-tools" class="dashboard-stack span-12" data-block-id="knowledge-tools" data-block-group="knowledge">
       <div class="card knowledge-service-card">
