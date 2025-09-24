@@ -60,6 +60,9 @@ printf '[+] Building images (with cache refresh) ...\n'
 "${COMPOSE_CMD[@]}" pull || true
 "${COMPOSE_CMD[@]}" build --pull
 
+printf '[+] Stopping running stack (if any) ...\n'
+"${COMPOSE_CMD[@]}" down --remove-orphans || true
+
 printf '[+] Applying stack ...\n'
 "${COMPOSE_CMD[@]}" up -d --remove-orphans
 

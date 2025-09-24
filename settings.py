@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     llm_model: str = "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
     telegram_api_base: AnyUrl | str = "http://app:8000"
     telegram_request_timeout: int = 30
+    cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 
     mongo: MongoSettings = MongoSettings()
     celery: CelerySettings = CelerySettings()

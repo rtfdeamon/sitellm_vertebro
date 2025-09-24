@@ -23,8 +23,24 @@ from backend.settings import settings
 
 logger = structlog.get_logger(__name__)
 
+def _parse_cors_origins(raw: str | list[str] | tuple[str, ...]) -> list[str]:
+    if isinstance(raw, (list, tuple)):
+        values = [str(item).strip() for item in raw if str(item).strip()]
+    else:
+        values = [item.strip() for item in str(raw or "").split(",") if item.strip()]
+    return values or ["*"]
+
+
+cors_origins = _parse_cors_origins(getattr(settings, "cors_origins", "*"))
+allow_all_origins = "*" in cors_origins
+
 app = FastAPI(title="LLM Model Service", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if allow_all_origins else cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 MODEL_API_KEY = os.environ.get("MODEL_API_KEY")
 

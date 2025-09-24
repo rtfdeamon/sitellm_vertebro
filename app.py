@@ -2314,11 +2314,29 @@ def _ssl_enabled() -> bool:
     return os.path.exists(cert) and os.path.exists(key)
 
 
+def _parse_cors_origins(raw: str | list[str] | tuple[str, ...]) -> list[str]:
+    """Return a list of CORS origins from a raw env value."""
+
+    if isinstance(raw, (list, tuple)):
+        values = [str(item).strip() for item in raw if str(item).strip()]
+    else:
+        values = [item.strip() for item in str(raw or "").split(",") if item.strip()]
+    return values or ["*"]
+
+
+cors_origins = _parse_cors_origins(getattr(settings, "cors_origins", "*"))
+allow_all_origins = "*" in cors_origins
+
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 if _ssl_enabled():
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
     app.add_middleware(HTTPSRedirectMiddleware)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if allow_all_origins else cors_origins,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(BasicAuthMiddleware)
 app.mount("/metrics", metrics_app)

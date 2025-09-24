@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     app_host: str = Field(default="0.0.0.0", env=["APP_HOST", "app_host"])
     app_port: int = Field(default=8000, env=["APP_PORT", "app_port"])
+    cors_origins: str = Field(default="*", env=["CORS_ORIGINS", "cors.origins"])
 
     # Optional: use external model microservice instead of local model loading
     model_base_url: Optional[str] = Field(default=None, env=["MODEL_BASE_URL", "model.base_url"])
