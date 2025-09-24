@@ -9,6 +9,7 @@ fake_pydantic = types.ModuleType("pydantic")
 fake_pydantic.AnyUrl = str
 fake_pydantic.BaseSettings = object
 fake_pydantic.ConfigDict = dict
+fake_pydantic.Field = lambda default=None, **kwargs: default
 _real_pydantic = sys.modules.get("pydantic")
 sys.modules["pydantic"] = fake_pydantic
 fake_structlog = types.ModuleType("structlog")
@@ -31,6 +32,7 @@ sys.modules["aiogram.filters"] = fake_filters
 fake_types = types.ModuleType("aiogram.types")
 fake_types.Message = type("Message", (), {"__init__": lambda self, **k: None})
 fake_types.URLInputFile = lambda url, filename=None: {"url": url, "filename": filename}
+fake_types.BufferedInputFile = lambda data, filename=None: {"data": data, "filename": filename}
 sys.modules["aiogram.types"] = fake_types
 
 pkg = types.ModuleType("tg_bot")
