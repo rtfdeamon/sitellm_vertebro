@@ -317,13 +317,13 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
             return cached[1].copy()
 
     settings = get_settings()
-    api_url = f"{settings.api_base_url}/api/v1/admin/projects"
+    api_url = f"{settings.api_base_url}/api/v1/llm/project-config"
     emotions_enabled = True
     debug_enabled = False
 
     try:
         async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
-            resp = await client.get(api_url)
+            resp = await client.get(api_url, params={"project": key})
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:  # noqa: BLE001
@@ -333,12 +333,8 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
             error=str(exc),
         )
     else:
-        for item in data.get("projects", []):
-            name = (item.get("name") or "").lower()
-            if name == key:
-                emotions_enabled = item.get("llm_emotions_enabled", True) is not False
-                debug_enabled = bool(item.get("debug_enabled", False))
-                break
+        emotions_enabled = bool(data.get("emotions_enabled", True))
+        debug_enabled = bool(data.get("debug_enabled", False))
 
     features = {"emotions_enabled": emotions_enabled, "debug_enabled": debug_enabled}
     async with _FEATURE_CACHE_LOCK:

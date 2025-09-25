@@ -1080,13 +1080,9 @@ async def chat(
 
 @llm_router.get("/project-config", response_class=ORJSONResponse)
 async def project_config(request: Request, project: str | None = None) -> ORJSONResponse:
-    """Expose limited project configuration for public widget usage."""
+    """Expose project configuration for widgets and clients."""
 
-    mongo_client = getattr(request.state, "mongo", None)
-    if mongo_client is None:
-        mongo_client = getattr(request.app.state, "mongo", None)
-    if mongo_client is None:
-        raise HTTPException(status_code=503, detail="mongo_unavailable")
+    mongo_client = _get_mongo_client(request)
 
     normalized = _normalize_project(project)
     if not normalized:
@@ -1106,6 +1102,8 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
     voice_model = None
     llm_model = getattr(llm_client, "MODEL_NAME", None)
     title = None
+    emotions_enabled = True
+    debug_enabled = False
 
     if project_obj:
         title = project_obj.title
@@ -1115,6 +1113,10 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
             voice_enabled = bool(project_obj.llm_voice_enabled)
         if project_obj.llm_voice_model:
             voice_model = project_obj.llm_voice_model
+        if project_obj.llm_emotions_enabled is not None:
+            emotions_enabled = bool(project_obj.llm_emotions_enabled)
+        if project_obj.debug_enabled is not None:
+            debug_enabled = bool(project_obj.debug_enabled)
 
     payload = {
         "project": normalized,
@@ -1122,9 +1124,10 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
         "llm_model": llm_model,
         "llm_voice_enabled": voice_enabled,
         "llm_voice_model": voice_model,
+        "emotions_enabled": emotions_enabled,
+        "debug_enabled": debug_enabled,
     }
     return ORJSONResponse(payload)
-
 
 class CrawlRequest(BaseModel):
     start_url: str
