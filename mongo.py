@@ -17,7 +17,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pymongo.errors import ConfigurationError
 
 from backend.cache import _get_redis
-from models import ContextMessage, ContextPreset, Document
+from models import ContextMessage, ContextPreset, Document, OllamaServer
 try:
     from models import Project
 except ImportError:  # pragma: no cover - fallback for test stubs
@@ -114,6 +114,7 @@ class MongoClient:
         self.settings_collection = os.getenv("MONGO_SETTINGS", "app_settings")
         self.documents_collection = os.getenv("MONGO_DOCUMENTS", "documents")
         self.stats_collection = os.getenv("MONGO_STATS", "request_stats")
+        self.ollama_servers_collection = os.getenv("MONGO_OLLAMA_SERVERS", "ollama_servers")
         self._indexes_ready = False
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
@@ -793,6 +794,98 @@ class MongoClient:
         summary["file_ids"] = file_ids
         return summary
 
+    async def list_ollama_servers(self) -> list[OllamaServer]:
+        try:
+            cursor = self.db[self.ollama_servers_collection].find({}, {"_id": False})
+            servers: list[OllamaServer] = []
+            async for item in cursor:
+                try:
+                    servers.append(OllamaServer(**item))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "mongo_ollama_server_parse_failed",
+                        server=item,
+                        error=str(exc),
+                    )
+            return servers
+        except Exception as exc:
+            logger.error("mongo_list_ollama_servers_failed", error=str(exc))
+            raise
+
+    async def get_ollama_server(self, name: str) -> OllamaServer | None:
+        try:
+            doc = await self.db[self.ollama_servers_collection].find_one(
+                {"name": name.strip().lower()},
+                {"_id": False},
+            )
+            return OllamaServer(**doc) if doc else None
+        except Exception as exc:
+            logger.error("mongo_get_ollama_server_failed", name=name, error=str(exc))
+            raise
+
+    async def upsert_ollama_server(self, server: OllamaServer) -> OllamaServer:
+        payload = server.model_dump()
+        payload["name"] = server.name.strip().lower()
+        payload["base_url"] = server.base_url.rstrip('/')
+        now = time.time()
+        payload.setdefault("created_at", now)
+        payload["updated_at"] = now
+        try:
+            await self.db[self.ollama_servers_collection].update_one(
+                {"name": payload["name"]},
+                {"$set": payload},
+                upsert=True,
+            )
+            stored = await self.db[self.ollama_servers_collection].find_one(
+                {"name": payload["name"]},
+                {"_id": False},
+            )
+            return OllamaServer(**stored) if stored else server
+        except Exception as exc:
+            logger.error("mongo_upsert_ollama_server_failed", name=server.name, error=str(exc))
+            raise
+
+    async def delete_ollama_server(self, name: str) -> bool:
+        key = name.strip().lower()
+        try:
+            result = await self.db[self.ollama_servers_collection].delete_one({"name": key})
+            return bool(result.deleted_count)
+        except Exception as exc:
+            logger.error("mongo_delete_ollama_server_failed", name=key, error=str(exc))
+            raise
+
+    async def update_ollama_server_stats(
+        self,
+        name: str,
+        *,
+        avg_latency_ms: float,
+        requests_last_hour: int,
+        total_duration_ms: float,
+    ) -> None:
+        key = name.strip().lower()
+        stats_payload = {
+            "avg_latency_ms": float(avg_latency_ms),
+            "requests_last_hour": int(requests_last_hour),
+            "total_duration_ms": float(total_duration_ms),
+            "updated_at": time.time(),
+        }
+        try:
+            await self.db[self.ollama_servers_collection].update_one(
+                {"name": key},
+                {
+                    "$set": {
+                        "stats": stats_payload,
+                        "updated_at": time.time(),
+                    }
+                },
+            )
+        except Exception as exc:
+            logger.debug(
+                "mongo_update_ollama_server_stats_failed",
+                name=key,
+                error=str(exc),
+            )
+
     async def get_project(self, domain: str) -> Project | None:
         try:
             doc = await self.db[self.projects_collection].find_one(
@@ -931,6 +1024,20 @@ class MongoClient:
                 "mongo_index_create_failed",
                 collection=self.stats_collection,
                 index="request_stats_project_date",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.ollama_servers_collection].create_index(
+                "name",
+                name="ollama_server_name_unique",
+                unique=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.ollama_servers_collection,
+                index="ollama_server_name_unique",
                 error=str(exc),
             )
 

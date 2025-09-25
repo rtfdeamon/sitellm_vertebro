@@ -1,7 +1,7 @@
 {
   "backend": {
-    "version": 28,
-    "hash": "40d555ff934c8b1e1037042ecae63b3fb9bf39dc64df150f5e22b075b48b1fb9"
+    "version": 30,
+    "hash": "6b8f7cf39a93961c306230e583af6b1cf049b350235807177c7e6e21cc3fa97e"
   },
   "telegram": {
     "version": 12,

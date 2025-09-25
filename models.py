@@ -193,3 +193,29 @@ class Project(BaseModel):
             }
         }
     )
+
+
+class OllamaServer(BaseModel):
+    """Configuration entry describing an Ollama backend node."""
+
+    name: str
+    base_url: str
+    enabled: bool = True
+    created_at: float | None = None
+    updated_at: float | None = None
+    stats: dict | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "primary",
+                "base_url": "http://localhost:11434",
+                "enabled": True,
+                "stats": {
+                    "avg_latency_ms": 2200.0,
+                    "requests_last_hour": 12,
+                    "updated_at": 1_700_000_000.0,
+                },
+            }
+        }
+    )

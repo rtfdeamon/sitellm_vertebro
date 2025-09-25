@@ -40,7 +40,7 @@ from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
 from mongo import MongoClient, NotFound
-from models import Document, Project
+from models import Document, Project, OllamaServer
 from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
@@ -52,6 +52,7 @@ from backend.ollama import (
     popular_models_with_size,
     ollama_available,
 )
+from backend.ollama_cluster import init_cluster, reload_cluster, get_cluster_manager
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
@@ -2264,6 +2265,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     app.state.pending_attachments = {}
     app.state.pending_attachments_lock = asyncio.Lock()
 
+    cluster = await init_cluster(
+        mongo_client,
+        default_base=getattr(base_settings, "ollama_base_url", None),
+    )
+    app.state.ollama_cluster = cluster
+
     # Warm-up runners based on stored configuration
     try:
         await telegram_hub.refresh()
@@ -2304,6 +2311,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         del app.state.telegram
         del app.state.max
         del app.state.vk
+        del app.state.ollama_cluster
 
 
 def _ssl_enabled() -> bool:
@@ -2603,6 +2611,12 @@ class ProjectVkAction(BaseModel):
 
 class OllamaInstallRequest(BaseModel):
     model: str
+
+
+class OllamaServerPayload(BaseModel):
+    name: str
+    base_url: str
+    enabled: bool = True
 
 
 @app.get("/api/v1/admin/session", response_class=ORJSONResponse)
@@ -3239,6 +3253,51 @@ async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
             "default_model": default_model,
         }
     )
+
+
+@app.get("/api/v1/admin/ollama/servers", response_class=ORJSONResponse)
+async def admin_ollama_servers(request: Request) -> ORJSONResponse:
+    _require_super_admin(request)
+    cluster = get_cluster_manager()
+    servers = await cluster.describe()
+    return ORJSONResponse({"servers": servers})
+
+
+@app.post("/api/v1/admin/ollama/servers", response_class=ORJSONResponse)
+async def admin_ollama_server_upsert(request: Request, payload: OllamaServerPayload) -> ORJSONResponse:
+    _require_super_admin(request)
+    name = (payload.name or "").strip().lower()
+    base_url = (payload.base_url or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not base_url:
+        raise HTTPException(status_code=400, detail="base_url is required")
+    try:
+        server = OllamaServer(name=name, base_url=base_url, enabled=payload.enabled)
+        stored = await _get_mongo_client(request).upsert_ollama_server(server)
+        await reload_cluster()
+        cluster = get_cluster_manager()
+        servers = await cluster.describe()
+        data = next((item for item in servers if item.get("name") == stored.name), None)
+        return ORJSONResponse({"server": data})
+    except Exception as exc:  # noqa: BLE001
+        logger.error("admin_ollama_server_upsert_failed", name=name, error=str(exc))
+        raise
+
+
+@app.delete("/api/v1/admin/ollama/servers/{name}", response_class=ORJSONResponse)
+async def admin_ollama_server_delete(request: Request, name: str) -> ORJSONResponse:
+    _require_super_admin(request)
+    key = (name or "").strip().lower()
+    if not key:
+        raise HTTPException(status_code=400, detail="name is required")
+    removed = await _get_mongo_client(request).delete_ollama_server(key)
+    if not removed:
+        raise HTTPException(status_code=404, detail="server_not_found")
+    await reload_cluster()
+    cluster = get_cluster_manager()
+    servers = await cluster.describe()
+    return ORJSONResponse({"servers": servers})
 
 
 @app.post("/api/v1/admin/ollama/install", response_class=ORJSONResponse)

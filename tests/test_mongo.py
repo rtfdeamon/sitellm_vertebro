@@ -9,7 +9,7 @@ from bson import ObjectId
 # Ensure any test stubs for ``mongo`` are cleared before importing the real module.
 sys.modules.pop("mongo", None)
 from mongo import MongoClient
-from models import Project
+from models import Project, OllamaServer
 
 
 class _FakeGridFS:
@@ -48,6 +48,65 @@ class _FakeDB:
 
     def __getitem__(self, _name: str) -> _FakeCollection:  # pragma: no cover
         return self._collection
+
+
+class _AsyncCursor:
+    def __init__(self, docs):
+        self._docs = list(docs)
+        self._index = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._index >= len(self._docs):
+            raise StopAsyncIteration
+        value = self._docs[self._index]
+        self._index += 1
+        return value
+
+
+class _OllamaCollection:
+    def __init__(self):
+        self.items: dict[str, dict] = {}
+
+    def find(self, _filter, _projection=None):
+        return _AsyncCursor([item.copy() for item in self.items.values()])
+
+    async def find_one(self, filter, _projection=None):
+        name = filter.get('name')
+        if name is None:
+            return None
+        item = self.items.get(name)
+        return item.copy() if item else None
+
+    async def update_one(self, filter, update, upsert=False):
+        name = filter.get('name')
+        if name is None:
+            raise ValueError('name is required')
+        payload = update.get('$set', {}) if isinstance(update, dict) else {}
+        existing = self.items.get(name, {}).copy()
+        existing.update(payload)
+        self.items[name] = existing
+
+    async def delete_one(self, filter):
+        name = filter.get('name')
+        existed = self.items.pop(name, None)
+
+        class _Result:
+            deleted_count = 1 if existed else 0
+
+        return _Result()
+
+
+class _OllamaDB:
+    def __init__(self, collection: _OllamaCollection):
+        self._collection = collection
+
+    def __getitem__(self, name: str):
+        if name == 'ollama_servers':
+            return self._collection
+        raise KeyError(name)
 
 
 @pytest.mark.asyncio
@@ -187,3 +246,36 @@ def test_project_from_doc_trims_optional_fields() -> None:
     assert project.widget_url == "https://demo.example/widget"
     assert project.llm_emotions_enabled is True
     assert project.llm_voice_enabled is True
+
+
+@pytest.mark.asyncio
+async def test_ollama_server_crud() -> None:
+    mc = MongoClient.__new__(MongoClient)
+    collection = _OllamaCollection()
+    mc.ollama_servers_collection = 'ollama_servers'
+    mc.db = _OllamaDB(collection)
+
+    server = OllamaServer(name='primary', base_url='http://localhost:11434', enabled=True)
+    stored = await MongoClient.upsert_ollama_server(mc, server)
+    assert stored.name == 'primary'
+    assert stored.base_url == 'http://localhost:11434'
+    assert stored.enabled is True
+
+    servers = await MongoClient.list_ollama_servers(mc)
+    assert len(servers) == 1
+    assert servers[0].name == 'primary'
+
+    await MongoClient.update_ollama_server_stats(
+        mc,
+        'primary',
+        avg_latency_ms=2200.0,
+        requests_last_hour=5,
+        total_duration_ms=11000.0,
+    )
+    updated = await MongoClient.list_ollama_servers(mc)
+    assert updated[0].stats["avg_latency_ms"] == 2200.0
+    assert updated[0].stats["requests_last_hour"] == 5
+
+    deleted = await MongoClient.delete_ollama_server(mc, 'primary')
+    assert deleted is True
+    assert await MongoClient.list_ollama_servers(mc) == []

@@ -682,6 +682,18 @@
     .ollama-job.running { color: #fbbf24; }
     .ollama-job.success { color: #10b981; }
     .ollama-job.error { color: #f87171; }
+    .ollama-servers { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .ollama-servers-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .ollama-server-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; align-items: center; }
+    .ollama-server-form-grid input[type=text] { padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.35); background: rgba(12, 16, 32, 0.6); color: var(--text-primary); font-size: 13px; }
+    .ollama-server-form-grid button { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.45); background: rgba(99, 102, 241, 0.2); color: var(--text-primary); cursor: pointer; }
+    .ollama-server-enabled { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+    .ollama-server-row { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; background: rgba(15, 23, 42, 0.45); border-radius: 8px; border: 1px solid rgba(99, 102, 241, 0.25); width: 100%; }
+    .ollama-server-row h4 { margin: 0; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .ollama-server-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-muted); }
+    .ollama-server-actions { display: flex; gap: 6px; margin-top: 4px; }
+    .ollama-server-actions button { padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.4); background: rgba(30, 41, 59, 0.6); color: var(--text-primary); cursor: pointer; font-size: 12px; }
+    .ollama-server-actions button[disabled] { opacity: 0.6; cursor: not-allowed; }
     .reorder-mode .dashboard-grid section[data-block-id] {
       cursor: grab;
       outline: 1px dashed rgba(96, 165, 250, 0.45);
@@ -1283,6 +1295,25 @@
             <div>
               <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;">Установка</strong>
               <div class="ollama-jobs" id="ollamaJobsList"></div>
+            </div>
+            <div class="ollama-servers" id="ollamaServersPanel">
+              <div class="ollama-servers-header">
+                <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;">Серверы</strong>
+                <button type="button" id="ollamaServersRefresh">Обновить</button>
+              </div>
+              <div class="ollama-meta" id="ollamaServersStatus">—</div>
+              <ul class="ollama-list" id="ollamaServersList"></ul>
+              <form id="ollamaServerForm" class="ollama-server-form">
+                <div class="ollama-server-form-grid">
+                  <input type="text" id="ollamaServerName" placeholder="идентификатор" required>
+                  <input type="text" id="ollamaServerUrl" placeholder="http://host:11434" required>
+                  <label class="ollama-server-enabled">
+                    <input type="checkbox" id="ollamaServerEnabled" checked>
+                    Включён
+                  </label>
+                  <button type="submit">Добавить</button>
+                </div>
+              </form>
             </div>
           </div>
         </div>
@@ -2957,6 +2988,14 @@
     const ollamaInstalledList = document.getElementById('ollamaInstalledList');
     const ollamaPopularList = document.getElementById('ollamaPopularList');
     const ollamaJobsList = document.getElementById('ollamaJobsList');
+    const ollamaServersPanel = document.getElementById('ollamaServersPanel');
+    const ollamaServersList = document.getElementById('ollamaServersList');
+    const ollamaServersStatus = document.getElementById('ollamaServersStatus');
+    const ollamaServersRefreshBtn = document.getElementById('ollamaServersRefresh');
+    const ollamaServerForm = document.getElementById('ollamaServerForm');
+    const ollamaServerName = document.getElementById('ollamaServerName');
+    const ollamaServerUrl = document.getElementById('ollamaServerUrl');
+    const ollamaServerEnabled = document.getElementById('ollamaServerEnabled');
     const projectModalBackdrop = document.getElementById('projectModal');
     const projectModalForm = document.getElementById('projectModalForm');
     const projectModalClose = document.getElementById('projectModalClose');
@@ -2994,6 +3033,7 @@
     let OLLAMA_CATALOG = { available: false, installed: [], popular: [], jobs: {}, default_model: null };
     let OLLAMA_INSTALLED_SET = new Set();
     let ollamaPollTimer = null;
+    let OLLAMA_SERVERS = [];
 
     async function performAdminLogout() {
       if (logoutButton) {
@@ -4487,6 +4527,185 @@
       });
       ollamaJobsList.appendChild(frag);
       return hasRunning;
+    }
+
+    function renderOllamaServers(servers) {
+      if (!ollamaServersList) return;
+      OLLAMA_SERVERS = Array.isArray(servers) ? servers : [];
+      ollamaServersList.innerHTML = '';
+      if (!OLLAMA_SERVERS.length) {
+        const li = document.createElement('li');
+        li.className = 'ollama-meta';
+        li.textContent = 'Нет зарегистрированных серверов';
+        ollamaServersList.appendChild(li);
+        if (ollamaServersStatus) ollamaServersStatus.textContent = 'Добавьте сервер Ollama';
+        return;
+      }
+      const frag = document.createDocumentFragment();
+      OLLAMA_SERVERS.forEach((server) => {
+        const li = document.createElement('li');
+        const row = document.createElement('div');
+        row.className = 'ollama-server-row';
+
+        const title = document.createElement('h4');
+        title.textContent = server.name || 'сервер';
+        row.appendChild(title);
+
+        const base = document.createElement('div');
+        base.className = 'ollama-meta';
+        base.textContent = server.base_url || '—';
+        row.appendChild(base);
+
+        const meta = document.createElement('div');
+        meta.className = 'ollama-server-meta';
+        const avg = typeof server.avg_latency_ms === 'number'
+          ? `${Math.round(server.avg_latency_ms)} мс`
+          : '—';
+        const reqs = typeof server.requests_last_hour === 'number'
+          ? `${server.requests_last_hour}/ч`
+          : '0/ч';
+        const inflight = typeof server.inflight === 'number' ? `в работе: ${server.inflight}` : 'в работе: 0';
+        const statusLabel = enabled ? 'активен' : 'выключен';
+        meta.appendChild(document.createTextNode(`Среднее: ${avg}`));
+        meta.appendChild(document.createTextNode(` • ${reqs}`));
+        meta.appendChild(document.createTextNode(` • ${inflight}`));
+        meta.appendChild(document.createTextNode(` • ${statusLabel}`));
+        row.appendChild(meta);
+
+        if (server.last_error) {
+          const errorLine = document.createElement('div');
+          errorLine.className = 'ollama-meta';
+          errorLine.style.color = '#f87171';
+          errorLine.textContent = `Ошибка: ${server.last_error}`;
+          row.appendChild(errorLine);
+        }
+
+        const actions = document.createElement('div');
+        actions.className = 'ollama-server-actions';
+
+        const enabled = Boolean(server.enabled);
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.textContent = enabled ? 'Отключить' : 'Включить';
+        toggleBtn.addEventListener('click', () => toggleOllamaServer(server.name, !enabled));
+        actions.appendChild(toggleBtn);
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Удалить';
+        deleteBtn.addEventListener('click', () => deleteOllamaServer(server.name));
+        actions.appendChild(deleteBtn);
+
+        row.appendChild(actions);
+        li.appendChild(row);
+        frag.appendChild(li);
+      });
+      ollamaServersList.appendChild(frag);
+      if (ollamaServersStatus) {
+        ollamaServersStatus.textContent = `Всего серверов: ${OLLAMA_SERVERS.length}`;
+      }
+    }
+
+    async function refreshOllamaServers() {
+      if (!ollamaServersPanel) return;
+      if (ollamaServersStatus) {
+        ollamaServersStatus.textContent = 'Загружаем…';
+      }
+      try {
+        const resp = await fetch('/api/v1/admin/ollama/servers', { cache: 'no-store' });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        renderOllamaServers(data.servers || []);
+      } catch (error) {
+        console.error('Failed to load Ollama servers', error);
+        if (ollamaServersStatus) {
+          ollamaServersStatus.textContent = 'Не удалось загрузить список серверов';
+        }
+      }
+    }
+
+    async function submitOllamaServerForm(event) {
+      event.preventDefault();
+      if (!ollamaServerForm) return;
+      const name = (ollamaServerName?.value || '').trim();
+      const url = (ollamaServerUrl?.value || '').trim();
+      if (!name || !url) {
+        if (ollamaServersStatus) ollamaServersStatus.textContent = 'Укажите имя и адрес сервера';
+        return;
+      }
+      const payload = {
+        name,
+        base_url: url,
+        enabled: ollamaServerEnabled ? ollamaServerEnabled.checked : true,
+      };
+      try {
+        if (ollamaServersStatus) ollamaServersStatus.textContent = 'Сохраняем сервер…';
+        const resp = await fetch('/api/v1/admin/ollama/servers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          throw new Error(await resp.text());
+        }
+        ollamaServerName.value = '';
+        if (ollamaServerEnabled) ollamaServerEnabled.checked = true;
+        await refreshOllamaServers();
+        if (ollamaServersStatus) ollamaServersStatus.textContent = 'Сервер сохранён';
+      } catch (error) {
+        console.error('Failed to upsert Ollama server', error);
+        if (ollamaServersStatus) {
+          ollamaServersStatus.textContent = 'Не удалось сохранить сервер';
+        }
+      }
+    }
+
+    async function toggleOllamaServer(name, enabled) {
+      const server = OLLAMA_SERVERS.find((item) => item.name === name);
+      if (!server) return;
+      try {
+        if (ollamaServersStatus) {
+          ollamaServersStatus.textContent = enabled ? 'Включаем сервер…' : 'Отключаем сервер…';
+        }
+        const resp = await fetch('/api/v1/admin/ollama/servers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: server.name, base_url: server.base_url, enabled }),
+        });
+        if (!resp.ok) {
+          throw new Error(await resp.text());
+        }
+        await refreshOllamaServers();
+        if (ollamaServersStatus) {
+          ollamaServersStatus.textContent = enabled ? 'Сервер включён' : 'Сервер отключён';
+        }
+      } catch (error) {
+        console.error('Failed to toggle Ollama server', error);
+        if (ollamaServersStatus) {
+          ollamaServersStatus.textContent = 'Не удалось обновить статус сервера';
+        }
+      }
+    }
+
+    async function deleteOllamaServer(name) {
+      if (!name) return;
+      if (!window.confirm(`Удалить сервер ${name}?`)) return;
+      try {
+        if (ollamaServersStatus) ollamaServersStatus.textContent = 'Удаляем сервер…';
+        const resp = await fetch(`/api/v1/admin/ollama/servers/${encodeURIComponent(name)}`, {
+          method: 'DELETE',
+        });
+        if (!resp.ok) {
+          throw new Error(await resp.text());
+        }
+        await refreshOllamaServers();
+        if (ollamaServersStatus) ollamaServersStatus.textContent = 'Сервер удалён';
+      } catch (error) {
+        console.error('Failed to delete Ollama server', error);
+        if (ollamaServersStatus) {
+          ollamaServersStatus.textContent = 'Не удалось удалить сервер';
+        }
+      }
     }
 
     async function refreshOllamaCatalog(force = false) {
@@ -6407,7 +6626,16 @@
       crawlerDedupBtn.addEventListener('click', () => performCrawlerAction('/deduplicate', 'Дубликаты удалены'));
     }
     if (ollamaRefreshBtn) {
-      ollamaRefreshBtn.addEventListener('click', () => refreshOllamaCatalog(true));
+      ollamaRefreshBtn.addEventListener('click', () => {
+        refreshOllamaCatalog(true);
+        refreshOllamaServers();
+      });
+    }
+    if (ollamaServersRefreshBtn) {
+      ollamaServersRefreshBtn.addEventListener('click', () => refreshOllamaServers());
+    }
+    if (ollamaServerForm) {
+      ollamaServerForm.addEventListener('submit', submitOllamaServerForm);
     }
 
     const promptAiHandlers = [];
@@ -6446,6 +6674,7 @@
       }
       if (adminSession.is_super) {
         await refreshOllamaCatalog(true);
+        await refreshOllamaServers();
       } else {
         await loadLlmModels();
       }

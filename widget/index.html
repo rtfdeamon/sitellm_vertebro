@@ -1574,7 +1574,7 @@ function buildFloatingSnippet(cfg) {
     `data-color="${cfg.accent}"`,
     cfg.theme ? `data-theme="${cfg.theme}"` : ''
   ];
-  return `<script\n${indentAttributes(attrs)}\n></script>`;
+  return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
 
 function buildInlineSnippet(cfg) {
@@ -1590,7 +1590,7 @@ function buildInlineSnippet(cfg) {
     `data-color="${cfg.accent}"`,
     cfg.theme ? `data-theme="${cfg.theme}"` : ''
   ];
-  return `<script\n${indentAttributes(attrs)}\n></script>`;
+  return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
 
 function buildIframeSnippet(cfg) {
@@ -1614,7 +1614,7 @@ function buildVoiceSnippet(cfg) {
     `data-subtitle="${t('chatSubtitle')}"`,
     `data-color="${cfg.accent}"`
   ];
-  return `<script\n${indentAttributes(attrs)}\n></script>`;
+  return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
 
 function translateVoiceMessage(key, params) {
