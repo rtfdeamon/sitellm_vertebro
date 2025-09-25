@@ -13,11 +13,6 @@
       50% { transform: translateY(-6px) scale(1.01); box-shadow: 0 22px 32px rgba(${accent}, 0.18); }
       100% { transform: translateY(0px) scale(1); box-shadow: 0 12px 24px rgba(${accent}, 0.25); }
     }
-    @keyframes sitellmWave {
-      0% { transform: scale(0.95); opacity: 0.4; }
-      70% { transform: scale(1.15); opacity: 0.05; }
-      100% { transform: scale(0.95); opacity: 0.0; }
-    }
     .sitellm-voice-widget {
       position: relative;
       width: min(360px, 100%);
@@ -48,7 +43,7 @@
       width: 82px;
       height: 82px;
       border-radius: 50%;
-      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.7), rgba(${accent}, 0.9));
+      background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.78), rgba(${accent}, 0.92));
       display: grid;
       place-items: center;
       font-weight: 700;
@@ -56,19 +51,35 @@
       letter-spacing: 0.08em;
       text-transform: uppercase;
       animation: sitellmAvatarFloat 4.5s ease-in-out infinite;
-      overflow: hidden;
+      overflow: visible;
     }
-    .sitellm-voice-avatar::after,
-    .sitellm-voice-avatar::before {
-      content: '';
+    .sitellm-voice-avatar-label {
+      position: relative;
+      z-index: 3;
+      font-size: 18px;
+    }
+    .sitellm-voice-visual {
       position: absolute;
-      inset: 0;
+      inset: -6px;
       border-radius: 50%;
-      border: 2px solid rgba(${accent}, 0.45);
-      animation: sitellmWave 3.6s linear infinite;
+      border: 2px solid rgba(${accent}, 0.32);
+      pointer-events: none;
+      opacity: 0;
+      transform: scale(1);
+      transition: opacity 0.2s ease, transform 0.15s ease;
+      z-index: 1;
     }
-    .sitellm-voice-avatar::after {
-      animation-delay: 1.5s;
+    .sitellm-voice-visual.mic.active {
+      opacity: 0.85;
+      border-color: rgba(${accent}, 0.55);
+      box-shadow: 0 0 0 6px rgba(${accent}, 0.12);
+    }
+    .sitellm-voice-visual.voice {
+      border-color: rgba(255,255,255,0.55);
+      box-shadow: 0 0 0 10px rgba(${accent}, 0.08);
+    }
+    .sitellm-voice-visual.voice.active {
+      opacity: 0.9;
     }
     .sitellm-voice-status {
       font-size: 13px;
@@ -272,22 +283,77 @@
     return cleaned;
   }
 
-  const DEFAULT_SPEECH_RATE = 2.0;
-  const DEFAULT_SPEECH_PITCH = 1.05;
+  const DEFAULT_SPEECH_RATE = 1.2;
+  const DEFAULT_SPEECH_PITCH = 1.0;
+  const DEFAULT_VOICE_HINT = 'Milena';
+
+  let cachedVoices = [];
+
+  function refreshVoices() {
+    if (!('speechSynthesis' in window)) return;
+    const voices = speechSynthesis.getVoices();
+    if (voices && voices.length) {
+      cachedVoices = voices;
+    }
+  }
+
+  if ('speechSynthesis' in window) {
+    refreshVoices();
+    if (typeof speechSynthesis.addEventListener === 'function') {
+      speechSynthesis.addEventListener('voiceschanged', refreshVoices);
+    } else {
+      const prev = speechSynthesis.onvoiceschanged;
+      speechSynthesis.onvoiceschanged = (...args) => {
+        refreshVoices();
+        if (typeof prev === 'function') prev.apply(speechSynthesis, args);
+      };
+    }
+  }
+
+  function resolveVoice(voiceHint, lang) {
+    if (!('speechSynthesis' in window)) return null;
+    const voices = speechSynthesis.getVoices();
+    const list = voices && voices.length ? voices : cachedVoices;
+    if (!list || !list.length) return null;
+    const normalizedHint = (voiceHint || '').trim().toLowerCase();
+    if (normalizedHint) {
+      const direct = list.find((voice) => voice.name.toLowerCase() === normalizedHint);
+      if (direct) return direct;
+    }
+    const pleasantCandidates = ['milena', 'alena', 'vera', 'siri', 'anna', 'natasha', 'victoria', 'vera (enhanced)'];
+    if (!normalizedHint) {
+      const pleasant = list.find((voice) => pleasantCandidates.includes(voice.name.toLowerCase()));
+      if (pleasant) return pleasant;
+    }
+    const langLower = (lang || '').trim().toLowerCase();
+    if (langLower) {
+      let fullMatch = list.find((voice) => (voice.lang || '').toLowerCase() === langLower);
+      if (fullMatch) return fullMatch;
+      const prefix = langLower.split('-')[0];
+      const prefixMatch = list.find((voice) => (voice.lang || '').toLowerCase().startsWith(prefix));
+      if (prefixMatch) return prefixMatch;
+    }
+    const pleasantFallback = list.find((voice) => pleasantCandidates.includes(voice.name.toLowerCase()));
+    return pleasantFallback || list[0] || null;
+  }
 
   function speak(text, lang, voiceHint, options = {}) {
     if (!('speechSynthesis' in window)) return;
-    const { flush = true } = options;
+    const {
+      flush = true,
+      rate = DEFAULT_SPEECH_RATE,
+      pitch = DEFAULT_SPEECH_PITCH,
+      voiceOverride,
+    } = options;
     const sanitized = stripEmojis(text);
     if (!sanitized.trim()) return;
     const utterance = new SpeechSynthesisUtterance(sanitized);
     if (lang) utterance.lang = lang;
-    utterance.rate = options.rate || DEFAULT_SPEECH_RATE;
-    utterance.pitch = options.pitch || DEFAULT_SPEECH_PITCH;
-    if (voiceHint) {
-      const voices = speechSynthesis.getVoices();
-      const match = voices.find((voice) => voice.name === voiceHint || voice.lang === voiceHint);
-      if (match) utterance.voice = match;
+    utterance.rate = rate;
+    utterance.pitch = pitch;
+    const selectedVoice = resolveVoice(voiceOverride || voiceHint, lang);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
     }
     if (flush) {
       try {
@@ -295,14 +361,17 @@
       } catch (_) {}
     }
     currentUtterance = utterance;
+    stopVoiceVisualizer();
+    startVoiceVisualizer();
     utterance.onend = () => {
       currentUtterance = null;
-      if (!awaitingResponse) {
-        renewIdleTimer();
-      }
+      awaitingResponse = false;
+      stopVoiceVisualizer();
+      renewIdleTimer();
     };
     utterance.onerror = () => {
       currentUtterance = null;
+      stopVoiceVisualizer();
     };
     speechSynthesis.speak(utterance);
   }
@@ -313,7 +382,8 @@
     const accentRgb = hexToRgb(script.dataset.color || '#4f7cff');
     const avatarLabel = script.dataset.label || 'AI';
     const lang = script.dataset.lang || 'ru-RU';
-    const voiceHint = script.dataset.voice || '';
+    const datasetVoiceHint = (script.dataset.voice || '').trim();
+    const voiceHint = datasetVoiceHint || DEFAULT_VOICE_HINT;
     const datasetVoiceModel = script.dataset.voiceModel || '';
     const headline = script.dataset.headline || 'AI Consultant';
     const subheadline = script.dataset.subtitle || 'Talk to me using your voice';
@@ -329,7 +399,16 @@
 
     const avatar = document.createElement('div');
     avatar.className = 'sitellm-voice-avatar';
-    avatar.textContent = avatarLabel;
+    const micVisual = document.createElement('div');
+    micVisual.className = 'sitellm-voice-visual mic';
+    const voiceVisual = document.createElement('div');
+    voiceVisual.className = 'sitellm-voice-visual voice';
+    const avatarLabelEl = document.createElement('span');
+    avatarLabelEl.className = 'sitellm-voice-avatar-label';
+    avatarLabelEl.textContent = avatarLabel;
+    avatar.appendChild(micVisual);
+    avatar.appendChild(voiceVisual);
+    avatar.appendChild(avatarLabelEl);
     header.appendChild(avatar);
 
     const status = document.createElement('div');
@@ -380,6 +459,7 @@
     const voiceSettings = {
       enabled: true,
       model: datasetVoiceModel,
+      voiceHint,
     };
     let spokenChars = 0;
 
@@ -422,6 +502,7 @@
     function stopRecognitionInternal() {
       listening = false;
       updateMicButton();
+      stopMicMonitor();
       if (recognition) {
         try {
           recognition.stop();
@@ -505,6 +586,7 @@
       if (listening) return;
       listening = true;
       updateMicButton();
+      startMicMonitor();
       try {
         recognition.start();
       } catch (err) {
@@ -524,6 +606,7 @@
       awaitingResponse = false;
       lastFinalUtterance = '';
       cancelStream();
+      stopActiveSpeech();
       stopRecognitionInternal();
       if (message) setError(message); else setError('');
       transcript.textContent = 'Tap the microphone and ask your question.';
@@ -544,6 +627,8 @@
     function stopActiveSpeech() {
       if (!('speechSynthesis' in window)) return;
       currentUtterance = null;
+      awaitingResponse = false;
+      stopVoiceVisualizer();
       try {
         speechSynthesis.cancel();
       } catch (_) {}
@@ -567,6 +652,107 @@
       const maxChildren = 6;
       while (status.children.length > maxChildren) {
         status.removeChild(status.firstChild);
+      }
+    }
+
+    const micMonitor = {
+      stream: null,
+      ctx: null,
+      analyser: null,
+      data: null,
+      raf: null,
+      failed: false,
+    };
+
+    const voicePulse = {
+      raf: null,
+      phase: 0,
+    };
+
+    function startVoiceVisualizer() {
+      if (!voiceVisual) return;
+      stopVoiceVisualizer();
+      voiceVisual.classList.add('active');
+      const tick = () => {
+        voicePulse.phase += 0.08;
+        const level = (Math.sin(voicePulse.phase) + 1) / 2;
+        voiceVisual.style.transform = `scale(${1 + level * 0.28})`;
+        voiceVisual.style.opacity = `${0.55 + level * 0.35}`;
+        voicePulse.raf = requestAnimationFrame(tick);
+      };
+      tick();
+    }
+
+    function stopVoiceVisualizer() {
+      if (voicePulse.raf) cancelAnimationFrame(voicePulse.raf);
+      voicePulse.raf = null;
+      if (voiceVisual) {
+        voiceVisual.classList.remove('active');
+        voiceVisual.style.transform = 'scale(1)';
+        voiceVisual.style.opacity = '0';
+      }
+    }
+
+    function applyMicLevel(level) {
+      if (!micVisual) return;
+      micVisual.classList.add('active');
+      micVisual.style.transform = `scale(${1 + Math.min(0.6, level * 0.6)})`;
+      micVisual.style.opacity = `${Math.min(0.95, 0.25 + level * 1.3)}`;
+    }
+
+    async function startMicMonitor() {
+      if (!micVisual || !navigator.mediaDevices?.getUserMedia || micMonitor.failed) return;
+      try {
+        if (!micMonitor.stream) {
+          micMonitor.stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: false,
+            },
+          });
+          micMonitor.ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const source = micMonitor.ctx.createMediaStreamSource(micMonitor.stream);
+          micMonitor.analyser = micMonitor.ctx.createAnalyser();
+          micMonitor.analyser.fftSize = 512;
+          micMonitor.analyser.smoothingTimeConstant = 0.7;
+          micMonitor.data = new Uint8Array(micMonitor.analyser.fftSize);
+          source.connect(micMonitor.analyser);
+        }
+        if (micMonitor.ctx && micMonitor.ctx.state === 'suspended') {
+          await micMonitor.ctx.resume();
+        }
+        if (micMonitor.raf) cancelAnimationFrame(micMonitor.raf);
+        const tick = () => {
+          if (!micMonitor.analyser) return;
+          micMonitor.analyser.getByteTimeDomainData(micMonitor.data);
+          let sum = 0;
+          for (let i = 0; i < micMonitor.data.length; i += 1) {
+            const value = (micMonitor.data[i] - 128) / 128;
+            sum += value * value;
+          }
+          const rms = Math.sqrt(sum / micMonitor.data.length);
+          const level = Math.min(1, rms * 3.5);
+          applyMicLevel(level);
+          micMonitor.raf = requestAnimationFrame(tick);
+        };
+        tick();
+      } catch (error) {
+        micMonitor.failed = true;
+        console.warn('voice_avatar_mic_visualizer_failed', error);
+      }
+    }
+
+    function stopMicMonitor() {
+      if (micMonitor.raf) cancelAnimationFrame(micMonitor.raf);
+      micMonitor.raf = null;
+      if (micVisual) {
+        micVisual.classList.remove('active');
+        micVisual.style.transform = 'scale(1)';
+        micVisual.style.opacity = '0';
+      }
+      if (micMonitor.ctx && micMonitor.ctx.state !== 'closed') {
+        micMonitor.ctx.suspend().catch(() => {});
       }
     }
 
@@ -631,8 +817,8 @@
     }
 
     function handleResponse(question) {
-      awaitingResponse = true;
       stopActiveSpeech();
+      awaitingResponse = true;
       cancelStream();
       renewIdleTimer();
       const url = buildUrl(baseUrl, project, session, question, channel, voiceSettings.model);
@@ -664,7 +850,11 @@
         if (!force && trimmed.length < STREAM_THRESHOLD && !endsWithSentence) {
           return;
         }
-        speak(sanitizedPending, lang, voiceHint, { flush: false, rate: DEFAULT_SPEECH_RATE, pitch: DEFAULT_SPEECH_PITCH });
+        speak(sanitizedPending, lang, voiceSettings.voiceHint || voiceHint, {
+          flush: false,
+          rate: DEFAULT_SPEECH_RATE,
+          pitch: DEFAULT_SPEECH_PITCH,
+        });
         spokenChars = buffer.length;
       }
 
@@ -722,8 +912,8 @@
         return;
       }
       renewIdleTimer();
-      awaitingResponse = true;
       stopActiveSpeech();
+      awaitingResponse = true;
       setError('');
       appendMessage('user', `🙋 ${trimmed}`);
       handleResponse(trimmed);
