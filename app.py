@@ -25,7 +25,6 @@ import structlog
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -2340,7 +2339,6 @@ allow_all_origins = "*" in cors_origins
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 if _ssl_enabled():
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
-    app.add_middleware(HTTPSRedirectMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if allow_all_origins else cors_origins,
