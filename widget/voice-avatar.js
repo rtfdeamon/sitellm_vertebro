@@ -259,10 +259,24 @@
     return promise;
   }
 
+  function stripEmojis(input) {
+    if (!input) return '';
+    let cleaned = String(input);
+    try {
+      cleaned = cleaned.replace(/\p{Extended_Pictographic}/gu, '');
+    } catch (_) {
+      cleaned = cleaned.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+    }
+    cleaned = cleaned.replace(/[\u200D\uFE0F]/g, '');
+    return cleaned;
+  }
+
   function speak(text, lang, voiceHint, options = {}) {
     if (!('speechSynthesis' in window)) return;
     const { flush = true } = options;
-    const utterance = new SpeechSynthesisUtterance(text);
+    const sanitized = stripEmojis(text);
+    if (!sanitized.trim()) return;
+    const utterance = new SpeechSynthesisUtterance(sanitized);
     if (lang) utterance.lang = lang;
     if (voiceHint) {
       const voices = speechSynthesis.getVoices();
@@ -346,13 +360,178 @@
     const channel = 'voice-avatar';
 
     let recognition = supportsSpeechRecognition() ? createRecognition(lang) : null;
-    let listening = false;
     let currentSource = null;
     const voiceSettings = {
       enabled: true,
       model: datasetVoiceModel,
     };
     let spokenChars = 0;
+
+    const IDLE_TIMEOUT_MS = 90000;
+    let voiceArmed = false;
+    let listening = false;
+    let restartOnEnd = false;
+    let awaitingResume = false;
+    let idleTimer = null;
+    let recognitionBound = false;
+
+    function clearIdleTimer() {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    }
+
+    function updateMicButton() {
+      if (voiceArmed) {
+        micButton.classList.add('active');
+        micButton.textContent = listening ? '⏺' : '⏸';
+      } else {
+        micButton.classList.remove('active');
+        micButton.textContent = '🎤';
+      }
+    }
+
+    function renewIdleTimer() {
+      clearIdleTimer();
+      if (!voiceArmed) return;
+      idleTimer = window.setTimeout(() => {
+        if (!voiceArmed) return;
+        deactivateVoice('Voice assistant paused due to inactivity.');
+        appendMessage('bot', '💤 Voice assistant paused due to inactivity');
+      }, IDLE_TIMEOUT_MS);
+    }
+
+    function stopRecognitionInternal() {
+      listening = false;
+      updateMicButton();
+      if (recognition) {
+        try {
+          recognition.stop();
+        } catch (_) {}
+      }
+    }
+
+    function bindRecognitionListeners() {
+      if (!recognition || recognitionBound) return;
+      recognitionBound = true;
+
+      recognition.addEventListener('result', (event) => {
+        renewIdleTimer();
+        if (!event.results || !event.results[0]) {
+          setError('Speech recognition did not return any result.');
+          resumeAfterResponse();
+          return;
+        }
+        const transcriptText = (event.results[0][0]?.transcript || '').trim();
+        if (!transcriptText) {
+          resumeAfterResponse();
+          return;
+        }
+        transcript.textContent = transcriptText;
+        if (voiceArmed) {
+          pauseForResponse();
+        }
+        handleQuestion(transcriptText);
+      });
+
+      recognition.addEventListener('error', (event) => {
+        const message = `Voice input error: ${event.error || 'unknown'}`;
+        setError(message);
+        listening = false;
+        restartOnEnd = false;
+        updateMicButton();
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          deactivateVoice('Microphone access is blocked. Use the text form below.');
+          manualInput.style.display = 'block';
+          return;
+        }
+        if (voiceArmed && !awaitingResume) {
+          setTimeout(() => {
+            if (voiceArmed && !listening && !awaitingResume) {
+              beginListening();
+            }
+          }, 1000);
+        }
+      });
+
+      recognition.addEventListener('end', () => {
+        const shouldRestart = restartOnEnd && voiceArmed && !awaitingResume;
+        listening = false;
+        restartOnEnd = false;
+        updateMicButton();
+        if (shouldRestart) {
+          setTimeout(() => {
+            if (voiceArmed && !listening && !awaitingResume) {
+              beginListening();
+            }
+          }, 300);
+        }
+      });
+    }
+
+    function beginListening() {
+      if (!recognition) return;
+      bindRecognitionListeners();
+      listening = true;
+      awaitingResume = false;
+      restartOnEnd = true;
+      updateMicButton();
+      transcript.textContent = 'Listening...';
+      renewIdleTimer();
+      try {
+        recognition.start();
+      } catch (err) {
+        restartOnEnd = false;
+        listening = false;
+        updateMicButton();
+        if (err && err.name === 'InvalidStateError') {
+          setTimeout(() => {
+            if (voiceArmed && !listening && !awaitingResume) {
+              beginListening();
+            }
+          }, 400);
+        } else {
+          setError('Unable to access microphone.');
+          deactivateVoice();
+          manualInput.style.display = 'block';
+        }
+      }
+    }
+
+    function deactivateVoice(message) {
+      voiceArmed = false;
+      awaitingResume = false;
+      restartOnEnd = false;
+      clearIdleTimer();
+      cancelStream();
+      stopRecognitionInternal();
+      if (message) setError(message); else setError('');
+      transcript.textContent = 'Tap the microphone and ask your question.';
+    }
+
+    function pauseForResponse() {
+      awaitingResume = true;
+      restartOnEnd = false;
+      stopRecognitionInternal();
+      transcript.textContent = 'Processing your request...';
+    }
+
+    function resumeWhenReady() {
+      if (!voiceArmed || listening) return;
+      if ('speechSynthesis' in window && (speechSynthesis.speaking || speechSynthesis.pending)) {
+        setTimeout(resumeWhenReady, 400);
+        return;
+      }
+      beginListening();
+    }
+
+    function resumeAfterResponse() {
+      if (!voiceArmed) return;
+      awaitingResume = false;
+      renewIdleTimer();
+      resumeWhenReady();
+    }
 
     function resetSpeechStream() {
       spokenChars = 0;
@@ -404,6 +583,7 @@
           }
           if (!voiceSettings.enabled) {
             micButton.disabled = true;
+            deactivateVoice(disabledMessage);
             micButton.textContent = '🔇';
             status.innerHTML = '';
             appendMessage('bot', disabledMessage);
@@ -414,7 +594,8 @@
             return;
           }
           micButton.disabled = false;
-          micButton.textContent = '🎤';
+          voiceArmed = false;
+          updateMicButton();
           manualButton.disabled = false;
           if (manualTextarea) manualTextarea.disabled = false;
           announceModel(voiceSettings.model);
@@ -423,7 +604,8 @@
           console.error('[SiteLLM voice-avatar]', error);
           setError('Unable to load voice settings.');
           micButton.disabled = false;
-          micButton.textContent = '🎤';
+          voiceArmed = false;
+          updateMicButton();
           manualButton.disabled = false;
           if (manualTextarea) manualTextarea.disabled = false;
           announceModel(voiceSettings.model);
@@ -441,6 +623,7 @@
 
     function handleResponse(question) {
       cancelStream();
+      renewIdleTimer();
       const url = buildUrl(baseUrl, project, session, question, channel, voiceSettings.model);
       let buffer = '';
       resetSpeechStream();
@@ -450,6 +633,7 @@
         currentSource = new EventSource(url, { withCredentials: false });
       } catch (err) {
         setError('Your browser blocked EventSource.');
+        resumeAfterResponse();
         return;
       }
 
@@ -478,14 +662,17 @@
         transcript.textContent = buffer || 'No answer received.';
         appendMessage('bot', buffer || 'No answer received.');
         maybeSpeak(true);
+        resumeAfterResponse();
       });
       currentSource.addEventListener('llm_error', () => {
         setError('Assistant failed to answer.');
         maybeSpeak(true);
+        resumeAfterResponse();
       });
       currentSource.onerror = () => {
         setError('Connection interrupted.');
         maybeSpeak(true);
+        resumeAfterResponse();
       };
       currentSource.onmessage = (event) => {
         try {
@@ -494,6 +681,7 @@
             buffer += payload.text;
             transcript.textContent = buffer;
             maybeSpeak(false);
+            renewIdleTimer();
           }
         } catch (err) {
           // ignore malformed chunk
@@ -506,52 +694,51 @@
         setError('Voice assistant is disabled by the administrator.');
         return;
       }
-      resetSpeechStream();
-      if (!question || !question.trim()) {
+      const trimmed = (question || '').trim();
+      if (!trimmed) {
         setError('Please say or type a question.');
+        resumeAfterResponse();
         return;
       }
+      renewIdleTimer();
+      if (voiceArmed && !awaitingResume) {
+        pauseForResponse();
+      }
+      resetSpeechStream();
       setError('');
-      appendMessage('user', `🙋 ${question.trim()}`);
-      handleResponse(question.trim());
+      appendMessage('user', `🙋 ${trimmed}`);
+      handleResponse(trimmed);
     }
 
-    function stopListening() {
-      listening = false;
-      micButton.classList.remove('active');
-      micButton.textContent = '🎤';
-      if (recognition) {
-        try { recognition.stop(); } catch (_) { /* noop */ }
-      }
-    }
-
-    function startListening() {
+    micButton.addEventListener('click', () => {
       if (!voiceSettings.enabled) {
-        setError('Voice assistant is disabled by the administrator.');
+        setError(disabledMessage);
         return;
+      }
+      if (!supportsSpeechRecognition()) {
+        manualInput.style.display = 'block';
+        setError('Speech recognition is not supported in this browser. Use the text form below.');
+        return;
+      }
+      if (!recognition) {
+        recognition = createRecognition(lang);
+        recognitionBound = false;
       }
       if (!recognition) {
         manualInput.style.display = 'block';
         setError('Speech recognition is not supported in this browser. Use the text form below.');
         return;
       }
-      if (listening) {
-        stopListening();
+      if (voiceArmed) {
+        deactivateVoice();
         return;
       }
-      listening = true;
-      micButton.classList.add('active');
-      micButton.textContent = '⏺';
-      transcript.textContent = 'Listening...';
-      try {
-        recognition.start();
-      } catch (err) {
-        setError('Unable to access microphone.');
-        stopListening();
-      }
-    }
-
-    micButton.addEventListener('click', startListening);
+      setError('');
+      voiceArmed = true;
+      updateMicButton();
+      renewIdleTimer();
+      beginListening();
+    });
 
     manualButton.addEventListener('click', () => {
       if (!voiceSettings.enabled) {
@@ -562,30 +749,16 @@
       if (!value) return;
       manualTextarea.value = '';
       transcript.textContent = value;
-      resetSpeechStream();
+      if (voiceArmed) {
+        pauseForResponse();
+      }
       handleQuestion(value);
     });
 
     if (!recognition) {
       manualInput.style.display = 'block';
     } else {
-      recognition.addEventListener('result', (event) => {
-        stopListening();
-        if (!event.results || !event.results[0]) {
-          setError('Speech recognition did not return any result.');
-          return;
-        }
-        const transcriptText = event.results[0][0].transcript;
-        transcript.textContent = transcriptText;
-        handleQuestion(transcriptText);
-      });
-      recognition.addEventListener('error', (event) => {
-        setError(`Voice input error: ${event.error || 'unknown'}`);
-        stopListening();
-      });
-      recognition.addEventListener('end', () => {
-        if (listening) stopListening();
-      });
+      bindRecognitionListeners();
     }
   }
 
