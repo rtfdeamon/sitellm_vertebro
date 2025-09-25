@@ -541,7 +541,11 @@
     }
 
     function stopActiveSpeech() {
-      resetSpeechStream();
+      if (!('speechSynthesis' in window)) return;
+      currentUtterance = null;
+      try {
+        speechSynthesis.cancel();
+      } catch (_) {}
     }
 
     function setError(message) {
