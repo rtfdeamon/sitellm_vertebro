@@ -643,13 +643,17 @@
       function maybeSpeak(force = false) {
         if (!('speechSynthesis' in window)) return;
         const pending = buffer.slice(spokenChars);
-        const trimmed = pending.trim();
-        if (!trimmed) return;
+        const sanitizedPending = stripEmojis(pending);
+        const trimmed = sanitizedPending.trim();
+        if (!trimmed) {
+          spokenChars = buffer.length;
+          return;
+        }
         const endsWithSentence = SENTENCE_END_RE.test(trimmed);
         if (!force && trimmed.length < STREAM_THRESHOLD && !endsWithSentence) {
           return;
         }
-        speak(pending, lang, voiceHint, { flush: false });
+        speak(sanitizedPending, lang, voiceHint, { flush: false });
         spokenChars = buffer.length;
       }
 
@@ -659,7 +663,7 @@
       currentSource.addEventListener('end', () => {
         currentSource && currentSource.close();
         currentSource = null;
-        transcript.textContent = buffer || 'No answer received.';
+        transcript.textContent = stripEmojis(buffer) || 'No answer received.';
         appendMessage('bot', buffer || 'No answer received.');
         maybeSpeak(true);
         resumeAfterResponse();
@@ -679,7 +683,7 @@
           const payload = JSON.parse(event.data);
           if (payload && typeof payload.text === 'string') {
             buffer += payload.text;
-            transcript.textContent = buffer;
+            transcript.textContent = stripEmojis(buffer);
             maybeSpeak(false);
             renewIdleTimer();
           }
