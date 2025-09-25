@@ -1098,15 +1098,22 @@ async def chat(
 async def project_config(request: Request, project: str | None = None) -> ORJSONResponse:
     """Expose project configuration for widgets and clients."""
 
-    mongo_client = _get_mongo_client(request)
+    try:
+        mongo_client = _get_mongo_client(request)
+    except HTTPException as exc:
+        logger.warning("project_config_mongo_unavailable", error=str(exc.detail))
+        mongo_client = None
 
     normalized = _normalize_project(project)
     if not normalized:
         normalized = _normalize_project(backend_settings.project_name)
 
     project_obj: Project | None = None
-    if normalized:
-        project_obj = await mongo_client.get_project(normalized)
+    if normalized and mongo_client is not None:
+        try:
+            project_obj = await mongo_client.get_project(normalized)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("project_config_load_failed", project=normalized, error=str(exc))
         if project_obj is None:
             logger.info("project_config_missing", project=normalized)
 
