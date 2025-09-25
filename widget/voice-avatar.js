@@ -272,6 +272,9 @@
     return cleaned;
   }
 
+  const DEFAULT_SPEECH_RATE = 2.0;
+  const DEFAULT_SPEECH_PITCH = 1.05;
+
   function speak(text, lang, voiceHint, options = {}) {
     if (!('speechSynthesis' in window)) return;
     const { flush = true } = options;
@@ -279,8 +282,8 @@
     if (!sanitized.trim()) return;
     const utterance = new SpeechSynthesisUtterance(sanitized);
     if (lang) utterance.lang = lang;
-    utterance.rate = SPEECH_RATE;
-    utterance.pitch = SPEECH_PITCH;
+    utterance.rate = options.rate || DEFAULT_SPEECH_RATE;
+    utterance.pitch = options.pitch || DEFAULT_SPEECH_PITCH;
     if (voiceHint) {
       const voices = speechSynthesis.getVoices();
       const match = voices.find((voice) => voice.name === voiceHint || voice.lang === voiceHint);
@@ -381,8 +384,6 @@
     let spokenChars = 0;
 
     const IDLE_TIMEOUT_MS = 90000;
-    const SPEECH_RATE = 2.0;
-    const SPEECH_PITCH = 1.05;
     let voiceArmed = false;
     let listening = false;
     let idleTimer = null;
@@ -663,7 +664,7 @@
         if (!force && trimmed.length < STREAM_THRESHOLD && !endsWithSentence) {
           return;
         }
-        speak(sanitizedPending, lang, voiceHint, { flush: false });
+        speak(sanitizedPending, lang, voiceHint, { flush: false, rate: DEFAULT_SPEECH_RATE, pitch: DEFAULT_SPEECH_PITCH });
         spokenChars = buffer.length;
       }
 
