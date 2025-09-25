@@ -1262,9 +1262,11 @@
     }
 
     @media (max-width: 720px) {
-      .page-shell { padding: 28px 18px 48px; }
+      body { font-size: 15px; line-height: 1.6; }
+      .page-shell { padding: 26px 18px 46px; gap: 24px; }
       .overview-banner { grid-template-columns: 1fr; }
       .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+      .dashboard-stack { gap: 18px; }
       .span-9,
       .span-8,
       .span-7,
@@ -1272,13 +1274,40 @@
       .span-4,
       .span-3,
       .span-12 { grid-column: span 1; }
-      .status-group { padding: 12px 14px; }
+      .page-header-actions { width: 100%; gap: 12px; }
+      .page-header-actions button { flex: 1 1 auto; min-height: 48px; }
+      .card { padding: 18px; }
+      .card > b { font-size: 14px; }
+      .section-title { font-size: 14px; }
+      .status-group { padding: 14px; }
       .status-list { gap: 8px; }
       .status-list li { flex-wrap: wrap; }
       .status-value { justify-content: flex-start; }
-      .collapsible-summary { padding: 14px 16px; flex-wrap: wrap; row-gap: 6px; }
-      .collapsible-body { padding: 10px 16px 16px; gap: 14px; }
+      .collapsible-summary { padding: 16px 16px; flex-wrap: wrap; row-gap: 8px; font-size: 13px; }
+      .collapsible-body { padding: 12px 16px 18px; gap: 16px; }
       .top-knowledge { gap: 14px; }
+      .knowledge-actions { flex-direction: column; align-items: stretch; }
+      .knowledge-actions button { width: 100%; min-height: 46px; }
+      #kbAddForm { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+      #kbAddForm button { width: 100%; min-height: 46px; }
+      #crawler-form { flex-direction: column !important; align-items: stretch !important; }
+      #crawler-form label,
+      #crawler-form button { width: 100%; }
+      .crawler-actions { flex-direction: column; align-items: stretch; }
+      .crawler-actions button { width: 100%; min-height: 46px; }
+      #projectForm { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+      #projectForm button { width: 100%; min-height: 46px; }
+      .prompt-ai-controls { width: 100%; flex-direction: column; align-items: stretch; }
+      .prompt-ai-controls select,
+      .prompt-ai-controls button,
+      .prompt-ai-controls .prompt-ai-status { width: 100%; }
+      .project-extensions { gap: 18px; }
+      .project-extensions > div { min-width: 100% !important; }
+      .project-storage-panel { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stats-actions { flex-direction: column; align-items: stretch; gap: 12px; }
+      .stats-actions button { width: 100%; }
+      .page-header h1 { font-size: 26px; }
+      .page-subtitle { font-size: 15px; }
     }
 
     @media (max-width: 540px) {
