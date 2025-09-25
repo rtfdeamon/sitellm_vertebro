@@ -769,9 +769,14 @@ async def chat(
     if project_obj and project_obj.llm_emotions_enabled is not None:
         emotions_enabled = bool(project_obj.llm_emotions_enabled)
 
+    project_debug_info_enabled = True
+    if project_obj and project_obj.debug_info_enabled is not None:
+        project_debug_info_enabled = bool(project_obj.debug_info_enabled)
+
     request_debug_enabled = bool(debug) if debug is not None else False
     project_debug_enabled = bool(project_obj.debug_enabled) if project_obj and project_obj.debug_enabled is not None else False
     send_debug = request_debug_enabled or project_debug_enabled
+    info_enabled = project_debug_info_enabled
     if send_debug:
         if request_debug_enabled and project_debug_enabled:
             debug_origin = "project+request"
@@ -992,6 +997,7 @@ async def chat(
                 "emotions_enabled": emotions_enabled,
                 "session_id": session_key,
                 "debug_enabled": send_debug,
+                "debug_info_enabled": info_enabled,
                 "debug_origin": debug_origin,
                 "attachments_pending": planned_attachments_count,
                 "model": effective_model,

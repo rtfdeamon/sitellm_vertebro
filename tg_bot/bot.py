@@ -31,7 +31,7 @@ except ModuleNotFoundError:  # pragma: no cover - degrade gracefully when unavai
 logger = structlog.get_logger(__name__)
 
 _FEATURE_CACHE: dict[str, tuple[float, dict[str, bool]]] = {}
-_FEATURE_CACHE_TTL = 120.0
+_FEATURE_CACHE_TTL = 5.0
 _FEATURE_CACHE_LOCK = asyncio.Lock()
 
 POSITIVE_REPLIES = {
@@ -582,6 +582,7 @@ async def text_handler(
         meta = response.get("meta", {}) if isinstance(response, dict) else {}
         emotions_enabled = bool(meta.get('emotions_enabled', emotions_enabled))
         debug_summary_allowed = bool(meta.get('debug_enabled', debug_summary_allowed))
+        debug_info_allowed = bool(meta.get('debug_info_enabled', debug_info_allowed))
         if project:
             async with _FEATURE_CACHE_LOCK:
                 _FEATURE_CACHE[project.lower()] = (
