@@ -397,6 +397,35 @@
 
     .knowledge-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 
+    #kbForm {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px !important;
+      align-items: end !important;
+    }
+
+    #kbForm label,
+    #kbForm button {
+      margin: 0;
+    }
+
+    #kbForm button {
+      align-self: end;
+      min-height: 48px;
+    }
+
+    #kbReloadProjects {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 48px;
+      min-height: 48px;
+      padding: 0;
+      font-size: 20px;
+      border-radius: 14px;
+      letter-spacing: 0;
+    }
+
     .prompt-ai-controls {
       display: flex;
       gap: 8px;
@@ -1206,6 +1235,53 @@
       .collapsible-body { padding: 10px 16px 16px; gap: 14px; }
       .top-knowledge { gap: 14px; }
     }
+
+    @media (max-width: 540px) {
+      body { font-size: 16px; }
+      h1 { font-size: 24px; }
+      .page-subtitle { font-size: 15px; }
+      .page-shell { padding: 24px 16px 44px; gap: 24px; }
+      .card { padding: 16px; }
+      button {
+        padding: 12px 18px;
+        font-size: 14px;
+        border-radius: 12px;
+      }
+      input:not([type="checkbox"]):not([type="radio"]),
+      select,
+      textarea {
+        padding: 12px 14px;
+        font-size: 15px;
+        border-radius: 12px;
+      }
+      .collapsible-summary {
+        font-size: 14px;
+        padding: 16px 16px;
+      }
+      .collapsible-body {
+        padding: 12px 16px 18px;
+        gap: 16px;
+      }
+      .overview-card { padding: 16px; }
+      .overview-card strong { font-size: 20px; }
+      .stats-graph { height: 220px; }
+      #kbForm {
+        grid-template-columns: minmax(0, 1fr) !important;
+        gap: 14px !important;
+      }
+      #kbForm button {
+        width: 100%;
+        min-height: 52px;
+      }
+      #kbReloadProjects {
+        width: 100%;
+        border-radius: 12px;
+        font-size: 18px;
+      }
+      .project-extensions > div {
+        min-width: 100% !important;
+      }
+    }
   </style>
   </head>
   <body>
@@ -1702,20 +1778,25 @@
     </section>
 
     <section id="block-stats" class="dashboard-stack span-12" data-block-id="stats" data-block-group="manage">
-      <div class="card stats-card">
-        <b>Активность пользователей</b>
-        <div class="muted" id="statsSubtitle">Последние 14 дней</div>
-        <div class="stats-graph">
-          <canvas id="statsCanvas"></canvas>
-          <div id="statsTooltip" class="stats-tooltip"></div>
-          <div id="statsEmpty" class="stats-empty">Нет данных</div>
+      <details class="card stats-card collapsible-card" data-collapsible="stats">
+        <summary class="collapsible-summary">
+          <span class="collapsible-title">Активность пользователей</span>
+          <span class="collapsible-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="collapsible-body">
+          <div class="muted" id="statsSubtitle">Последние 14 дней</div>
+          <div class="stats-graph">
+            <canvas id="statsCanvas"></canvas>
+            <div id="statsTooltip" class="stats-tooltip"></div>
+            <div id="statsEmpty" class="stats-empty">Нет данных</div>
+          </div>
+          <div class="stats-actions">
+            <button type="button" id="statsRefresh">Обновить</button>
+            <button type="button" id="statsExport">Экспорт CSV</button>
+            <span class="muted" id="statsSummary"></span>
+          </div>
         </div>
-        <div class="stats-actions">
-          <button type="button" id="statsRefresh">Обновить</button>
-          <button type="button" id="statsExport">Экспорт CSV</button>
-          <span class="muted" id="statsSummary"></span>
-        </div>
-      </div>
+      </details>
     </section>
 
 
