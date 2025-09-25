@@ -6865,27 +6865,37 @@
         : 'Финальная отладочная сводка отключена.';
     };
 
+    const submitProjectForm = () => {
+      if (projectForm) {
+        projectForm.requestSubmit();
+      }
+    };
+
     if (projectEmotionsInput) {
       projectEmotionsInput.addEventListener('change', () => {
         refreshEmotionsHint(projectEmotionsInput.checked);
+        submitProjectForm();
       });
       refreshEmotionsHint(projectEmotionsInput.checked);
     }
     if (projectVoiceInput) {
       projectVoiceInput.addEventListener('change', () => {
         refreshVoiceHint(projectVoiceInput.checked);
+        submitProjectForm();
       });
       refreshVoiceHint(projectVoiceInput.checked);
     }
     if (projectDebugInfoInput) {
       projectDebugInfoInput.addEventListener('change', () => {
         refreshDebugInfoHint(projectDebugInfoInput.checked);
+        submitProjectForm();
       });
       refreshDebugInfoHint(projectDebugInfoInput.checked);
     }
     if (projectDebugInput) {
       projectDebugInput.addEventListener('change', () => {
         refreshDebugHint(projectDebugInput.checked);
+        submitProjectForm();
       });
       refreshDebugHint(projectDebugInput.checked);
     }

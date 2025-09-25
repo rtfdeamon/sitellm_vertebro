@@ -542,16 +542,6 @@ async def text_handler(
         emotions_enabled = features.get("emotions_enabled", True)
         debug_info_allowed = features.get("debug_info_enabled", True)
         debug_summary_allowed = features.get("debug_enabled", False)
-        if debug_info_allowed:
-            request_lines = [
-                "🛰️ Отправляю запрос бэкенду",
-                f"• проект: {project or '—'}",
-                f"• endpoint: {backend_hint}",
-                f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
-            ]
-            if debug_summary_allowed:
-                request_lines.append("• отладка: включена")
-            await message.answer("\n".join(request_lines))
         try:
             response = await rag_answer(
                 message.text or "",
@@ -596,6 +586,17 @@ async def text_handler(
         )
 
         chunks = [answer_text[i : i + 4000] for i in range(0, len(answer_text), 4000)]
+        if debug_info_allowed:
+            info_lines = [
+                "🛰️ Отправляю запрос бэкенду",
+                f"• проект: {project or '—'}",
+                f"• endpoint: {backend_hint}",
+                f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
+            ]
+            if debug_summary_allowed:
+                info_lines.append("• отладка: включена")
+            await message.answer("\n".join(info_lines))
+
         if chunks:
             for chunk in chunks:
                 await message.answer(chunk)
