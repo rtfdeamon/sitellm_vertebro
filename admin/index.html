@@ -694,6 +694,9 @@
     .ollama-server-actions { display: flex; gap: 6px; margin-top: 4px; }
     .ollama-server-actions button { padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.4); background: rgba(30, 41, 59, 0.6); color: var(--text-primary); cursor: pointer; font-size: 12px; }
     .ollama-server-actions button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .ollama-server-toggle { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
+    .ollama-server-toggle input { accent-color: rgba(96, 165, 250, 0.7); }
+    .ollama-server-offline { border-color: rgba(239, 68, 68, 0.45); }
     .reorder-mode .dashboard-grid section[data-block-id] {
       cursor: grab;
       outline: 1px dashed rgba(96, 165, 250, 0.45);
@@ -4557,6 +4560,8 @@
         row.appendChild(base);
 
         const meta = document.createElement('div');
+        const enabled = Boolean(server.enabled);
+        const healthy = server.healthy !== false;
         meta.className = 'ollama-server-meta';
         const avg = typeof server.avg_latency_ms === 'number'
           ? `${Math.round(server.avg_latency_ms)} мс`
@@ -4566,10 +4571,12 @@
           : '0/ч';
         const inflight = typeof server.inflight === 'number' ? `в работе: ${server.inflight}` : 'в работе: 0';
         const statusLabel = enabled ? 'активен' : 'выключен';
+        const healthLabel = healthy ? 'связь есть' : 'нет связи';
         meta.appendChild(document.createTextNode(`Среднее: ${avg}`));
         meta.appendChild(document.createTextNode(` • ${reqs}`));
         meta.appendChild(document.createTextNode(` • ${inflight}`));
         meta.appendChild(document.createTextNode(` • ${statusLabel}`));
+        meta.appendChild(document.createTextNode(` • ${healthLabel}`));
         row.appendChild(meta);
 
         if (server.last_error) {
@@ -4580,15 +4587,32 @@
           row.appendChild(errorLine);
         }
 
+        if (!healthy) {
+          row.classList.add('ollama-server-offline');
+        }
+
         const actions = document.createElement('div');
         actions.className = 'ollama-server-actions';
-
-        const enabled = Boolean(server.enabled);
-        const toggleBtn = document.createElement('button');
-        toggleBtn.type = 'button';
-        toggleBtn.textContent = enabled ? 'Отключить' : 'Включить';
-        toggleBtn.addEventListener('click', () => toggleOllamaServer(server.name, !enabled));
-        actions.appendChild(toggleBtn);
+        const toggleLabel = document.createElement('label');
+        toggleLabel.className = 'ollama-server-toggle';
+        const toggleCheckbox = document.createElement('input');
+        toggleCheckbox.type = 'checkbox';
+        toggleCheckbox.checked = enabled;
+        toggleCheckbox.addEventListener('change', async () => {
+          const next = toggleCheckbox.checked;
+          toggleCheckbox.disabled = true;
+          try {
+            await toggleOllamaServer(server.name, next);
+          } catch (error) {
+            console.error('toggle failed', error);
+            toggleCheckbox.checked = !next;
+          } finally {
+            toggleCheckbox.disabled = false;
+          }
+        });
+        toggleLabel.appendChild(toggleCheckbox);
+        toggleLabel.append('Включён');
+        actions.appendChild(toggleLabel);
 
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
@@ -4646,7 +4670,13 @@
           body: JSON.stringify(payload),
         });
         if (!resp.ok) {
-          throw new Error(await resp.text());
+          const text = await resp.text();
+          let message = text || `HTTP ${resp.status}`;
+          try {
+            const json = JSON.parse(text);
+            if (json?.detail) message = json.detail;
+          } catch (_) {}
+          throw new Error(message);
         }
         ollamaServerName.value = '';
         if (ollamaServerEnabled) ollamaServerEnabled.checked = true;
@@ -4655,7 +4685,8 @@
       } catch (error) {
         console.error('Failed to upsert Ollama server', error);
         if (ollamaServersStatus) {
-          ollamaServersStatus.textContent = 'Не удалось сохранить сервер';
+          const msg = error?.message || 'Не удалось сохранить сервер';
+          ollamaServersStatus.textContent = msg;
         }
       }
     }
@@ -4673,7 +4704,13 @@
           body: JSON.stringify({ name: server.name, base_url: server.base_url, enabled }),
         });
         if (!resp.ok) {
-          throw new Error(await resp.text());
+          const text = await resp.text();
+          let message = text || `HTTP ${resp.status}`;
+          try {
+            const json = JSON.parse(text);
+            if (json?.detail) message = json.detail;
+          } catch (_) {}
+          throw new Error(message);
         }
         await refreshOllamaServers();
         if (ollamaServersStatus) {
@@ -4682,7 +4719,8 @@
       } catch (error) {
         console.error('Failed to toggle Ollama server', error);
         if (ollamaServersStatus) {
-          ollamaServersStatus.textContent = 'Не удалось обновить статус сервера';
+          const msg = error?.message || 'Не удалось обновить статус сервера';
+          ollamaServersStatus.textContent = msg;
         }
       }
     }
@@ -4696,14 +4734,21 @@
           method: 'DELETE',
         });
         if (!resp.ok) {
-          throw new Error(await resp.text());
+          const text = await resp.text();
+          let message = text || `HTTP ${resp.status}`;
+          try {
+            const json = JSON.parse(text);
+            if (json?.detail) message = json.detail;
+          } catch (_) {}
+          throw new Error(message);
         }
         await refreshOllamaServers();
         if (ollamaServersStatus) ollamaServersStatus.textContent = 'Сервер удалён';
       } catch (error) {
         console.error('Failed to delete Ollama server', error);
         if (ollamaServersStatus) {
-          ollamaServersStatus.textContent = 'Не удалось удалить сервер';
+          const msg = error?.message || 'Не удалось удалить сервер';
+          ollamaServersStatus.textContent = msg;
         }
       }
     }

@@ -56,6 +56,7 @@ class _ServerState:
     cooldown_until: float = 0.0
     last_error: str | None = None
     ephemeral: bool = False
+    healthy: bool = True
 
     def estimated_load(self, now: float) -> float:
         latency = max(self.stats.avg_duration, 0.1)
@@ -78,6 +79,7 @@ class _ServerState:
             "updated_at": self.updated_at,
             "created_at": self.created_at,
             "ephemeral": self.ephemeral,
+            "healthy": self.healthy,
         }
 
 
@@ -103,6 +105,8 @@ class OllamaClusterManager:
                 state.updated_at = doc.updated_at or now
                 if stats:
                     state.stats = stats
+                state.healthy = getattr(state, 'healthy', True)
+                state.last_error = None if doc.enabled else state.last_error
             else:
                 state = _ServerState(
                     name=doc.name,
@@ -111,6 +115,7 @@ class OllamaClusterManager:
                     created_at=doc.created_at or now,
                     updated_at=doc.updated_at or now,
                     stats=stats or _ServerStats(avg_duration=DEFAULT_AVG_LATENCY),
+                    healthy=True,
                 )
             new_map[state.name] = state
         if not new_map and self._default_base:
@@ -122,6 +127,7 @@ class OllamaClusterManager:
                 updated_at=now,
                 stats=_ServerStats(avg_duration=DEFAULT_AVG_LATENCY),
                 ephemeral=True,
+                healthy=True,
             )
             new_map[state.name] = state
         async with self._lock:
@@ -132,6 +138,8 @@ class OllamaClusterManager:
                     state.inflight = prev.inflight
                     state.failures = prev.failures
                     state.cooldown_until = prev.cooldown_until
+                    state.healthy = prev.healthy
+                    state.last_error = prev.last_error
             self._servers = new_map
 
     def _build_stats_from_doc(self, doc: OllamaServer) -> _ServerStats | None:
@@ -211,6 +219,7 @@ class OllamaClusterManager:
             server.inflight = max(0, server.inflight - 1)
             server.failures = 0
             server.cooldown_until = 0.0
+            server.healthy = True
             now = time.time()
             server.stats.samples.append((now, duration))
             self._prune_samples(server, now)
@@ -244,6 +253,8 @@ class OllamaClusterManager:
             server.last_error = str(error) if error else None
             if server.failures >= MAX_FAILURES_BEFORE_COOLDOWN or hard_failure:
                 server.cooldown_until = time.time() + FAILURE_COOLDOWN_SECONDS
+            if error is not None or hard_failure:
+                server.healthy = False
         if hard_failure and not server.ephemeral:
             await self._mongo.update_ollama_server_stats(
                 server.name,

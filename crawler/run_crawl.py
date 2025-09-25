@@ -471,12 +471,12 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
         if main_type == "application/pdf" or url.lower().endswith(".pdf"):
             text = pdf_to_text(resp.content)
             if text:
-                logger.info("pdf extracted", url=url, chars=len(text))
+                logger.debug("pdf extracted", url=url, chars=len(text))
                 return text, ctype or "application/pdf"
-            logger.info("skip pdf", url=url, reason="no_text")
+            logger.debug("skip pdf", url=url, reason="no_text")
             return None, ctype or "application/pdf"
         if main_type != "text/html":
-            logger.info("skip non-html", url=url, content_type=ctype)
+            logger.debug("skip non-html", url=url, content_type=ctype)
             return None, ctype
         # ``requests`` uses ``text`` for decoded body
         return resp.text, ctype
@@ -1188,26 +1188,26 @@ async def crawl(
             if main_type == "application/pdf" or path_lower.endswith(".pdf"):
                 text = pdf_to_text(resp.content)
                 if text:
-                    logger.info("pdf extracted", url=url, chars=len(text))
+                    logger.debug("pdf extracted", url=url, chars=len(text))
                 else:
-                    logger.info("pdf extracted", url=url, chars=0, reason="empty_text")
+                    logger.debug("pdf extracted", url=url, chars=0, reason="empty_text")
                 return text, (ctype or "application/pdf"), False, resp.content
             if main_type in DOCX_MIME_TYPES or path_lower.endswith(".docx"):
                 text = extract_docx_text(resp.content)
                 if text:
-                    logger.info("docx extracted", url=url, chars=len(text))
+                    logger.debug("docx extracted", url=url, chars=len(text))
                 else:
-                    logger.info("docx extracted", url=url, chars=0, reason="empty_text")
+                    logger.debug("docx extracted", url=url, chars=0, reason="empty_text")
                 return text, (ctype or "application/vnd.openxmlformats-officedocument.wordprocessingml.document"), False, resp.content
             if main_type in DOC_MIME_TYPES or path_lower.endswith(".doc"):
                 text = extract_doc_text(resp.content)
                 if text:
-                    logger.info("doc extracted", url=url, chars=len(text))
+                    logger.debug("doc extracted", url=url, chars=len(text))
                 else:
-                    logger.info("doc extracted", url=url, chars=0, reason="empty_text")
+                    logger.debug("doc extracted", url=url, chars=0, reason="empty_text")
                 return text, (ctype or "application/msword"), False, resp.content
             if main_type != "text/html":
-                logger.info("skip non-html", url=url, content_type=ctype)
+                logger.debug("skip non-html", url=url, content_type=ctype)
                 return None, ctype, False, None
             if JS_RENDER_ENABLED:
                 rendered = await _render_with_playwright(url)
@@ -1378,7 +1378,7 @@ async def crawl(
 
                     if payload or binary_data:
                         content_length = len(payload) if payload else len(binary_data or b"")
-                        logger.info(
+                        logger.debug(
                             "page fetched",
                             url=url,
                             depth=depth,
@@ -1396,7 +1396,7 @@ async def crawl(
                             ):
                                 await enqueue_url(link, depth + 1)
                     else:
-                        logger.info("page skipped", url=url, reason="non_html_or_error")
+                        logger.debug("page skipped", url=url, reason="non_html_or_error")
                 finally:
                     enqueued.discard(url)
                     url_queue.task_done()

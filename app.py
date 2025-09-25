@@ -2619,6 +2619,19 @@ class OllamaServerPayload(BaseModel):
     enabled: bool = True
 
 
+async def _ensure_ollama_reachable(base_url: str, timeout: float = 2.5) -> None:
+    url = f"{base_url.rstrip('/')}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = f"Сервер ответил ошибкой HTTP {exc.response.status_code}"
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=400, detail=f"Не удалось подключиться: {exc}") from exc
+
+
 @app.get("/api/v1/admin/session", response_class=ORJSONResponse)
 async def admin_session(request: Request) -> ORJSONResponse:
     identity = _require_admin(request)
@@ -3273,6 +3286,8 @@ async def admin_ollama_server_upsert(request: Request, payload: OllamaServerPayl
     if not base_url:
         raise HTTPException(status_code=400, detail="base_url is required")
     try:
+        if payload.enabled:
+            await _ensure_ollama_reachable(base_url)
         server = OllamaServer(name=name, base_url=base_url, enabled=payload.enabled)
         stored = await _get_mongo_client(request).upsert_ollama_server(server)
         await reload_cluster()
