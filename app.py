@@ -2658,6 +2658,7 @@ class ProjectCreate(BaseModel):
     llm_voice_model: str | None = None
     debug_enabled: bool | None = None
     debug_info_enabled: bool | None = None
+    knowledge_image_caption_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -2820,6 +2821,16 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
                 vk_auto_start=project.vk_auto_start if project else None,
                 widget_url=project.widget_url if project else None,
                 debug_enabled=project.debug_enabled if project and project.debug_enabled is not None else None,
+                debug_info_enabled=(
+                    project.debug_info_enabled
+                    if project and project.debug_info_enabled is not None
+                    else True
+                ),
+                knowledge_image_caption_enabled=(
+                    project.knowledge_image_caption_enabled
+                    if project and project.knowledge_image_caption_enabled is not None
+                    else True
+                ),
             )
             await request.state.mongo.upsert_project(project_payload)
     except HTTPException:
@@ -3098,6 +3109,17 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
             vk_token=existing.vk_token if existing else None,
             vk_auto_start=existing.vk_auto_start if existing else None,
             widget_url=existing.widget_url if existing else None,
+            debug_enabled=existing.debug_enabled if existing and existing.debug_enabled is not None else None,
+            debug_info_enabled=(
+                existing.debug_info_enabled
+                if existing and existing.debug_info_enabled is not None
+                else True
+            ),
+            knowledge_image_caption_enabled=(
+                existing.knowledge_image_caption_enabled
+                if existing and existing.knowledge_image_caption_enabled is not None
+                else True
+            ),
         )
         saved_project = await request.state.mongo.upsert_project(project_payload)
         hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
@@ -3652,6 +3674,16 @@ async def admin_project_telegram_config(
         vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -3723,6 +3755,16 @@ async def admin_project_telegram_start(
         vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -3778,6 +3820,16 @@ async def admin_project_telegram_stop(
         vk_token=existing.vk_token,
         vk_auto_start=existing.vk_auto_start,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -3856,6 +3908,16 @@ async def admin_project_max_config(
         vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -3927,6 +3989,16 @@ async def admin_project_max_start(
         vk_auto_start=existing.vk_auto_start,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -3982,6 +4054,16 @@ async def admin_project_max_stop(
         admin_username=existing.admin_username,
         admin_password_hash=existing.admin_password_hash,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -4060,6 +4142,16 @@ async def admin_project_vk_config(
         vk_auto_start=auto_start_value,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -4131,6 +4223,16 @@ async def admin_project_vk_start(
         vk_auto_start=auto_start_value,
         widget_url=existing.widget_url,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -4186,6 +4288,16 @@ async def admin_project_vk_stop(
         admin_username=existing.admin_username,
         admin_password_hash=existing.admin_password_hash,
         debug_enabled=existing.debug_enabled,
+        debug_info_enabled=(
+            existing.debug_info_enabled
+            if existing.debug_info_enabled is not None
+            else True
+        ),
+        knowledge_image_caption_enabled=(
+            existing.knowledge_image_caption_enabled
+            if existing.knowledge_image_caption_enabled is not None
+            else True
+        ),
     )
 
     saved = await mongo_client.upsert_project(project_payload)
@@ -4455,6 +4567,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         else:
             debug_info_value = True
 
+    if "knowledge_image_caption_enabled" in provided_fields:
+        knowledge_captions_value = (
+            bool(payload.knowledge_image_caption_enabled)
+            if payload.knowledge_image_caption_enabled is not None
+            else True
+        )
+    else:
+        if existing and existing.knowledge_image_caption_enabled is not None:
+            knowledge_captions_value = bool(existing.knowledge_image_caption_enabled)
+        else:
+            knowledge_captions_value = True
+
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
             token_value = payload.telegram_token.strip() or None
@@ -4557,6 +4681,7 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_voice_model=voice_model_value,
         debug_enabled=debug_value,
         debug_info_enabled=debug_info_value,
+        knowledge_image_caption_enabled=knowledge_captions_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,

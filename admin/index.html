@@ -1826,6 +1826,13 @@
           </label>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="projectImageCaptions" checked>
+              Подписи к изображениям базы знаний
+            </label>
+            <span class="muted" id="projectImageCaptionsHint">LLM будет подбирать короткое описание при индексации изображений.</span>
+          </div>
+          <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+            <label style="display:flex; align-items:center; gap:8px;">
               <input type="checkbox" id="projectDebugInfo" checked>
               Служебная справка перед ответом
             </label>
@@ -3258,6 +3265,8 @@
     const projectPromptAiBtn = document.getElementById('projectPromptAi');
     const projectPromptAiStatus = document.getElementById('projectPromptAiStatus');
     const projectEmotionsInput = document.getElementById('projectEmotions');
+    const projectImageCaptionsInput = document.getElementById('projectImageCaptions');
+    const projectImageCaptionsHint = document.getElementById('projectImageCaptionsHint');
     const projectDebugInfoInput = document.getElementById('projectDebugInfo');
     const projectDebugInfoHint = document.getElementById('projectDebugInfoHint');
     const projectDebugInput = document.getElementById('projectDebug');
@@ -6864,6 +6873,13 @@
       }
     };
 
+    const refreshImageCaptionsHint = (enabled) => {
+      if (!projectImageCaptionsHint) return;
+      projectImageCaptionsHint.textContent = enabled
+        ? 'LLM создаёт короткие подписи для изображений при индексации.'
+        : 'Подписи не генерируются, изображения сохраняются без описания.';
+    };
+
     const refreshDebugInfoHint = (enabled) => {
       if (!projectDebugInfoHint) return;
       projectDebugInfoHint.textContent = enabled
@@ -6897,6 +6913,13 @@
         submitProjectForm();
       });
       refreshVoiceHint(projectVoiceInput.checked);
+    }
+    if (projectImageCaptionsInput) {
+      projectImageCaptionsInput.addEventListener('change', () => {
+        refreshImageCaptionsHint(projectImageCaptionsInput.checked);
+        submitProjectForm();
+      });
+      refreshImageCaptionsHint(projectImageCaptionsInput.checked);
     }
     if (projectDebugInfoInput) {
       projectDebugInfoInput.addEventListener('change', () => {
@@ -6960,6 +6983,11 @@
         if (projectVoiceInput) {
           projectVoiceModelInput.disabled = !projectVoiceInput.checked;
         }
+      }
+      if (projectImageCaptionsInput) {
+        const captionsEnabled = project?.knowledge_image_caption_enabled !== false;
+        projectImageCaptionsInput.checked = captionsEnabled;
+        refreshImageCaptionsHint(captionsEnabled);
       }
       if (projectDebugInfoInput) {
         const infoEnabled = project?.debug_info_enabled !== false;
@@ -7031,6 +7059,11 @@
         metaBits.push(emoText);
         metaBits.push(project.debug_info_enabled ? 'Справка: вкл' : 'Справка: выкл');
         metaBits.push(project.debug_enabled ? 'Отладка: вкл' : 'Отладка: выкл');
+        metaBits.push(
+          project.knowledge_image_caption_enabled === false
+            ? 'Подписи изображений: выкл'
+            : 'Подписи изображений: вкл'
+        );
         const voiceEnabledBit = project.llm_voice_enabled === false ? 'Голосовой режим: выкл' : 'Голосовой режим: вкл';
         if (project.llm_voice_enabled !== false && project.llm_voice_model) {
           metaBits.push(`Голосовая модель: ${project.llm_voice_model}`);
@@ -7133,6 +7166,7 @@
             llm_voice_model: typeof p.llm_voice_model === 'string' ? p.llm_voice_model.trim() : p.llm_voice_model,
             debug_enabled: !!p.debug_enabled,
             debug_info_enabled: p.debug_info_enabled === undefined ? true : !!p.debug_info_enabled,
+            knowledge_image_caption_enabled: p.knowledge_image_caption_enabled === undefined ? true : !!p.knowledge_image_caption_enabled,
             admin_username: typeof p.admin_username === 'string' ? p.admin_username.trim() : '',
             admin_password_set: Boolean(p.admin_password_set),
           };
@@ -7186,6 +7220,7 @@
         llm_emotions_enabled: projectEmotionsInput ? projectEmotionsInput.checked : true,
         llm_voice_enabled: projectVoiceInput ? projectVoiceInput.checked : true,
         llm_voice_model: null,
+        knowledge_image_caption_enabled: projectImageCaptionsInput ? projectImageCaptionsInput.checked : true,
         debug_info_enabled: projectDebugInfoInput ? projectDebugInfoInput.checked : true,
         debug_enabled: projectDebugInput ? projectDebugInput.checked : false,
         widget_url: projectWidgetUrl && projectWidgetUrl.value.trim() ? projectWidgetUrl.value.trim() : null,

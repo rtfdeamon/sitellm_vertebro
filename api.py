@@ -1128,6 +1128,7 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
     emotions_enabled = True
     debug_enabled = False
     debug_info_enabled = True
+    knowledge_image_caption_enabled = True
 
     if project_obj:
         title = project_obj.title
@@ -1143,6 +1144,8 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
             debug_enabled = bool(project_obj.debug_enabled)
         if project_obj.debug_info_enabled is not None:
             debug_info_enabled = bool(project_obj.debug_info_enabled)
+        if project_obj.knowledge_image_caption_enabled is not None:
+            knowledge_image_caption_enabled = bool(project_obj.knowledge_image_caption_enabled)
 
     payload = {
         "project": normalized,
@@ -1153,6 +1156,7 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
         "emotions_enabled": emotions_enabled,
         "debug_enabled": debug_enabled,
         "debug_info_enabled": debug_info_enabled,
+        "knowledge_image_caption_enabled": knowledge_image_caption_enabled,
     }
     return ORJSONResponse(payload)
 
