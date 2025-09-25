@@ -1286,8 +1286,14 @@
       .collapsible-summary { padding: 16px 16px; flex-wrap: wrap; row-gap: 8px; font-size: 13px; }
       .collapsible-body { padding: 12px 16px 18px; gap: 16px; }
       .top-knowledge { gap: 14px; }
+      .kb-section-nav { flex-direction: column; align-items: stretch; gap: 10px; }
+      .kb-tab-button { width: 100%; justify-content: center; }
       .knowledge-actions { flex-direction: column; align-items: stretch; }
       .knowledge-actions button { width: 100%; min-height: 46px; }
+      .kb-section { padding: 0; }
+      .kb-table-wrapper { margin: 0 -4px; padding-bottom: 6px; }
+      table { font-size: 12px; }
+      th, td { padding: 9px 8px; }
       #kbAddForm { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: 12px; }
       #kbAddForm button { width: 100%; min-height: 46px; }
       #crawler-form { flex-direction: column !important; align-items: stretch !important; }
@@ -1355,6 +1361,24 @@
       .project-extensions > div {
         min-width: 100% !important;
       }
+    }
+
+    @media (max-width: 420px) {
+      body { font-size: 15.5px; }
+      .page-shell { padding: 22px 14px 40px; }
+      .collapsible-summary { font-size: 12px; }
+      .collapsible-body { gap: 14px; }
+      .overview-card { padding: 14px; }
+      .overview-card strong { font-size: 18px; }
+      .status-group summary { font-size: 12px; }
+      .stats-graph { height: 200px; }
+      #kbForm button,
+      #kbAddForm button,
+      .crawler-actions button,
+      #projectForm button,
+      .stats-actions button { min-height: 52px; font-size: 14px; }
+      .kb-tab-button { font-size: 13px; }
+      th, td { padding: 8px 6px; }
     }
   </style>
   </head>
