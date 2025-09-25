@@ -92,6 +92,7 @@ class OllamaClusterManager:
         self._servers: Dict[str, _ServerState] = {}
         self._warm_task: asyncio.Task | None = None
         self._warm_interval = 30.0
+        self._availability = asyncio.Event()
 
     # region lifecycle
     async def reload(self) -> None:
@@ -144,6 +145,7 @@ class OllamaClusterManager:
                     state.healthy = prev.healthy
                     state.last_error = prev.last_error
             self._servers = new_map
+            self._update_availability_locked()
 
     def start(self) -> None:
         if self._warm_task is None:
@@ -175,12 +177,39 @@ class OllamaClusterManager:
         async with self._lock:
             return [state.to_dict() for state in self._servers.values()]
 
+    def has_available(self) -> bool:
+        """Return ``True`` when at least one server can handle requests."""
+
+        now = time.time()
+        return any(
+            state.enabled and state.healthy and state.cooldown_until <= now
+            for state in self._servers.values()
+        )
+
+    async def wait_until_available(self, timeout: float | None = None) -> bool:
+        """Block until a healthy server is available or ``timeout`` expires."""
+
+        async with self._lock:
+            if self._has_available_locked():
+                return True
+            event = self._availability
+        if timeout is None:
+            await event.wait()
+            return True
+        try:
+            await asyncio.wait_for(event.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
+
     async def generate(self, prompt: str, *, model: str | None = None) -> AsyncIterator[str]:
         exclude: set[str] = set()
         while True:
             server = await self._acquire_server(exclude)
             if not server:
-                raise RuntimeError("Нет доступных серверов Ollama")
+                await self._wait_for_available()
+                exclude.clear()
+                continue
             start = time.time()
             try:
                 async for chunk in self._stream_from_server(server, prompt, model):
@@ -202,18 +231,7 @@ class OllamaClusterManager:
                 )
                 await self._release_failure(server, duration, error=exc)
                 exclude.add(server.name)
-                if len(exclude) >= await self._enabled_server_count():
-                    raise
                 continue
-
-    async def _enabled_server_count(self) -> int:
-        async with self._lock:
-            now = time.time()
-            return sum(
-                1
-                for state in self._servers.values()
-                if state.enabled and state.cooldown_until <= now
-            )
 
     async def _acquire_server(self, exclude: set[str]) -> Optional[_ServerState]:
         async with self._lock:
@@ -221,9 +239,10 @@ class OllamaClusterManager:
             candidates = [
                 state
                 for name, state in self._servers.items()
-                if name not in exclude and state.enabled and state.cooldown_until <= now
+                if name not in exclude and state.enabled and state.healthy and state.cooldown_until <= now
             ]
             if not candidates:
+                self._availability.clear()
                 return None
             candidates.sort(key=lambda s: s.estimated_load(now))
             server = candidates[0]
@@ -247,6 +266,7 @@ class OllamaClusterManager:
                 ) / 1000.0
             else:
                 server.stats.avg_duration = DEFAULT_AVG_LATENCY
+            self._update_availability_locked()
         if not server.ephemeral:
             await self._mongo.update_ollama_server_stats(
                 server.name,
@@ -271,6 +291,7 @@ class OllamaClusterManager:
                 server.cooldown_until = time.time() + FAILURE_COOLDOWN_SECONDS
             if error is not None or hard_failure:
                 server.healthy = False
+            self._update_availability_locked()
         if hard_failure and not server.ephemeral:
             await self._mongo.update_ollama_server_stats(
                 server.name,
@@ -284,6 +305,28 @@ class OllamaClusterManager:
         samples = server.stats.samples
         while samples and now - samples[0][0] > window:
             samples.popleft()
+
+    def _has_available_locked(self, now: float | None = None) -> bool:
+        if now is None:
+            now = time.time()
+        return any(
+            state.enabled and state.healthy and state.cooldown_until <= now
+            for state in self._servers.values()
+        )
+
+    def _update_availability_locked(self) -> None:
+        if self._has_available_locked():
+            self._availability.set()
+        else:
+            self._availability.clear()
+
+    async def _wait_for_available(self) -> None:
+        while True:
+            async with self._lock:
+                if self._has_available_locked():
+                    return
+                event = self._availability
+            await event.wait()
 
     async def _stream_from_server(
         self,

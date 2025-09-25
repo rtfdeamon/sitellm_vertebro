@@ -63,6 +63,7 @@ class Status:
     last_crawl_ts: Optional[float] = None
     last_crawl_iso: Optional[str] = None
     notes: str = ""
+    llm_available: Optional[bool] = None
 
 
 def _safe_int(x) -> int:
@@ -166,11 +167,31 @@ def get_status(domain: str | None = None) -> Status:
 
     ok = (f == 0) and (q == 0) and (p == 0) and (total_now > 0)
 
+    llm_available: Optional[bool]
+    try:
+        from backend.ollama_cluster import get_cluster_manager  # local import to avoid circular deps
+
+        cluster = get_cluster_manager()
+    except Exception:
+        llm_available = None
+    else:
+        try:
+            llm_available = cluster.has_available()
+        except Exception:
+            llm_available = None
+
     last_crawl_iso = (
         datetime.utcfromtimestamp(last_crawl_ts).isoformat() if last_crawl_ts else None
     )
 
     remaining = max(q + p, 0)
+
+    notes_parts: list[str] = []
+    if not ok:
+        notes_parts.append("Идет индексирование или есть ошибки; смотрите counters.")
+    if llm_available is False:
+        notes_parts.append("LLM недоступно — обработка очереди приостановлена.")
+    notes_text = " ".join(part for part in notes_parts if part)
 
     return Status(
         ok=ok,
@@ -188,7 +209,8 @@ def get_status(domain: str | None = None) -> Status:
         db=DbStats(mongo_docs, points, target, fill_percent),
         last_crawl_ts=last_crawl_ts,
         last_crawl_iso=last_crawl_iso,
-        notes="" if ok else "Идет индексирование или есть ошибки; смотрите counters.",
+        notes=notes_text,
+        llm_available=llm_available,
     )
 
 

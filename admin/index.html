@@ -41,6 +41,20 @@
       line-height: 1.5;
     }
 
+    .cluster-warning {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      padding: 12px 18px;
+      background: rgba(239, 68, 68, 0.9);
+      color: #fff7f7;
+      text-align: center;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      box-shadow: 0 12px 30px rgba(127, 29, 29, 0.45);
+    }
+
     a { color: var(--accent); }
 
     .page-shell {
@@ -970,6 +984,7 @@
   </style>
   </head>
   <body>
+  <div id="clusterWarning" class="cluster-warning" style="display:none;">Работа с LLM приостановлена. Нет доступных серверов Ollama.</div>
   <div class="page-shell">
     <div class="page-header">
       <div>
@@ -2722,9 +2737,9 @@
     const knowledgeServiceStatus = document.getElementById('knowledgeServiceStatus');
     const knowledgeServiceCard = document.querySelector('.knowledge-service-card');
     const knowledgeServiceEndpoints = [
+      '/api/v1/knowledge/service',
       '/api/v1/admin/knowledge/service',
       '/api/v1/llm/admin/knowledge/service',
-      '/api/v1/knowledge/service',
     ];
     let activeKnowledgeServiceEndpoint = null;
     const PROMPT_AI_ROLES = [
@@ -2991,6 +3006,8 @@
     const ollamaInstalledList = document.getElementById('ollamaInstalledList');
     const ollamaPopularList = document.getElementById('ollamaPopularList');
     const ollamaJobsList = document.getElementById('ollamaJobsList');
+    const clusterWarning = document.getElementById('clusterWarning');
+    let clusterAvailabilityTimer = null;
     const ollamaServersPanel = document.getElementById('ollamaServersPanel');
     const ollamaServersList = document.getElementById('ollamaServersList');
     const ollamaServersStatus = document.getElementById('ollamaServersStatus');
@@ -4625,8 +4642,33 @@
         frag.appendChild(li);
       });
       ollamaServersList.appendChild(frag);
+      const anyHealthy = OLLAMA_SERVERS.some((server) => server.enabled && server.healthy !== false);
       if (ollamaServersStatus) {
         ollamaServersStatus.textContent = `Всего серверов: ${OLLAMA_SERVERS.length}`;
+      }
+      if (clusterWarning) {
+        if (!anyHealthy) {
+          clusterWarning.style.display = 'block';
+        } else {
+          clusterWarning.style.display = 'none';
+        }
+      }
+    }
+
+    async function refreshClusterAvailability() {
+      if (!clusterWarning) return;
+      try {
+        const resp = await fetch('/api/v1/admin/llm/availability', { cache: 'no-store' });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(text || `HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        const available = Boolean(data?.available);
+        clusterWarning.style.display = available ? 'none' : 'block';
+      } catch (error) {
+        console.error('cluster availability check failed', error);
+        clusterWarning.style.display = 'block';
       }
     }
 
@@ -4644,6 +4686,9 @@
         console.error('Failed to load Ollama servers', error);
         if (ollamaServersStatus) {
           ollamaServersStatus.textContent = 'Не удалось загрузить список серверов';
+        }
+        if (clusterWarning) {
+          clusterWarning.style.display = 'block';
         }
       }
     }
@@ -6708,12 +6753,17 @@
           handler.abort();
         }
       });
+      if (clusterAvailabilityTimer) {
+        clearInterval(clusterAvailabilityTimer);
+        clusterAvailabilityTimer = null;
+      }
     });
 
     initLayoutReordering();
 
     (async () => {
       await fetchSession();
+      await refreshClusterAvailability();
       if (!currentProject && adminSession.primary_project) {
         currentProject = adminSession.primary_project;
       }
@@ -6737,6 +6787,11 @@
         pollStatus();
       } else {
         updateProjectSummary();
+      }
+      if (!clusterAvailabilityTimer) {
+        clusterAvailabilityTimer = setInterval(() => {
+          refreshClusterAvailability();
+        }, 20000);
       }
     })();
 

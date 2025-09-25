@@ -3239,6 +3239,24 @@ def admin_llm_models() -> ORJSONResponse:
     return ORJSONResponse({"models": models})
 
 
+@app.get("/api/v1/admin/llm/availability", response_class=ORJSONResponse)
+async def admin_llm_availability(request: Request) -> ORJSONResponse:
+    """Expose a simple availability flag for the LLM cluster."""
+
+    _require_admin(request)
+    available = False
+    try:
+        cluster = get_cluster_manager()
+    except RuntimeError:
+        available = False
+    else:
+        try:
+            available = bool(cluster.has_available())
+        except Exception:
+            available = False
+    return ORJSONResponse({"available": available})
+
+
 @app.get("/api/v1/admin/ollama/catalog", response_class=ORJSONResponse)
 async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
     _require_super_admin(request)
