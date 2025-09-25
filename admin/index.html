@@ -3601,21 +3601,28 @@
         logoutButton.disabled = true;
         logoutButton.textContent = t('logoutProgress');
       }
+      const origin = window.location.origin || `${window.location.protocol}//${window.location.host}`;
+      const logoutEndpoint = `${origin}/api/v1/admin/logout`;
+      const nonce = Date.now().toString(36);
+      const invalidAuthHeader = `Basic ${btoa(`logout:${nonce}`)}`;
       try {
-        await fetch('/api/v1/admin/logout', {
+        await fetch(logoutEndpoint, {
           method: 'POST',
           cache: 'no-store',
           credentials: 'include',
+          headers: {
+            Authorization: invalidAuthHeader,
+            'Cache-Control': 'no-store, max-age=0',
+            Pragma: 'no-cache',
+          },
         });
       } catch (error) {
         console.warn('admin_logout_request_failed', error);
       }
       try {
-        if (typeof document !== 'undefined' && typeof document.execCommand === 'function') {
-          document.execCommand('ClearAuthenticationCache');
-        }
+        await navigator.credentials?.preventSilentAccess?.();
       } catch (error) {
-        console.warn('admin_logout_clear_cache_failed', error);
+        console.warn('admin_logout_credentials_failed', error);
       }
       try {
         localStorage.removeItem('admin_project');
@@ -3623,8 +3630,14 @@
         console.warn('admin_logout_localstorage_failed', error);
       }
       setTimeout(() => {
-        window.location.href = '/api/v1/admin/logout';
-      }, 150);
+        const logoutUrlWithNonce = `${window.location.protocol}//logout:${nonce}@${window.location.host}/api/v1/admin/logout?ts=${Date.now()}`;
+        try {
+          window.location.replace(logoutUrlWithNonce);
+        } catch (error) {
+          console.warn('admin_logout_replace_failed', error);
+          window.location.href = `${logoutEndpoint}?ts=${Date.now()}`;
+        }
+      }, 120);
     }
 
     if (logoutButton) {
