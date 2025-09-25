@@ -40,7 +40,7 @@ from observability.metrics import MetricsMiddleware, metrics_app
 
 from api import llm_router, crawler_router
 from mongo import MongoClient, NotFound
-from models import Document, Project
+from models import Document, Project, OllamaServer
 from settings import MongoSettings, Settings
 from core.status import status_dict
 from backend.settings import settings as base_settings
@@ -52,6 +52,7 @@ from backend.ollama import (
     popular_models_with_size,
     ollama_available,
 )
+from backend.ollama_cluster import init_cluster, reload_cluster, get_cluster_manager, shutdown_cluster
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
@@ -2264,6 +2265,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     app.state.pending_attachments = {}
     app.state.pending_attachments_lock = asyncio.Lock()
 
+    cluster = await init_cluster(
+        mongo_client,
+        default_base=getattr(base_settings, "ollama_base_url", None),
+    )
+    app.state.ollama_cluster = cluster
+
     # Warm-up runners based on stored configuration
     try:
         await telegram_hub.refresh()
@@ -2294,6 +2301,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         await max_hub.stop_all()
     with suppress(Exception):
         await vk_hub.stop_all()
+    with suppress(Exception):
+        await shutdown_cluster()
     mongo_client.client.close()
     qdrant_client.close()
     with suppress(AttributeError):
@@ -2304,6 +2313,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         del app.state.telegram
         del app.state.max
         del app.state.vk
+        del app.state.ollama_cluster
 
 
 def _ssl_enabled() -> bool:
@@ -2605,6 +2615,25 @@ class OllamaInstallRequest(BaseModel):
     model: str
 
 
+class OllamaServerPayload(BaseModel):
+    name: str
+    base_url: str
+    enabled: bool = True
+
+
+async def _ensure_ollama_reachable(base_url: str, timeout: float = 2.5) -> None:
+    url = f"{base_url.rstrip('/')}/api/tags"
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = f"Сервер ответил ошибкой HTTP {exc.response.status_code}"
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=400, detail=f"Не удалось подключиться: {exc}") from exc
+
+
 @app.get("/api/v1/admin/session", response_class=ORJSONResponse)
 async def admin_session(request: Request) -> ORJSONResponse:
     identity = _require_admin(request)
@@ -2627,7 +2656,10 @@ class ProjectCreate(BaseModel):
     llm_model: str | None = None
     llm_prompt: str | None = None
     llm_emotions_enabled: bool | None = None
+    llm_voice_enabled: bool | None = None
+    llm_voice_model: str | None = None
     debug_enabled: bool | None = None
+    debug_info_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -3208,6 +3240,24 @@ def admin_llm_models() -> ORJSONResponse:
     return ORJSONResponse({"models": models})
 
 
+@app.get("/api/v1/admin/llm/availability", response_class=ORJSONResponse)
+async def admin_llm_availability(request: Request) -> ORJSONResponse:
+    """Expose a simple availability flag for the LLM cluster."""
+
+    _require_admin(request)
+    available = False
+    try:
+        cluster = get_cluster_manager()
+    except RuntimeError:
+        available = False
+    else:
+        try:
+            available = bool(cluster.has_available())
+        except Exception:
+            available = False
+    return ORJSONResponse({"available": available})
+
+
 @app.get("/api/v1/admin/ollama/catalog", response_class=ORJSONResponse)
 async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
     _require_super_admin(request)
@@ -3237,6 +3287,53 @@ async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
             "default_model": default_model,
         }
     )
+
+
+@app.get("/api/v1/admin/ollama/servers", response_class=ORJSONResponse)
+async def admin_ollama_servers(request: Request) -> ORJSONResponse:
+    _require_super_admin(request)
+    cluster = get_cluster_manager()
+    servers = await cluster.describe()
+    return ORJSONResponse({"servers": servers})
+
+
+@app.post("/api/v1/admin/ollama/servers", response_class=ORJSONResponse)
+async def admin_ollama_server_upsert(request: Request, payload: OllamaServerPayload) -> ORJSONResponse:
+    _require_super_admin(request)
+    name = (payload.name or "").strip().lower()
+    base_url = (payload.base_url or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+    if not base_url:
+        raise HTTPException(status_code=400, detail="base_url is required")
+    try:
+        if payload.enabled:
+            await _ensure_ollama_reachable(base_url)
+        server = OllamaServer(name=name, base_url=base_url, enabled=payload.enabled)
+        stored = await _get_mongo_client(request).upsert_ollama_server(server)
+        await reload_cluster()
+        cluster = get_cluster_manager()
+        servers = await cluster.describe()
+        data = next((item for item in servers if item.get("name") == stored.name), None)
+        return ORJSONResponse({"server": data})
+    except Exception as exc:  # noqa: BLE001
+        logger.error("admin_ollama_server_upsert_failed", name=name, error=str(exc))
+        raise
+
+
+@app.delete("/api/v1/admin/ollama/servers/{name}", response_class=ORJSONResponse)
+async def admin_ollama_server_delete(request: Request, name: str) -> ORJSONResponse:
+    _require_super_admin(request)
+    key = (name or "").strip().lower()
+    if not key:
+        raise HTTPException(status_code=400, detail="name is required")
+    removed = await _get_mongo_client(request).delete_ollama_server(key)
+    if not removed:
+        raise HTTPException(status_code=404, detail="server_not_found")
+    await reload_cluster()
+    cluster = get_cluster_manager()
+    servers = await cluster.describe()
+    return ORJSONResponse({"servers": servers})
 
 
 @app.post("/api/v1/admin/ollama/install", response_class=ORJSONResponse)
@@ -4317,6 +4414,29 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         else:
             emotions_value = True
 
+    if "llm_voice_enabled" in provided_fields:
+        voice_enabled_value = (
+            bool(payload.llm_voice_enabled)
+            if payload.llm_voice_enabled is not None
+            else True
+        )
+    else:
+        if existing and existing.llm_voice_enabled is not None:
+            voice_enabled_value = bool(existing.llm_voice_enabled)
+        else:
+            voice_enabled_value = True
+
+    if "llm_voice_model" in provided_fields:
+        if isinstance(payload.llm_voice_model, str):
+            voice_model_value = payload.llm_voice_model.strip() or None
+        else:
+            voice_model_value = None
+    else:
+        voice_model_value = existing.llm_voice_model if existing and existing.llm_voice_model else None
+
+    if not voice_enabled_value:
+        voice_model_value = None
+
     if "debug_enabled" in provided_fields:
         debug_value = bool(payload.debug_enabled) if payload.debug_enabled is not None else False
     else:
@@ -4324,6 +4444,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
             debug_value = bool(existing.debug_enabled)
         else:
             debug_value = False
+
+    if "debug_info_enabled" in provided_fields:
+        debug_info_value = (
+            bool(payload.debug_info_enabled)
+            if payload.debug_info_enabled is not None
+            else False
+        )
+    else:
+        if existing and existing.debug_info_enabled is not None:
+            debug_info_value = bool(existing.debug_info_enabled)
+        else:
+            debug_info_value = True
 
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
@@ -4423,7 +4555,10 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_model=model_value,
         llm_prompt=prompt_value,
         llm_emotions_enabled=emotions_value,
+        llm_voice_enabled=voice_enabled_value,
+        llm_voice_model=voice_model_value,
         debug_enabled=debug_value,
+        debug_info_enabled=debug_info_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,

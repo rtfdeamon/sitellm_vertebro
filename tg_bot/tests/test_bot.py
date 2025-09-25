@@ -181,6 +181,15 @@ def test_text_handler_sends_image(monkeypatch):
 
     bot_mod.rag_answer = fake_rag_answer
 
+    async def fake_features(project):
+        return {
+            "emotions_enabled": True,
+            "debug_enabled": False,
+            "debug_info_enabled": False,
+        }
+
+    bot_mod._get_project_features = fake_features
+
     msg = FakeMessage("show license")
     asyncio.run(bot_mod.text_handler(msg, project="demo", session_id="abc"))
 

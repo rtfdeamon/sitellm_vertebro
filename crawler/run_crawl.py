@@ -471,12 +471,12 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
         if main_type == "application/pdf" or url.lower().endswith(".pdf"):
             text = pdf_to_text(resp.content)
             if text:
-                logger.info("pdf extracted", url=url, chars=len(text))
+                logger.debug("pdf extracted", url=url, chars=len(text))
                 return text, ctype or "application/pdf"
-            logger.info("skip pdf", url=url, reason="no_text")
+            logger.debug("skip pdf", url=url, reason="no_text")
             return None, ctype or "application/pdf"
         if main_type != "text/html":
-            logger.info("skip non-html", url=url, content_type=ctype)
+            logger.debug("skip non-html", url=url, content_type=ctype)
             return None, ctype
         # ``requests`` uses ``text`` for decoded body
         return resp.text, ctype
@@ -1188,26 +1188,26 @@ async def crawl(
             if main_type == "application/pdf" or path_lower.endswith(".pdf"):
                 text = pdf_to_text(resp.content)
                 if text:
-                    logger.info("pdf extracted", url=url, chars=len(text))
+                    logger.debug("pdf extracted", url=url, chars=len(text))
                 else:
-                    logger.info("pdf extracted", url=url, chars=0, reason="empty_text")
+                    logger.debug("pdf extracted", url=url, chars=0, reason="empty_text")
                 return text, (ctype or "application/pdf"), False, resp.content
             if main_type in DOCX_MIME_TYPES or path_lower.endswith(".docx"):
                 text = extract_docx_text(resp.content)
                 if text:
-                    logger.info("docx extracted", url=url, chars=len(text))
+                    logger.debug("docx extracted", url=url, chars=len(text))
                 else:
-                    logger.info("docx extracted", url=url, chars=0, reason="empty_text")
+                    logger.debug("docx extracted", url=url, chars=0, reason="empty_text")
                 return text, (ctype or "application/vnd.openxmlformats-officedocument.wordprocessingml.document"), False, resp.content
             if main_type in DOC_MIME_TYPES or path_lower.endswith(".doc"):
                 text = extract_doc_text(resp.content)
                 if text:
-                    logger.info("doc extracted", url=url, chars=len(text))
+                    logger.debug("doc extracted", url=url, chars=len(text))
                 else:
-                    logger.info("doc extracted", url=url, chars=0, reason="empty_text")
+                    logger.debug("doc extracted", url=url, chars=0, reason="empty_text")
                 return text, (ctype or "application/msword"), False, resp.content
             if main_type != "text/html":
-                logger.info("skip non-html", url=url, content_type=ctype)
+                logger.debug("skip non-html", url=url, content_type=ctype)
                 return None, ctype, False, None
             if JS_RENDER_ENABLED:
                 rendered = await _render_with_playwright(url)
@@ -1285,6 +1285,38 @@ async def crawl(
 
         user_agent = HEADERS.get("User-Agent", "*")
 
+        def prune_pending_queue() -> int:
+            """Deduplicate the pending URL queue before workers start."""
+
+            if url_queue.empty():
+                enqueued.clear()
+                return 0
+
+            unique_items: list[tuple[str, int]] = []
+            seen_urls: set[str] = set()
+            removed = 0
+
+            while True:
+                try:
+                    url, depth = url_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                url_queue.task_done()
+                if url in seen_urls:
+                    removed += 1
+                    _incr("queued", -1, project_label)
+                    continue
+                seen_urls.add(url)
+                unique_items.append((url, depth))
+
+            enqueued.clear()
+
+            for url, depth in unique_items:
+                enqueued.add(url)
+                url_queue.put_nowait((url, depth))
+
+            return removed
+
         async def enqueue_url(raw: str, depth: int, *, force: bool = False) -> None:
             normalized = normalize_url(
                 raw,
@@ -1315,6 +1347,15 @@ async def crawl(
         for extra_url in sitemap_seed_urls:
             await enqueue_url(extra_url, 1)
 
+        removed_initial_duplicates = prune_pending_queue()
+        if removed_initial_duplicates:
+            logger.info(
+                "crawl_queue_deduplicated",
+                removed=removed_initial_duplicates,
+                stage="initial_seed",
+                project=project_label,
+            )
+
         async def _worker(client: httpx.AsyncClient) -> None:
             while True:
                 url, depth = await url_queue.get()
@@ -1337,7 +1378,7 @@ async def crawl(
 
                     if payload or binary_data:
                         content_length = len(payload) if payload else len(binary_data or b"")
-                        logger.info(
+                        logger.debug(
                             "page fetched",
                             url=url,
                             depth=depth,
@@ -1355,7 +1396,7 @@ async def crawl(
                             ):
                                 await enqueue_url(link, depth + 1)
                     else:
-                        logger.info("page skipped", url=url, reason="non_html_or_error")
+                        logger.debug("page skipped", url=url, reason="non_html_or_error")
                 finally:
                     enqueued.discard(url)
                     url_queue.task_done()

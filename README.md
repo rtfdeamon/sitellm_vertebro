@@ -208,7 +208,10 @@ required.
 - Health endpoints: `/health` (external dependencies) and `/healthz`
   (container liveness).
 - Metrics: `/metrics` (Prometheus exposition).
-- Logs: admin dashboard "Logs" card + container logs via Docker.
+- Logs: admin dashboard "Logs" card (stores an in-memory history for the last
+  three days) + container logs via Docker.
+- Embedding: see `docs/widget_embed.md` for floating widget and voice avatar
+  snippets that can be dropped into external sites.
 
 If you encounter issues, start by checking the crawler progress channel in
 Redis (`crawler:events`) and the Celery worker logs for embedding status.

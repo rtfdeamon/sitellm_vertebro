@@ -38,8 +38,10 @@ Knowledge base management
   system prompt.  The prompt is applied to **every** subsequent LLM request,
   which is confirmed by ``project_prompt_attached`` entries in the logs.
 * Upload documents manually through the "Knowledge Base" card or launch a
-  crawl.  When the crawler finishes, the Celery worker queues an embeddings
-  refresh so Redis stays in sync without a full rebuild.
+  crawl.  The crawler deduplicates its pending queue before fetching so
+  repeated links from menus or sitemaps do not waste crawl budget.  When the
+  crawler finishes, the Celery worker queues an embeddings refresh so Redis
+  stays in sync without a full rebuild.
 * The "Logs" card surfaces ``llm_prompt_compiled`` events so operators can
   inspect the full prompt/knowledge combination used for each conversation.
 

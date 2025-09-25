@@ -17,7 +17,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pymongo.errors import ConfigurationError
 
 from backend.cache import _get_redis
-from models import ContextMessage, ContextPreset, Document
+from models import ContextMessage, ContextPreset, Document, OllamaServer
 try:
     from models import Project
 except ImportError:  # pragma: no cover - fallback for test stubs
@@ -114,6 +114,7 @@ class MongoClient:
         self.settings_collection = os.getenv("MONGO_SETTINGS", "app_settings")
         self.documents_collection = os.getenv("MONGO_DOCUMENTS", "documents")
         self.stats_collection = os.getenv("MONGO_STATS", "request_stats")
+        self.ollama_servers_collection = os.getenv("MONGO_OLLAMA_SERVERS", "ollama_servers")
         self._indexes_ready = False
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
@@ -585,7 +586,7 @@ class MongoClient:
             data["admin_password_hash"] = admin_password_hash.strip() or None
         else:
             data["admin_password_hash"] = None
-        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "max_token", "vk_token", "widget_url"):
+        for field in ("title", "llm_model", "llm_prompt", "llm_voice_model", "telegram_token", "max_token", "vk_token", "widget_url"):
             value = data.get(field)
             if isinstance(value, str):
                 stripped = value.strip()
@@ -603,6 +604,19 @@ class MongoClient:
             data["llm_emotions_enabled"] = True
         else:
             data["llm_emotions_enabled"] = bool(emotions_value)
+        voice_value = data.get("llm_voice_enabled")
+        if isinstance(voice_value, str):
+            lowered = voice_value.strip().lower()
+            if lowered in {"false", "0", "off", "no"}:
+                data["llm_voice_enabled"] = False
+            elif lowered in {"true", "1", "on", "yes"}:
+                data["llm_voice_enabled"] = True
+            else:
+                data["llm_voice_enabled"] = True
+        elif voice_value is None:
+            data["llm_voice_enabled"] = True
+        else:
+            data["llm_voice_enabled"] = bool(voice_value)
         debug_value = data.get("debug_enabled")
         if isinstance(debug_value, str):
             lowered = debug_value.strip().lower()
@@ -616,6 +630,19 @@ class MongoClient:
             data["debug_enabled"] = False
         else:
             data["debug_enabled"] = bool(debug_value)
+        debug_info_value = data.get("debug_info_enabled")
+        if isinstance(debug_info_value, str):
+            lowered = debug_info_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["debug_info_enabled"] = True
+            elif lowered in {"false", "0", "off", "no"}:
+                data["debug_info_enabled"] = False
+            else:
+                data["debug_info_enabled"] = False
+        elif debug_info_value is None:
+            data["debug_info_enabled"] = True
+        else:
+            data["debug_info_enabled"] = bool(debug_info_value)
         for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             auto_value = data.get(field)
             if isinstance(auto_value, str):
@@ -654,6 +681,10 @@ class MongoClient:
         for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             if field in data and data[field] is not None:
                 data[field] = bool(data[field])
+        if "llm_voice_enabled" in data and data["llm_voice_enabled"] is not None:
+            data["llm_voice_enabled"] = bool(data["llm_voice_enabled"])
+        if data.get("llm_voice_model"):
+            data["llm_voice_model"] = str(data["llm_voice_model"]).strip() or None
         try:
             await self.db[self.projects_collection].update_one(
                 {"name": data["name"]},
@@ -775,6 +806,98 @@ class MongoClient:
 
         summary["file_ids"] = file_ids
         return summary
+
+    async def list_ollama_servers(self) -> list[OllamaServer]:
+        try:
+            cursor = self.db[self.ollama_servers_collection].find({}, {"_id": False})
+            servers: list[OllamaServer] = []
+            async for item in cursor:
+                try:
+                    servers.append(OllamaServer(**item))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "mongo_ollama_server_parse_failed",
+                        server=item,
+                        error=str(exc),
+                    )
+            return servers
+        except Exception as exc:
+            logger.error("mongo_list_ollama_servers_failed", error=str(exc))
+            raise
+
+    async def get_ollama_server(self, name: str) -> OllamaServer | None:
+        try:
+            doc = await self.db[self.ollama_servers_collection].find_one(
+                {"name": name.strip().lower()},
+                {"_id": False},
+            )
+            return OllamaServer(**doc) if doc else None
+        except Exception as exc:
+            logger.error("mongo_get_ollama_server_failed", name=name, error=str(exc))
+            raise
+
+    async def upsert_ollama_server(self, server: OllamaServer) -> OllamaServer:
+        payload = server.model_dump()
+        payload["name"] = server.name.strip().lower()
+        payload["base_url"] = server.base_url.rstrip('/')
+        now = time.time()
+        payload.setdefault("created_at", now)
+        payload["updated_at"] = now
+        try:
+            await self.db[self.ollama_servers_collection].update_one(
+                {"name": payload["name"]},
+                {"$set": payload},
+                upsert=True,
+            )
+            stored = await self.db[self.ollama_servers_collection].find_one(
+                {"name": payload["name"]},
+                {"_id": False},
+            )
+            return OllamaServer(**stored) if stored else server
+        except Exception as exc:
+            logger.error("mongo_upsert_ollama_server_failed", name=server.name, error=str(exc))
+            raise
+
+    async def delete_ollama_server(self, name: str) -> bool:
+        key = name.strip().lower()
+        try:
+            result = await self.db[self.ollama_servers_collection].delete_one({"name": key})
+            return bool(result.deleted_count)
+        except Exception as exc:
+            logger.error("mongo_delete_ollama_server_failed", name=key, error=str(exc))
+            raise
+
+    async def update_ollama_server_stats(
+        self,
+        name: str,
+        *,
+        avg_latency_ms: float,
+        requests_last_hour: int,
+        total_duration_ms: float,
+    ) -> None:
+        key = name.strip().lower()
+        stats_payload = {
+            "avg_latency_ms": float(avg_latency_ms),
+            "requests_last_hour": int(requests_last_hour),
+            "total_duration_ms": float(total_duration_ms),
+            "updated_at": time.time(),
+        }
+        try:
+            await self.db[self.ollama_servers_collection].update_one(
+                {"name": key},
+                {
+                    "$set": {
+                        "stats": stats_payload,
+                        "updated_at": time.time(),
+                    }
+                },
+            )
+        except Exception as exc:
+            logger.debug(
+                "mongo_update_ollama_server_stats_failed",
+                name=key,
+                error=str(exc),
+            )
 
     async def get_project(self, domain: str) -> Project | None:
         try:
@@ -914,6 +1037,20 @@ class MongoClient:
                 "mongo_index_create_failed",
                 collection=self.stats_collection,
                 index="request_stats_project_date",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.ollama_servers_collection].create_index(
+                "name",
+                name="ollama_server_name_unique",
+                unique=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.ollama_servers_collection,
+                index="ollama_server_name_unique",
                 error=str(exc),
             )
 

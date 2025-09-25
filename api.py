@@ -45,7 +45,7 @@ from crawler.run_crawl import (
 )
 
 from models import Document, LLMResponse, LLMRequest, RoleEnum, Project, Attachment
-from mongo import NotFound
+from mongo import MongoClient, NotFound
 from pydantic import BaseModel
 
 from core.status import status_dict
@@ -72,6 +72,16 @@ def _normalize_project(value: str | None) -> str | None:
     if fallback:
         return fallback.strip().lower() or None
     return None
+
+
+def _get_mongo_client(request: Request) -> MongoClient:
+    mongo_client: MongoClient | None = getattr(request.state, "mongo", None)
+    if mongo_client is None:
+        mongo_client = getattr(request.app.state, "mongo", None)
+        if mongo_client is None:
+            raise HTTPException(status_code=503, detail="mongo_unavailable")
+        request.state.mongo = mongo_client
+    return mongo_client
 
 
 def _resolve_session_identifiers(
@@ -105,6 +115,9 @@ def _resolve_session_identifiers(
 
 _KNOWLEDGE_SNIPPET_CHARS = 640
 _MAX_DIALOG_TURNS = 5
+_VOICE_MAX_TURNS = 3
+_VOICE_KNOWLEDGE_LIMIT = 2
+_VOICE_KNOWLEDGE_CHARS = 800
 _ATTACHMENT_PENDING_TTL = 10 * 60  # seconds
 _ATTACHMENT_CONSENT_SIMPLE = {
     "да",
@@ -465,6 +478,27 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     return header + "\n\n" + "\n\n".join(blocks)
 
 
+def _trim_voice_snippets(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not snippets:
+        return []
+    trimmed: list[dict[str, Any]] = []
+    total_chars = 0
+    for item in snippets[:_VOICE_KNOWLEDGE_LIMIT]:
+        text = item.get("text", "")
+        remaining = _VOICE_KNOWLEDGE_CHARS - total_chars
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            slice_ = text[:remaining]
+            slice_ = slice_.rsplit(" ", 1)[0].strip() or text[:remaining]
+            text = slice_.rstrip(". ") + "…"
+        total_chars += len(text)
+        new_item = dict(item)
+        new_item["text"] = text
+        trimmed.append(new_item)
+    return trimmed
+
+
 def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_DIALOG_TURNS) -> list[dict[str, Any]]:
     """Return ``messages`` trimmed to the last ``max_turns`` user requests."""
 
@@ -585,6 +619,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
     knowledge_snippets: list[dict[str, Any]] = []
     attachments_payload: list[dict[str, Any]] = []
+    attachments_to_queue: list[dict[str, Any]] = []
     knowledge_message = ""
     try:
         question_text = context[-1].get("content", "")
@@ -708,6 +743,7 @@ async def chat(
     channel: str | None = None,
     debug: bool | None = None,
     session_id: str | None = None,
+    model: str | None = None,
 ) -> StreamingResponse:
     """Stream tokens from the language model using server-sent events.
 
@@ -757,12 +793,40 @@ async def chat(
                 prompt_length=len(prompt_text),
                 mode="stream",
             )
-    model_override = None
+    requested_model = model.strip() if isinstance(model, str) and model.strip() else None
+    base_model_override = None
     if project_obj and project_obj.llm_model:
         model_text = project_obj.llm_model.strip()
         if model_text:
-            model_override = model_text
+            base_model_override = model_text
 
+    voice_model_override = None
+    if project_obj and project_obj.llm_voice_model:
+        voice_model_text = project_obj.llm_voice_model.strip()
+        if voice_model_text:
+            voice_model_override = voice_model_text
+
+    voice_enabled = True
+    if project_obj and project_obj.llm_voice_enabled is not None:
+        voice_enabled = bool(project_obj.llm_voice_enabled)
+
+    selected_model_override = base_model_override
+    if channel_name.lower() == "voice-avatar":
+        if not voice_enabled:
+            logger.warning(
+                "voice_channel_disabled",
+                project=project_name,
+                session=session_key,
+                channel=channel_name,
+            )
+            raise HTTPException(status_code=403, detail="voice_mode_disabled")
+        if voice_model_override:
+            selected_model_override = voice_model_override
+
+    if requested_model:
+        selected_model_override = requested_model
+
+    model_override = selected_model_override
     effective_model = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
 
     if app_settings.debug:
@@ -800,8 +864,13 @@ async def chat(
         if attachments_from_store:
             attachments_payload = attachments_from_store
             knowledge_snippets = (stored_entry or {}).get("snippets") or []
+            if is_voice_channel:
+                knowledge_snippets = _trim_voice_snippets(knowledge_snippets)
+                attachments_payload = []
             planned_attachments_count = len(attachments_payload)
             pending_consumed = True
+
+    is_voice_channel = channel_name.lower() == "voice-avatar"
 
     if not knowledge_snippets:
         try:
@@ -816,20 +885,26 @@ async def chat(
                 mode="stream",
             )
         else:
+            if is_voice_channel:
+                knowledge_snippets = _trim_voice_snippets(knowledge_snippets)
             attachments_to_queue = _collect_attachments(knowledge_snippets)
             if pending_consumed:
                 # Attachments already confirmed for delivery; do not overwrite payload
                 planned_attachments_count = len(attachments_payload)
             else:
                 planned_attachments_count = len(attachments_to_queue)
-                await _set_pending_attachments(
-                    request.app,
-                    session_key,
-                    attachments_to_queue,
-                    knowledge_snippets,
-                    now_ts,
-                )
-                attachments_payload = []  # wait for explicit confirmation
+                if is_voice_channel:
+                    attachments_to_queue = []
+                    planned_attachments_count = 0
+                else:
+                    await _set_pending_attachments(
+                        request.app,
+                        session_key,
+                        attachments_to_queue,
+                        knowledge_snippets,
+                        now_ts,
+                    )
+                    attachments_payload = []  # wait for explicit confirmation
 
     knowledge_message = _compose_knowledge_message(knowledge_snippets)
     if knowledge_message:
@@ -1012,6 +1087,61 @@ async def chat(
         )
     return response
 
+
+@llm_router.get("/project-config", response_class=ORJSONResponse)
+async def project_config(request: Request, project: str | None = None) -> ORJSONResponse:
+    """Expose project configuration for widgets and clients."""
+
+    mongo_client = _get_mongo_client(request)
+
+    normalized = _normalize_project(project)
+    if not normalized:
+        normalized = _normalize_project(backend_settings.project_name)
+
+    project_obj: Project | None = None
+    if normalized:
+        project_obj = await mongo_client.get_project(normalized)
+        if project_obj is None:
+            logger.info("project_config_missing", project=normalized)
+
+    if project_obj is None and normalized:
+        # create placeholder to keep defaults if project not stored yet
+        project_obj = Project(name=normalized)
+
+    voice_enabled = True
+    voice_model = None
+    llm_model = getattr(llm_client, "MODEL_NAME", None)
+    title = None
+    emotions_enabled = True
+    debug_enabled = False
+    debug_info_enabled = True
+
+    if project_obj:
+        title = project_obj.title
+        if project_obj.llm_model:
+            llm_model = project_obj.llm_model
+        if project_obj.llm_voice_enabled is not None:
+            voice_enabled = bool(project_obj.llm_voice_enabled)
+        if project_obj.llm_voice_model:
+            voice_model = project_obj.llm_voice_model
+        if project_obj.llm_emotions_enabled is not None:
+            emotions_enabled = bool(project_obj.llm_emotions_enabled)
+        if project_obj.debug_enabled is not None:
+            debug_enabled = bool(project_obj.debug_enabled)
+        if project_obj.debug_info_enabled is not None:
+            debug_info_enabled = bool(project_obj.debug_info_enabled)
+
+    payload = {
+        "project": normalized,
+        "title": title,
+        "llm_model": llm_model,
+        "llm_voice_enabled": voice_enabled,
+        "llm_voice_model": voice_model,
+        "emotions_enabled": emotions_enabled,
+        "debug_enabled": debug_enabled,
+        "debug_info_enabled": debug_info_enabled,
+    }
+    return ORJSONResponse(payload)
 
 class CrawlRequest(BaseModel):
     start_url: str

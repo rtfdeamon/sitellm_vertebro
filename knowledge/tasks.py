@@ -15,6 +15,7 @@ from worker import celery, get_mongo_client, settings as worker_settings
 from models import Project
 from knowledge.summary import generate_document_summary
 from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from backend.ollama_cluster import get_cluster_manager
 
 logger = structlog.get_logger(__name__)
 
@@ -90,8 +91,8 @@ def _extract_text(name: str, content_type: str, payload: bytes) -> str:
     return ""
 
 
-@celery.task(name="knowledge.generate_auto_description")
-def generate_auto_description(file_id: str, project: str | None = None) -> None:
+@celery.task(name="knowledge.generate_auto_description", bind=True, max_retries=None)
+def generate_auto_description(self, file_id: str, project: str | None = None) -> None:
     """Generate a concise description for a document and update its metadata."""
 
     logger.info("auto_description_queued", file_id=file_id, project=project)
@@ -103,6 +104,34 @@ def generate_auto_description(file_id: str, project: str | None = None) -> None:
         if not doc:
             logger.warning("auto_description_missing_doc", file_id=file_id)
             return
+        pending_message = "Ожидаем доступной LLM модели"
+        try:
+            cluster = get_cluster_manager()
+        except RuntimeError as exc:
+            logger.warning(
+                "auto_description_cluster_uninitialized",
+                file_id=file_id,
+                project=project,
+                error=str(exc),
+            )
+            _update_status(collection, file_id, "pending_auto_description", pending_message)
+            collection.update_one(
+                {"fileId": file_id},
+                {"$set": {"autoDescriptionPending": True}},
+            )
+            raise self.retry(countdown=60, exc=exc)
+        if not cluster.has_available():
+            logger.info(
+                "auto_description_wait_llm",
+                file_id=file_id,
+                project=project,
+            )
+            _update_status(collection, file_id, "pending_auto_description", pending_message)
+            collection.update_one(
+                {"fileId": file_id},
+                {"$set": {"autoDescriptionPending": True}},
+            )
+            raise self.retry(countdown=60, exc=RuntimeError("LLM cluster unavailable"))
         gridfs = GridFS(db)
         _update_status(collection, file_id, "auto_description_in_progress", "Формируем описание")
         try:

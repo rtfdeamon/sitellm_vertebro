@@ -162,6 +162,8 @@ class Project(BaseModel):
     llm_model: str | None = None
     llm_prompt: str | None = None
     llm_emotions_enabled: bool | None = True
+    llm_voice_enabled: bool | None = True
+    llm_voice_model: str | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -170,6 +172,7 @@ class Project(BaseModel):
     vk_auto_start: bool | None = None
     widget_url: str | None = None
     debug_enabled: bool | None = None
+    debug_info_enabled: bool | None = True
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -181,11 +184,40 @@ class Project(BaseModel):
                 "llm_model": "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
                 "llm_prompt": "You are helpful and concise.",
                 "llm_emotions_enabled": True,
+                "llm_voice_enabled": True,
+                "llm_voice_model": "fast-solutions/voice-gpt",
                 "debug_enabled": False,
+                "debug_info_enabled": True,
                 "telegram_auto_start": False,
                 "max_auto_start": False,
                 "vk_auto_start": False,
                 "widget_url": "https://example.com/widget?project=mmvs",
+            }
+        }
+    )
+
+
+class OllamaServer(BaseModel):
+    """Configuration entry describing an Ollama backend node."""
+
+    name: str
+    base_url: str
+    enabled: bool = True
+    created_at: float | None = None
+    updated_at: float | None = None
+    stats: dict | None = None
+
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "name": "primary",
+                "base_url": "http://localhost:11434",
+                "enabled": True,
+                "stats": {
+                    "avg_latency_ms": 2200.0,
+                    "requests_last_hour": 12,
+                    "updated_at": 1_700_000_000.0,
+                },
             }
         }
     )
