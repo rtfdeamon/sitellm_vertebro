@@ -310,4 +310,3 @@ def get_cluster_manager() -> OllamaClusterManager:
 async def reload_cluster() -> None:
     manager = get_cluster_manager()
     await manager.reload()
-*** End of File
