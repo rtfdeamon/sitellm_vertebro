@@ -399,6 +399,8 @@
     }
     .voice-grid label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
     .voice-grid input { background: rgba(15, 17, 23, 0.55); border: 1px solid rgba(148, 163, 184, 0.25); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .voice-choice { position: relative; }
+    .voice-choice input { width: 100%; }
     .voice-preview-placeholder {
       text-align: center;
       color: var(--muted);
@@ -523,9 +525,10 @@
               <span data-i18n="avatarLangLabel">Recognition language</span>
               <input type="text" id="avatarLang" value="ru-RU" autocomplete="off" />
             </label>
-            <label>
+            <label class="voice-choice">
               <span data-i18n="avatarVoiceLabel">Speech voice (optional)</span>
-              <input type="text" id="avatarVoice" placeholder="Milena" autocomplete="off" />
+              <input type="text" id="avatarVoice" placeholder="Milena" autocomplete="off" list="avatarVoiceList" />
+              <datalist id="avatarVoiceList"></datalist>
             </label>
           </div>
           <div class="code-card">
@@ -650,6 +653,7 @@ const embedThemeSelect = document.getElementById('embedTheme');
 const voiceAvatarHost = document.getElementById('voiceAvatarHost');
 const avatarLangInput = document.getElementById('avatarLang');
 const avatarVoiceInput = document.getElementById('avatarVoice');
+const avatarVoiceList = document.getElementById('avatarVoiceList');
 const avatarCodeEl = document.getElementById('avatarCode');
 const avatarCopyBtn = document.getElementById('avatarCopy');
 const voiceFeatureHint = document.getElementById('voiceFeatureHint');
@@ -667,6 +671,9 @@ let voicePreviewToken = 0;
 let voicePlaceholderState = { key: 'avatarPreviewSelect', params: null };
 
 const LANGUAGE_STORAGE_KEY = 'chat_language';
+const VOICE_STORAGE_KEY = 'chat_voice_preference';
+const DEFAULT_VOICE_HINT = 'Milena';
+let voiceOptionsPending = false;
 const FALLBACK_LANGUAGE = 'en';
 const LANGUAGES = {
   en: {
@@ -1543,6 +1550,70 @@ function normalizeBaseUrl(value) {
   }
 }
 
+function populateVoiceOptions() {
+  if (!avatarVoiceList || typeof window === 'undefined' || typeof window.speechSynthesis === 'undefined') {
+    return;
+  }
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices || !voices.length) {
+    if (!voiceOptionsPending) {
+      voiceOptionsPending = true;
+      setTimeout(() => {
+        voiceOptionsPending = false;
+        populateVoiceOptions();
+      }, 600);
+    }
+    return;
+  }
+  voiceOptionsPending = false;
+  const unique = new Set();
+  avatarVoiceList.innerHTML = '';
+  voices
+    .slice()
+    .sort((a, b) => {
+      const langDiff = (a.lang || '').localeCompare(b.lang || '');
+      return langDiff !== 0 ? langDiff : (a.name || '').localeCompare(b.name || '');
+    })
+    .forEach((voice) => {
+      const name = (voice.name || '').trim();
+      if (!name || unique.has(name)) return;
+      unique.add(name);
+      const option = document.createElement('option');
+      option.value = name;
+      const lang = (voice.lang || '').trim();
+      option.label = lang ? `${name} — ${lang}` : name;
+      avatarVoiceList.appendChild(option);
+    });
+  try {
+    const stored = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (stored && avatarVoiceInput && !avatarVoiceInput.value) {
+      avatarVoiceInput.value = stored;
+    }
+  } catch {}
+}
+
+function initVoiceOptions() {
+  populateVoiceOptions();
+  if (typeof window !== 'undefined' && window.speechSynthesis) {
+    const register = () => populateVoiceOptions();
+    if (typeof window.speechSynthesis.addEventListener === 'function') {
+      window.speechSynthesis.addEventListener('voiceschanged', register);
+    } else {
+      const previous = window.speechSynthesis.onvoiceschanged;
+      window.speechSynthesis.onvoiceschanged = (...args) => {
+        populateVoiceOptions();
+        if (typeof previous === 'function') previous.apply(window.speechSynthesis, args);
+      };
+    }
+  }
+  if (avatarVoiceInput) {
+    try {
+      const stored = localStorage.getItem(VOICE_STORAGE_KEY);
+      if (stored) avatarVoiceInput.value = stored;
+    } catch {}
+  }
+}
+
 function getEmbedConfig() {
   const base = normalizeBaseUrl(embedBaseInput?.value || baseUrlInput?.value || window.location.origin);
   const project = (embedProjectInput?.value || currentProject || '').trim();
@@ -1870,7 +1941,19 @@ function initEmbedShowcase() {
   });
   embedThemeSelect?.addEventListener('change', handleEmbedChange);
   avatarLangInput?.addEventListener('input', () => refreshVoiceSnippet());
-  avatarVoiceInput?.addEventListener('input', () => refreshVoiceSnippet());
+  const handleVoiceInput = () => {
+    const value = (avatarVoiceInput?.value || '').trim();
+    try {
+      if (value) {
+        localStorage.setItem(VOICE_STORAGE_KEY, value);
+      } else {
+        localStorage.removeItem(VOICE_STORAGE_KEY);
+      }
+    } catch {}
+    refreshVoiceSnippet();
+  };
+  avatarVoiceInput?.addEventListener('input', handleVoiceInput);
+  avatarVoiceInput?.addEventListener('change', handleVoiceInput);
 
   if (embedCopyBtn) {
     embedCopyBtn.addEventListener('click', () => {
@@ -1883,6 +1966,7 @@ function initEmbedShowcase() {
     });
   }
 
+  initVoiceOptions();
   refreshEmbedSnippet();
   refreshVoiceSnippet();
 }
