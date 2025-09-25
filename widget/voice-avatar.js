@@ -259,8 +259,9 @@
     return promise;
   }
 
-  function speak(text, lang, voiceHint) {
+  function speak(text, lang, voiceHint, options = {}) {
     if (!('speechSynthesis' in window)) return;
+    const { flush = true } = options;
     const utterance = new SpeechSynthesisUtterance(text);
     if (lang) utterance.lang = lang;
     if (voiceHint) {
@@ -268,7 +269,11 @@
       const match = voices.find((voice) => voice.name === voiceHint || voice.lang === voiceHint);
       if (match) utterance.voice = match;
     }
-    speechSynthesis.cancel();
+    if (flush) {
+      try {
+        speechSynthesis.cancel();
+      } catch (_) {}
+    }
     speechSynthesis.speak(utterance);
   }
 
@@ -347,6 +352,14 @@
       enabled: true,
       model: datasetVoiceModel,
     };
+    let spokenChars = 0;
+
+    function resetSpeechStream() {
+      spokenChars = 0;
+      if ('speechSynthesis' in window) {
+        try { speechSynthesis.cancel(); } catch (_) {}
+      }
+    }
 
     function setError(message) {
       if (!message) {
@@ -430,6 +443,7 @@
       cancelStream();
       const url = buildUrl(baseUrl, project, session, question, channel, voiceSettings.model);
       let buffer = '';
+      resetSpeechStream();
       transcript.textContent = 'Assistant is responding...';
 
       try {
@@ -437,6 +451,22 @@
       } catch (err) {
         setError('Your browser blocked EventSource.');
         return;
+      }
+
+      const STREAM_THRESHOLD = 120;
+      const SENTENCE_END_RE = /[.!?。！？…]$/;
+
+      function maybeSpeak(force = false) {
+        if (!('speechSynthesis' in window)) return;
+        const pending = buffer.slice(spokenChars);
+        const trimmed = pending.trim();
+        if (!trimmed) return;
+        const endsWithSentence = SENTENCE_END_RE.test(trimmed);
+        if (!force && trimmed.length < STREAM_THRESHOLD && !endsWithSentence) {
+          return;
+        }
+        speak(pending, lang, voiceHint, { flush: false });
+        spokenChars = buffer.length;
       }
 
       currentSource.addEventListener('meta', () => {
@@ -447,13 +477,15 @@
         currentSource = null;
         transcript.textContent = buffer || 'No answer received.';
         appendMessage('bot', buffer || 'No answer received.');
-        speak(buffer, lang, voiceHint);
+        maybeSpeak(true);
       });
       currentSource.addEventListener('llm_error', () => {
         setError('Assistant failed to answer.');
+        maybeSpeak(true);
       });
       currentSource.onerror = () => {
         setError('Connection interrupted.');
+        maybeSpeak(true);
       };
       currentSource.onmessage = (event) => {
         try {
@@ -461,6 +493,7 @@
           if (payload && typeof payload.text === 'string') {
             buffer += payload.text;
             transcript.textContent = buffer;
+            maybeSpeak(false);
           }
         } catch (err) {
           // ignore malformed chunk
@@ -473,6 +506,7 @@
         setError('Voice assistant is disabled by the administrator.');
         return;
       }
+      resetSpeechStream();
       if (!question || !question.trim()) {
         setError('Please say or type a question.');
         return;
@@ -528,6 +562,7 @@
       if (!value) return;
       manualTextarea.value = '';
       transcript.textContent = value;
+      resetSpeechStream();
       handleQuestion(value);
     });
 

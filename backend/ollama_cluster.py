@@ -6,6 +6,7 @@ import asyncio
 import json
 import time
 from collections import deque
+from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import AsyncIterator, Dict, List, Optional
 
@@ -89,6 +90,8 @@ class OllamaClusterManager:
         self._default_base = default_base.rstrip('/') if default_base else None
         self._lock = asyncio.Lock()
         self._servers: Dict[str, _ServerState] = {}
+        self._warm_task: asyncio.Task | None = None
+        self._warm_interval = 30.0
 
     # region lifecycle
     async def reload(self) -> None:
@@ -141,6 +144,19 @@ class OllamaClusterManager:
                     state.healthy = prev.healthy
                     state.last_error = prev.last_error
             self._servers = new_map
+
+    def start(self) -> None:
+        if self._warm_task is None:
+            self._warm_task = asyncio.create_task(self._warm_loop())
+
+    async def shutdown(self) -> None:
+        task = self._warm_task
+        if task is None:
+            return
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        self._warm_task = None
 
     def _build_stats_from_doc(self, doc: OllamaServer) -> _ServerStats | None:
         stats_info = doc.stats or {}
@@ -300,6 +316,48 @@ class OllamaClusterManager:
                     if data.get("done"):
                         return
 
+    async def _warm_loop(self) -> None:
+        try:
+            while True:
+                await self._ping_enabled_servers()
+                await asyncio.sleep(self._warm_interval)
+        except asyncio.CancelledError:
+            raise
+
+    async def _ping_enabled_servers(self) -> None:
+        async with self._lock:
+            servers = [state for state in self._servers.values() if state.enabled]
+        if not servers:
+            return
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            for state in servers:
+                await self._ping_single_server(client, state)
+
+    async def _ping_single_server(self, client: httpx.AsyncClient, snapshot: _ServerState) -> None:
+        url = f"{snapshot.base_url.rstrip('/')}/api/tags"
+        try:
+            resp = await client.get(url)
+            resp.raise_for_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "ollama_ping_failed",
+                server=snapshot.name,
+                base_url=snapshot.base_url,
+                error=str(exc),
+            )
+            async with self._lock:
+                state = self._servers.get(snapshot.name)
+                if state:
+                    state.healthy = False
+                    state.last_error = str(exc)
+        else:
+            async with self._lock:
+                state = self._servers.get(snapshot.name)
+                if state:
+                    state.healthy = True
+                    state.last_error = None
+                    state.updated_at = time.time()
+
 
 _cluster_manager: OllamaClusterManager | None = None
 
@@ -308,6 +366,7 @@ async def init_cluster(mongo_client, *, default_base: str | None = None) -> Olla
     global _cluster_manager
     manager = OllamaClusterManager(mongo_client, default_base=default_base)
     await manager.reload()
+    manager.start()
     _cluster_manager = manager
     return manager
 
@@ -321,3 +380,9 @@ def get_cluster_manager() -> OllamaClusterManager:
 async def reload_cluster() -> None:
     manager = get_cluster_manager()
     await manager.reload()
+
+
+async def shutdown_cluster() -> None:
+    if _cluster_manager is None:
+        return
+    await _cluster_manager.shutdown()

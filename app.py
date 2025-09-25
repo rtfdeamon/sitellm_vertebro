@@ -52,7 +52,7 @@ from backend.ollama import (
     popular_models_with_size,
     ollama_available,
 )
-from backend.ollama_cluster import init_cluster, reload_cluster, get_cluster_manager
+from backend.ollama_cluster import init_cluster, reload_cluster, get_cluster_manager, shutdown_cluster
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
@@ -2301,6 +2301,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
         await max_hub.stop_all()
     with suppress(Exception):
         await vk_hub.stop_all()
+    with suppress(Exception):
+        await shutdown_cluster()
     mongo_client.client.close()
     qdrant_client.close()
     with suppress(AttributeError):

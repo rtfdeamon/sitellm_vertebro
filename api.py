@@ -105,6 +105,9 @@ def _resolve_session_identifiers(
 
 _KNOWLEDGE_SNIPPET_CHARS = 640
 _MAX_DIALOG_TURNS = 5
+_VOICE_MAX_TURNS = 3
+_VOICE_KNOWLEDGE_LIMIT = 2
+_VOICE_KNOWLEDGE_CHARS = 800
 _ATTACHMENT_PENDING_TTL = 10 * 60  # seconds
 _ATTACHMENT_CONSENT_SIMPLE = {
     "да",
@@ -465,6 +468,27 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     return header + "\n\n" + "\n\n".join(blocks)
 
 
+def _trim_voice_snippets(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not snippets:
+        return []
+    trimmed: list[dict[str, Any]] = []
+    total_chars = 0
+    for item in snippets[:_VOICE_KNOWLEDGE_LIMIT]:
+        text = item.get("text", "")
+        remaining = _VOICE_KNOWLEDGE_CHARS - total_chars
+        if remaining <= 0:
+            break
+        if len(text) > remaining:
+            slice_ = text[:remaining]
+            slice_ = slice_.rsplit(" ", 1)[0].strip() or text[:remaining]
+            text = slice_.rstrip(". ") + "…"
+        total_chars += len(text)
+        new_item = dict(item)
+        new_item["text"] = text
+        trimmed.append(new_item)
+    return trimmed
+
+
 def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_DIALOG_TURNS) -> list[dict[str, Any]]:
     """Return ``messages`` trimmed to the last ``max_turns`` user requests."""
 
@@ -585,6 +609,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
     knowledge_snippets: list[dict[str, Any]] = []
     attachments_payload: list[dict[str, Any]] = []
+    attachments_to_queue: list[dict[str, Any]] = []
     knowledge_message = ""
     try:
         question_text = context[-1].get("content", "")
@@ -829,8 +854,13 @@ async def chat(
         if attachments_from_store:
             attachments_payload = attachments_from_store
             knowledge_snippets = (stored_entry or {}).get("snippets") or []
+            if is_voice_channel:
+                knowledge_snippets = _trim_voice_snippets(knowledge_snippets)
+                attachments_payload = []
             planned_attachments_count = len(attachments_payload)
             pending_consumed = True
+
+    is_voice_channel = channel_name.lower() == "voice-avatar"
 
     if not knowledge_snippets:
         try:
@@ -845,20 +875,26 @@ async def chat(
                 mode="stream",
             )
         else:
+            if is_voice_channel:
+                knowledge_snippets = _trim_voice_snippets(knowledge_snippets)
             attachments_to_queue = _collect_attachments(knowledge_snippets)
             if pending_consumed:
                 # Attachments already confirmed for delivery; do not overwrite payload
                 planned_attachments_count = len(attachments_payload)
             else:
                 planned_attachments_count = len(attachments_to_queue)
-                await _set_pending_attachments(
-                    request.app,
-                    session_key,
-                    attachments_to_queue,
-                    knowledge_snippets,
-                    now_ts,
-                )
-                attachments_payload = []  # wait for explicit confirmation
+                if is_voice_channel:
+                    attachments_to_queue = []
+                    planned_attachments_count = 0
+                else:
+                    await _set_pending_attachments(
+                        request.app,
+                        session_key,
+                        attachments_to_queue,
+                        knowledge_snippets,
+                        now_ts,
+                    )
+                    attachments_payload = []  # wait for explicit confirmation
 
     knowledge_message = _compose_knowledge_message(knowledge_snippets)
     if knowledge_message:
