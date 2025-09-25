@@ -1136,6 +1136,16 @@
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="projectVoiceEnabled" checked>
+              Голосовой консультант
+            </label>
+            <span class="muted" id="projectVoiceHint">Включите, чтобы показывать анимированного голосового ассистента на сайте.</span>
+          </div>
+          <label style="flex:1 1 200px;">Модель для голосового режима (опционально)
+            <input type="text" id="projectVoiceModel" placeholder="Например, gpt-4o-mini" list="llmModelOptions">
+          </label>
+          <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+            <label style="display:flex; align-items:center; gap:8px;">
               <input type="checkbox" id="projectDebug">
               Отладка (служебные сообщения)
             </label>
@@ -2652,6 +2662,9 @@
     const projectDomainInput = document.getElementById('projectDomain');
     const projectTitleInput = document.getElementById('projectTitle');
     const projectModelInput = document.getElementById('projectModel');
+    const projectVoiceInput = document.getElementById('projectVoiceEnabled');
+    const projectVoiceHint = document.getElementById('projectVoiceHint');
+    const projectVoiceModelInput = document.getElementById('projectVoiceModel');
     const projectPromptInput = document.getElementById('projectPrompt');
     const projectPromptRoleSelect = document.getElementById('projectPromptRole');
     const projectPromptAiBtn = document.getElementById('projectPromptAi');
@@ -5978,6 +5991,16 @@
         : 'Ответы будут нейтральными без эмодзи.';
     };
 
+    const refreshVoiceHint = (enabled) => {
+      if (!projectVoiceHint) return;
+      projectVoiceHint.textContent = enabled
+        ? 'Виджет может показывать анимированного голосового ассистента.'
+        : 'Голосовой консультант не будет доступен в виджете.';
+      if (projectVoiceModelInput) {
+        projectVoiceModelInput.disabled = !enabled;
+      }
+    };
+
     const refreshDebugHint = (enabled) => {
       if (!projectDebugHint) return;
       projectDebugHint.textContent = enabled
@@ -5990,6 +6013,12 @@
         refreshEmotionsHint(projectEmotionsInput.checked);
       });
       refreshEmotionsHint(projectEmotionsInput.checked);
+    }
+    if (projectVoiceInput) {
+      projectVoiceInput.addEventListener('change', () => {
+        refreshVoiceHint(projectVoiceInput.checked);
+      });
+      refreshVoiceHint(projectVoiceInput.checked);
     }
     if (projectDebugInput) {
       projectDebugInput.addEventListener('change', () => {
@@ -6034,6 +6063,17 @@
         const enabled = project?.llm_emotions_enabled !== false;
         projectEmotionsInput.checked = enabled;
         refreshEmotionsHint(enabled);
+      }
+      if (projectVoiceInput) {
+        const voiceEnabled = project?.llm_voice_enabled !== false;
+        projectVoiceInput.checked = voiceEnabled;
+        refreshVoiceHint(voiceEnabled);
+      }
+      if (projectVoiceModelInput) {
+        projectVoiceModelInput.value = project?.llm_voice_model || '';
+        if (projectVoiceInput) {
+          projectVoiceModelInput.disabled = !projectVoiceInput.checked;
+        }
       }
       if (projectDebugInput) {
         const debugEnabled = !!project?.debug_enabled;
@@ -6099,6 +6139,12 @@
         const emoText = project.llm_emotions_enabled === false ? 'Эмоции: выкл' : 'Эмоции: вкл';
         metaBits.push(emoText);
         metaBits.push(project.debug_enabled ? 'Отладка: вкл' : 'Отладка: выкл');
+        const voiceEnabledBit = project.llm_voice_enabled === false ? 'Голосовой режим: выкл' : 'Голосовой режим: вкл';
+        if (project.llm_voice_enabled !== false && project.llm_voice_model) {
+          metaBits.push(`Голосовая модель: ${project.llm_voice_model}`);
+        } else {
+          metaBits.push(voiceEnabledBit);
+        }
       }
       if (storage && (textBytes || fileBytes || ctxBytes || redisBytes)) {
         metaBits.push(
@@ -6191,6 +6237,8 @@
             telegram_auto_start: typeof p.telegram_auto_start === 'boolean' ? p.telegram_auto_start : !!p.telegram_auto_start,
             max_auto_start: typeof p.max_auto_start === 'boolean' ? p.max_auto_start : !!p.max_auto_start,
             llm_emotions_enabled: p.llm_emotions_enabled !== false,
+            llm_voice_enabled: p.llm_voice_enabled === undefined ? true : !!p.llm_voice_enabled,
+            llm_voice_model: typeof p.llm_voice_model === 'string' ? p.llm_voice_model.trim() : p.llm_voice_model,
             debug_enabled: !!p.debug_enabled,
             admin_username: typeof p.admin_username === 'string' ? p.admin_username.trim() : '',
             admin_password_set: Boolean(p.admin_password_set),
@@ -6243,9 +6291,17 @@
         llm_model: projectModelInput.value || null,
         llm_prompt: projectPromptInput.value.trim() || null,
         llm_emotions_enabled: projectEmotionsInput ? projectEmotionsInput.checked : true,
+        llm_voice_enabled: projectVoiceInput ? projectVoiceInput.checked : true,
+        llm_voice_model: null,
         debug_enabled: projectDebugInput ? projectDebugInput.checked : false,
         widget_url: projectWidgetUrl && projectWidgetUrl.value.trim() ? projectWidgetUrl.value.trim() : null,
       };
+      if (projectVoiceInput && !projectVoiceInput.checked) {
+        payload.llm_voice_model = null;
+      } else if (projectVoiceModelInput) {
+        const voiceModel = projectVoiceModelInput.value.trim();
+        payload.llm_voice_model = voiceModel ? voiceModel : null;
+      }
       if (adminSession.is_super && projectAdminUsernameInput) {
         const adminUsername = projectAdminUsernameInput.value.trim();
         payload.admin_username = adminUsername || null;

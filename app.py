@@ -2627,6 +2627,8 @@ class ProjectCreate(BaseModel):
     llm_model: str | None = None
     llm_prompt: str | None = None
     llm_emotions_enabled: bool | None = None
+    llm_voice_enabled: bool | None = None
+    llm_voice_model: str | None = None
     debug_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
@@ -4317,6 +4319,29 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         else:
             emotions_value = True
 
+    if "llm_voice_enabled" in provided_fields:
+        voice_enabled_value = (
+            bool(payload.llm_voice_enabled)
+            if payload.llm_voice_enabled is not None
+            else True
+        )
+    else:
+        if existing and existing.llm_voice_enabled is not None:
+            voice_enabled_value = bool(existing.llm_voice_enabled)
+        else:
+            voice_enabled_value = True
+
+    if "llm_voice_model" in provided_fields:
+        if isinstance(payload.llm_voice_model, str):
+            voice_model_value = payload.llm_voice_model.strip() or None
+        else:
+            voice_model_value = None
+    else:
+        voice_model_value = existing.llm_voice_model if existing and existing.llm_voice_model else None
+
+    if not voice_enabled_value:
+        voice_model_value = None
+
     if "debug_enabled" in provided_fields:
         debug_value = bool(payload.debug_enabled) if payload.debug_enabled is not None else False
     else:
@@ -4423,6 +4448,8 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_model=model_value,
         llm_prompt=prompt_value,
         llm_emotions_enabled=emotions_value,
+        llm_voice_enabled=voice_enabled_value,
+        llm_voice_model=voice_model_value,
         debug_enabled=debug_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,

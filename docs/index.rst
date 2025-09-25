@@ -13,6 +13,7 @@ sitellm_vertebro documentation
    architecture
    components
    workflows
+   widget_embed
 
 
 API reference

@@ -170,6 +170,7 @@ async def test_upsert_project_merges_existing(monkeypatch) -> None:
     assert result.telegram_token == "newtoken"
     assert result.telegram_auto_start is False
     assert result.widget_url == "https://demo.example/widget"
+    assert result.llm_voice_enabled is True
 
 
 def test_project_from_doc_trims_optional_fields() -> None:
@@ -185,3 +186,4 @@ def test_project_from_doc_trims_optional_fields() -> None:
     assert project.telegram_token == "token123"
     assert project.widget_url == "https://demo.example/widget"
     assert project.llm_emotions_enabled is True
+    assert project.llm_voice_enabled is True

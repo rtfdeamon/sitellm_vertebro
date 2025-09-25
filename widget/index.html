@@ -167,6 +167,264 @@
     .project-panel .actions { display: flex; gap: 8px; align-items: center; }
     .project-panel .checkbox { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; color: var(--text); }
     .project-panel .checkbox input { width: 16px; height: 16px; }
+    @keyframes heroGlow {
+      0% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.9; }
+      50% { transform: translate3d(6px, -6px, 0) scale(1.05); opacity: 1; }
+      100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.9; }
+    }
+    @keyframes orbitPulse {
+      0% { transform: rotate(0deg) scale(0.95); opacity: 0.6; }
+      50% { transform: rotate(12deg) scale(1.05); opacity: 0.9; }
+      100% { transform: rotate(0deg) scale(0.95); opacity: 0.6; }
+    }
+    @keyframes badgeFloat {
+      0% { transform: translateY(0px); }
+      50% { transform: translateY(-8px); }
+      100% { transform: translateY(0px); }
+    }
+    @keyframes pulseRing {
+      0% { transform: scale(0.85); opacity: 0.25; }
+      70% { transform: scale(1.18); opacity: 0.05; }
+      100% { transform: scale(0.85); opacity: 0; }
+    }
+    .page-shell {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 48px 24px 32px;
+      display: grid;
+      gap: 64px;
+    }
+    body.embed .page-shell { display: none; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 32px;
+      background: radial-gradient(circle at 20% 20%, rgba(79, 124, 255, 0.2), transparent 60%),
+                  linear-gradient(150deg, rgba(79, 124, 255, 0.16), rgba(6, 12, 24, 0.8));
+      padding: 72px 24px 64px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 48px;
+      align-items: center;
+    }
+    .hero::after {
+      content: '';
+      position: absolute;
+      inset: 12px;
+      border-radius: 28px;
+      border: 1px solid rgba(79, 124, 255, 0.18);
+      pointer-events: none;
+    }
+    .hero-copy {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      gap: 18px;
+    }
+    .hero-title {
+      margin: 0;
+      font-size: clamp(32px, 5vw, 48px);
+      line-height: 1.08;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+    }
+    .hero-lead {
+      margin: 0;
+      color: rgba(226, 232, 240, 0.82);
+      font-size: 18px;
+      line-height: 1.6;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+    }
+    .hero-cta {
+      background: var(--accent);
+      border: none;
+      color: #fff;
+      padding: 14px 22px;
+      border-radius: 999px;
+      font-size: 15px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      box-shadow: 0 18px 40px rgba(79, 124, 255, 0.35);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .hero-cta:hover { transform: translateY(-2px); box-shadow: 0 24px 48px rgba(79, 124, 255, 0.45); }
+    .hero-link {
+      color: rgba(226, 232, 240, 0.82);
+      text-decoration: none;
+      font-size: 14px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .hero-link:hover { color: #fff; }
+    .hero-visual {
+      position: relative;
+      justify-self: center;
+      width: min(360px, 100%);
+      aspect-ratio: 1;
+      display: grid;
+      place-items: center;
+    }
+    .hero-orb {
+      position: absolute;
+      inset: 18%;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%, rgba(248, 250, 252, 0.72), rgba(79, 124, 255, 0.95));
+      filter: drop-shadow(0 24px 60px rgba(79, 124, 255, 0.4));
+      animation: heroGlow 8s ease-in-out infinite;
+    }
+    .hero-ring {
+      position: absolute;
+      inset: 4%;
+      border-radius: 50%;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      animation: orbitPulse 9s ease-in-out infinite;
+    }
+    .hero-badge {
+      position: relative;
+      z-index: 3;
+      width: 96px;
+      height: 96px;
+      border-radius: 28px;
+      background: rgba(15, 23, 42, 0.75);
+      color: #fff;
+      font-size: 28px;
+      font-weight: 700;
+      display: grid;
+      place-items: center;
+      letter-spacing: 0.1em;
+      animation: badgeFloat 4.5s ease-in-out infinite;
+      box-shadow: 0 18px 36px rgba(15, 23, 42, 0.45);
+    }
+    .hero-pulse {
+      position: absolute;
+      inset: 12%;
+      border-radius: 50%;
+      border: 2px solid rgba(79, 124, 255, 0.45);
+      animation: pulseRing 4s linear infinite;
+    }
+    .section-header { display: grid; gap: 12px; margin-bottom: 24px; }
+    .section-title { margin: 0; font-size: 28px; letter-spacing: -0.01em; color: var(--text); }
+    .section-lead { margin: 0; color: var(--muted); font-size: 16px; max-width: 680px; }
+    .embed-section, .voice-section {
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 32px;
+      background: linear-gradient(160deg, rgba(79, 124, 255, 0.08), rgba(15, 17, 23, 0.68));
+      backdrop-filter: blur(8px);
+    }
+    .embed-tabs { display: inline-flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .embed-tab {
+      background: rgba(15, 17, 23, 0.35);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: rgba(226, 232, 240, 0.85);
+      border-radius: 999px;
+      padding: 8px 16px;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: border 0.2s ease, background 0.2s ease, color 0.2s ease;
+    }
+    .embed-tab.active {
+      background: rgba(79, 124, 255, 0.18);
+      border-color: rgba(79, 124, 255, 0.55);
+      color: #fff;
+      box-shadow: 0 10px 28px rgba(79, 124, 255, 0.28);
+    }
+    .embed-controls {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .embed-controls label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .embed-controls input,
+    .embed-controls select {
+      background: rgba(15, 17, 23, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .code-card {
+      position: relative;
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      background: rgba(9, 11, 19, 0.78);
+      padding: 18px;
+      overflow-x: auto;
+      font-family: "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .code-card pre { margin: 0; white-space: pre; }
+    .copy-btn {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      background: rgba(79, 124, 255, 0.16);
+      border: 1px solid rgba(79, 124, 255, 0.4);
+      color: rgba(226, 232, 240, 0.9);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      padding: 6px 12px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+    .copy-btn:hover { background: rgba(79, 124, 255, 0.28); transform: translateY(-1px); }
+    .copy-btn.copied { background: rgba(34, 197, 94, 0.22); border-color: rgba(34, 197, 94, 0.5); color: #bbf7d0; }
+    .copy-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .voice-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
+    .voice-preview { min-height: 260px; display: flex; align-items: center; justify-content: center; }
+    .voice-controls { display: grid; gap: 16px; }
+    .voice-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .voice-grid label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .voice-grid input { background: rgba(15, 17, 23, 0.55); border: 1px solid rgba(148, 163, 184, 0.25); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .voice-preview-placeholder {
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+      padding: 24px;
+    }
+    body:not(.embed) .chat-modal { max-width: 920px; margin: 0 auto 96px; }
+    body:not(.embed) .chat-modal::before {
+      content: attr(data-demo-title);
+      display: block;
+      font-size: 24px;
+      letter-spacing: -0.01em;
+      color: var(--text);
+      margin: 0 0 16px;
+      font-weight: 600;
+    }
+    @media (max-width: 720px) {
+      .hero { padding: 48px 18px; }
+      .hero::after { inset: 8px; }
+      .section-title { font-size: 24px; }
+      .section-lead { font-size: 15px; }
+      .embed-section, .voice-section { padding: 24px; }
+      .copy-btn { position: static; justify-self: flex-end; margin-bottom: 12px; }
+      .code-card { padding-top: 12px; }
+    }
     body.embed .toolbar,
     body.embed .project-panel,
     body.embed #saveCfg,
@@ -194,6 +452,91 @@
   </style>
 </head>
 <body>
+  <div class="page-shell" id="pageShell">
+    <section class="hero">
+      <div class="hero-copy">
+        <h1 class="hero-title" data-i18n="heroTitle">AI consultant for your website</h1>
+        <p class="hero-lead" data-i18n="heroSubtitle">Embed a streaming assistant or a voice avatar anywhere in minutes.</p>
+        <div class="hero-actions">
+          <button type="button" class="hero-cta" id="heroDemoBtn" data-i18n="heroLaunchDemo">Open live demo</button>
+          <a class="hero-link" href="#embedShowcase" data-i18n="heroSecondary">See embed options</a>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="hero-orb"></div>
+        <div class="hero-ring"></div>
+        <div class="hero-badge">AI</div>
+        <div class="hero-pulse"></div>
+      </div>
+    </section>
+
+    <section class="embed-section" id="embedShowcase">
+      <div class="section-header">
+        <h2 class="section-title" data-i18n="embedSectionTitle">Chat widget embed options</h2>
+        <p class="section-lead" data-i18n="embedSectionSubtitle">Choose the presentation style and copy a ready-to-paste snippet for your site.</p>
+      </div>
+      <div class="embed-tabs" role="tablist">
+        <button type="button" class="embed-tab active" data-embed-tab="floating" data-i18n="embedTabFloating">Floating bubble</button>
+        <button type="button" class="embed-tab" data-embed-tab="inline" data-i18n="embedTabInline">Inline card</button>
+        <button type="button" class="embed-tab" data-embed-tab="iframe" data-i18n="embedTabIframe">Full frame</button>
+      </div>
+      <div class="embed-controls">
+        <label>
+          <span data-i18n="embedConfigBase">Base URL</span>
+          <input type="text" id="embedBase" placeholder="https://your-domain.com" autocomplete="off" spellcheck="false" />
+        </label>
+        <label>
+          <span data-i18n="embedConfigProject">Project slug</span>
+          <input type="text" id="embedProject" placeholder="demo" autocomplete="off" />
+        </label>
+        <label>
+          <span data-i18n="embedConfigAccent">Accent colour</span>
+          <input type="color" id="embedAccent" value="#4f7cff" />
+        </label>
+        <label>
+          <span data-i18n="embedConfigTheme">Theme</span>
+          <select id="embedTheme">
+            <option value="" data-i18n="embedThemeAuto">Auto</option>
+            <option value="dark" data-i18n="embedThemeDark">Dark</option>
+            <option value="light" data-i18n="embedThemeLight">Light</option>
+          </select>
+        </label>
+      </div>
+      <div class="code-card">
+        <button type="button" class="copy-btn" id="embedCopy" data-i18n="embedCopy">Copy snippet</button>
+        <pre><code id="embedCode"></code></pre>
+      </div>
+    </section>
+
+    <section class="voice-section" id="voiceSection">
+      <div class="section-header">
+        <h2 class="section-title" data-i18n="avatarSectionTitle">Voice-enabled avatar</h2>
+        <p class="section-lead" data-i18n="avatarSectionSubtitle">Let visitors speak with an animated assistant that streams and reads answers aloud.</p>
+      </div>
+      <div class="voice-layout">
+        <div class="voice-preview" id="voiceAvatarHost">
+          <div class="voice-preview-placeholder" data-i18n="avatarPreviewSelect">Select a project to preview the voice assistant.</div>
+        </div>
+        <div class="voice-controls">
+          <div class="voice-grid">
+            <label>
+              <span data-i18n="avatarLangLabel">Recognition language</span>
+              <input type="text" id="avatarLang" value="ru-RU" autocomplete="off" />
+            </label>
+            <label>
+              <span data-i18n="avatarVoiceLabel">Speech voice (optional)</span>
+              <input type="text" id="avatarVoice" placeholder="Milena" autocomplete="off" />
+            </label>
+          </div>
+          <div class="code-card">
+            <button type="button" class="copy-btn" id="avatarCopy" data-i18n="avatarCopy">Copy widget snippet</button>
+            <pre><code id="avatarCode"></code></pre>
+          </div>
+          <p class="muted" id="voiceFeatureHint" data-i18n="avatarHintSelectProject">Select a project to preview the voice assistant.</p>
+        </div>
+      </div>
+    </section>
+  </div>
   <div class="widget-launcher" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria">
     <div class="launcher-avatar">AI</div>
     <div class="launcher-text">
@@ -202,7 +545,7 @@
     </div>
   </div>
   <div class="chat-backdrop" id="chatBackdrop"></div>
-  <div class="chat-modal" id="chatModal">
+  <div class="chat-modal" id="chatModal" data-demo-title="Live chat preview">
     <div class="chat-window">
       <div class="chat-header">
         <div>
@@ -296,11 +639,32 @@ const widgetLauncher = document.getElementById('widgetLauncher');
 const chatModal = document.getElementById('chatModal');
 const chatBackdrop = document.getElementById('chatBackdrop');
 const chatClose = document.getElementById('chatClose');
+const heroDemoBtn = document.getElementById('heroDemoBtn');
+const embedTabs = Array.from(document.querySelectorAll('[data-embed-tab]'));
+const embedCodeEl = document.getElementById('embedCode');
+const embedCopyBtn = document.getElementById('embedCopy');
+const embedBaseInput = document.getElementById('embedBase');
+const embedProjectInput = document.getElementById('embedProject');
+const embedAccentInput = document.getElementById('embedAccent');
+const embedThemeSelect = document.getElementById('embedTheme');
+const voiceAvatarHost = document.getElementById('voiceAvatarHost');
+const avatarLangInput = document.getElementById('avatarLang');
+const avatarVoiceInput = document.getElementById('avatarVoice');
+const avatarCodeEl = document.getElementById('avatarCode');
+const avatarCopyBtn = document.getElementById('avatarCopy');
+const voiceFeatureHint = document.getElementById('voiceFeatureHint');
 
 const urlParams = new URLSearchParams(window.location.search);
 const urlProject = (urlParams.get('project') || '').trim().toLowerCase();
 let currentProject = urlProject || (localStorage.getItem('chat_project') || '').trim().toLowerCase();
 const isEmbed = window.self !== window.top || urlParams.get('embed') === '1';
+let activeEmbedVariant = 'floating';
+let voiceRenderTimer = null;
+const voiceConfigCache = new Map();
+const voiceHintState = { status: 'select', model: null };
+let remoteVoiceState = { key: '', enabled: true, model: null };
+let voicePreviewToken = 0;
+let voicePlaceholderState = { key: 'avatarPreviewSelect', params: null };
 
 const LANGUAGE_STORAGE_KEY = 'chat_language';
 const FALLBACK_LANGUAGE = 'en';
@@ -309,6 +673,37 @@ const LANGUAGES = {
     name: 'English',
     dir: 'ltr',
     strings: {
+      heroTitle: 'AI consultant for your website',
+      heroSubtitle: 'Embed a streaming assistant or a voice avatar anywhere in minutes.',
+      heroLaunchDemo: 'Open live demo',
+      heroSecondary: 'See embed options',
+      embedSectionTitle: 'Chat widget embed options',
+      embedSectionSubtitle: 'Choose the presentation style and copy a ready-to-paste snippet for your site.',
+      embedTabFloating: 'Floating bubble',
+      embedTabInline: 'Inline card',
+      embedTabIframe: 'Full frame',
+      embedConfigBase: 'Base URL',
+      embedConfigProject: 'Project slug',
+      embedConfigAccent: 'Accent colour',
+      embedConfigTheme: 'Theme',
+      embedThemeAuto: 'Auto',
+      embedThemeDark: 'Dark',
+      embedThemeLight: 'Light',
+      embedCopy: 'Copy snippet',
+      avatarSectionTitle: 'Voice-enabled avatar',
+      avatarSectionSubtitle: 'Let visitors speak with an animated assistant that streams and reads answers aloud.',
+      avatarLangLabel: 'Recognition language',
+      avatarVoiceLabel: 'Speech voice (optional)',
+      avatarCopy: 'Copy widget snippet',
+      avatarPreviewSelect: 'Select a project to preview the voice assistant.',
+      avatarHintSelectProject: 'Select a project to preview the voice assistant.',
+      avatarHintLoading: 'Loading voice settings…',
+      avatarHintDisabled: 'Voice assistant is disabled for this project.',
+      avatarHintEnabled: 'Voice assistant is enabled for this project.',
+      avatarHintEnabledModel: 'Voice assistant uses model {model}.',
+      avatarHintError: 'Unable to load voice settings.',
+      copiedLabel: 'Copied!',
+      chatPreviewTitle: 'Live chat preview',
       launcherTitle: 'AI Assistant',
       launcherSubtitle: 'Ask me anything',
       launcherAria: 'Open chat',
@@ -358,6 +753,37 @@ const LANGUAGES = {
     name: 'Español',
     dir: 'ltr',
     strings: {
+      heroTitle: 'Consultor IA para tu sitio web',
+      heroSubtitle: 'Integra un asistente en streaming o un avatar con voz en cuestión de minutos.',
+      heroLaunchDemo: 'Abrir demo en vivo',
+      heroSecondary: 'Ver opciones de inserción',
+      embedSectionTitle: 'Opciones de inserción del widget',
+      embedSectionSubtitle: 'Elige la presentación y copia un fragmento listo para pegar en tu sitio.',
+      embedTabFloating: 'Burbuja flotante',
+      embedTabInline: 'Tarjeta incrustada',
+      embedTabIframe: 'Marco completo',
+      embedConfigBase: 'URL base',
+      embedConfigProject: 'Slug del proyecto',
+      embedConfigAccent: 'Color de acento',
+      embedConfigTheme: 'Tema',
+      embedThemeAuto: 'Automático',
+      embedThemeDark: 'Oscuro',
+      embedThemeLight: 'Claro',
+      embedCopy: 'Copiar snippet',
+      avatarSectionTitle: 'Avatar con voz',
+      avatarSectionSubtitle: 'Permite que los visitantes hablen con un asistente animado que responde en voz alta.',
+      avatarLangLabel: 'Idioma de reconocimiento',
+      avatarVoiceLabel: 'Voz de síntesis (opcional)',
+      avatarCopy: 'Copiar widget',
+      avatarPreviewSelect: 'Selecciona un proyecto para mostrar el asistente de voz.',
+      avatarHintSelectProject: 'Selecciona un proyecto para mostrar el asistente de voz.',
+      avatarHintLoading: 'Cargando configuración de voz…',
+      avatarHintDisabled: 'El asistente de voz está desactivado para este proyecto.',
+      avatarHintEnabled: 'El asistente de voz está activado para este proyecto.',
+      avatarHintEnabledModel: 'El asistente de voz usa el modelo {model}.',
+      avatarHintError: 'No se pudieron cargar los ajustes de voz.',
+      copiedLabel: '¡Copiado!',
+      chatPreviewTitle: 'Vista previa del chat en vivo',
       launcherTitle: 'Asistente de IA',
       launcherSubtitle: 'Pregunta lo que quieras',
       launcherAria: 'Abrir chat',
@@ -407,6 +833,37 @@ const LANGUAGES = {
     name: 'Deutsch',
     dir: 'ltr',
     strings: {
+      heroTitle: 'KI-Berater für Ihre Website',
+      heroSubtitle: 'Binden Sie in Minuten einen Streaming-Assistenten oder einen Sprachavatar ein.',
+      heroLaunchDemo: 'Live-Demo öffnen',
+      heroSecondary: 'Einbindungsoptionen ansehen',
+      embedSectionTitle: 'Einbindungsoptionen für das Chat-Widget',
+      embedSectionSubtitle: 'Wählen Sie das Layout und kopieren Sie den fertigen Code für Ihre Seite.',
+      embedTabFloating: 'Schwebende Blase',
+      embedTabInline: 'Eingebettete Karte',
+      embedTabIframe: 'Vollständiger Frame',
+      embedConfigBase: 'Basis-URL',
+      embedConfigProject: 'Projekt-Slug',
+      embedConfigAccent: 'Akzentfarbe',
+      embedConfigTheme: 'Theme',
+      embedThemeAuto: 'Automatisch',
+      embedThemeDark: 'Dunkel',
+      embedThemeLight: 'Hell',
+      embedCopy: 'Snippet kopieren',
+      avatarSectionTitle: 'Avatar mit Sprachsteuerung',
+      avatarSectionSubtitle: 'Lassen Sie Besucher mit einem animierten Assistenten sprechen, der Antworten laut vorliest.',
+      avatarLangLabel: 'Erkennungssprache',
+      avatarVoiceLabel: 'Sprachstimme (optional)',
+      avatarCopy: 'Widget kopieren',
+      avatarPreviewSelect: 'Wähle ein Projekt, um den Sprachassistenten anzuzeigen.',
+      avatarHintSelectProject: 'Wähle ein Projekt, um den Sprachassistenten anzuzeigen.',
+      avatarHintLoading: 'Sprachkonfiguration wird geladen…',
+      avatarHintDisabled: 'Der Sprachassistent ist für dieses Projekt deaktiviert.',
+      avatarHintEnabled: 'Der Sprachassistent ist für dieses Projekt aktiviert.',
+      avatarHintEnabledModel: 'Der Sprachassistent verwendet das Modell {model}.',
+      avatarHintError: 'Sprachkonfiguration konnte nicht geladen werden.',
+      copiedLabel: 'Kopiert!',
+      chatPreviewTitle: 'Live-Chat-Vorschau',
       launcherTitle: 'KI-Assistent',
       launcherSubtitle: 'Frag mich alles',
       launcherAria: 'Chat öffnen',
@@ -456,6 +913,37 @@ const LANGUAGES = {
     name: 'Français',
     dir: 'ltr',
     strings: {
+      heroTitle: 'Consultant IA pour votre site web',
+      heroSubtitle: 'Intégrez en quelques minutes un assistant en streaming ou un avatar vocal.',
+      heroLaunchDemo: 'Ouvrir la démo en direct',
+      heroSecondary: 'Voir les options d\'intégration',
+      embedSectionTitle: 'Options d\'intégration du widget de chat',
+      embedSectionSubtitle: 'Choisissez la présentation et copiez un extrait prêt à coller sur votre site.',
+      embedTabFloating: 'Bulle flottante',
+      embedTabInline: 'Carte intégrée',
+      embedTabIframe: 'Cadre complet',
+      embedConfigBase: 'URL de base',
+      embedConfigProject: 'Identifiant projet',
+      embedConfigAccent: 'Couleur d\'accent',
+      embedConfigTheme: 'Thème',
+      embedThemeAuto: 'Auto',
+      embedThemeDark: 'Sombre',
+      embedThemeLight: 'Clair',
+      embedCopy: 'Copier le snippet',
+      avatarSectionTitle: 'Avatar avec voix',
+      avatarSectionSubtitle: 'Permettez aux visiteurs de parler avec un assistant animé qui lit les réponses.',
+      avatarLangLabel: 'Langue de reconnaissance',
+      avatarVoiceLabel: 'Voix de synthèse (optionnel)',
+      avatarCopy: 'Copier le widget',
+      avatarPreviewSelect: 'Sélectionnez un projet pour prévisualiser l’assistant vocal.',
+      avatarHintSelectProject: 'Sélectionnez un projet pour prévisualiser l’assistant vocal.',
+      avatarHintLoading: 'Chargement des paramètres vocaux…',
+      avatarHintDisabled: 'L’assistant vocal est désactivé pour ce projet.',
+      avatarHintEnabled: 'L’assistant vocal est activé pour ce projet.',
+      avatarHintEnabledModel: 'L’assistant vocal utilise le modèle {model}.',
+      avatarHintError: 'Impossible de charger les paramètres vocaux.',
+      copiedLabel: 'Copié !',
+      chatPreviewTitle: 'Aperçu du chat en direct',
       launcherTitle: 'Assistant IA',
       launcherSubtitle: 'Posez-moi vos questions',
       launcherAria: 'Ouvrir le chat',
@@ -505,6 +993,37 @@ const LANGUAGES = {
     name: 'Italiano',
     dir: 'ltr',
     strings: {
+      heroTitle: 'Consulente AI per il tuo sito',
+      heroSubtitle: 'Integra in pochi minuti un assistente in streaming o un avatar vocale.',
+      heroLaunchDemo: 'Apri demo live',
+      heroSecondary: 'Vedi opzioni di integrazione',
+      embedSectionTitle: 'Opzioni di integrazione del widget',
+      embedSectionSubtitle: 'Scegli lo stile di presentazione e copia un codice pronto da incollare sul sito.',
+      embedTabFloating: 'Bolla flottante',
+      embedTabInline: 'Scheda incorporata',
+      embedTabIframe: 'Frame completo',
+      embedConfigBase: 'URL di base',
+      embedConfigProject: 'Slug del progetto',
+      embedConfigAccent: 'Colore di accento',
+      embedConfigTheme: 'Tema',
+      embedThemeAuto: 'Automatico',
+      embedThemeDark: 'Scuro',
+      embedThemeLight: 'Chiaro',
+      embedCopy: 'Copia snippet',
+      avatarSectionTitle: 'Avatar con voce',
+      avatarSectionSubtitle: 'Fai parlare i visitatori con un assistente animato che legge le risposte.',
+      avatarLangLabel: 'Lingua di riconoscimento',
+      avatarVoiceLabel: 'Voce parlata (opzionale)',
+      avatarCopy: 'Copia widget',
+      avatarPreviewSelect: 'Seleziona un progetto per vedere l’assistente vocale.',
+      avatarHintSelectProject: 'Seleziona un progetto per vedere l’assistente vocale.',
+      avatarHintLoading: 'Caricamento delle impostazioni vocali…',
+      avatarHintDisabled: 'L’assistente vocale è disattivato per questo progetto.',
+      avatarHintEnabled: 'L’assistente vocale è attivato per questo progetto.',
+      avatarHintEnabledModel: 'L’assistente vocale utilizza il modello {model}.',
+      avatarHintError: 'Impossibile caricare le impostazioni vocali.',
+      copiedLabel: 'Copiato!',
+      chatPreviewTitle: 'Anteprima chat live',
       launcherTitle: 'Assistente IA',
       launcherSubtitle: 'Chiedimi qualsiasi cosa',
       launcherAria: 'Apri chat',
@@ -554,6 +1073,37 @@ const LANGUAGES = {
     name: 'Português',
     dir: 'ltr',
     strings: {
+      heroTitle: 'Consultor IA para o seu site',
+      heroSubtitle: 'Incorpore em minutos um assistente em streaming ou um avatar com voz.',
+      heroLaunchDemo: 'Abrir demo ao vivo',
+      heroSecondary: 'Ver opções de incorporação',
+      embedSectionTitle: 'Opções de incorporação do widget de chat',
+      embedSectionSubtitle: 'Escolha o estilo de exibição e copie um snippet pronto para colar no seu site.',
+      embedTabFloating: 'Bolha flutuante',
+      embedTabInline: 'Cartão embutido',
+      embedTabIframe: 'Frame completo',
+      embedConfigBase: 'URL base',
+      embedConfigProject: 'Slug do projeto',
+      embedConfigAccent: 'Cor de destaque',
+      embedConfigTheme: 'Tema',
+      embedThemeAuto: 'Automático',
+      embedThemeDark: 'Escuro',
+      embedThemeLight: 'Claro',
+      embedCopy: 'Copiar snippet',
+      avatarSectionTitle: 'Avatar com voz',
+      avatarSectionSubtitle: 'Permita que os visitantes conversem com um assistente animado que lê as respostas.',
+      avatarLangLabel: 'Idioma de reconhecimento',
+      avatarVoiceLabel: 'Voz de síntese (opcional)',
+      avatarCopy: 'Copiar widget',
+      avatarPreviewSelect: 'Selecione um projeto para pré-visualizar o assistente de voz.',
+      avatarHintSelectProject: 'Selecione um projeto para pré-visualizar o assistente de voz.',
+      avatarHintLoading: 'Carregando configurações de voz…',
+      avatarHintDisabled: 'O assistente de voz está desativado para este projeto.',
+      avatarHintEnabled: 'O assistente de voz está ativado para este projeto.',
+      avatarHintEnabledModel: 'O assistente de voz usa o modelo {model}.',
+      avatarHintError: 'Não foi possível carregar as configurações de voz.',
+      copiedLabel: 'Copiado!',
+      chatPreviewTitle: 'Pré-visualização do chat ao vivo',
       launcherTitle: 'Assistente IA',
       launcherSubtitle: 'Pergunte qualquer coisa',
       launcherAria: 'Abrir chat',
@@ -603,6 +1153,37 @@ const LANGUAGES = {
     name: 'Русский',
     dir: 'ltr',
     strings: {
+      heroTitle: 'AI‑консультант для вашего сайта',
+      heroSubtitle: 'Подключите потоковый чат или голосового аватара за считанные минуты.',
+      heroLaunchDemo: 'Открыть живую демонстрацию',
+      heroSecondary: 'Посмотреть варианты вставки',
+      embedSectionTitle: 'Варианты вставки чат-виджета',
+      embedSectionSubtitle: 'Выберите оформление и скопируйте готовый код для своего сайта.',
+      embedTabFloating: 'Плавающая кнопка',
+      embedTabInline: 'Встроенная панель',
+      embedTabIframe: 'Полноэкранный фрейм',
+      embedConfigBase: 'Базовый URL',
+      embedConfigProject: 'Слаг проекта',
+      embedConfigAccent: 'Акцентный цвет',
+      embedConfigTheme: 'Тема',
+      embedThemeAuto: 'Авто',
+      embedThemeDark: 'Тёмная',
+      embedThemeLight: 'Светлая',
+      embedCopy: 'Скопировать код',
+      avatarSectionTitle: 'Голосовой аватар',
+      avatarSectionSubtitle: 'Дайте посетителям возможность говорить с анимированным ассистентом в реальном времени.',
+      avatarLangLabel: 'Язык распознавания',
+      avatarVoiceLabel: 'Голос синтеза (опционально)',
+      avatarCopy: 'Скопировать виджет',
+      avatarPreviewSelect: 'Выберите проект, чтобы увидеть голосового ассистента.',
+      avatarHintSelectProject: 'Выберите проект, чтобы увидеть голосового ассистента.',
+      avatarHintLoading: 'Загружаем настройки голосового режима…',
+      avatarHintDisabled: 'Голосовой ассистент отключён для этого проекта.',
+      avatarHintEnabled: 'Голосовой ассистент включён для этого проекта.',
+      avatarHintEnabledModel: 'Голосовой ассистент использует модель {model}.',
+      avatarHintError: 'Не удалось загрузить настройки голосового режима.',
+      copiedLabel: 'Скопировано!',
+      chatPreviewTitle: 'Предпросмотр живого чата',
       launcherTitle: 'AI‑помощник',
       launcherSubtitle: 'Спросите меня о чём угодно',
       launcherAria: 'Открыть чат',
@@ -652,6 +1233,37 @@ const LANGUAGES = {
     name: '中文',
     dir: 'ltr',
     strings: {
+      heroTitle: '为你的网站提供 AI 咨询顾问',
+      heroSubtitle: '几分钟内嵌入流式聊天或语音头像助手。',
+      heroLaunchDemo: '打开实时演示',
+      heroSecondary: '查看嵌入选项',
+      embedSectionTitle: '聊天组件嵌入选项',
+      embedSectionSubtitle: '选择呈现方式，并复制可直接粘贴的代码。',
+      embedTabFloating: '浮动气泡',
+      embedTabInline: '内嵌卡片',
+      embedTabIframe: '整页框架',
+      embedConfigBase: '基础 URL',
+      embedConfigProject: '项目标识',
+      embedConfigAccent: '主色调',
+      embedConfigTheme: '主题',
+      embedThemeAuto: '自动',
+      embedThemeDark: '深色',
+      embedThemeLight: '浅色',
+      embedCopy: '复制代码段',
+      avatarSectionTitle: '语音头像',
+      avatarSectionSubtitle: '让访客与会说话的动画助手实时对话。',
+      avatarLangLabel: '识别语言',
+      avatarVoiceLabel: '合成语音（可选）',
+      avatarCopy: '复制小组件',
+      avatarPreviewSelect: '选择一个项目以预览语音助手。',
+      avatarHintSelectProject: '选择一个项目以预览语音助手。',
+      avatarHintLoading: '正在加载语音设置…',
+      avatarHintDisabled: '此项目已禁用语音助手。',
+      avatarHintEnabled: '此项目已启用语音助手。',
+      avatarHintEnabledModel: '语音助手使用模型 {model}。',
+      avatarHintError: '无法加载语音设置。',
+      copiedLabel: '已复制！',
+      chatPreviewTitle: '实时聊天预览',
       launcherTitle: 'AI 助手',
       launcherSubtitle: '随时向我提问',
       launcherAria: '打开聊天',
@@ -701,6 +1313,37 @@ const LANGUAGES = {
     name: '日本語',
     dir: 'ltr',
     strings: {
+      heroTitle: 'あなたのサイトのためのAIコンサルタント',
+      heroSubtitle: '数分でストリーミングチャットや音声アバターを埋め込めます。',
+      heroLaunchDemo: 'ライブデモを開く',
+      heroSecondary: '埋め込みオプションを見る',
+      embedSectionTitle: 'チャットウィジェットの埋め込みオプション',
+      embedSectionSubtitle: 'レイアウトを選び、すぐに貼り付けられるコードをコピーしましょう。',
+      embedTabFloating: 'フローティングバブル',
+      embedTabInline: 'インラインカード',
+      embedTabIframe: 'フルフレーム',
+      embedConfigBase: 'ベースURL',
+      embedConfigProject: 'プロジェクトスラッグ',
+      embedConfigAccent: 'アクセントカラー',
+      embedConfigTheme: 'テーマ',
+      embedThemeAuto: '自動',
+      embedThemeDark: 'ダーク',
+      embedThemeLight: 'ライト',
+      embedCopy: 'スニペットをコピー',
+      avatarSectionTitle: '音声アバター',
+      avatarSectionSubtitle: '訪問者がアニメーションアシスタントと会話し、音声で回答を聞けます。',
+      avatarLangLabel: '認識言語',
+      avatarVoiceLabel: '読み上げ音声(任意)',
+      avatarCopy: 'ウィジェットをコピー',
+      avatarPreviewSelect: '音声アシスタントを表示するにはプロジェクトを選択してください。',
+      avatarHintSelectProject: '音声アシスタントを表示するにはプロジェクトを選択してください。',
+      avatarHintLoading: '音声設定を読み込み中…',
+      avatarHintDisabled: 'このプロジェクトでは音声アシスタントが無効です。',
+      avatarHintEnabled: 'このプロジェクトでは音声アシスタントが有効です。',
+      avatarHintEnabledModel: '音声アシスタントは {model} モデルを使用します。',
+      avatarHintError: '音声設定を読み込めませんでした。',
+      copiedLabel: 'コピーしました！',
+      chatPreviewTitle: 'ライブチャットプレビュー',
       launcherTitle: 'AIアシスタント',
       launcherSubtitle: '何でも聞いてください',
       launcherAria: 'チャットを開く',
@@ -750,6 +1393,37 @@ const LANGUAGES = {
     name: 'العربية',
     dir: 'rtl',
     strings: {
+      heroTitle: 'مستشار ذكاء اصطناعي لموقعك',
+      heroSubtitle: 'أضف محادثة متدفقة أو صورة رمزية صوتية في دقائق.',
+      heroLaunchDemo: 'فتح العرض المباشر',
+      heroSecondary: 'عرض خيارات الدمج',
+      embedSectionTitle: 'خيارات تضمين ودجت الدردشة',
+      embedSectionSubtitle: 'اختر طريقة العرض و انسخ الشيفرة الجاهزة لموقعك.',
+      embedTabFloating: 'فقاعة عائمة',
+      embedTabInline: 'بطاقة مدمجة',
+      embedTabIframe: 'إطار كامل',
+      embedConfigBase: 'الرابط الأساسي',
+      embedConfigProject: 'مُعرّف المشروع',
+      embedConfigAccent: 'لون التمييز',
+      embedConfigTheme: 'السمة',
+      embedThemeAuto: 'تلقائي',
+      embedThemeDark: 'داكن',
+      embedThemeLight: 'فاتح',
+      embedCopy: 'نسخ الشيفرة',
+      avatarSectionTitle: 'صورة رمزية بالصوت',
+      avatarSectionSubtitle: 'اسمح للزوار بالتحدث مع مساعد متحرك يجيب بصوت حي.',
+      avatarLangLabel: 'لغة التعرف',
+      avatarVoiceLabel: 'صوت القراءة (اختياري)',
+      avatarCopy: 'نسخ الودجت',
+      avatarPreviewSelect: 'اختر مشروعًا لعرض المعاينة للمساعد الصوتي.',
+      avatarHintSelectProject: 'اختر مشروعًا لعرض المعاينة للمساعد الصوتي.',
+      avatarHintLoading: 'جارٍ تحميل إعدادات الصوت…',
+      avatarHintDisabled: 'المساعد الصوتي معطل لهذا المشروع.',
+      avatarHintEnabled: 'المساعد الصوتي مفعل لهذا المشروع.',
+      avatarHintEnabledModel: 'المساعد الصوتي يستخدم النموذج {model}.',
+      avatarHintError: 'تعذر تحميل إعدادات الصوت.',
+      copiedLabel: 'تم النسخ!',
+      chatPreviewTitle: 'معاينة الدردشة الحية',
       launcherTitle: 'مساعد الذكاء الاصطناعي',
       launcherSubtitle: 'اطرح أي سؤال',
       launcherAria: 'فتح المحادثة',
@@ -849,6 +1523,370 @@ function populateLanguageOptions() {
   languageSelect.value = currentLanguage;
 }
 
+function normalizeBaseUrl(value) {
+  const fallback = window.location.origin.replace(/\/$/, '');
+  if (!value) return fallback;
+  let candidate = String(value).trim();
+  if (!candidate) return fallback;
+  if (!/^https?:\/\//i.test(candidate)) {
+    try {
+      candidate = new URL(candidate, window.location.origin).href;
+    } catch {
+      return fallback;
+    }
+  }
+  try {
+    const parsed = new URL(candidate);
+    return parsed.origin.replace(/\/$/, '');
+  } catch {
+    return fallback;
+  }
+}
+
+function getEmbedConfig() {
+  const base = normalizeBaseUrl(embedBaseInput?.value || baseUrlInput?.value || window.location.origin);
+  const project = (embedProjectInput?.value || currentProject || '').trim();
+  const accent = (embedAccentInput?.value || '#4f7cff').trim() || '#4f7cff';
+  const theme = (embedThemeSelect?.value || '').trim();
+  return { baseUrl: base, project, accent, theme };
+}
+
+function getVoiceConfig() {
+  const core = getEmbedConfig();
+  const lang = (avatarLangInput?.value || 'ru-RU').trim() || 'ru-RU';
+  const voice = (avatarVoiceInput?.value || '').trim();
+  return { ...core, lang, voice };
+}
+
+function indentAttributes(attrs) {
+  return attrs.filter(Boolean).map((line) => `  ${line}`).join('\n');
+}
+
+function buildFloatingSnippet(cfg) {
+  const attrs = [
+    `src="${cfg.baseUrl}/widget/widget-loader.js"`,
+    `data-base-url="${cfg.baseUrl}"`,
+    cfg.project ? `data-project="${cfg.project}"` : '',
+    `data-variant="floating"`,
+    `data-title="${t('launcherTitle')}"`,
+    `data-subtitle="${t('launcherSubtitle')}"`,
+    `data-icon="AI"`,
+    `data-color="${cfg.accent}"`,
+    cfg.theme ? `data-theme="${cfg.theme}"` : ''
+  ];
+  return `<script\n${indentAttributes(attrs)}\n></script>`;
+}
+
+function buildInlineSnippet(cfg) {
+  const attrs = [
+    `src="${cfg.baseUrl}/widget/widget-loader.js"`,
+    `data-base-url="${cfg.baseUrl}"`,
+    cfg.project ? `data-project="${cfg.project}"` : '',
+    `data-variant="inline"`,
+    `data-width="100%"`,
+    `data-height="520px"`,
+    `data-title="${t('launcherTitle')}"`,
+    `data-subtitle="${t('launcherSubtitle')}"`,
+    `data-color="${cfg.accent}"`,
+    cfg.theme ? `data-theme="${cfg.theme}"` : ''
+  ];
+  return `<script\n${indentAttributes(attrs)}\n></script>`;
+}
+
+function buildIframeSnippet(cfg) {
+  const params = new URLSearchParams({ embed: '1' });
+  if (cfg.project) params.set('project', cfg.project);
+  if (cfg.theme) params.set('theme', cfg.theme);
+  const src = `${cfg.baseUrl}/widget/index.html?${params.toString()}`;
+  return `<iframe\n  src="${src}"\n  style="width:100%; min-height:640px; border:none; border-radius:18px; box-shadow:0 22px 48px rgba(15, 23, 42, 0.35);"\n  allow="microphone; clipboard-read; clipboard-write;"\n></iframe>`;
+}
+
+function buildVoiceSnippet(cfg) {
+  const attrs = [
+    `src="${cfg.baseUrl}/widget/voice-avatar.js"`,
+    `data-base-url="${cfg.baseUrl}"`,
+    cfg.project ? `data-project="${cfg.project}"` : '',
+    `data-lang="${cfg.lang}"`,
+    cfg.voice ? `data-voice="${cfg.voice}"` : '',
+    cfg.voiceModel ? `data-voice-model="${cfg.voiceModel}"` : '',
+    `data-label="AI"`,
+    `data-headline="${t('chatTitle')}"`,
+    `data-subtitle="${t('chatSubtitle')}"`,
+    `data-color="${cfg.accent}"`
+  ];
+  return `<script\n${indentAttributes(attrs)}\n></script>`;
+}
+
+function translateVoiceMessage(key, params) {
+  let text = t(key);
+  if (params && typeof params.model === 'string') {
+    text = text.replace('{model}', params.model);
+  }
+  return text;
+}
+
+function renderVoiceHint() {
+  if (!voiceFeatureHint) return;
+  let key = 'avatarHintSelectProject';
+  let params = null;
+  switch (voiceHintState.status) {
+    case 'loading':
+      key = 'avatarHintLoading';
+      break;
+    case 'disabled':
+      key = 'avatarHintDisabled';
+      break;
+    case 'error':
+      key = 'avatarHintError';
+      break;
+    case 'enabled-model':
+      key = 'avatarHintEnabledModel';
+      params = { model: voiceHintState.model || '' };
+      break;
+    case 'enabled':
+      key = 'avatarHintEnabled';
+      break;
+    case 'select':
+    default:
+      key = 'avatarHintSelectProject';
+  }
+  voiceFeatureHint.textContent = translateVoiceMessage(key, params);
+}
+
+function setVoiceHint(status, model) {
+  voiceHintState.status = status;
+  voiceHintState.model = model || null;
+  renderVoiceHint();
+}
+
+function renderVoicePlaceholderFromState() {
+  if (!voiceAvatarHost || !voicePlaceholderState.key) return;
+  const wrapper = document.createElement('div');
+  wrapper.className = 'voice-preview-placeholder';
+  wrapper.textContent = translateVoiceMessage(voicePlaceholderState.key, voicePlaceholderState.params);
+  voiceAvatarHost.innerHTML = '';
+  voiceAvatarHost.appendChild(wrapper);
+}
+
+function showVoicePlaceholder(key, params = null) {
+  voicePlaceholderState = { key, params };
+  renderVoicePlaceholderFromState();
+}
+
+function setVoiceSnippetText() {
+  if (!avatarCodeEl) return;
+  const cfg = getVoiceConfig();
+  const key = `${cfg.baseUrl}|${cfg.project || '__default__'}`;
+  const voiceModel = key === remoteVoiceState.key ? remoteVoiceState.model : null;
+  avatarCodeEl.textContent = buildVoiceSnippet({ ...cfg, voiceModel });
+}
+
+function scheduleVoicePreviewUpdate() {
+  if (isEmbed) return;
+  clearTimeout(voiceRenderTimer);
+  voiceRenderTimer = setTimeout(() => {
+    updateVoicePreview().catch((error) => console.error(error));
+  }, 180);
+}
+
+async function fetchVoiceConfig(baseUrl, project) {
+  const normalizedBase = normalizeBaseUrl(baseUrl);
+  const cacheKey = `${normalizedBase}|${project || '__default__'}`;
+  if (voiceConfigCache.has(cacheKey)) {
+    return voiceConfigCache.get(cacheKey);
+  }
+  const promise = (async () => {
+    if (!project) {
+      return { enabled: true, model: null };
+    }
+    const url = `${normalizedBase}/api/v1/llm/project-config?project=${encodeURIComponent(project)}`;
+    const resp = await fetch(url, { mode: 'cors' });
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    return {
+      enabled: data.llm_voice_enabled !== false,
+      model: data.llm_voice_model || null,
+    };
+  })()
+    .catch((error) => {
+      voiceConfigCache.delete(cacheKey);
+      throw error;
+    });
+  voiceConfigCache.set(cacheKey, promise);
+  return promise;
+}
+
+async function updateVoicePreview() {
+  if (isEmbed || !voiceAvatarHost) return;
+  const cfg = getVoiceConfig();
+  const normalizedBase = normalizeBaseUrl(cfg.baseUrl);
+  const stateKey = `${normalizedBase}|${cfg.project || '__default__'}`;
+  voicePreviewToken += 1;
+  const token = voicePreviewToken;
+
+  if (!cfg.project) {
+    remoteVoiceState = { key: stateKey, enabled: true, model: null };
+    showVoicePlaceholder('avatarPreviewSelect');
+    setVoiceHint('select');
+    setVoiceSnippetText();
+    if (avatarCopyBtn) avatarCopyBtn.disabled = true;
+    return;
+  }
+
+  setVoiceHint('loading');
+  showVoicePlaceholder('avatarHintLoading');
+  if (avatarCopyBtn) avatarCopyBtn.disabled = true;
+
+  try {
+    const remote = await fetchVoiceConfig(normalizedBase, cfg.project);
+    if (token !== voicePreviewToken) return;
+    remoteVoiceState = { key: stateKey, enabled: remote.enabled, model: remote.model };
+    setVoiceSnippetText();
+    if (!remote.enabled) {
+      showVoicePlaceholder('avatarHintDisabled');
+      setVoiceHint('disabled');
+      if (avatarCopyBtn) avatarCopyBtn.disabled = true;
+      return;
+    }
+    setVoiceHint(remote.model ? 'enabled-model' : 'enabled', remote.model);
+    if (avatarCopyBtn) avatarCopyBtn.disabled = false;
+    voicePlaceholderState = { key: null, params: null };
+    renderVoiceAvatarDemo({ ...cfg, voiceModel: remote.model });
+  } catch (error) {
+    if (token !== voicePreviewToken) return;
+    console.error(error);
+    remoteVoiceState = { key: stateKey, enabled: true, model: null };
+    setVoiceSnippetText();
+    showVoicePlaceholder('avatarHintError');
+    setVoiceHint('error');
+    if (avatarCopyBtn) avatarCopyBtn.disabled = true;
+  }
+}
+
+function setEmbedActiveTab(key) {
+  activeEmbedVariant = key;
+  embedTabs.forEach((tab) => {
+    const variant = tab.dataset.embedTab || '';
+    if (variant === key) {
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+    } else {
+      tab.classList.remove('active');
+      tab.setAttribute('aria-selected', 'false');
+    }
+  });
+}
+
+function refreshEmbedSnippet() {
+  if (!embedCodeEl) return;
+  const cfg = getEmbedConfig();
+  let snippet = '';
+  if (activeEmbedVariant === 'inline') snippet = buildInlineSnippet(cfg);
+  else if (activeEmbedVariant === 'iframe') snippet = buildIframeSnippet(cfg);
+  else snippet = buildFloatingSnippet(cfg);
+  embedCodeEl.textContent = snippet;
+}
+
+function refreshVoiceSnippet() {
+  setVoiceSnippetText();
+  if (isEmbed) return;
+  scheduleVoicePreviewUpdate();
+}
+
+function renderVoiceAvatarDemo(cfgOverride) {
+  if (isEmbed || !voiceAvatarHost) return;
+  const cfg = cfgOverride || getVoiceConfig();
+  voicePlaceholderState = { key: null, params: null };
+  voiceAvatarHost.innerHTML = '';
+  const script = document.createElement('script');
+  script.src = 'voice-avatar.js';
+  script.dataset.baseUrl = cfg.baseUrl;
+  if (cfg.project) script.dataset.project = cfg.project;
+  script.dataset.lang = cfg.lang;
+  if (cfg.voice) script.dataset.voice = cfg.voice;
+  if (cfg.voiceModel) script.dataset.voiceModel = cfg.voiceModel;
+  script.dataset.label = 'AI';
+  script.dataset.headline = t('chatTitle');
+  script.dataset.subtitle = t('chatSubtitle');
+  script.dataset.color = cfg.accent;
+  voiceAvatarHost.appendChild(script);
+}
+
+async function copySnippet(text, button) {
+  if (!button || !text) return;
+  const key = button.dataset.i18n || '';
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      throw new Error('Clipboard API unavailable');
+    }
+  } catch {
+    const helper = document.createElement('textarea');
+    helper.value = text;
+    helper.style.position = 'fixed';
+    helper.style.opacity = '0';
+    helper.style.pointerEvents = 'none';
+    document.body.appendChild(helper);
+    helper.focus();
+    helper.select();
+    try { document.execCommand('copy'); } catch {}
+    document.body.removeChild(helper);
+  }
+  button.classList.add('copied');
+  button.textContent = t('copiedLabel');
+  setTimeout(() => {
+    button.classList.remove('copied');
+    if (key) button.textContent = t(key);
+  }, 2000);
+}
+
+function initEmbedShowcase() {
+  if (!embedBaseInput) return;
+  const inferredBase = baseUrlInput?.value?.trim() || window.location.origin;
+  embedBaseInput.value = normalizeBaseUrl(inferredBase || window.location.origin);
+  if (embedProjectInput && currentProject) embedProjectInput.value = currentProject;
+  if (embedAccentInput && !embedAccentInput.value) embedAccentInput.value = '#4f7cff';
+
+  setEmbedActiveTab(activeEmbedVariant);
+
+  embedTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const variant = tab.dataset.embedTab || 'floating';
+      setEmbedActiveTab(variant);
+      refreshEmbedSnippet();
+    });
+  });
+
+  const handleEmbedChange = () => {
+    refreshEmbedSnippet();
+    refreshVoiceSnippet();
+  };
+
+  [embedBaseInput, embedProjectInput, embedAccentInput].forEach((input) => {
+    input?.addEventListener('input', handleEmbedChange);
+  });
+  embedThemeSelect?.addEventListener('change', handleEmbedChange);
+  avatarLangInput?.addEventListener('input', () => refreshVoiceSnippet());
+  avatarVoiceInput?.addEventListener('input', () => refreshVoiceSnippet());
+
+  if (embedCopyBtn) {
+    embedCopyBtn.addEventListener('click', () => {
+      copySnippet(embedCodeEl?.textContent || '', embedCopyBtn);
+    });
+  }
+  if (avatarCopyBtn) {
+    avatarCopyBtn.addEventListener('click', () => {
+      copySnippet(avatarCodeEl?.textContent || '', avatarCopyBtn);
+    });
+  }
+
+  refreshEmbedSnippet();
+  refreshVoiceSnippet();
+}
+
 function applyLanguage(lang) {
   if (!LANGUAGES[lang]) lang = FALLBACK_LANGUAGE;
   currentLanguage = lang;
@@ -899,6 +1937,26 @@ function applyLanguage(lang) {
   document.querySelectorAll('[data-role-key]').forEach((node) => {
     node.textContent = translateRole(node.dataset.roleKey);
   });
+
+  if (chatModal) {
+    chatModal.dataset.demoTitle = t('chatPreviewTitle');
+  }
+
+  if (embedCopyBtn) {
+    embedCopyBtn.classList.remove('copied');
+    const key = embedCopyBtn.dataset.i18n || 'embedCopy';
+    embedCopyBtn.textContent = t(key);
+  }
+  if (avatarCopyBtn) {
+    avatarCopyBtn.classList.remove('copied');
+    const key = avatarCopyBtn.dataset.i18n || 'avatarCopy';
+    avatarCopyBtn.textContent = t(key);
+  }
+
+  renderVoiceHint();
+  renderVoicePlaceholderFromState();
+  refreshEmbedSnippet();
+  refreshVoiceSnippet();
 }
 
 if (languageSelect) {
@@ -909,6 +1967,16 @@ if (languageSelect) {
 }
 
 applyLanguage(currentLanguage);
+initEmbedShowcase();
+
+if (heroDemoBtn) {
+  heroDemoBtn.addEventListener('click', () => {
+    if (chatModal) {
+      chatModal.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(() => { input?.focus(); }, 300);
+    }
+  });
+}
 
 
 const SESSION_STORAGE_KEY = 'chat_session_base';
@@ -1025,6 +2093,11 @@ async function pingHealth() {
 function saveConfig() {
   const base = baseUrlInput.value.trim();
   try { localStorage.setItem('chat_base_url', base); } catch {}
+  if (embedBaseInput) {
+    embedBaseInput.value = normalizeBaseUrl(base || window.location.origin);
+    refreshEmbedSnippet();
+    refreshVoiceSnippet();
+  }
   pingHealth();
 }
 
@@ -1181,6 +2254,11 @@ function updateProjectInfo() {
   try { localStorage.setItem('chat_project', currentProject); } catch {}
   if (projectInfo) {
     projectInfo.textContent = currentProject ? t('projectInfoSelected').replace('{project}', currentProject) : t('projectInfoNone');
+  }
+  if (embedProjectInput) {
+    embedProjectInput.value = currentProject;
+    refreshEmbedSnippet();
+    refreshVoiceSnippet();
   }
 }
 

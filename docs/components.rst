@@ -72,6 +72,10 @@ User interfaces
   without additional builds.
 * ``widget/`` – embeddable chat widget that streams token responses from
   ``/api/v1/llm/chat``.
+* ``widget/widget-loader.js`` – drop-in script that renders the widget as a
+  floating bubble or inline card on third-party sites.
+* ``widget/voice-avatar.js`` – animated, voice-enabled avatar that uses the
+  Web Speech API plus SSE for conversations without embedding the full widget.
 * ``tg_bot/`` – Telegram bot built on Aiogram; started and monitored through
   the admin panel.
 
@@ -80,6 +84,7 @@ Testing and tooling
 
 * ``tests/`` – unit tests for crawler behaviour and API glue code.
 * ``scripts/`` – operational helpers (benchmarks, maintenance jobs).
-* ``observability/`` – logging configuration and Prometheus metrics middleware.
+* ``observability/`` – logging configuration (in-memory buffer retains three
+  days of entries for the admin log viewer) and Prometheus metrics middleware.
 * ``deploy_project.sh`` / ``deploy_project.ps1`` – automated one-shot
   installation scripts for Linux/macOS and Windows.

@@ -585,7 +585,7 @@ class MongoClient:
             data["admin_password_hash"] = admin_password_hash.strip() or None
         else:
             data["admin_password_hash"] = None
-        for field in ("title", "llm_model", "llm_prompt", "telegram_token", "max_token", "vk_token", "widget_url"):
+        for field in ("title", "llm_model", "llm_prompt", "llm_voice_model", "telegram_token", "max_token", "vk_token", "widget_url"):
             value = data.get(field)
             if isinstance(value, str):
                 stripped = value.strip()
@@ -603,6 +603,19 @@ class MongoClient:
             data["llm_emotions_enabled"] = True
         else:
             data["llm_emotions_enabled"] = bool(emotions_value)
+        voice_value = data.get("llm_voice_enabled")
+        if isinstance(voice_value, str):
+            lowered = voice_value.strip().lower()
+            if lowered in {"false", "0", "off", "no"}:
+                data["llm_voice_enabled"] = False
+            elif lowered in {"true", "1", "on", "yes"}:
+                data["llm_voice_enabled"] = True
+            else:
+                data["llm_voice_enabled"] = True
+        elif voice_value is None:
+            data["llm_voice_enabled"] = True
+        else:
+            data["llm_voice_enabled"] = bool(voice_value)
         debug_value = data.get("debug_enabled")
         if isinstance(debug_value, str):
             lowered = debug_value.strip().lower()
@@ -654,6 +667,10 @@ class MongoClient:
         for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             if field in data and data[field] is not None:
                 data[field] = bool(data[field])
+        if "llm_voice_enabled" in data and data["llm_voice_enabled"] is not None:
+            data["llm_voice_enabled"] = bool(data["llm_voice_enabled"])
+        if data.get("llm_voice_model"):
+            data["llm_voice_model"] = str(data["llm_voice_model"]).strip() or None
         try:
             await self.db[self.projects_collection].update_one(
                 {"name": data["name"]},

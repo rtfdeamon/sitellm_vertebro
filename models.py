@@ -162,6 +162,8 @@ class Project(BaseModel):
     llm_model: str | None = None
     llm_prompt: str | None = None
     llm_emotions_enabled: bool | None = True
+    llm_voice_enabled: bool | None = True
+    llm_voice_model: str | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -181,6 +183,8 @@ class Project(BaseModel):
                 "llm_model": "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
                 "llm_prompt": "You are helpful and concise.",
                 "llm_emotions_enabled": True,
+                "llm_voice_enabled": True,
+                "llm_voice_model": "fast-solutions/voice-gpt",
                 "debug_enabled": False,
                 "telegram_auto_start": False,
                 "max_auto_start": False,

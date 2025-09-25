@@ -708,6 +708,7 @@ async def chat(
     channel: str | None = None,
     debug: bool | None = None,
     session_id: str | None = None,
+    model: str | None = None,
 ) -> StreamingResponse:
     """Stream tokens from the language model using server-sent events.
 
@@ -757,12 +758,40 @@ async def chat(
                 prompt_length=len(prompt_text),
                 mode="stream",
             )
-    model_override = None
+    requested_model = model.strip() if isinstance(model, str) and model.strip() else None
+    base_model_override = None
     if project_obj and project_obj.llm_model:
         model_text = project_obj.llm_model.strip()
         if model_text:
-            model_override = model_text
+            base_model_override = model_text
 
+    voice_model_override = None
+    if project_obj and project_obj.llm_voice_model:
+        voice_model_text = project_obj.llm_voice_model.strip()
+        if voice_model_text:
+            voice_model_override = voice_model_text
+
+    voice_enabled = True
+    if project_obj and project_obj.llm_voice_enabled is not None:
+        voice_enabled = bool(project_obj.llm_voice_enabled)
+
+    selected_model_override = base_model_override
+    if channel_name.lower() == "voice-avatar":
+        if not voice_enabled:
+            logger.warning(
+                "voice_channel_disabled",
+                project=project_name,
+                session=session_key,
+                channel=channel_name,
+            )
+            raise HTTPException(status_code=403, detail="voice_mode_disabled")
+        if voice_model_override:
+            selected_model_override = voice_model_override
+
+    if requested_model:
+        selected_model_override = requested_model
+
+    model_override = selected_model_override
     effective_model = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
 
     if app_settings.debug:
@@ -1011,6 +1040,54 @@ async def chat(
             samesite="Lax",
         )
     return response
+
+
+@llm_router.get("/project-config", response_class=ORJSONResponse)
+async def project_config(request: Request, project: str | None = None) -> ORJSONResponse:
+    """Expose limited project configuration for public widget usage."""
+
+    mongo_client = getattr(request.state, "mongo", None)
+    if mongo_client is None:
+        mongo_client = getattr(request.app.state, "mongo", None)
+    if mongo_client is None:
+        raise HTTPException(status_code=503, detail="mongo_unavailable")
+
+    normalized = _normalize_project(project)
+    if not normalized:
+        normalized = _normalize_project(backend_settings.project_name)
+
+    project_obj: Project | None = None
+    if normalized:
+        project_obj = await mongo_client.get_project(normalized)
+        if project_obj is None:
+            logger.info("project_config_missing", project=normalized)
+
+    if project_obj is None and normalized:
+        # create placeholder to keep defaults if project not stored yet
+        project_obj = Project(name=normalized)
+
+    voice_enabled = True
+    voice_model = None
+    llm_model = getattr(llm_client, "MODEL_NAME", None)
+    title = None
+
+    if project_obj:
+        title = project_obj.title
+        if project_obj.llm_model:
+            llm_model = project_obj.llm_model
+        if project_obj.llm_voice_enabled is not None:
+            voice_enabled = bool(project_obj.llm_voice_enabled)
+        if project_obj.llm_voice_model:
+            voice_model = project_obj.llm_voice_model
+
+    payload = {
+        "project": normalized,
+        "title": title,
+        "llm_model": llm_model,
+        "llm_voice_enabled": voice_enabled,
+        "llm_voice_model": voice_model,
+    }
+    return ORJSONResponse(payload)
 
 
 class CrawlRequest(BaseModel):
