@@ -1176,10 +1176,17 @@
           </label>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectDebug">
-              Отладка (служебные сообщения)
+              <input type="checkbox" id="projectDebugInfo" checked>
+              Служебная справка перед ответом
             </label>
-            <span class="muted" id="projectDebugHint">Включите, чтобы перед ответом в Telegram приходила служебная справка (endpoint, эмоции и т. п.).</span>
+            <span class="muted" id="projectDebugInfoHint">Включите, чтобы перед ответом в Telegram приходила служебная справка (endpoint, эмоции и т. п.).</span>
+          </div>
+          <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+            <label style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="projectDebug">
+              Подробная отладка после ответа
+            </label>
+            <span class="muted" id="projectDebugHint">Включите, чтобы после ответа приходила подробная сводка (символы, знания, сессия).</span>
           </div>
           <div id="projectAdminSection" style="flex:1 1 100%; display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;">
             <label style="flex:1 1 200px;">Админ логин
@@ -2719,6 +2726,8 @@
     const projectPromptAiBtn = document.getElementById('projectPromptAi');
     const projectPromptAiStatus = document.getElementById('projectPromptAiStatus');
     const projectEmotionsInput = document.getElementById('projectEmotions');
+    const projectDebugInfoInput = document.getElementById('projectDebugInfo');
+    const projectDebugInfoHint = document.getElementById('projectDebugInfoHint');
     const projectDebugInput = document.getElementById('projectDebug');
     const projectDebugHint = document.getElementById('projectDebugHint');
     const projectEmotionsHint = document.getElementById('projectEmotionsHint');
@@ -6310,11 +6319,18 @@
       }
     };
 
+    const refreshDebugInfoHint = (enabled) => {
+      if (!projectDebugInfoHint) return;
+      projectDebugInfoHint.textContent = enabled
+        ? 'Перед каждым ответом бот отправит служебную справку о запросе.'
+        : 'Служебная справка перед ответом отключена.';
+    };
+
     const refreshDebugHint = (enabled) => {
       if (!projectDebugHint) return;
       projectDebugHint.textContent = enabled
-        ? 'Перед каждым ответом бот отправит служебную справку о запросе.'
-        : 'Служебная справка перед ответом отключена.';
+        ? 'После ответа будет приходить подробная сводка (символы, знания, сессия).'
+        : 'Финальная отладочная сводка отключена.';
     };
 
     if (projectEmotionsInput) {
@@ -6328,6 +6344,12 @@
         refreshVoiceHint(projectVoiceInput.checked);
       });
       refreshVoiceHint(projectVoiceInput.checked);
+    }
+    if (projectDebugInfoInput) {
+      projectDebugInfoInput.addEventListener('change', () => {
+        refreshDebugInfoHint(projectDebugInfoInput.checked);
+      });
+      refreshDebugInfoHint(projectDebugInfoInput.checked);
     }
     if (projectDebugInput) {
       projectDebugInput.addEventListener('change', () => {
@@ -6383,6 +6405,11 @@
         if (projectVoiceInput) {
           projectVoiceModelInput.disabled = !projectVoiceInput.checked;
         }
+      }
+      if (projectDebugInfoInput) {
+        const infoEnabled = project?.debug_info_enabled !== false;
+        projectDebugInfoInput.checked = infoEnabled;
+        refreshDebugInfoHint(infoEnabled);
       }
       if (projectDebugInput) {
         const debugEnabled = !!project?.debug_enabled;
@@ -6447,6 +6474,7 @@
       if (project) {
         const emoText = project.llm_emotions_enabled === false ? 'Эмоции: выкл' : 'Эмоции: вкл';
         metaBits.push(emoText);
+        metaBits.push(project.debug_info_enabled ? 'Справка: вкл' : 'Справка: выкл');
         metaBits.push(project.debug_enabled ? 'Отладка: вкл' : 'Отладка: выкл');
         const voiceEnabledBit = project.llm_voice_enabled === false ? 'Голосовой режим: выкл' : 'Голосовой режим: вкл';
         if (project.llm_voice_enabled !== false && project.llm_voice_model) {
@@ -6549,6 +6577,7 @@
             llm_voice_enabled: p.llm_voice_enabled === undefined ? true : !!p.llm_voice_enabled,
             llm_voice_model: typeof p.llm_voice_model === 'string' ? p.llm_voice_model.trim() : p.llm_voice_model,
             debug_enabled: !!p.debug_enabled,
+            debug_info_enabled: p.debug_info_enabled === undefined ? true : !!p.debug_info_enabled,
             admin_username: typeof p.admin_username === 'string' ? p.admin_username.trim() : '',
             admin_password_set: Boolean(p.admin_password_set),
           };
@@ -6602,6 +6631,7 @@
         llm_emotions_enabled: projectEmotionsInput ? projectEmotionsInput.checked : true,
         llm_voice_enabled: projectVoiceInput ? projectVoiceInput.checked : true,
         llm_voice_model: null,
+        debug_info_enabled: projectDebugInfoInput ? projectDebugInfoInput.checked : false,
         debug_enabled: projectDebugInput ? projectDebugInput.checked : false,
         widget_url: projectWidgetUrl && projectWidgetUrl.value.trim() ? projectWidgetUrl.value.trim() : null,
       };

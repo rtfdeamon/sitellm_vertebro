@@ -45,7 +45,7 @@ from crawler.run_crawl import (
 )
 
 from models import Document, LLMResponse, LLMRequest, RoleEnum, Project, Attachment
-from mongo import NotFound
+from mongo import MongoClient, NotFound
 from pydantic import BaseModel
 
 from core.status import status_dict
@@ -72,6 +72,16 @@ def _normalize_project(value: str | None) -> str | None:
     if fallback:
         return fallback.strip().lower() or None
     return None
+
+
+def _get_mongo_client(request: Request) -> MongoClient:
+    mongo_client: MongoClient | None = getattr(request.state, "mongo", None)
+    if mongo_client is None:
+        mongo_client = getattr(request.app.state, "mongo", None)
+        if mongo_client is None:
+            raise HTTPException(status_code=503, detail="mongo_unavailable")
+        request.state.mongo = mongo_client
+    return mongo_client
 
 
 def _resolve_session_identifiers(
@@ -1104,6 +1114,7 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
     title = None
     emotions_enabled = True
     debug_enabled = False
+    debug_info_enabled = True
 
     if project_obj:
         title = project_obj.title
@@ -1117,6 +1128,8 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
             emotions_enabled = bool(project_obj.llm_emotions_enabled)
         if project_obj.debug_enabled is not None:
             debug_enabled = bool(project_obj.debug_enabled)
+        if project_obj.debug_info_enabled is not None:
+            debug_info_enabled = bool(project_obj.debug_info_enabled)
 
     payload = {
         "project": normalized,
@@ -1126,6 +1139,7 @@ async def project_config(request: Request, project: str | None = None) -> ORJSON
         "llm_voice_model": voice_model,
         "emotions_enabled": emotions_enabled,
         "debug_enabled": debug_enabled,
+        "debug_info_enabled": debug_info_enabled,
     }
     return ORJSONResponse(payload)
 

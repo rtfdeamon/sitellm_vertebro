@@ -306,7 +306,11 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
     """Return cached feature flags for the given project."""
 
     if not project:
-        return {"emotions_enabled": True, "debug_enabled": False}
+        return {
+            "emotions_enabled": True,
+            "debug_enabled": False,
+            "debug_info_enabled": True,
+        }
 
     key = project.lower()
     now = time.time()
@@ -320,6 +324,7 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
     api_url = f"{settings.api_base_url}/api/v1/llm/project-config"
     emotions_enabled = True
     debug_enabled = False
+    debug_info_enabled = True
 
     try:
         async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
@@ -335,8 +340,13 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
     else:
         emotions_enabled = bool(data.get("emotions_enabled", True))
         debug_enabled = bool(data.get("debug_enabled", False))
+        debug_info_enabled = bool(data.get("debug_info_enabled", True))
 
-    features = {"emotions_enabled": emotions_enabled, "debug_enabled": debug_enabled}
+    features = {
+        "emotions_enabled": emotions_enabled,
+        "debug_enabled": debug_enabled,
+        "debug_info_enabled": debug_info_enabled,
+    }
     async with _FEATURE_CACHE_LOCK:
         _FEATURE_CACHE[key] = (now, features.copy())
     return features
@@ -535,22 +545,24 @@ async def text_handler(
         backend_hint = str(settings.backend_url)
         features = await _get_project_features(project)
         emotions_enabled = features.get("emotions_enabled", True)
-        debug_allowed = features.get("debug_enabled", False)
-        if debug_allowed:
+        debug_info_allowed = features.get("debug_info_enabled", True)
+        debug_summary_allowed = features.get("debug_enabled", False)
+        if debug_info_allowed:
             request_lines = [
                 "🛰️ Отправляю запрос бэкенду",
                 f"• проект: {project or '—'}",
                 f"• endpoint: {backend_hint}",
                 f"• эмоции: {'включены ✨' if emotions_enabled else 'выключены'}",
-                "• отладка: включена",
             ]
+            if debug_summary_allowed:
+                request_lines.append("• отладка: включена")
             await message.answer("\n".join(request_lines))
         try:
             response = await rag_answer(
                 message.text or "",
                 project=project,
                 session_id=session_id,
-                debug=debug_allowed,
+                debug=debug_summary_allowed,
             )
         except ValueError:
             stop_typing.set()
@@ -569,12 +581,16 @@ async def text_handler(
         attachments = response.get("attachments", []) if isinstance(response, dict) else []
         meta = response.get("meta", {}) if isinstance(response, dict) else {}
         emotions_enabled = bool(meta.get('emotions_enabled', emotions_enabled))
-        debug_allowed = bool(meta.get('debug_enabled', debug_allowed))
+        debug_summary_allowed = bool(meta.get('debug_enabled', debug_summary_allowed))
         if project:
             async with _FEATURE_CACHE_LOCK:
                 _FEATURE_CACHE[project.lower()] = (
                     time.time(),
-                    {"emotions_enabled": emotions_enabled, "debug_enabled": debug_allowed},
+                    {
+                        "emotions_enabled": emotions_enabled,
+                        "debug_enabled": debug_summary_allowed,
+                        "debug_info_enabled": debug_info_allowed,
+                    },
                 )
         logger.info(
             "answer ready",
@@ -588,7 +604,7 @@ async def text_handler(
             for chunk in chunks:
                 await message.answer(chunk)
 
-        if debug_allowed:
+        if debug_summary_allowed:
             summary_lines: List[str] = [
                 "✅ Ответ получен",
                 f"• символов: {len(answer_text)} (SSE: {meta.get('chars', '—')})",

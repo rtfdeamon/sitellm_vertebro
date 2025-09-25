@@ -172,6 +172,7 @@ class Project(BaseModel):
     vk_auto_start: bool | None = None
     widget_url: str | None = None
     debug_enabled: bool | None = None
+    debug_info_enabled: bool | None = True
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -186,6 +187,7 @@ class Project(BaseModel):
                 "llm_voice_enabled": True,
                 "llm_voice_model": "fast-solutions/voice-gpt",
                 "debug_enabled": False,
+                "debug_info_enabled": True,
                 "telegram_auto_start": False,
                 "max_auto_start": False,
                 "vk_auto_start": False,

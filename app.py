@@ -2659,6 +2659,7 @@ class ProjectCreate(BaseModel):
     llm_voice_enabled: bool | None = None
     llm_voice_model: str | None = None
     debug_enabled: bool | None = None
+    debug_info_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -4444,6 +4445,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         else:
             debug_value = False
 
+    if "debug_info_enabled" in provided_fields:
+        debug_info_value = (
+            bool(payload.debug_info_enabled)
+            if payload.debug_info_enabled is not None
+            else False
+        )
+    else:
+        if existing and existing.debug_info_enabled is not None:
+            debug_info_value = bool(existing.debug_info_enabled)
+        else:
+            debug_info_value = True
+
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
             token_value = payload.telegram_token.strip() or None
@@ -4545,6 +4558,7 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_voice_enabled=voice_enabled_value,
         llm_voice_model=voice_model_value,
         debug_enabled=debug_value,
+        debug_info_enabled=debug_info_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,

@@ -630,6 +630,19 @@ class MongoClient:
             data["debug_enabled"] = False
         else:
             data["debug_enabled"] = bool(debug_value)
+        debug_info_value = data.get("debug_info_enabled")
+        if isinstance(debug_info_value, str):
+            lowered = debug_info_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["debug_info_enabled"] = True
+            elif lowered in {"false", "0", "off", "no"}:
+                data["debug_info_enabled"] = False
+            else:
+                data["debug_info_enabled"] = False
+        elif debug_info_value is None:
+            data["debug_info_enabled"] = True
+        else:
+            data["debug_info_enabled"] = bool(debug_info_value)
         for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             auto_value = data.get(field)
             if isinstance(auto_value, str):
