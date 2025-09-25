@@ -16,6 +16,8 @@
     .sitellm-voice-widget {
       position: relative;
       width: min(360px, 100%);
+      max-height: 520px;
+      overflow: hidden;
       margin: 24px auto;
       font-family: "Inter", system-ui, -apple-system, Segoe UI, sans-serif;
       border-radius: 24px;
@@ -80,6 +82,14 @@
     }
     .sitellm-voice-visual.voice.active {
       opacity: 0.9;
+    }
+    .sitellm-voice-content {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      max-height: 360px;
+      overflow-y: auto;
+      padding-right: 6px;
     }
     .sitellm-voice-status {
       font-size: 13px;
@@ -440,11 +450,15 @@
       <button type="button">Send</button>
     `;
 
+    const content = document.createElement('div');
+    content.className = 'sitellm-voice-content';
+    content.appendChild(status);
+    content.appendChild(actions);
+    content.appendChild(manualInput);
+    content.appendChild(errorBox);
+
     container.appendChild(header);
-    container.appendChild(status);
-    container.appendChild(actions);
-    container.appendChild(manualInput);
-    container.appendChild(errorBox);
+    container.appendChild(content);
 
     script.insertAdjacentElement('beforebegin', container);
 
