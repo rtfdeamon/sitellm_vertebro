@@ -31,7 +31,7 @@ except ModuleNotFoundError:  # pragma: no cover - degrade gracefully when unavai
 logger = structlog.get_logger(__name__)
 
 _FEATURE_CACHE: dict[str, tuple[float, dict[str, bool]]] = {}
-_FEATURE_CACHE_TTL = 5.0
+_FEATURE_CACHE_TTL = 0.0
 _FEATURE_CACHE_LOCK = asyncio.Lock()
 
 POSITIVE_REPLIES = {
@@ -314,11 +314,6 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
 
     key = project.lower()
     now = time.time()
-
-    async with _FEATURE_CACHE_LOCK:
-        cached = _FEATURE_CACHE.get(key)
-        if cached and (now - cached[0]) < _FEATURE_CACHE_TTL:
-            return cached[1].copy()
 
     settings = get_settings()
     api_url = f"{settings.api_base_url}/api/v1/llm/project-config"
