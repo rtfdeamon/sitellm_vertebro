@@ -981,6 +981,19 @@ class MongoClient:
             data["debug_info_enabled"] = True
         else:
             data["debug_info_enabled"] = bool(debug_info_value)
+        captions_value = data.get("knowledge_image_caption_enabled")
+        if isinstance(captions_value, str):
+            lowered = captions_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["knowledge_image_caption_enabled"] = True
+            elif lowered in {"false", "0", "off", "no"}:
+                data["knowledge_image_caption_enabled"] = False
+            else:
+                data["knowledge_image_caption_enabled"] = True
+        elif captions_value is None:
+            data["knowledge_image_caption_enabled"] = True
+        else:
+            data["knowledge_image_caption_enabled"] = bool(captions_value)
         for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             auto_value = data.get(field)
             if isinstance(auto_value, str):
@@ -1043,6 +1056,8 @@ class MongoClient:
             data["llm_voice_enabled"] = bool(data["llm_voice_enabled"])
         if data.get("llm_voice_model"):
             data["llm_voice_model"] = str(data["llm_voice_model"]).strip() or None
+        if "knowledge_image_caption_enabled" in data and data["knowledge_image_caption_enabled"] is not None:
+            data["knowledge_image_caption_enabled"] = bool(data["knowledge_image_caption_enabled"])
         try:
             await self.db[self.projects_collection].update_one(
                 {"name": data["name"]},

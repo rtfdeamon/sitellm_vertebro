@@ -175,6 +175,7 @@ class Project(BaseModel):
     debug_info_enabled: bool | None = True
     bitrix_enabled: bool | None = None
     bitrix_webhook_url: str | None = None
+    knowledge_image_caption_enabled: bool | None = True
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -190,6 +191,7 @@ class Project(BaseModel):
                 "llm_voice_model": "fast-solutions/voice-gpt",
                 "debug_enabled": False,
                 "debug_info_enabled": True,
+                "knowledge_image_caption_enabled": True,
                 "telegram_auto_start": False,
                 "max_auto_start": False,
                 "vk_auto_start": False,

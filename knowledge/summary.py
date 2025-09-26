@@ -125,6 +125,13 @@ async def generate_image_caption(
     else:
         context_excerpt = ""
 
+    captions_allowed = True
+    if project is not None:
+        captions_allowed = getattr(project, "knowledge_image_caption_enabled", True) is not False
+
+    if not captions_allowed:
+        return fallback
+
     if not alt_clean and not context_excerpt:
         return fallback
 
