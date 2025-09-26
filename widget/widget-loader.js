@@ -270,6 +270,7 @@
     if (project) search.set('project', project);
     if (extraParams.theme) search.set('theme', extraParams.theme);
     if (extraParams.debug === '1') search.set('debug', '1');
+    if (extraParams.reading) search.set('reading', '1');
     return `${base}/widget/index.html?${search.toString()}`;
   }
 
@@ -285,9 +286,10 @@
     const launcherIcon = script.dataset.icon || 'AI';
     const theme = script.dataset.theme || '';
     const debug = script.dataset.debug || '';
+    const reading = script.dataset.readingMode === '1';
 
     const session = sessionKey(project);
-    const frameSrc = buildFrameSrc(base, project, session, { theme, debug });
+    const frameSrc = buildFrameSrc(base, project, session, { theme, debug, reading });
 
     const options = {
       frameSrc,

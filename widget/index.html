@@ -345,6 +345,8 @@
       margin-bottom: 20px;
     }
     .embed-controls label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .embed-reading { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .embed-reading input { width: auto; accent-color: var(--accent); }
     .embed-controls input,
     .embed-controls select {
       background: rgba(15, 17, 23, 0.55);
@@ -401,6 +403,20 @@
     .voice-grid input { background: rgba(15, 17, 23, 0.55); border: 1px solid rgba(148, 163, 184, 0.25); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
     .voice-choice { position: relative; }
     .voice-choice input { width: 100%; }
+    .developer-credit { display:block; margin:32px auto 12px; text-align:center; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:rgba(226,232,240,0.45); text-decoration:none; transition:color 0.2s ease; }
+    .developer-credit:hover { color: rgba(226,232,240,0.75); }
+    .feedback-trigger { position:fixed; left:24px; bottom:24px; z-index:9999; display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:999px; border:1px solid rgba(148,163,184,0.3); background:rgba(15,17,23,0.6); color:rgba(226,232,240,0.78); font-size:12px; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; backdrop-filter:blur(6px); transition:background 0.2s ease, color 0.2s ease; }
+    .feedback-trigger:hover { background:rgba(79,124,255,0.18); color:#fff; }
+    .feedback-panel { position:fixed; left:24px; bottom:80px; width:min(320px, calc(100vw - 40px)); background:rgba(12,15,24,0.92); border:1px solid rgba(148,163,184,0.3); border-radius:16px; box-shadow:0 20px 48px rgba(15,23,42,0.45); padding:18px; color:rgba(226,232,240,0.9); font-family:"Inter", system-ui, -apple-system, Segoe UI, sans-serif; display:none; flex-direction:column; gap:10px; z-index:10000; backdrop-filter:blur(6px); }
+    .feedback-panel.show { display:flex; }
+    .feedback-panel h3 { margin:0; font-size:14px; letter-spacing:0.08em; text-transform:uppercase; }
+    .feedback-panel label { display:grid; gap:6px; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; }
+    .feedback-panel input,
+    .feedback-panel textarea { width:100%; background:rgba(15,17,23,0.6); border:1px solid rgba(148,163,184,0.35); color:rgba(226,232,240,0.9); border-radius:10px; padding:10px 12px; font-size:13px; font-family:inherit; }
+    .feedback-panel textarea { min-height:100px; resize:vertical; }
+    .feedback-panel .feedback-actions { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .feedback-panel button { padding:8px 12px; border-radius:999px; border:1px solid rgba(79,124,255,0.35); background:rgba(79,124,255,0.18); color:rgba(226,232,255,0.9); letter-spacing:0.08em; cursor:pointer; }
+    .feedback-status { font-size:11px; color:rgba(226,232,255,0.6); min-height:18px; }
     .voice-preview-placeholder {
       text-align: center;
       color: var(--muted);
@@ -494,6 +510,10 @@
         <label>
           <span data-i18n="embedConfigAccent">Accent colour</span>
           <input type="color" id="embedAccent" value="#4f7cff" />
+        </label>
+        <label class="embed-reading">
+          <input type="checkbox" id="embedReadingMode" />
+          <span data-i18n="embedReadingLabel">Enable book reading mode</span>
         </label>
         <label>
           <span data-i18n="embedConfigTheme">Theme</span>
@@ -609,8 +629,35 @@
           </form>
         </div>
       </div>
-    </div>
   </div>
+  <a href="https://dev-bot.su" class="developer-credit" target="_blank" rel="noopener" data-i18n="developerCredit">Created by дев-бот-су</a>
+  <button type="button" class="feedback-trigger" id="feedbackTrigger" data-i18n="feedbackButton">Feedback</button>
+  <div class="feedback-panel" id="feedbackPanel">
+    <div class="feedback-actions">
+      <h3 data-i18n="feedbackTitle">Help us improve</h3>
+      <button type="button" id="feedbackClose" data-i18n="feedbackClose">Close</button>
+    </div>
+    <p class="muted" data-i18n="feedbackDivider">We appreciate your input!</p>
+    <form id="feedbackForm">
+      <label>
+        <span data-i18n="feedbackName">Your name (optional)</span>
+        <input type="text" id="feedbackName" autocomplete="off" />
+      </label>
+      <label>
+        <span data-i18n="feedbackContact">Contact info (optional)</span>
+        <input type="text" id="feedbackContact" autocomplete="off" />
+      </label>
+      <label>
+        <span data-i18n="feedbackMessage">Describe your suggestion or issue</span>
+        <textarea id="feedbackMessage" placeholder="Share your idea or problem…" data-i18n-placeholder="feedbackPlaceholder"></textarea>
+      </label>
+      <div class="feedback-actions">
+        <button type="submit" id="feedbackSubmit" data-i18n="feedbackSend">Send feedback</button>
+        <span class="feedback-status" id="feedbackStatus"></span>
+      </div>
+    </form>
+  </div>
+</div>
 <script>
 const form = document.getElementById('chat-form');
 const input = document.getElementById('question');
@@ -650,6 +697,7 @@ const embedBaseInput = document.getElementById('embedBase');
 const embedProjectInput = document.getElementById('embedProject');
 const embedAccentInput = document.getElementById('embedAccent');
 const embedThemeSelect = document.getElementById('embedTheme');
+const embedReadingInput = document.getElementById('embedReadingMode');
 const voiceAvatarHost = document.getElementById('voiceAvatarHost');
 const avatarLangInput = document.getElementById('avatarLang');
 const avatarVoiceInput = document.getElementById('avatarVoice');
@@ -657,6 +705,15 @@ const avatarVoiceList = document.getElementById('avatarVoiceList');
 const avatarCodeEl = document.getElementById('avatarCode');
 const avatarCopyBtn = document.getElementById('avatarCopy');
 const voiceFeatureHint = document.getElementById('voiceFeatureHint');
+const feedbackTrigger = document.getElementById('feedbackTrigger');
+const feedbackPanel = document.getElementById('feedbackPanel');
+const feedbackForm = document.getElementById('feedbackForm');
+const feedbackCloseBtn = document.getElementById('feedbackClose');
+const feedbackStatus = document.getElementById('feedbackStatus');
+const feedbackNameInput = document.getElementById('feedbackName');
+const feedbackContactInput = document.getElementById('feedbackContact');
+const feedbackMessageInput = document.getElementById('feedbackMessage');
+const feedbackSubmitBtn = document.getElementById('feedbackSubmit');
 
 const urlParams = new URLSearchParams(window.location.search);
 const urlProject = (urlParams.get('project') || '').trim().toLowerCase();
@@ -675,6 +732,14 @@ const VOICE_STORAGE_KEY = 'chat_voice_preference';
 const DEFAULT_VOICE_HINT = 'Milena';
 let voiceOptionsPending = false;
 const FALLBACK_LANGUAGE = 'en';
+const pageReadingMode = urlParams.get('reading') === '1';
+let widgetReadingMode = pageReadingMode;
+
+if (isEmbed) {
+  document.querySelectorAll('.feedback-trigger, .feedback-panel, .developer-credit').forEach((node) => {
+    if (node) node.style.display = 'none';
+  });
+}
 const LANGUAGES = {
   en: {
     name: 'English',
@@ -693,6 +758,7 @@ const LANGUAGES = {
       embedConfigProject: 'Project slug',
       embedConfigAccent: 'Accent colour',
       embedConfigTheme: 'Theme',
+      embedReadingLabel: 'Enable book reading mode',
       embedThemeAuto: 'Auto',
       embedThemeDark: 'Dark',
       embedThemeLight: 'Light',
@@ -709,6 +775,7 @@ const LANGUAGES = {
       avatarHintEnabled: 'Voice assistant is enabled for this project.',
       avatarHintEnabledModel: 'Voice assistant uses model {model}.',
       avatarHintError: 'Unable to load voice settings.',
+      avatarHintReadingMode: 'Book reading mode is active.',
       copiedLabel: 'Copied!',
       chatPreviewTitle: 'Live chat preview',
       launcherTitle: 'AI Assistant',
@@ -727,6 +794,28 @@ const LANGUAGES = {
       statusOffline: 'offline',
       bannerConnectionError: 'Connection error',
       bannerDismiss: 'Dismiss',
+      feedbackButton: 'Feedback',
+      feedbackOpen: 'Open feedback form',
+      feedbackClose: 'Close',
+      feedbackTitle: 'Help us improve',
+      feedbackName: 'Your name (optional)',
+      feedbackContact: 'Contact info (optional)',
+      feedbackMessage: 'Describe your suggestion or issue',
+      feedbackPlaceholder: 'Share your idea or problem…',
+      feedbackSend: 'Send feedback',
+      feedbackSending: 'Sending…',
+      feedbackSuccess: 'Thanks! We received your message.',
+      feedbackThanks: 'We will read your feedback soon.',
+      feedbackError: 'Could not send feedback. Please try later.',
+      feedbackDivider: 'We appreciate your input!',
+      developerCredit: 'Created by дев-бот-су',
+      feedbackSectionTitle: 'Feedback',
+      feedbackStatusOpen: 'Open',
+      feedbackStatusInProgress: 'In progress',
+      feedbackStatusDone: 'Resolved',
+      feedbackStatusDismissed: 'Dismissed',
+      feedbackNoItems: 'No feedback yet.',
+      feedbackUpdated: 'Updated',
       projectLabel: 'Project',
       reloadProjects: 'Reload',
       projectInfoNone: 'No project selected',
@@ -1614,12 +1703,91 @@ function initVoiceOptions() {
   }
 }
 
+function openFeedbackPanel() {
+  if (!feedbackPanel) return;
+  feedbackPanel.classList.add('show');
+  if (feedbackStatus) feedbackStatus.textContent = '';
+  if (feedbackMessageInput) {
+    feedbackMessageInput.focus();
+    feedbackMessageInput.select?.();
+  }
+}
+
+function closeFeedbackPanel() {
+  if (!feedbackPanel) return;
+  feedbackPanel.classList.remove('show');
+}
+
+async function submitFeedback(event) {
+  event.preventDefault();
+  if (!feedbackSubmitBtn) return;
+  const message = (feedbackMessageInput?.value || '').trim();
+  if (!message) {
+    if (feedbackStatus) feedbackStatus.textContent = t('feedbackError');
+    return;
+  }
+  const baseCfg = getEmbedConfig();
+  const baseUrl = baseCfg.baseUrl || window.location.origin;
+  const payload = {
+    message,
+    name: (feedbackNameInput?.value || '').trim() || null,
+    contact: (feedbackContactInput?.value || '').trim() || null,
+    page: window.location.href,
+    project: currentProject || null,
+    source: isEmbed ? 'embed' : 'demo',
+  };
+  feedbackSubmitBtn.disabled = true;
+  const originalText = feedbackSubmitBtn.textContent;
+  feedbackSubmitBtn.textContent = t('feedbackSending');
+  if (feedbackStatus) feedbackStatus.textContent = '';
+  try {
+    const resp = await fetch(`${baseUrl}/api/v1/feedback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      cache: 'no-store',
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    feedbackMessageInput.value = '';
+    if (feedbackStatus) feedbackStatus.textContent = t('feedbackSuccess');
+  } catch (error) {
+    console.error('feedback_submit_failed', error);
+    if (feedbackStatus) feedbackStatus.textContent = t('feedbackError');
+  } finally {
+    feedbackSubmitBtn.disabled = false;
+    feedbackSubmitBtn.textContent = originalText || t('feedbackSend');
+  }
+}
+
+function initFeedbackWidget() {
+  if (!feedbackTrigger || isEmbed) {
+    if (feedbackTrigger) feedbackTrigger.style.display = 'none';
+    if (feedbackPanel) feedbackPanel.style.display = 'none';
+    return;
+  }
+  feedbackTrigger.addEventListener('click', () => {
+    if (feedbackPanel?.classList.contains('show')) {
+      closeFeedbackPanel();
+    } else {
+      openFeedbackPanel();
+    }
+  });
+  feedbackCloseBtn?.addEventListener('click', closeFeedbackPanel);
+  feedbackForm?.addEventListener('submit', submitFeedback);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && feedbackPanel?.classList.contains('show')) {
+      closeFeedbackPanel();
+    }
+  });
+}
+
 function getEmbedConfig() {
   const base = normalizeBaseUrl(embedBaseInput?.value || baseUrlInput?.value || window.location.origin);
   const project = (embedProjectInput?.value || currentProject || '').trim();
   const accent = (embedAccentInput?.value || '#4f7cff').trim() || '#4f7cff';
   const theme = (embedThemeSelect?.value || '').trim();
-  return { baseUrl: base, project, accent, theme };
+  const reading = !!embedReadingInput?.checked;
+  return { baseUrl: base, project, accent, theme, reading };
 }
 
 function getVoiceConfig() {
@@ -1643,7 +1811,8 @@ function buildFloatingSnippet(cfg) {
     `data-subtitle="${t('launcherSubtitle')}"`,
     `data-icon="AI"`,
     `data-color="${cfg.accent}"`,
-    cfg.theme ? `data-theme="${cfg.theme}"` : ''
+    cfg.theme ? `data-theme="${cfg.theme}"` : '',
+    cfg.reading ? 'data-reading-mode="1"' : ''
   ];
   return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
@@ -1659,7 +1828,8 @@ function buildInlineSnippet(cfg) {
     `data-title="${t('launcherTitle')}"`,
     `data-subtitle="${t('launcherSubtitle')}"`,
     `data-color="${cfg.accent}"`,
-    cfg.theme ? `data-theme="${cfg.theme}"` : ''
+    cfg.theme ? `data-theme="${cfg.theme}"` : '',
+    cfg.reading ? 'data-reading-mode="1"' : ''
   ];
   return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
@@ -1668,6 +1838,7 @@ function buildIframeSnippet(cfg) {
   const params = new URLSearchParams({ embed: '1' });
   if (cfg.project) params.set('project', cfg.project);
   if (cfg.theme) params.set('theme', cfg.theme);
+  if (cfg.reading) params.set('reading', '1');
   const src = `${cfg.baseUrl}/widget/index.html?${params.toString()}`;
   return `<iframe\n  src="${src}"\n  style="width:100%; min-height:640px; border:none; border-radius:18px; box-shadow:0 22px 48px rgba(15, 23, 42, 0.35);"\n  allow="microphone; clipboard-read; clipboard-write;"\n></iframe>`;
 }
@@ -1683,7 +1854,8 @@ function buildVoiceSnippet(cfg) {
     `data-label="AI"`,
     `data-headline="${t('chatTitle')}"`,
     `data-subtitle="${t('chatSubtitle')}"`,
-    `data-color="${cfg.accent}"`
+    `data-color="${cfg.accent}"`,
+    cfg.reading ? 'data-reading-mode="1"' : ''
   ];
   return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
@@ -1721,7 +1893,11 @@ function renderVoiceHint() {
     default:
       key = 'avatarHintSelectProject';
   }
-  voiceFeatureHint.textContent = translateVoiceMessage(key, params);
+  let text = translateVoiceMessage(key, params);
+  if (widgetReadingMode || pageReadingMode) {
+    text = `${text} ${t('avatarHintReadingMode')}`;
+  }
+  voiceFeatureHint.textContent = text;
 }
 
 function setVoiceHint(status, model) {
@@ -1853,6 +2029,7 @@ function setEmbedActiveTab(key) {
 function refreshEmbedSnippet() {
   if (!embedCodeEl) return;
   const cfg = getEmbedConfig();
+  widgetReadingMode = !!cfg.reading;
   let snippet = '';
   if (activeEmbedVariant === 'inline') snippet = buildInlineSnippet(cfg);
   else if (activeEmbedVariant === 'iframe') snippet = buildIframeSnippet(cfg);
@@ -1878,6 +2055,7 @@ function renderVoiceAvatarDemo(cfgOverride) {
   script.dataset.lang = cfg.lang;
   if (cfg.voice) script.dataset.voice = cfg.voice;
   if (cfg.voiceModel) script.dataset.voiceModel = cfg.voiceModel;
+   if (cfg.reading) script.dataset.readingMode = '1';
   script.dataset.label = 'AI';
   script.dataset.headline = t('chatTitle');
   script.dataset.subtitle = t('chatSubtitle');
@@ -1920,6 +2098,7 @@ function initEmbedShowcase() {
   embedBaseInput.value = normalizeBaseUrl(inferredBase || window.location.origin);
   if (embedProjectInput && currentProject) embedProjectInput.value = currentProject;
   if (embedAccentInput && !embedAccentInput.value) embedAccentInput.value = '#4f7cff';
+  if (embedReadingInput) embedReadingInput.checked = pageReadingMode;
 
   setEmbedActiveTab(activeEmbedVariant);
 
@@ -1936,7 +2115,7 @@ function initEmbedShowcase() {
     refreshVoiceSnippet();
   };
 
-  [embedBaseInput, embedProjectInput, embedAccentInput].forEach((input) => {
+  [embedBaseInput, embedProjectInput, embedAccentInput, embedReadingInput].forEach((input) => {
     input?.addEventListener('input', handleEmbedChange);
   });
   embedThemeSelect?.addEventListener('change', handleEmbedChange);
@@ -2052,6 +2231,7 @@ if (languageSelect) {
 
 applyLanguage(currentLanguage);
 initEmbedShowcase();
+initFeedbackWidget();
 
 if (heroDemoBtn) {
   heroDemoBtn.addEventListener('click', () => {
@@ -2400,6 +2580,7 @@ async function sendQuestion(question) {
   const sessionId = ensureSession();
   params.set('session_id', sessionId);
   if (debugCheckbox.checked) params.set('debug', '1');
+  if (widgetReadingMode || pageReadingMode) params.set('reading', '1');
   const url = `${endpointBase || ''}/api/v1/llm/chat?${params.toString()}`;
 
   if (currentES) {

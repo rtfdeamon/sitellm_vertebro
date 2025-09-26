@@ -245,10 +245,11 @@
     return instance;
   }
 
-  function buildUrl(base, project, session, question, channel, model) {
+  function buildUrl(base, project, session, question, channel, model, reading) {
     const params = new URLSearchParams({ question, session_id: session, channel });
     if (project) params.set('project', project);
     if (model) params.set('model', model);
+    if (reading) params.set('reading', '1');
     return `${base}/api/v1/llm/chat?${params.toString()}`;
   }
 
@@ -395,6 +396,7 @@
     const datasetVoiceHint = (script.dataset.voice || '').trim();
     const voiceHint = datasetVoiceHint || DEFAULT_VOICE_HINT;
     const datasetVoiceModel = script.dataset.voiceModel || '';
+    const readingMode = script.dataset.readingMode === '1';
     const headline = script.dataset.headline || 'AI Consultant';
     const subheadline = script.dataset.subtitle || 'Talk to me using your voice';
 
@@ -424,6 +426,12 @@
     const status = document.createElement('div');
     status.className = 'sitellm-voice-status';
     status.innerHTML = '<span class="bot">💬 Ready when you are</span>';
+    if (readingMode) {
+      const hint = document.createElement('span');
+      hint.className = 'bot';
+      hint.textContent = '📖 Reading mode enabled. Ask for the next page when you are ready.';
+      status.appendChild(hint);
+    }
 
     const errorBox = document.createElement('div');
     errorBox.className = 'sitellm-voice-error';
@@ -474,6 +482,7 @@
       enabled: true,
       model: datasetVoiceModel,
       voiceHint,
+      reading: readingMode,
     };
     let spokenChars = 0;
 
@@ -835,7 +844,7 @@
       awaitingResponse = true;
       cancelStream();
       renewIdleTimer();
-      const url = buildUrl(baseUrl, project, session, question, channel, voiceSettings.model);
+      const url = buildUrl(baseUrl, project, session, question, channel, voiceSettings.model, voiceSettings.reading);
       let buffer = '';
       transcript.textContent = 'Assistant is responding...';
 

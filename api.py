@@ -26,11 +26,10 @@ from fastapi.responses import ORJSONResponse, StreamingResponse
 from starlette.routing import NoMatchFound
 import asyncio
 
-import redis.asyncio as redis
-
 import structlog
 
 from backend import llm_client
+from backend.cache import _get_redis
 from backend.settings import settings as backend_settings
 from backend.ollama import (
     list_installed_models,
@@ -51,6 +50,7 @@ from pydantic import BaseModel
 from core.status import status_dict
 from settings import MongoSettings, get_settings as get_app_settings
 from core.build import get_build_info
+from integrations.bitrix import BitrixError, call_bitrix_webhook
 
 logger = structlog.get_logger(__name__)
 app_settings = get_app_settings()
@@ -61,6 +61,12 @@ EMOTION_ON_PROMPT = (
 )
 EMOTION_OFF_PROMPT = (
     "Отвечай в спокойном, нейтральном тоне и не используй эмодзи либо эмоциональные высказывания."
+)
+
+READING_MODE_PROMPT = (
+    "Режим чтения книг активирован. Делись текстом источника последовательными страницами примерно по 1200–1500 символов без пропуска разделов."
+    " После каждой страницы делай короткий вывод и ожидай команду пользователя (например, 'далее' или вопрос)."
+    " Если пользователь просит перейти к другой части, вежливо уточняй нужную страницу или главу."
 )
 
 
@@ -145,6 +151,76 @@ _ATTACHMENT_NEGATIONS = {
     "no",
     "неа",
 }
+
+_KNOWN_KNOWLEDGE_SOURCES = ("qa", "qdrant", "mongo")
+_DEFAULT_KNOWLEDGE_PRIORITY = ["qa", "qdrant", "mongo"]
+BITRIX_COMMAND_PROMPT = (
+    "Ты помощник интеграции с Bitrix24. Анализируешь сообщение пользователя и решаешь, нужна ли задача.\n"
+    "Если нужно создать задачу, верни JSON вида:\n"
+    "{\"action\": \"create_task\", \"title\": \"...\", \n"
+    " \"description\": \"...\", \"responsible_id\": 123, \"deadline\": \"2024-12-31T18:00:00\"}.\n"
+    "Можно опустить responsible_id или deadline, если их нет.\n"
+    "Если достаточно другого метода Bitrix (например crm.lead.list), верни\n"
+    "{\"action\": \"call\", \"method\": \"crm.lead.list\", \"params\": {...}}.\n"
+    "Если действия не требуется — {\"action\": \"skip\"}.\n"
+    "Всегда отвечай строго JSON без пояснений.\n\n"
+    "Сообщение пользователя: {question}\n"
+)
+BITRIX_RESPONSE_PREVIEW_LIMIT = 2400
+BITRIX_PARAMS_PREVIEW_LIMIT = 800
+
+
+def _normalize_priority_order(order: list[str] | None) -> list[str]:
+    sanitized: list[str] = []
+    if order:
+        for item in order:
+            if not isinstance(item, str):
+                continue
+            candidate = item.strip().lower()
+            if candidate and candidate in _KNOWN_KNOWLEDGE_SOURCES and candidate not in sanitized:
+                sanitized.append(candidate)
+    for fallback in _DEFAULT_KNOWLEDGE_PRIORITY:
+        if fallback not in sanitized:
+            sanitized.append(fallback)
+    return sanitized
+
+
+def _extract_json_object(raw: str) -> dict[str, Any] | None:
+    candidate = (raw or "").strip()
+    if not candidate:
+        return None
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        snippet = candidate[start : end + 1]
+        try:
+            parsed = json.loads(snippet)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+def _json_preview(payload: Any, *, limit: int) -> str:
+    try:
+        text = json.dumps(payload, ensure_ascii=False, indent=2)
+    except (TypeError, ValueError):
+        text = str(payload)
+    text = text.strip()
+    if len(text) > limit:
+        return text[: limit - 1].rstrip() + "…"
+    return text
+
+
+class BitrixPlanAction(BaseModel):
+    plan_id: str
+    project: str | None = None
+    session_id: str | None = None
 
 
 def _log_debug_event(message: str, **kwargs) -> None:
@@ -317,9 +393,51 @@ async def _collect_knowledge_snippets(
     question = (question or "").strip()
     if not question:
         return []
+    mongo_client = getattr(request.state, "mongo", None)
+    priority_order: list[str]
+    if mongo_client and hasattr(mongo_client, "get_knowledge_priority"):
+        try:
+            stored_order = await mongo_client.get_knowledge_priority(project)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("knowledge_priority_load_failed", error=str(exc))
+            stored_order = []
+        priority_order = _normalize_priority_order(stored_order)
+    else:
+        priority_order = list(_DEFAULT_KNOWLEDGE_PRIORITY)
 
-    snippets: list[dict[str, Any]] = []
-    seen_ids: set[str] = set()
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "qa": [],
+        "qdrant": [],
+        "mongo": [],
+    }
+
+    if mongo_client and hasattr(mongo_client, "search_qa_pairs"):
+        try:
+            qa_candidates = await mongo_client.search_qa_pairs(question, project, limit=limit * 2)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("knowledge_qa_search_failed", error=str(exc))
+            qa_candidates = []
+        qa_seen: set[str] = set()
+        for idx, entry in enumerate(qa_candidates):
+            answer = str(entry.get("answer") or "").strip()
+            question_text = str(entry.get("question") or "").strip()
+            if not answer:
+                continue
+            source_id = entry.get("id") or f"{idx}"
+            qa_id = f"qa::{source_id}"
+            if qa_id in qa_seen:
+                continue
+            qa_seen.add(qa_id)
+            buckets["qa"].append(
+                {
+                    "id": qa_id,
+                    "name": question_text or "FAQ",
+                    "text": answer,
+                    "score": entry.get("score"),
+                    "source": "qa",
+                    "metadata": {"question": question_text} if question_text else None,
+                }
+            )
 
     try:
         docs = await asyncio.to_thread(retrieval_search.hybrid_search, question, limit * 3)
@@ -327,15 +445,16 @@ async def _collect_knowledge_snippets(
         logger.debug("knowledge_hybrid_failed", error=str(exc))
         docs = []
 
+    vector_seen: set[str] = set()
     for doc in docs:
         payload = getattr(doc, "payload", None)
         text = _extract_payload_text(payload)
         if not text:
             continue
         doc_id = str(getattr(doc, "id", "")) or None
-        if doc_id and doc_id in seen_ids:
+        if doc_id and doc_id in vector_seen:
             continue
-        snippets.append(
+        buckets["qdrant"].append(
             {
                 "id": doc_id,
                 "name": _extract_payload_name(payload, default=doc_id),
@@ -346,102 +465,417 @@ async def _collect_knowledge_snippets(
             }
         )
         if doc_id:
-            seen_ids.add(doc_id)
-        if len(snippets) >= limit:
+            vector_seen.add(doc_id)
+        if len(buckets["qdrant"]) >= limit:
             break
 
-    if len(snippets) >= limit:
-        return snippets[:limit]
-
-    mongo_client = getattr(request.state, "mongo", None)
-    if not mongo_client or not hasattr(mongo_client, "search_documents"):
-        return snippets[:limit]
-
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-
-    try:
-        candidates = await mongo_client.search_documents(
-            collection, question, project=project
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("knowledge_mongo_search_failed", error=str(exc))
-        candidates = []
-
-    if not candidates:
+    if mongo_client and hasattr(mongo_client, "search_documents"):
+        mongo_cfg = MongoSettings()
+        collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
         try:
-            query: dict[str, Any] = {}
-            if project:
-                query["project"] = project
-            cursor = (
-                mongo_client.db[collection]
-                .find(query, {"_id": False})
-                .sort("ts", -1)
-                .limit(limit * 3)
-            )
-            candidates = [Document(**doc) async for doc in cursor]
+            candidates = await mongo_client.search_documents(collection, question, project=project)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("knowledge_mongo_fallback_failed", error=str(exc))
+            logger.debug("knowledge_mongo_search_failed", error=str(exc))
             candidates = []
 
-    for doc in candidates:
-        if len(snippets) >= limit:
-            break
-        file_id = getattr(doc, "fileId", None)
-        if file_id and file_id in seen_ids:
-            continue
-        attachment_meta: dict[str, Any] | None = None
-        doc_meta = doc.model_dump()
-        text = ""
-        doc_url = doc.url
-        try:
-            if file_id and _is_attachment_doc(doc_meta):
-                text = doc.description or ""
-            else:
-                _meta, payload = await mongo_client.get_document_with_content(
-                    collection, doc.fileId
+        if not candidates:
+            try:
+                query: dict[str, Any] = {}
+                if project:
+                    query["project"] = project
+                cursor = (
+                    mongo_client.db[collection]
+                    .find(query, {"_id": False})
+                    .sort("ts", -1)
+                    .limit(limit * 3)
                 )
-                text = payload.decode("utf-8", errors="ignore")
-                if not doc_url:
-                    doc_url = _meta.get("url")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("knowledge_content_fetch_failed", file_id=file_id, error=str(exc))
-            text = doc.description or ""
+                candidates = [Document(**doc) async for doc in cursor]
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("knowledge_mongo_fallback_failed", error=str(exc))
+                candidates = []
 
-        if file_id and _is_attachment_doc(doc_meta):
-            download_url = _build_download_url(request, file_id)
-            doc_url = doc_url or download_url
-            attachment_meta = {
-                "name": doc.name or file_id,
-                "url": doc_url,
-                "content_type": doc.content_type,
-                "file_id": file_id,
-            }
-            if doc.description:
-                attachment_meta["description"] = doc.description
-            if doc.size_bytes is not None:
-                attachment_meta["size_bytes"] = int(doc.size_bytes)
-            if not text.strip():
+        mongo_seen: set[str] = set()
+        for doc in candidates:
+            file_id = getattr(doc, "fileId", None)
+            if file_id and file_id in mongo_seen:
+                continue
+            attachment_meta: dict[str, Any] | None = None
+            doc_meta = doc.model_dump()
+            text = ""
+            doc_url = doc.url
+            try:
+                if file_id and _is_attachment_doc(doc_meta):
+                    text = doc.description or ""
+                else:
+                    _meta, payload = await mongo_client.get_document_with_content(
+                        collection, doc.fileId
+                    )
+                    text = payload.decode("utf-8", errors="ignore")
+                    if not doc_url:
+                        doc_url = _meta.get("url")
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("knowledge_content_fetch_failed", file_id=file_id, error=str(exc))
                 text = doc.description or ""
 
-        if not text.strip() and not attachment_meta:
-            continue
+            if file_id and _is_attachment_doc(doc_meta):
+                download_url = _build_download_url(request, file_id)
+                doc_url = doc_url or download_url
+                attachment_meta = {
+                    "name": doc.name or file_id,
+                    "url": doc_url,
+                    "content_type": doc.content_type,
+                    "file_id": file_id,
+                }
+                if doc.description:
+                    attachment_meta["description"] = doc.description
+                if doc.size_bytes is not None:
+                    attachment_meta["size_bytes"] = int(doc.size_bytes)
+                if not text.strip():
+                    text = doc.description or ""
 
-        item = {
-            "id": file_id,
-            "name": doc.name,
-            "text": text,
-            "score": getattr(doc, "ts", None),
-            "url": doc_url,
-            "source": "mongo",
+            if not text.strip() and not attachment_meta:
+                continue
+
+            item = {
+                "id": file_id,
+                "name": doc.name,
+                "text": text,
+                "score": getattr(doc, "ts", None),
+                "url": doc_url,
+                "source": "mongo",
+            }
+            if attachment_meta:
+                item["attachment"] = attachment_meta
+            buckets["mongo"].append(item)
+            if file_id:
+                mongo_seen.add(file_id)
+            if len(buckets["mongo"]) >= limit * 2:
+                break
+
+    merged: list[dict[str, Any]] = []
+    merged_ids: set[str] = set()
+    for source in priority_order:
+        bucket = buckets.get(source) or []
+        for entry in bucket:
+            entry_id = entry.get("id")
+            if entry_id and entry_id in merged_ids:
+                continue
+            merged.append(entry)
+            if entry_id:
+                merged_ids.add(entry_id)
+            if len(merged) >= limit:
+                break
+        if len(merged) >= limit:
+            break
+
+    if len(merged) < limit:
+        for source, bucket in buckets.items():
+            if source in priority_order:
+                continue
+            for entry in bucket:
+                entry_id = entry.get("id")
+                if entry_id and entry_id in merged_ids:
+                    continue
+                merged.append(entry)
+                if entry_id:
+                    merged_ids.add(entry_id)
+                if len(merged) >= limit:
+                    break
+            if len(merged) >= limit:
+                break
+
+    if not merged and mongo_client and hasattr(mongo_client, "record_unanswered_question"):
+        try:
+            await mongo_client.record_unanswered_question(
+                project=project,
+                question=question,
+                metadata={"source": "knowledge"},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("knowledge_unanswered_record_failed", error=str(exc))
+
+    return merged[:limit]
+
+
+async def _plan_bitrix_action(
+    question: str,
+    project: Project | None,
+) -> dict[str, Any] | None:
+    cleaned_question = (question or "").strip()
+    if not cleaned_question:
+        return None
+    prompt = BITRIX_COMMAND_PROMPT.format(question=cleaned_question)
+    model_override = None
+    if project and isinstance(project.llm_model, str) and project.llm_model.strip():
+        model_override = project.llm_model.strip()
+    chunks: list[str] = []
+    try:
+        async for token in llm_client.generate(prompt, model=model_override):
+            chunks.append(token)
+            if len("".join(chunks)) >= 2000:
+                break
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("bitrix_plan_failed", error=str(exc))
+        return None
+    raw = "".join(chunks).strip()
+    if not raw:
+        return None
+    parsed = _extract_json_object(raw)
+    if not parsed:
+        logger.debug("bitrix_plan_parse_failed", raw=raw[:200])
+        return None
+    action = str(parsed.get("action") or "").strip().lower()
+    if action in {"", "skip", "none", "no"}:
+        return {"action": "skip"}
+    if action == "create_task":
+        title = parsed.get("title")
+        description = parsed.get("description")
+        if not isinstance(title, str) or not title.strip():
+            return None
+        task_payload: dict[str, Any] = {
+            "title": title.strip(),
+            "description": description.strip() if isinstance(description, str) else "",
         }
-        if attachment_meta:
-            item["attachment"] = attachment_meta
-        snippets.append(item)
-        if file_id:
-            seen_ids.add(file_id)
+        responsible_id = parsed.get("responsible_id")
+        if isinstance(responsible_id, int) and responsible_id > 0:
+            task_payload["responsible_id"] = responsible_id
+        deadline = parsed.get("deadline")
+        if isinstance(deadline, str) and deadline.strip():
+            task_payload["deadline"] = deadline.strip()
+        return {"action": "create_task", "params": task_payload}
 
-    return snippets[:limit]
+    method = parsed.get("method")
+    if not isinstance(method, str) or not method.strip():
+        return None
+    params = parsed.get("params") if isinstance(parsed.get("params"), dict) else None
+    return {
+        "action": "call",
+        "method": method.strip(),
+        "params": params or {},
+    }
+
+
+def _format_bitrix_snippet(
+    method: str,
+    params: dict[str, Any] | None,
+    response: dict[str, Any] | str,
+    *,
+    error: str | None = None,
+) -> str:
+    segments: list[str] = [f"Bitrix24 метод: {method}"]
+    if params:
+        params_preview = _json_preview(params, limit=BITRIX_PARAMS_PREVIEW_LIMIT)
+        segments.append(f"Параметры: {params_preview}")
+    if error:
+        segments.append(f"Ошибка: {error}")
+    else:
+        payload = response
+        if isinstance(response, dict) and "result" in response:
+            payload = response["result"]
+        segments.append(
+            "Ответ: " + _json_preview(payload, limit=BITRIX_RESPONSE_PREVIEW_LIMIT)
+        )
+    return "\n".join(segments)
+
+
+async def _collect_bitrix_snippet(
+    request: Request,
+    question: str,
+    project: Project | None,
+    session_key: str | None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]:
+    if not project or not getattr(project, "bitrix_enabled", False):
+        return None, None, None
+    webhook_url = getattr(project, "bitrix_webhook_url", None)
+    if not isinstance(webhook_url, str) or not webhook_url.strip():
+        return None, None, None
+
+    plan = await _plan_bitrix_action(question, project)
+    if not plan or plan.get("action") not in {"call", "create_task"}:
+        return None, plan if plan else None, None
+
+    if plan["action"] == "create_task":
+        method = "tasks.task.add"
+        params = {"fields": plan.get("params", {})}
+    else:
+        method = str(plan.get("method") or "").strip()
+        params = plan.get("params") if isinstance(plan.get("params"), dict) else {}
+
+    debug_info: dict[str, Any] = {
+        "action": plan["action"],
+        "method": method,
+        "params": params,
+    }
+
+    if not method:
+        debug_info["error"] = "empty_method"
+        return None, debug_info, None
+
+    if plan["action"] == "create_task":
+        fields = params.get("fields", {}) if isinstance(params, dict) else {}
+        preview_lines = [
+            "Bitrix24 задача (предварительно):",
+            f"• Название: {fields.get('title') or '—'}",
+        ]
+        description = fields.get("description") or ""
+        if description:
+            preview_lines.append(f"• Описание: {description[:400]}{'' if len(description) <= 400 else '…'}")
+        responsible = fields.get("responsible_id")
+        if responsible:
+            preview_lines.append(f"• Ответственный: {responsible}")
+        deadline = fields.get("deadline")
+        if deadline:
+            preview_lines.append(f"• Дедлайн: {deadline}")
+        preview_lines.append(
+            "\nОтветьте «да», чтобы отправить задачу в Bitrix, или «нет», чтобы отменить."
+        )
+        snippet_text = "\n".join(preview_lines)
+
+        plan_id = uuid4().hex
+        pending_payload = {
+            "plan_id": plan_id,
+            "action": plan["action"],
+            "method": method,
+            "params": params,
+            "preview": snippet_text,
+        }
+        store_payload = {
+            "method": method,
+            "params": params,
+            "project": project.name if project else None,
+            "session": session_key,
+            "created_at": time.time(),
+        }
+        try:
+            redis_client = _get_redis()
+            await redis_client.setex(
+                f"bitrix:plan:{plan_id}",
+                15 * 60,
+                json.dumps(store_payload, ensure_ascii=False),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("bitrix_plan_store_failed", error=str(exc))
+            debug_info["error"] = "plan_store_failed"
+            return None, debug_info, None
+
+        snippet = {
+            "id": f"bitrix::pending:{plan_id}",
+            "name": "Bitrix24 задача (ожидает подтверждения)",
+            "text": snippet_text,
+            "source": "bitrix",
+            "metadata": {
+                "method": method,
+                "action": plan["action"],
+                "pending_confirmation": True,
+                "plan_id": plan_id,
+            },
+        }
+        debug_info["pending"] = True
+        debug_info["plan_id"] = plan_id
+        return snippet, debug_info, pending_payload
+
+    try:
+        response = await call_bitrix_webhook(webhook_url, method, params)
+        snippet_text = _format_bitrix_snippet(method, params, response)
+        debug_info["response_preview"] = _json_preview(response, limit=600)
+        snippet = {
+            "id": f"bitrix::{method}",
+            "name": f"Bitrix24 {method}",
+            "text": snippet_text,
+            "source": "bitrix",
+            "metadata": {
+                "method": method,
+                "action": plan["action"],
+            },
+        }
+        return snippet, debug_info, None
+    except BitrixError as exc:
+        message = str(exc)
+        debug_info["error"] = message
+        snippet_text = _format_bitrix_snippet(method, params, {}, error=message)
+        snippet = {
+            "id": f"bitrix::{method}:error",
+            "name": f"Bitrix24 {method} (ошибка)",
+            "text": snippet_text,
+            "source": "bitrix",
+            "metadata": {
+                "method": method,
+                "status": "error",
+            },
+        }
+        return snippet, debug_info, None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("bitrix_call_unexpected_failure", error=str(exc))
+        debug_info["error"] = "unexpected_failure"
+        return None, debug_info, None
+
+
+@llm_router.post("/bitrix/confirm", response_class=ORJSONResponse)
+async def confirm_bitrix_plan(request: Request, payload: BitrixPlanAction) -> ORJSONResponse:
+    try:
+        redis_client = _get_redis()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="redis_unavailable") from exc
+    key = f"bitrix:plan:{payload.plan_id}"
+    raw = await redis_client.get(key)
+    if raw is None:
+        raise HTTPException(status_code=404, detail="bitrix_plan_not_found")
+    try:
+        stored = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001
+        await redis_client.delete(key)
+        raise HTTPException(status_code=410, detail="bitrix_plan_corrupted") from exc
+
+    expected_session = stored.get("session")
+    if expected_session and payload.session_id and expected_session != payload.session_id:
+        raise HTTPException(status_code=403, detail="session_mismatch")
+
+    project_name = _normalize_project(payload.project or stored.get("project"))
+    project_obj: Project | None = None
+    if project_name:
+        mongo_client = _get_mongo_client(request)
+        project_obj = await mongo_client.get_project(project_name)
+    if not project_obj or not getattr(project_obj, "bitrix_enabled", False):
+        raise HTTPException(status_code=400, detail="bitrix_not_configured")
+    webhook_url = getattr(project_obj, "bitrix_webhook_url", None)
+    if not isinstance(webhook_url, str) or not webhook_url.strip():
+        raise HTTPException(status_code=400, detail="bitrix_webhook_missing")
+
+    method = stored.get("method")
+    params = stored.get("params")
+    if not isinstance(method, str) or not method.strip():
+        await redis_client.delete(key)
+        raise HTTPException(status_code=410, detail="bitrix_plan_invalid")
+
+    try:
+        response = await call_bitrix_webhook(webhook_url, method, params if isinstance(params, dict) else {})
+    except BitrixError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await redis_client.delete(key)
+
+    return ORJSONResponse({"status": "sent", "result": response})
+
+
+@llm_router.post("/bitrix/cancel", response_class=ORJSONResponse)
+async def cancel_bitrix_plan(payload: BitrixPlanAction) -> ORJSONResponse:
+    try:
+        redis_client = _get_redis()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="redis_unavailable") from exc
+    key = f"bitrix:plan:{payload.plan_id}"
+    raw = await redis_client.get(key)
+    if raw is None:
+        return ORJSONResponse({"status": "cancelled", "removed": False})
+    try:
+        stored = json.loads(raw)
+    except Exception:
+        stored = {}
+    expected_session = stored.get("session")
+    if expected_session and payload.session_id and expected_session != payload.session_id:
+        raise HTTPException(status_code=403, detail="session_mismatch")
+    await redis_client.delete(key)
+    return ORJSONResponse({"status": "cancelled", "removed": True})
 
 
 def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
@@ -621,8 +1055,8 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     attachments_payload: list[dict[str, Any]] = []
     attachments_to_queue: list[dict[str, Any]] = []
     knowledge_message = ""
+    question_text = context[-1].get("content", "")
     try:
-        question_text = context[-1].get("content", "")
         knowledge_snippets = await _collect_knowledge_snippets(
             request, question_text, project_name
         )
@@ -633,27 +1067,60 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
             project=project_name,
             error=str(exc),
         )
-    else:
+
+    bitrix_snippet: dict[str, Any] | None = None
+    bitrix_debug: dict[str, Any] | None = None
+    bitrix_pending: dict[str, Any] | None = None
+    try:
+        bitrix_snippet, bitrix_debug, bitrix_pending = await _collect_bitrix_snippet(
+            request,
+            question_text,
+            project,
+            str(llm_request.session_id),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "bitrix_collect_failed",
+            session=str(llm_request.session_id),
+            project=project_name,
+            error=str(exc),
+        )
+        bitrix_debug = {"error": "exception", "detail": str(exc)}
+        bitrix_snippet = None
+        bitrix_pending = None
+
+    if bitrix_snippet:
+        knowledge_snippets = [bitrix_snippet, *knowledge_snippets]
+
+    if knowledge_snippets:
         knowledge_message = _compose_knowledge_message(knowledge_snippets)
         attachments_payload = _collect_attachments(knowledge_snippets)
         if knowledge_message:
             preset = preset + [{"role": "system", "content": knowledge_message}]
+            log_payload = [
+                {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "source": item.get("source"),
+                    "url": item.get("url"),
+                    "chars": len(item.get("text", "")),
+                    "score": item.get("score"),
+                }
+                for item in knowledge_snippets
+            ]
             _log_debug_event(
                 "knowledge_context_attached",
                 session=str(llm_request.session_id),
                 project=project_name,
-                docs=[
-                    {
-                        "id": item.get("id"),
-                        "name": item.get("name"),
-                        "source": item.get("source"),
-                        "url": item.get("url"),
-                        "chars": len(item.get("text", "")),
-                        "score": item.get("score"),
-                    }
-                    for item in knowledge_snippets
-                ],
+                docs=log_payload,
             )
+    if bitrix_debug:
+        _log_debug_event(
+            "bitrix_context_decision",
+            session=str(llm_request.session_id),
+            project=project_name,
+            details=bitrix_debug,
+        )
 
     system_messages: list[dict[str, str]] = []
     if project and project.llm_prompt:
@@ -669,6 +1136,10 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
     system_messages.append({"role": "system", "content": emotion_instruction})
+
+    reading_mode = request.query_params.get("reading") == "1"
+    if reading_mode:
+        system_messages.append({"role": "system", "content": READING_MODE_PROMPT})
 
     if system_messages:
         preset = system_messages + preset
@@ -721,6 +1192,15 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         attachments=[Attachment(**att) for att in attachments_payload],
         emotions_enabled=emotions_enabled,
     )
+    meta_payload: dict[str, Any] = {
+        "emotions_enabled": emotions_enabled,
+    }
+    if bitrix_debug:
+        meta_payload["bitrix_debug"] = bitrix_debug
+    if bitrix_pending:
+        meta_payload["bitrix_pending"] = bitrix_pending
+    if attachments_payload:
+        meta_payload["attachments"] = len(attachments_payload)
     await request.state.mongo.log_request_stat(
         project=project_name,
         question=context[-1].get("content", "") if context else None,
@@ -732,7 +1212,10 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         user_id=None,
         error=None,
     )
-    return ORJSONResponse(response_payload.model_dump())
+    payload = response_payload.model_dump()
+    if meta_payload:
+        payload["meta"] = meta_payload
+    return ORJSONResponse(payload)
 
 
 @llm_router.get("/chat")
@@ -764,6 +1247,8 @@ async def chat(
         project_obj = await request.state.mongo.get_project(project_name)
         if project_obj is None:
             project_obj = await request.state.mongo.upsert_project(Project(name=project_name))
+
+    reading_mode = request.query_params.get("reading") == "1"
 
     emotions_enabled = True
     if project_obj and project_obj.llm_emotions_enabled is not None:
@@ -862,6 +1347,9 @@ async def chat(
     attachments_payload: list[dict[str, Any]] = []
     planned_attachments_count = 0
     pending_consumed = False
+    bitrix_debug: dict[str, Any] | None = None
+    bitrix_pending: dict[str, Any] | None = None
+    bitrix_used = False
 
     if session_key and _detect_attachment_consent(question):
         stored_entry = await _pop_pending_attachments(request.app, session_key)
@@ -911,6 +1399,31 @@ async def chat(
                     )
                     attachments_payload = []  # wait for explicit confirmation
 
+    try:
+        bitrix_snippet, bitrix_debug, bitrix_pending = await _collect_bitrix_snippet(
+            request,
+            question,
+            project_obj,
+            session_key,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "bitrix_collect_failed",
+            project=project_name,
+            error=str(exc),
+            mode="stream",
+        )
+        bitrix_snippet = None
+        bitrix_debug = {"error": "exception", "detail": str(exc)}
+    if bitrix_debug:
+        if bitrix_debug.get("action") == "call" or bitrix_debug.get("pending"):
+            bitrix_used = True
+    if bitrix_snippet:
+        knowledge_snippets = [bitrix_snippet, *knowledge_snippets]
+        bitrix_used = True
+    if is_voice_channel and knowledge_snippets:
+        knowledge_snippets = _trim_voice_snippets(knowledge_snippets)
+
     knowledge_message = _compose_knowledge_message(knowledge_snippets)
     if knowledge_message:
         _log_debug_event(
@@ -930,10 +1443,22 @@ async def chat(
                 }
                 for item in knowledge_snippets
             ],
+            bitrix=bitrix_debug,
+            bitrix_pending=bitrix_pending,
+        )
+    if bitrix_debug and not knowledge_message:
+        _log_debug_event(
+            "bitrix_context_decision",
+            project=project_name,
+            mode="stream",
+            session=session_key,
+            details=bitrix_debug,
         )
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
     prompt_segments = [emotion_instruction]
+    if reading_mode:
+        prompt_segments.insert(0, READING_MODE_PROMPT)
     if knowledge_message:
         prompt_segments.append(knowledge_message)
     prompt_segments.append(f"Вопрос: {prompt_base}")
@@ -1001,7 +1526,11 @@ async def chat(
                 "debug_origin": debug_origin,
                 "attachments_pending": planned_attachments_count,
                 "model": effective_model,
+                "reading_mode": reading_mode,
+                "bitrix_used": bitrix_used,
             }
+            if bitrix_pending:
+                meta_payload["bitrix_pending"] = bitrix_pending
             if build_payload:
                 meta_payload["build"] = build_payload
             yield "event: meta\n"
@@ -1021,10 +1550,16 @@ async def chat(
                     "attachments_planned": planned_attachments_count,
                     "emotions_enabled": emotions_enabled,
                     "model": effective_model,
+                    "reading_mode": reading_mode,
                     "debug_origin": debug_origin,
                     "total_knowledge_chars": total_knowledge_chars,
                     "ts": time.time(),
+                    "bitrix_used": bitrix_used,
                 }
+                if bitrix_debug:
+                    debug_start_payload["bitrix"] = bitrix_debug
+                if bitrix_pending:
+                    debug_start_payload["bitrix_pending"] = bitrix_pending
                 if build_payload:
                     debug_start_payload["build"] = build_payload
                 yield "event: debug\n"
@@ -1061,7 +1596,12 @@ async def chat(
                     "model": effective_model,
                     "emotions_enabled": emotions_enabled,
                     "ts": time.time(),
+                    "bitrix_used": bitrix_used,
                 }
+                if bitrix_debug:
+                    debug_summary_payload["bitrix"] = bitrix_debug
+                if bitrix_pending:
+                    debug_summary_payload["bitrix_pending"] = bitrix_pending
                 if build_payload:
                     debug_summary_payload["build"] = build_payload
                 yield "event: debug\n"

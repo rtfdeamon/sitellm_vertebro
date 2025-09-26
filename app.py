@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 import random
 from datetime import datetime, timezone, timedelta
 import csv
@@ -19,8 +19,10 @@ import asyncio
 import asyncio.subprocess as asyncio_subprocess
 import urllib.parse as urlparse
 import re
+import json
 import httpx
 import structlog
+from functools import lru_cache
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
@@ -60,6 +62,8 @@ from retrieval import search as retrieval_search
 from knowledge.summary import generate_document_summary
 from knowledge.tasks import queue_auto_description
 from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from integrations.bitrix import BitrixError, call_bitrix_webhook
+from openpyxl import load_workbook
 from max_bot.config import get_settings as get_max_settings
 from vk_bot.config import get_settings as get_vk_settings
 import redis
@@ -131,6 +135,13 @@ configure_logging()
 
 settings = Settings()
 logger = structlog.get_logger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _mongo_settings() -> MongoSettings:
+    """Cache Mongo settings to avoid repeated env parsing."""
+
+    return MongoSettings()
 
 BUILD_INFO = get_build_info()
 
@@ -2234,7 +2245,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     qdrant_client = QdrantClient(url=base_settings.qdrant_url)
     retrieval_search.qdrant = qdrant_client
 
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     mongo_client = MongoClient(
         mongo_cfg.host,
         mongo_cfg.port,
@@ -2363,7 +2374,7 @@ app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 def _mongo_check(mongo_uri: str | None = None) -> tuple[bool, str | None]:
     """Best-effort Mongo probe with short retries."""
 
-    cfg = MongoSettings()
+    cfg = _mongo_settings()
     uri = mongo_uri or f"mongodb://{cfg.username}:{cfg.password}@{cfg.host}:{cfg.port}/{cfg.auth}"
     error: str | None = None
     for timeout in (0.5, 1.5, 3.0):
@@ -2412,11 +2423,18 @@ def _qdrant_check(qdrant_url: str | None = None) -> tuple[bool, str | None]:
 
 
 @app.get("/health", include_in_schema=False)
-def health() -> dict[str, object]:
+async def health() -> dict[str, object]:
     """Health check with external service probes."""
-    mongo_ok, mongo_err = _mongo_check()
-    redis_ok, redis_err = _redis_check()
-    qdrant_ok, qdrant_err = _qdrant_check()
+
+    tasks = (
+        asyncio.to_thread(_mongo_check),
+        asyncio.to_thread(_redis_check),
+        asyncio.to_thread(_qdrant_check),
+    )
+    mongo_result, redis_result, qdrant_result = await asyncio.gather(*tasks, return_exceptions=False)
+    mongo_ok, mongo_err = mongo_result
+    redis_ok, redis_err = redis_result
+    qdrant_ok, qdrant_err = qdrant_result
 
     checks = {
         "mongo": {"ok": mongo_ok, "error": mongo_err},
@@ -2506,6 +2524,159 @@ class KnowledgeServiceConfig(BaseModel):
 
 
 KNOWLEDGE_SERVICE_KEY = "knowledge_service"
+
+
+class KnowledgeQaItem(BaseModel):
+    question: str
+    answer: str
+    priority: int | None = None
+
+
+class KnowledgeQaUpdate(BaseModel):
+    question: str | None = None
+    answer: str | None = None
+    priority: int | None = None
+
+
+class KnowledgeQaReorder(BaseModel):
+    order: list[str]
+
+
+class KnowledgePriorityUpdate(BaseModel):
+    order: list[str]
+
+
+class KnowledgeUnansweredClear(BaseModel):
+    project: str | None = None
+
+
+QA_SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".csv"}
+
+
+def _detect_qa_columns(header: list[str]) -> tuple[int, int]:
+    question_idx = -1
+    answer_idx = -1
+    for idx, title in enumerate(header):
+        lowered = title.lower()
+        if question_idx == -1 and any(token in lowered for token in ("вопрос", "question", "q:")):
+            question_idx = idx
+        if answer_idx == -1 and any(token in lowered for token in ("ответ", "answer", "a:")):
+            answer_idx = idx
+    if question_idx == -1 and len(header) >= 1:
+        question_idx = 0
+    if answer_idx == -1 and len(header) >= 2:
+        answer_idx = 1
+    if question_idx == answer_idx:
+        answer_idx = answer_idx + 1 if answer_idx + 1 < len(header) else -1
+    return question_idx, answer_idx
+
+
+async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
+    """Parse uploaded Excel/CSV into question-answer pairs."""
+
+    filename = file.filename or "qa.xlsx"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in QA_SUPPORTED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Формат файла не поддерживается")
+
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Файл пустой")
+
+    rows: list[list[str]] = []
+    if ext == ".csv":
+        try:
+            text = payload.decode("utf-8-sig", errors="ignore")
+        except Exception:
+            text = payload.decode("cp1251", errors="ignore")
+        reader = csv.reader(io.StringIO(text))
+        for raw in reader:
+            rows.append([str(cell).strip() for cell in raw])
+    else:
+        wb = load_workbook(filename=io.BytesIO(payload), read_only=True, data_only=True)
+        sheet = wb.active
+        for row in sheet.iter_rows(values_only=True):
+            rows.append(["" if cell is None else str(cell).strip() for cell in row])
+
+    if not rows:
+        return []
+
+    header = rows[0]
+    has_header = any(cell for cell in header)
+    if has_header:
+        q_idx, a_idx = _detect_qa_columns(header)
+        data_rows = rows[1:]
+    else:
+        q_idx, a_idx = 0, 1 if len(header) > 1 else -1
+        data_rows = rows
+
+    pairs: list[dict[str, str]] = []
+    for row in data_rows:
+        if q_idx >= len(row) or q_idx < 0:
+            continue
+        question = (row[q_idx] or "").strip()
+        answer = (row[a_idx] or "").strip() if 0 <= a_idx < len(row) else ""
+        if not question or not answer:
+            continue
+        pairs.append({"question": question, "answer": answer})
+    return pairs
+
+
+async def _refine_qa_with_llm(
+    pairs: list[dict[str, str]],
+    *,
+    project_model: Project | None,
+) -> list[dict[str, str]]:
+    """Use LLM to normalize QA pairs when possible."""
+
+    if not pairs:
+        return []
+    sample = pairs[: min(len(pairs), 80)]
+    prompt = (
+        "Ты обрабатываешь справочник вопросов и ответов."
+        " Отформатируй данные в компактный JSON-массив."
+        " На входе — список объектов JSON с полями question и answer."
+        " Приведи каждый вопрос и ответ к аккуратной форме (одно предложение)."
+        " Проверь, что ответы содержат информативный текст и нет пустых значений." \
+        " Верни только JSON массив без комментариев.\n\n"
+        f"Входные данные:\n{json.dumps(sample, ensure_ascii=False)}\n\nJSON:"
+    )
+
+    chunks: list[str] = []
+    try:
+        model_override = None
+        if project_model and isinstance(project_model.llm_model, str):
+            trimmed = project_model.llm_model.strip()
+            if trimmed:
+                model_override = trimmed
+        async for token in llm_client.generate(prompt, model=model_override):
+            chunks.append(token)
+            if len("".join(chunks)) >= 16000:
+                break
+        raw = "".join(chunks).strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("qa_llm_refine_failed", error=str(exc))
+        return pairs
+
+    if not raw:
+        return pairs
+
+    try:
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start != -1 and end != -1:
+            raw = raw[start : end + 1]
+        parsed = json.loads(raw)
+        refined: list[dict[str, str]] = []
+        for item in parsed:
+            question = str(item.get("question", "")).strip()
+            answer = str(item.get("answer", "")).strip()
+            if question and answer:
+                refined.append({"question": question, "answer": answer})
+        return refined or pairs
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("qa_llm_parse_failed", error=str(exc))
+        return pairs
 
 
 class PromptGenerationRequest(BaseModel):
@@ -2609,6 +2780,23 @@ class ProjectVkAction(BaseModel):
     auto_start: bool | None = None
 
 
+FEEDBACK_ALLOWED_STATUSES = {"open", "in_progress", "done", "dismissed"}
+
+
+class FeedbackCreatePayload(BaseModel):
+    message: str
+    name: str | None = None
+    contact: str | None = None
+    page: str | None = None
+    project: str | None = None
+    source: str | None = None
+
+
+class FeedbackUpdatePayload(BaseModel):
+    status: Literal["open", "in_progress", "done", "dismissed"]
+    note: str | None = None
+
+
 class OllamaInstallRequest(BaseModel):
     model: str
 
@@ -2665,6 +2853,8 @@ class ProjectCreate(BaseModel):
     vk_token: str | None = None
     vk_auto_start: bool | None = None
     widget_url: str | None = None
+    bitrix_enabled: bool | None = None
+    bitrix_webhook_url: str | None = None
 
 
 @app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
@@ -2687,23 +2877,36 @@ async def admin_knowledge(
         request, selector
     )
 
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     filter_query = {"project": project_name} if project_name else {}
 
+    count_task: asyncio.Task[int] | None = None
     try:
         if q:
             docs_models = await mongo_client.search_documents(
                 collection, q, project=project_name
             )
+            matched = len(docs_models)
+            total = matched
+            has_more = matched >= limit
         else:
+            count_task = asyncio.create_task(
+                mongo_client.db[collection].count_documents(filter_query or {})
+            )
             cursor = (
                 mongo_client.db[collection]
                 .find(filter_query, {"_id": False})
                 .sort("name", 1)
-                .limit(limit)
+                .limit(limit + 1)
             )
             docs_models = [Document(**doc) async for doc in cursor]
+            has_more = len(docs_models) > limit
+            if has_more:
+                docs_models = docs_models[:limit]
+            total = await count_task
+            matched = total
+            count_task = None
 
         documents = [
             doc.model_dump(by_alias=True) if isinstance(doc, Document) else doc
@@ -2713,16 +2916,13 @@ async def admin_knowledge(
             file_id = doc.get("fileId")
             if file_id:
                 doc["downloadUrl"] = _build_download_url(request, file_id)
-        total = await mongo_client.db[collection].count_documents(filter_query or {})
-        if q:
-            matched = len(documents)
-            has_more = len(documents) >= limit
-        else:
-            matched = total
-            has_more = len(documents) < total
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"MongoDB query failed: {exc}") from exc
     finally:
+        if count_task is not None:
+            count_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await count_task
         if owns_client:
             await mongo_client.close()
 
@@ -2753,7 +2953,7 @@ async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> 
     project_name, project, mongo_client, owns_client = await _get_project_context(
         request, payload.project or payload.domain
     )
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
     description_input = (payload.description or "").strip()
@@ -2856,7 +3056,7 @@ async def admin_upload_knowledge(
     project_name, project_model, mongo_client, owns_client = await _get_project_context(
         request, project
     )
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
     filename = (name or file.filename or "").strip()
@@ -2940,9 +3140,233 @@ async def admin_upload_knowledge(
     )
 
 
+@app.get("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse)
+async def admin_list_qa_pairs(
+    request: Request,
+    project: str | None = None,
+    limit: int = 1000,
+) -> ORJSONResponse:
+    project_name, project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        items = await mongo_client.list_qa_pairs(project_name, limit=limit)
+        order = await mongo_client.get_knowledge_priority(project_name)
+        return ORJSONResponse(
+            {
+                "items": items,
+                "project": project_name,
+                "priority": order,
+            }
+        )
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.post("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse, status_code=201)
+async def admin_create_qa_pair(
+    request: Request,
+    payload: KnowledgeQaItem,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        data = [{
+            "question": payload.question,
+            "answer": payload.answer,
+            "priority": payload.priority or 0,
+        }]
+        result = await mongo_client.insert_qa_pairs(project_name, data)
+        items = await mongo_client.list_qa_pairs(project_name, limit=200)
+        return ORJSONResponse(
+            {
+                "status": "ok",
+                "project": project_name,
+                "result": result,
+                "items": items,
+            }
+        )
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.put("/api/v1/admin/knowledge/qa/{pair_id}", response_class=ORJSONResponse)
+async def admin_update_qa_pair(
+    request: Request,
+    pair_id: str,
+    payload: KnowledgeQaUpdate,
+) -> ORJSONResponse:
+    mongo_client = _get_mongo_client(request)
+    updated = await mongo_client.update_qa_pair(pair_id, payload.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="QA pair not found")
+    return ORJSONResponse({"status": "ok", "item": updated})
+
+
+@app.delete("/api/v1/admin/knowledge/qa/{pair_id}", response_class=ORJSONResponse)
+async def admin_delete_qa_pair(request: Request, pair_id: str) -> ORJSONResponse:
+    mongo_client = _get_mongo_client(request)
+    removed = await mongo_client.delete_qa_pair(pair_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="QA pair not found")
+    return ORJSONResponse({"status": "deleted", "id": pair_id})
+
+
+@app.post("/api/v1/admin/knowledge/qa/reorder", response_class=ORJSONResponse)
+async def admin_reorder_qa_pairs(
+    request: Request,
+    payload: KnowledgeQaReorder,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        await mongo_client.reorder_qa_pairs(project_name, payload.order)
+        return ORJSONResponse({"status": "ok"})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.post("/api/v1/admin/knowledge/qa/upload", response_class=ORJSONResponse)
+async def admin_upload_qa_pairs(
+    request: Request,
+    file: UploadFile = File(...),
+    project: str | None = Form(None),
+) -> ORJSONResponse:
+    project_name, project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        raw_pairs = await _read_qa_upload(file)
+        refined = await _refine_qa_with_llm(raw_pairs, project_model=project_model)
+        prioritized: list[dict[str, object]] = []
+        priority = len(refined)
+        for item in refined:
+            prioritized.append({
+                "question": item["question"],
+                "answer": item["answer"],
+                "priority": priority,
+            })
+            priority -= 1
+        result = await mongo_client.insert_qa_pairs(project_name, prioritized)
+        items = await mongo_client.list_qa_pairs(project_name, limit=200)
+        return ORJSONResponse(
+            {
+                "status": "ok",
+                "project": project_name,
+                "imported": len(refined),
+                "raw_count": len(raw_pairs),
+                "result": result,
+                "items": items,
+            }
+        )
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.get("/api/v1/admin/knowledge/priority", response_class=ORJSONResponse)
+async def admin_get_knowledge_priority(
+    request: Request,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        order = await mongo_client.get_knowledge_priority(project_name)
+        return ORJSONResponse({"order": order, "project": project_name})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.post("/api/v1/admin/knowledge/priority", response_class=ORJSONResponse)
+async def admin_set_knowledge_priority(
+    request: Request,
+    payload: KnowledgePriorityUpdate,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        await mongo_client.set_knowledge_priority(project_name, payload.order)
+        return ORJSONResponse({"status": "ok", "order": payload.order})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.get("/api/v1/admin/knowledge/unanswered", response_class=ORJSONResponse)
+async def admin_list_unanswered(
+    request: Request,
+    project: str | None = None,
+    limit: int = 1000,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        items = await mongo_client.list_unanswered_questions(project_name, limit=limit)
+        return ORJSONResponse({"items": items, "project": project_name})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.get("/api/v1/admin/knowledge/unanswered/export")
+async def admin_export_unanswered(
+    request: Request,
+    project: str | None = None,
+) -> Response:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        items = await mongo_client.list_unanswered_questions(project_name, limit=5000)
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["question", "project", "hits", "created_at", "updated_at"])
+        for item in items:
+            writer.writerow([
+                item.get("question", ""),
+                item.get("project") or project_name or "",
+                item.get("hits", 1),
+                item.get("created_at", ""),
+                item.get("updated_at", ""),
+            ])
+        payload = output.getvalue().encode("utf-8")
+    finally:
+        if owns_client:
+            await mongo_client.close()
+    filename = f"unanswered_{project_name or 'all'}.csv"
+    headers = {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": f"attachment; filename={filename}",
+    }
+    return Response(content=payload, media_type="text/csv", headers=headers)
+
+
+@app.post("/api/v1/admin/knowledge/unanswered/clear", response_class=ORJSONResponse)
+async def admin_clear_unanswered(
+    request: Request,
+    payload: KnowledgeUnansweredClear,
+) -> ORJSONResponse:
+    mongo_client = _get_mongo_client(request)
+    deleted = await mongo_client.clear_unanswered_questions(payload.project)
+    return ORJSONResponse({"status": "ok", "deleted": deleted})
+
+
 @app.get("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
 async def admin_get_document(request: Request, file_id: str) -> ORJSONResponse:
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     try:
         doc, payload = await request.state.mongo.get_document_with_content(collection, file_id)
@@ -2958,7 +3382,7 @@ async def admin_get_document(request: Request, file_id: str) -> ORJSONResponse:
 
 @app.put("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
 async def admin_update_document(request: Request, file_id: str, payload: KnowledgeUpdate) -> ORJSONResponse:
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     try:
         existing_doc, raw_content = await request.state.mongo.get_document_with_content(collection, file_id)
@@ -3126,7 +3550,7 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
 
 @app.post("/api/v1/admin/knowledge/deduplicate", response_class=ORJSONResponse)
 async def admin_deduplicate_knowledge(request: Request, payload: KnowledgeDeduplicate) -> ORJSONResponse:
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     project_name, _, _, _ = await _get_project_context(request, payload.project)
     try:
@@ -3153,7 +3577,7 @@ async def admin_reindex_documents(request: Request) -> ORJSONResponse:
 async def admin_clear_knowledge(request: Request, project: str | None = None) -> ORJSONResponse:
     """Remove documents from the knowledge base (optionally scoped to a project)."""
 
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     project_name, _, mongo_client, _ = await _get_project_context(request, project)
     summary = await mongo_client.delete_documents(collection, project_name)
@@ -3215,7 +3639,7 @@ async def admin_project_names(request: Request, limit: int = 100) -> ORJSONRespo
     """Return a list of known project identifiers."""
 
     identity = _require_admin(request)
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     mongo_client = _get_mongo_client(request)
     names = await mongo_client.list_project_names(collection, limit=limit)
@@ -3354,6 +3778,54 @@ async def admin_ollama_install(request: Request, payload: "OllamaInstallRequest"
             "job": snapshot.get(model),
         }
     )
+
+
+@app.post("/api/v1/feedback", response_class=ORJSONResponse)
+async def submit_feedback(request: Request, payload: FeedbackCreatePayload) -> ORJSONResponse:
+    message = (payload.message or "").strip()
+    if len(message) < 3:
+        raise HTTPException(status_code=400, detail="message is too short")
+    if len(message) > 4000:
+        message = message[:4000]
+    mongo = _get_mongo_client(request)
+    doc = await mongo.create_feedback_task(
+        {
+            "message": message,
+            "name": (payload.name or "").strip() or None,
+            "contact": (payload.contact or "").strip() or None,
+            "page": payload.page,
+            "project": payload.project,
+            "source": payload.source or "widget",
+        }
+    )
+    return ORJSONResponse({"status": "ok", "task": doc})
+
+
+@app.get("/api/v1/admin/feedback", response_class=ORJSONResponse)
+async def admin_feedback_list(request: Request, limit: int = 100) -> ORJSONResponse:
+    _require_super_admin(request)
+    mongo = _get_mongo_client(request)
+    tasks = await mongo.list_feedback_tasks(limit=limit)
+    return ORJSONResponse({"tasks": tasks})
+
+
+@app.patch("/api/v1/admin/feedback/{task_id}", response_class=ORJSONResponse)
+async def admin_feedback_update(request: Request, task_id: str, payload: FeedbackUpdatePayload) -> ORJSONResponse:
+    _require_super_admin(request)
+    status = payload.status
+    if status not in FEEDBACK_ALLOWED_STATUSES:
+        raise HTTPException(status_code=400, detail="invalid_status")
+    mongo = _get_mongo_client(request)
+    doc = await mongo.update_feedback_task(
+        task_id,
+        {
+            "status": status,
+            "note": payload.note,
+        },
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="feedback_not_found")
+    return ORJSONResponse({"task": doc})
 
 
 @app.get("/api/v1/admin/telegram", response_class=ORJSONResponse)
@@ -4331,13 +4803,15 @@ async def admin_projects_storage(request: Request) -> ORJSONResponse:
     """Return aggregated storage usage per project (Mongo/GridFS/Redis)."""
 
     identity = _require_admin(request)
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     documents_collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     contexts_collection = getattr(request.state, "contexts_collection", mongo_cfg.contexts)
 
     mongo_client = _get_mongo_client(request)
-    storage = await mongo_client.aggregate_project_storage(documents_collection, contexts_collection)
-    redis_usage = await _redis_project_usage()
+    storage, redis_usage = await asyncio.gather(
+        mongo_client.aggregate_project_storage(documents_collection, contexts_collection),
+        _redis_project_usage(),
+    )
 
     if not identity.is_super:
         allowed = {proj.strip().lower() for proj in identity.projects if proj}
@@ -4514,6 +4988,26 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
     else:
         widget_url_value = existing.widget_url if existing else None
 
+    if "bitrix_enabled" in provided_fields:
+        bitrix_enabled_value = (
+            bool(payload.bitrix_enabled)
+            if payload.bitrix_enabled is not None
+            else False
+        )
+    else:
+        if existing and existing.bitrix_enabled is not None:
+            bitrix_enabled_value = bool(existing.bitrix_enabled)
+        else:
+            bitrix_enabled_value = False
+
+    if "bitrix_webhook_url" in provided_fields:
+        if isinstance(payload.bitrix_webhook_url, str):
+            bitrix_webhook_value = payload.bitrix_webhook_url.strip() or None
+        else:
+            bitrix_webhook_value = None
+    else:
+        bitrix_webhook_value = existing.bitrix_webhook_url if existing else None
+
     admin_username_value = existing.admin_username if existing else None
     if "admin_username" in provided_fields:
         if isinstance(payload.admin_username, str):
@@ -4564,6 +5058,8 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         vk_token=vk_token_value,
         vk_auto_start=vk_auto_start_value,
         widget_url=widget_url_value,
+        bitrix_enabled=bitrix_enabled_value,
+        bitrix_webhook_url=bitrix_webhook_value,
     )
     project = await mongo_client.upsert_project(project)
     hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
@@ -4589,7 +5085,7 @@ async def admin_delete_project(request: Request, domain: str) -> ORJSONResponse:
         if domain_value not in allowed:
             raise HTTPException(status_code=403, detail="Access to project is forbidden")
     mongo_client = _get_mongo_client(request)
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     documents_collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     contexts_collection = getattr(request.state, "contexts_collection", mongo_cfg.contexts)
     summary = await mongo_client.delete_project(
@@ -4844,7 +5340,7 @@ async def admin_download_document(request: Request, file_id: str) -> Response:
     """Return the raw contents of a document from GridFS."""
 
     identity = _require_admin(request)
-    mongo_cfg = MongoSettings()
+    mongo_cfg = _mongo_settings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
 
     def fetch_file() -> tuple[dict[str, Any], bytes]:

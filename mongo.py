@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import suppress
 from urllib.parse import quote_plus
 import hashlib
 import json
 import os
 import time
+from difflib import SequenceMatcher
 
 import structlog
 from bson import ObjectId
@@ -115,6 +116,10 @@ class MongoClient:
         self.documents_collection = os.getenv("MONGO_DOCUMENTS", "documents")
         self.stats_collection = os.getenv("MONGO_STATS", "request_stats")
         self.ollama_servers_collection = os.getenv("MONGO_OLLAMA_SERVERS", "ollama_servers")
+        self.qa_collection = os.getenv("MONGO_QA", "knowledge_qa")
+        self.unanswered_collection = os.getenv("MONGO_UNANSWERED", "knowledge_unanswered")
+        self.feedback_collection = os.getenv("MONGO_FEEDBACK", "feedback_tasks")
+        self.unanswered_collection = os.getenv("MONGO_UNANSWERED", "unanswered_questions")
         self._indexes_ready = False
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
@@ -523,6 +528,339 @@ class MongoClient:
             logger.error("mongo_upsert_text_document_failed", collection=documents_collection, name=name, project=project, error=str(exc))
             raise
 
+    async def list_qa_pairs(self, project: str | None, *, limit: int = 1000) -> list[dict]:
+        """Return FAQ pairs for ``project`` ordered by priority and recency."""
+
+        query: dict[str, object] = {}
+        if project:
+            query["project"] = project
+        try:
+            cursor = (
+                self.db[self.qa_collection]
+                .find(query, {"_id": True, "question": True, "answer": True, "priority": True, "project": True, "updated_at": True, "created_at": True})
+                .sort([("priority", -1), ("updated_at", -1)])
+                .limit(max(10, min(int(limit), 5000)))
+            )
+            items: list[dict] = []
+            async for doc in cursor:
+                items.append(
+                    {
+                        "id": str(doc.get("_id")),
+                        "question": doc.get("question", ""),
+                        "answer": doc.get("answer", ""),
+                        "priority": int(doc.get("priority", 0)),
+                        "project": doc.get("project"),
+                        "created_at": doc.get("created_at"),
+                        "updated_at": doc.get("updated_at"),
+                    }
+                )
+            return items
+        except Exception as exc:
+            logger.error("mongo_qa_list_failed", project=project, error=str(exc))
+            raise
+
+    async def insert_qa_pairs(self, project: str | None, items: list[dict[str, object]]) -> dict[str, int]:
+        """Bulk insert/update QA pairs returning counters."""
+
+        if not items:
+            return {"inserted": 0, "updated": 0}
+
+        now = time.time()
+        inserted = 0
+        updated = 0
+        for item in items:
+            question = str(item.get("question") or "").strip()
+            answer = str(item.get("answer") or "").strip()
+            if not question or not answer:
+                continue
+            priority = item.get("priority")
+            try:
+                priority_value = int(priority)
+            except Exception:
+                priority_value = 0
+            payload = {
+                "question": question,
+                "answer": answer,
+                "priority": priority_value,
+                "project": project,
+                "updated_at": now,
+            }
+            payload.setdefault("created_at", now)
+            try:
+                result = await self.db[self.qa_collection].update_one(
+                    {"project": project, "question": question},
+                    {"$set": payload, "$setOnInsert": {"created_at": now}},
+                    upsert=True,
+                )
+                if result.upserted_id is not None:
+                    inserted += 1
+                elif result.modified_count:
+                    updated += 1
+            except Exception as exc:
+                logger.warning(
+                    "mongo_qa_upsert_failed",
+                    project=project,
+                    question=question,
+                    error=str(exc),
+                )
+        return {"inserted": inserted, "updated": updated}
+
+    async def update_qa_pair(self, pair_id: str, updates: dict[str, object]) -> dict | None:
+        """Update single QA pair by ``pair_id`` and return updated document."""
+
+        try:
+            oid = ObjectId(pair_id)
+        except Exception:
+            return None
+
+        payload: dict[str, object] = {"updated_at": time.time()}
+        if "question" in updates:
+            payload["question"] = str(updates["question"]).strip()
+        if "answer" in updates:
+            payload["answer"] = str(updates["answer"]).strip()
+        if "priority" in updates and updates["priority"] is not None:
+            try:
+                payload["priority"] = int(updates["priority"])
+            except Exception:
+                payload["priority"] = 0
+        try:
+            doc = await self.db[self.qa_collection].find_one_and_update(
+                {"_id": oid},
+                {"$set": payload},
+                return_document=True,
+            )
+            if not doc:
+                return None
+            return {
+                "id": str(doc.get("_id")),
+                "question": doc.get("question", ""),
+                "answer": doc.get("answer", ""),
+                "priority": int(doc.get("priority", 0)),
+                "project": doc.get("project"),
+                "created_at": doc.get("created_at"),
+                "updated_at": doc.get("updated_at"),
+            }
+        except Exception as exc:
+            logger.error("mongo_qa_update_failed", pair_id=pair_id, error=str(exc))
+            raise
+
+    async def delete_qa_pair(self, pair_id: str) -> bool:
+        """Remove QA pair by ``pair_id``."""
+
+        try:
+            oid = ObjectId(pair_id)
+        except Exception:
+            return False
+        try:
+            result = await self.db[self.qa_collection].delete_one({"_id": oid})
+            return bool(result.deleted_count)
+        except Exception as exc:
+            logger.error("mongo_qa_delete_failed", pair_id=pair_id, error=str(exc))
+            raise
+
+    async def reorder_qa_pairs(self, project: str | None, ordered_ids: list[str]) -> None:
+        """Assign descending priority according to ``ordered_ids`` order."""
+
+        if not ordered_ids:
+            return
+        priority = len(ordered_ids)
+        for pair_id in ordered_ids:
+            try:
+                oid = ObjectId(pair_id)
+            except Exception:
+                continue
+            try:
+                await self.db[self.qa_collection].update_one(
+                    {"_id": oid, "project": project},
+                    {"$set": {"priority": priority, "updated_at": time.time()}},
+                )
+            except Exception as exc:
+                logger.warning(
+                    "mongo_qa_reorder_failed",
+                    pair_id=pair_id,
+                    project=project,
+                    error=str(exc),
+                )
+            priority -= 1
+
+    async def search_qa_pairs(
+        self,
+        query: str,
+        project: str | None,
+        *,
+        limit: int = 10,
+    ) -> list[dict[str, object]]:
+        """Search QA pairs by text relevance."""
+
+        cleaned = (query or "").strip()
+        if not cleaned:
+            return []
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project
+        projection = {
+            "question": True,
+            "answer": True,
+            "priority": True,
+            "project": True,
+            "updated_at": True,
+            "score": {"$meta": "textScore"},
+        }
+        try:
+            cursor = (
+                self.db[self.qa_collection]
+                .find({"$and": [filter_query, {"$text": {"$search": cleaned}}]}, projection)
+                .sort([
+                    ("score", {"$meta": "textScore"}),
+                    ("priority", -1),
+                    ("updated_at", -1),
+                ])
+                .limit(max(5, min(int(limit), 50)))
+            )
+        except Exception as exc:
+            logger.debug("mongo_qa_text_search_failed", error=str(exc), project=project)
+            cursor = (
+                self.db[self.qa_collection]
+                .find(filter_query, {"question": True, "answer": True, "priority": True, "project": True, "updated_at": True})
+                .sort([("priority", -1), ("updated_at", -1)])
+                .limit(max(5, min(int(limit), 50)))
+            )
+
+        results: list[dict[str, object]] = []
+        async for doc in cursor:
+            results.append(
+                {
+                    "id": str(doc.get("_id")),
+                    "question": doc.get("question", ""),
+                    "answer": doc.get("answer", ""),
+                    "priority": int(doc.get("priority", 0)),
+                    "project": doc.get("project"),
+                    "score": doc.get("score"),
+                    "updated_at": doc.get("updated_at"),
+                }
+            )
+        return results
+
+    async def record_unanswered_question(
+        self,
+        *,
+        project: str | None,
+        question: str,
+        metadata: dict[str, object] | None = None,
+        ttl_seconds: int = 30 * 24 * 60 * 60,
+    ) -> None:
+        """Store unanswered ``question`` for statistics with TTL cleanup."""
+
+        cleaned = (question or "").strip()
+        if not cleaned:
+            return
+        now = time.time()
+        payload = {
+            "question": cleaned,
+            "project": project,
+            "metadata": metadata or {},
+            "updated_at": now,
+        }
+        ttl_threshold = now - max(3600, int(ttl_seconds))
+        try:
+            await self.db[self.unanswered_collection].update_one(
+                {"project": project, "question": cleaned},
+                {
+                    "$set": payload,
+                    "$setOnInsert": {
+                        "created_at": now,
+                        "hits": 0,
+                    },
+                    "$inc": {"hits": 1},
+                },
+                upsert=True,
+            )
+            await self.db[self.unanswered_collection].delete_many({"updated_at": {"$lt": ttl_threshold}})
+        except Exception as exc:
+            logger.warning("mongo_unanswered_record_failed", project=project, error=str(exc))
+
+    async def list_unanswered_questions(
+        self,
+        project: str | None,
+        *,
+        limit: int = 1000,
+    ) -> list[dict[str, object]]:
+        """Return unanswered questions for ``project`` sorted by recency."""
+
+        query: dict[str, object] = {}
+        if project:
+            query["project"] = project
+        try:
+            cursor = (
+                self.db[self.unanswered_collection]
+                .find(query, {"_id": True, "question": True, "project": True, "hits": True, "created_at": True, "updated_at": True})
+                .sort([("updated_at", -1)])
+                .limit(max(10, min(int(limit), 5000)))
+            )
+            items: list[dict[str, object]] = []
+            async for doc in cursor:
+                items.append(
+                    {
+                        "id": str(doc.get("_id")),
+                        "question": doc.get("question", ""),
+                        "project": doc.get("project"),
+                        "hits": int(doc.get("hits", 1)),
+                        "created_at": doc.get("created_at"),
+                        "updated_at": doc.get("updated_at"),
+                    }
+                )
+            return items
+        except Exception as exc:
+            logger.error("mongo_unanswered_list_failed", project=project, error=str(exc))
+            raise
+
+    async def clear_unanswered_questions(self, project: str | None) -> int:
+        """Remove unanswered statistics for ``project`` (or all when ``None``)."""
+
+        query: dict[str, object] = {}
+        if project:
+            query["project"] = project
+        try:
+            result = await self.db[self.unanswered_collection].delete_many(query)
+            return int(result.deleted_count or 0)
+        except Exception as exc:
+            logger.error("mongo_unanswered_clear_failed", project=project, error=str(exc))
+            raise
+
+    async def purge_stale_unanswered(self, older_than: float) -> int:
+        """Remove unanswered entries with ``updated_at`` older than timestamp."""
+
+        try:
+            result = await self.db[self.unanswered_collection].delete_many({"updated_at": {"$lt": older_than}})
+            return int(result.deleted_count or 0)
+        except Exception as exc:
+            logger.error("mongo_unanswered_purge_failed", older_than=older_than, error=str(exc))
+            raise
+
+    async def get_knowledge_priority(self, project: str | None) -> list[str]:
+        """Return knowledge source priority order for ``project``."""
+
+        key = f"knowledge_priority::{project or 'default'}"
+        try:
+            doc = await self.get_setting(key) or {}
+        except Exception:
+            doc = {}
+        order = doc.get("order") if isinstance(doc, dict) else None
+        if isinstance(order, list) and all(isinstance(item, str) for item in order):
+            return order
+        return []
+
+    async def set_knowledge_priority(self, project: str | None, order: list[str]) -> None:
+        """Persist knowledge source priority order for ``project``."""
+
+        cleaned = [str(item).strip() for item in order if str(item).strip()]
+        key = f"knowledge_priority::{project or 'default'}"
+        payload = {
+            "order": cleaned,
+            "updated_at": time.time(),
+        }
+        await self.set_setting(key, payload)
+
     async def list_project_names(self, documents_collection: str, limit: int = 100) -> list[str]:
         """Return a list of known project identifiers."""
 
@@ -657,6 +995,22 @@ class MongoClient:
                 data[field] = None
             else:
                 data[field] = bool(auto_value)
+        bitrix_enabled_value = data.get("bitrix_enabled")
+        if isinstance(bitrix_enabled_value, str):
+            lowered = bitrix_enabled_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["bitrix_enabled"] = True
+            elif lowered in {"false", "0", "off", "no", ""}:
+                data["bitrix_enabled"] = False
+            else:
+                data["bitrix_enabled"] = None
+        elif bitrix_enabled_value is None:
+            data["bitrix_enabled"] = False
+        else:
+            data["bitrix_enabled"] = bool(bitrix_enabled_value)
+
+        if isinstance(data.get("bitrix_webhook_url"), str):
+            data["bitrix_webhook_url"] = data["bitrix_webhook_url"].strip() or None
         return Project(**data)
 
     async def list_projects(self) -> list[Project]:
@@ -678,6 +1032,10 @@ class MongoClient:
         for field in ("telegram_token", "max_token", "vk_token"):
             if data.get(field):
                 data[field] = str(data[field]).strip() or None
+        if data.get("bitrix_webhook_url"):
+            data["bitrix_webhook_url"] = str(data["bitrix_webhook_url"]).strip() or None
+        if "bitrix_enabled" in data and data["bitrix_enabled"] is not None:
+            data["bitrix_enabled"] = bool(data["bitrix_enabled"])
         for field in ("telegram_auto_start", "max_auto_start", "vk_auto_start"):
             if field in data and data[field] is not None:
                 data[field] = bool(data[field])
@@ -952,6 +1310,473 @@ class MongoClient:
             logger.error("mongo_set_setting_failed", key=key, error=str(exc))
             raise
 
+    async def get_knowledge_priority(self) -> list[str]:
+        try:
+            doc = await self.get_setting("knowledge_priority") or {}
+        except Exception:
+            doc = {}
+        order = doc.get("order") if isinstance(doc, dict) else None
+        if isinstance(order, list) and order:
+            return [str(item).strip().lower() for item in order if str(item).strip()]
+        # default priority order
+        return ["qa", "text", "docs", "images", "vector"]
+
+    async def set_knowledge_priority(self, order: list[str]) -> None:
+        normalized = []
+        for item in order:
+            cleaned = str(item or "").strip().lower()
+            if cleaned and cleaned not in normalized:
+                normalized.append(cleaned)
+        if not normalized:
+            normalized = ["qa", "text", "docs", "images", "vector"]
+        await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
+
+    def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
+        if not doc:
+            return None
+        payload: dict[str, object] = {
+            "id": str(doc.get("_id")),
+            "message": doc.get("message"),
+            "name": doc.get("name"),
+            "contact": doc.get("contact"),
+            "page": doc.get("page"),
+            "project": doc.get("project"),
+            "source": doc.get("source"),
+            "status": doc.get("status", "open"),
+            "created_at": doc.get("created_at"),
+            "updated_at": doc.get("updated_at"),
+            "created_at_iso": doc.get("created_at_iso"),
+            "updated_at_iso": doc.get("updated_at_iso"),
+            "note": doc.get("note"),
+        }
+        count = doc.get("count")
+        if count is not None:
+            payload["count"] = count
+        return payload
+
+    async def create_feedback_task(self, payload: dict[str, object]) -> dict:
+        now = time.time()
+        document = {
+            "message": str(payload.get("message") or "").strip(),
+            "name": (str(payload.get("name")).strip() or None) if payload.get("name") else None,
+            "contact": (str(payload.get("contact")).strip() or None) if payload.get("contact") else None,
+            "page": (str(payload.get("page")).strip() or None) if payload.get("page") else None,
+            "project": (str(payload.get("project")).strip().lower() or None) if payload.get("project") else None,
+            "source": (str(payload.get("source")) or "web").strip().lower(),
+            "status": "open",
+            "count": int(payload.get("count") or 1),
+            "created_at": now,
+            "updated_at": now,
+            "created_at_iso": datetime.utcfromtimestamp(now).isoformat(),
+            "updated_at_iso": datetime.utcfromtimestamp(now).isoformat(),
+        }
+        try:
+            result = await self.db[self.feedback_collection].insert_one(document)
+            document["_id"] = result.inserted_id
+            return self._serialize_feedback_task(document) or {}
+        except Exception as exc:
+            logger.error("mongo_feedback_create_failed", error=str(exc))
+            raise
+
+    async def list_feedback_tasks(self, *, limit: int = 100) -> list[dict]:
+        try:
+            cursor = (
+                self.db[self.feedback_collection]
+                .find({}, {"_id": True, "message": True, "name": True, "contact": True, "page": True, "project": True, "source": True, "status": True, "created_at": True, "updated_at": True, "created_at_iso": True, "updated_at_iso": True, "note": True, "count": True})
+                .sort("created_at", -1)
+                .limit(max(10, min(int(limit), 200)))
+            )
+            tasks: list[dict] = []
+            async for doc in cursor:
+                serialized = self._serialize_feedback_task(doc)
+                if serialized:
+                    tasks.append(serialized)
+            return tasks
+        except Exception as exc:
+            logger.error("mongo_feedback_list_failed", error=str(exc))
+            raise
+
+    async def update_feedback_task(self, task_id: str, updates: dict[str, object]) -> dict | None:
+        try:
+            oid = ObjectId(task_id)
+        except Exception:
+            return None
+        payload: dict[str, object] = {}
+        if "status" in updates:
+            payload["status"] = str(updates["status"])
+        if "note" in updates and updates["note"] is not None:
+            payload["note"] = str(updates["note"])
+        now = time.time()
+        payload["updated_at"] = now
+        payload["updated_at_iso"] = datetime.utcfromtimestamp(now).isoformat()
+        try:
+            result = await self.db[self.feedback_collection].find_one_and_update(
+                {"_id": oid},
+                {"$set": payload},
+                return_document=True,
+            )
+            return self._serialize_feedback_task(result)
+        except Exception as exc:
+            logger.error("mongo_feedback_update_failed", task_id=task_id, error=str(exc))
+            raise
+
+    async def bulk_insert_qa(self, project: str, pairs: list[dict[str, object]], *, default_priority: int = 0) -> int:
+        if not project:
+            raise ValueError("project is required")
+        now = time.time()
+        documents = []
+        for idx, pair in enumerate(pairs):
+            question = str(pair.get("question") or "").strip()
+            answer = str(pair.get("answer") or "").strip()
+            if not question or not answer:
+                continue
+            documents.append(
+                {
+                    "project": project,
+                    "question": question,
+                    "answer": answer,
+                    "priority": int(pair.get("priority") or default_priority),
+                    "created_at": now + idx * 0.001,
+                    "updated_at": now + idx * 0.001,
+                }
+            )
+        if not documents:
+            return 0
+        try:
+            result = await self.db[self.qa_collection].insert_many(documents)
+            return len(result.inserted_ids)
+        except Exception as exc:
+            logger.error("mongo_qa_bulk_insert_failed", project=project, error=str(exc))
+            raise
+
+    async def create_qa_pair(self, project: str, question: str, answer: str, *, priority: int = 0) -> dict:
+        if not project:
+            raise ValueError("project is required")
+        question = question.strip()
+        answer = answer.strip()
+        if not question or not answer:
+            raise ValueError("question and answer are required")
+        now = time.time()
+        doc = {
+            "project": project,
+            "question": question,
+            "answer": answer,
+            "priority": int(priority),
+            "created_at": now,
+            "updated_at": now,
+        }
+        try:
+            result = await self.db[self.qa_collection].insert_one(doc)
+            doc["_id"] = result.inserted_id
+            return self._serialize_qa(doc)
+        except Exception as exc:
+            logger.error("mongo_qa_create_failed", project=project, error=str(exc))
+            raise
+
+    def _serialize_qa(self, doc: dict | None) -> dict:
+        if not doc:
+            return {}
+        return {
+            "id": str(doc.get("_id")),
+            "project": doc.get("project"),
+            "question": doc.get("question"),
+            "answer": doc.get("answer"),
+            "priority": int(doc.get("priority") or 0),
+            "created_at": doc.get("created_at"),
+            "updated_at": doc.get("updated_at"),
+            "created_at_iso": doc.get("created_at_iso"),
+            "updated_at_iso": doc.get("updated_at_iso"),
+        }
+
+    async def list_qa_pairs(self, project: str, *, limit: int = 500) -> list[dict]:
+        if not project:
+            return []
+        try:
+            cursor = (
+                self.db[self.qa_collection]
+                .find({"project": project}, {"_id": True, "question": True, "answer": True, "priority": True, "created_at": True, "updated_at": True})
+                .sort([("priority", -1), ("updated_at", -1)])
+                .limit(max(10, min(int(limit), 1000)))
+            )
+            pairs = [self._serialize_qa(doc) async for doc in cursor]
+            return pairs
+        except Exception as exc:
+            logger.error("mongo_qa_list_failed", project=project, error=str(exc))
+            raise
+
+    async def update_qa_pair(self, qa_id: str, *, question: str | None = None, answer: str | None = None, priority: int | None = None) -> dict | None:
+        try:
+            oid = ObjectId(qa_id)
+        except Exception:
+            return None
+        updates: dict[str, object] = {}
+        if question is not None:
+            updates["question"] = question.strip()
+        if answer is not None:
+            updates["answer"] = answer.strip()
+        if priority is not None:
+            updates["priority"] = int(priority)
+        updates["updated_at"] = time.time()
+        try:
+            result = await self.db[self.qa_collection].find_one_and_update(
+                {"_id": oid},
+                {"$set": updates},
+                return_document=True,
+            )
+            return self._serialize_qa(result)
+        except Exception as exc:
+            logger.error("mongo_qa_update_failed", qa_id=qa_id, error=str(exc))
+            raise
+
+    async def delete_qa_pair(self, qa_id: str) -> bool:
+        try:
+            oid = ObjectId(qa_id)
+        except Exception:
+            return False
+        try:
+            result = await self.db[self.qa_collection].delete_one({"_id": oid})
+            return bool(result.deleted_count)
+        except Exception as exc:
+            logger.error("mongo_qa_delete_failed", qa_id=qa_id, error=str(exc))
+            raise
+
+    async def reorder_qa_pairs(self, project: str, ordered_ids: list[str]) -> None:
+        if not project or not ordered_ids:
+            return
+        try:
+            bulk = self.db[self.qa_collection].initialize_unordered_bulk_op()
+        except AttributeError:
+            # PyMongo 4 removed bulk API; fallback to manual updates
+            new_priority = len(ordered_ids)
+            for qa_id in ordered_ids:
+                try:
+                    await self.update_qa_pair(qa_id, priority=new_priority)
+                except Exception:
+                    continue
+                new_priority -= 1
+            return
+        new_priority = len(ordered_ids)
+        for qa_id in ordered_ids:
+            try:
+                oid = ObjectId(qa_id)
+            except Exception:
+                continue
+            bulk.find({"_id": oid, "project": project}).update({"$set": {"priority": new_priority, "updated_at": time.time()}})
+            new_priority -= 1
+        try:
+            bulk.execute()
+        except Exception as exc:
+            logger.debug("mongo_qa_reorder_failed", project=project, error=str(exc))
+
+    async def search_qa_pairs(self, project: str | None, query: str, *, limit: int = 4) -> list[dict]:
+        query = (query or "").strip()
+        if not query:
+            return []
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project
+        try:
+            cursor = (
+                self.db[self.qa_collection]
+                .find({**filter_query, "$text": {"$search": query}}, {"_id": True, "question": True, "answer": True, "priority": True, "project": True, "score": {"$meta": "textScore"}})
+                .sort([("priority", -1), ("score", -1)])
+                .limit(limit * 2)
+            )
+            results = [self._serialize_qa(doc) | {"score": doc.get("score") or 0} async for doc in cursor]
+        except Exception:
+            results = []
+        if not results:
+            # fallback: simple similarity check
+            try:
+                cursor = (
+                    self.db[self.qa_collection]
+                    .find(filter_query, {"_id": True, "question": True, "answer": True, "priority": True, "project": True})
+                    .sort("priority", -1)
+                    .limit(200)
+                )
+                all_docs = [self._serialize_qa(doc) async for doc in cursor]
+            except Exception:
+                all_docs = []
+            scored = []
+            for doc in all_docs:
+                question = doc.get("question") or ""
+                ratio = SequenceMatcher(None, question.lower(), query.lower()).ratio()
+                if ratio < 0.35:
+                    continue
+                doc["score"] = ratio
+                scored.append(doc)
+            results = sorted(scored, key=lambda d: (d.get("priority", 0), d.get("score", 0)), reverse=True)[: limit]
+        else:
+            results = results[:limit]
+        return results
+
+    async def log_unanswered_question(self, *, project: str | None, question: str, channel: str | None, session_id: str | None) -> None:
+        question = (question or "").strip()
+        if not question:
+            return
+        normalized_project = (project or "").strip().lower() or None
+        question_hash = hashlib.sha1(question.lower().encode("utf-8", "ignore")).hexdigest()
+        now = time.time()
+        payload = {
+            "question": question,
+            "hash": question_hash,
+            "project": normalized_project,
+            "channel": (channel or "widget").strip().lower(),
+            "session_id": session_id,
+            "updated_at": now,
+            "updated_at_iso": datetime.utcfromtimestamp(now).isoformat(),
+        }
+        try:
+            await self.db[self.unanswered_collection].update_one(
+                {"hash": question_hash, "project": normalized_project},
+                {
+                    "$set": payload,
+                    "$setOnInsert": {
+                        "created_at": now,
+                        "created_at_iso": datetime.utcfromtimestamp(now).isoformat(),
+                        "count": 0,
+                    },
+                    "$inc": {"count": 1},
+                },
+                upsert=True,
+            )
+        except Exception as exc:
+            logger.debug("mongo_unanswered_log_failed", question=question[:32], error=str(exc))
+        cutoff = time.time() - 30 * 86400
+        try:
+            await self.db[self.unanswered_collection].delete_many({"updated_at": {"$lt": cutoff}})
+        except Exception:  # noqa: BLE001
+            pass
+
+    async def list_unanswered_questions(self, *, project: str | None = None, limit: int = 200) -> list[dict]:
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project.strip().lower()
+        try:
+            cursor = (
+                self.db[self.unanswered_collection]
+                .find(filter_query)
+                .sort("updated_at", -1)
+                .limit(max(10, min(int(limit), 500)))
+            )
+            results = []
+            async for doc in cursor:
+                results.append(
+                    {
+                        "id": str(doc.get("_id")),
+                        "question": doc.get("question"),
+                        "project": doc.get("project"),
+                        "channel": doc.get("channel"),
+                        "session_id": doc.get("session_id"),
+                        "count": doc.get("count", 1),
+                        "created_at": doc.get("created_at"),
+                        "updated_at": doc.get("updated_at"),
+                        "created_at_iso": doc.get("created_at_iso"),
+                        "updated_at_iso": doc.get("updated_at_iso"),
+                    }
+                )
+            return results
+        except Exception as exc:
+            logger.error("mongo_unanswered_list_failed", error=str(exc))
+            raise
+
+    async def clear_unanswered_questions(self, *, project: str | None = None, older_than: float | None = None) -> int:
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project.strip().lower()
+        if older_than is not None:
+            filter_query["updated_at"] = {"$lte": older_than}
+        try:
+            result = await self.db[self.unanswered_collection].delete_many(filter_query)
+            return int(result.deleted_count or 0)
+        except Exception as exc:
+            logger.error("mongo_unanswered_clear_failed", error=str(exc))
+            raise
+
+    def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
+        if not doc:
+            return None
+        payload: dict[str, object] = {
+            "id": str(doc.get("_id")),
+            "message": doc.get("message"),
+            "name": doc.get("name"),
+            "contact": doc.get("contact"),
+            "page": doc.get("page"),
+            "project": doc.get("project"),
+            "source": doc.get("source"),
+            "status": doc.get("status", "open"),
+            "created_at": doc.get("created_at"),
+            "updated_at": doc.get("updated_at"),
+            "created_at_iso": doc.get("created_at_iso"),
+            "updated_at_iso": doc.get("updated_at_iso"),
+        }
+        return payload
+
+    async def create_feedback_task(self, payload: dict[str, object]) -> dict:
+        now = time.time()
+        document = {
+            "message": str(payload.get("message") or "").strip(),
+            "name": (str(payload.get("name")).strip() or None) if payload.get("name") else None,
+            "contact": (str(payload.get("contact")).strip() or None) if payload.get("contact") else None,
+            "page": (str(payload.get("page")).strip() or None) if payload.get("page") else None,
+            "project": (str(payload.get("project")).strip() or None) if payload.get("project") else None,
+            "source": (str(payload.get("source")) or "web").strip(),
+            "status": "open",
+            "created_at": now,
+            "updated_at": now,
+            "created_at_iso": datetime.utcfromtimestamp(now).isoformat(),
+            "updated_at_iso": datetime.utcfromtimestamp(now).isoformat(),
+        }
+        try:
+            result = await self.db[self.feedback_collection].insert_one(document)
+            document["_id"] = result.inserted_id
+            return self._serialize_feedback_task(document) or {}
+        except Exception as exc:
+            logger.error("mongo_feedback_create_failed", error=str(exc))
+            raise
+
+    async def list_feedback_tasks(self, *, limit: int = 100) -> list[dict]:
+        try:
+            cursor = (
+                self.db[self.feedback_collection]
+                .find({}, {"_id": True, "message": True, "name": True, "contact": True, "page": True, "project": True, "source": True, "status": True, "created_at": True, "updated_at": True, "created_at_iso": True, "updated_at_iso": True})
+                .sort("created_at", -1)
+                .limit(max(10, min(int(limit), 200)))
+            )
+            tasks: list[dict] = []
+            async for doc in cursor:
+                serialized = self._serialize_feedback_task(doc)
+                if serialized:
+                    tasks.append(serialized)
+            return tasks
+        except Exception as exc:
+            logger.error("mongo_feedback_list_failed", error=str(exc))
+            raise
+
+    async def update_feedback_task(self, task_id: str, updates: dict[str, object]) -> dict | None:
+        try:
+            oid = ObjectId(task_id)
+        except Exception:
+            return None
+        payload: dict[str, object] = {}
+        if "status" in updates:
+            payload["status"] = str(updates["status"])
+        if "note" in updates and updates["note"] is not None:
+            payload["note"] = str(updates["note"])
+        now = time.time()
+        payload["updated_at"] = now
+        payload["updated_at_iso"] = datetime.utcfromtimestamp(now).isoformat()
+        try:
+            result = await self.db[self.feedback_collection].find_one_and_update(
+                {"_id": oid},
+                {"$set": payload},
+                return_document=True,
+            )
+            return self._serialize_feedback_task(result)
+        except Exception as exc:
+            logger.error("mongo_feedback_update_failed", task_id=task_id, error=str(exc))
+            raise
+
     async def close(self) -> None:
         self.client.close()
 
@@ -972,6 +1797,126 @@ class MongoClient:
                 "mongo_index_create_failed",
                 collection=self.projects_collection,
                 index="project_name_unique",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.qa_collection].create_index(
+                [
+                    ("project", 1),
+                    ("priority", -1),
+                    ("created_at", -1),
+                ],
+                name="qa_project_priority",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.qa_collection,
+                index="qa_project_priority",
+                error=str(exc),
+            )
+        try:
+            await self.db[self.qa_collection].create_index(
+                [("project", 1), ("question", 1)],
+                name="qa_project_question_unique",
+                unique=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.qa_collection,
+                index="qa_project_question_unique",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.qa_collection].create_index(
+                [
+                    ("question", "text"),
+                    ("answer", "text"),
+                ],
+                name="qa_text_index",
+                default_language="russian",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.qa_collection,
+                index="qa_text_index",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.unanswered_collection].create_index(
+                [("project", 1), ("updated_at", -1)],
+                name="unanswered_project_updated",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.unanswered_collection,
+                index="unanswered_project_updated",
+                error=str(exc),
+            )
+        try:
+            await self.db[self.unanswered_collection].create_index(
+                "updated_at",
+                name="unanswered_updated_at",
+                expireAfterSeconds=int(os.getenv("KNOWLEDGE_UNANSWERED_TTL", 45 * 24 * 60 * 60)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.unanswered_collection,
+                index="unanswered_updated_at",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.unanswered_collection].create_index(
+                [("project", 1), ("hash", 1)],
+                name="unanswered_project_hash",
+                unique=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.unanswered_collection,
+                index="unanswered_project_hash",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.qa_collection].create_index(
+                [
+                    ("project", 1),
+                    ("priority", -1),
+                    ("created_at", -1),
+                ],
+                name="qa_project_priority",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.qa_collection,
+                index="qa_project_priority",
+                error=str(exc),
+            )
+        try:
+            await self.db[self.qa_collection].create_index(
+                [
+                    ("question", "text"),
+                    ("answer", "text"),
+                ],
+                name="qa_text_index",
+                default_language="russian",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.qa_collection,
+                index="qa_text_index",
                 error=str(exc),
             )
 
