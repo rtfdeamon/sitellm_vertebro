@@ -40,7 +40,7 @@ from bson import ObjectId
 from PIL import Image
 
 from knowledge.summary import generate_document_summary, generate_image_caption
-from knowledge.text import extract_doc_text, extract_docx_text
+from knowledge.text import extract_best_effort_text, extract_doc_text, extract_docx_text
 from models import Project
 
 from observability.logging import configure_logging
@@ -1619,9 +1619,11 @@ def run(
                                 skip_reason = "duplicate_binary"
                             else:
                                 seen_binary_hashes.add(content_hash)
-                        description = await generate_document_summary(filename, text, project_model)
-                        if not description.strip() and text:
-                            description = text.replace("\n", " ").strip()[:200]
+                        extracted_binary_text = extract_best_effort_text(filename, storage_type, payload_bytes)
+                        summary_source = extracted_binary_text or text
+                        description = await generate_document_summary(filename, summary_source, project_model)
+                        if not description.strip() and summary_source:
+                            description = summary_source.replace("\n", " ").strip()[:200]
                         if not description.strip():
                             description = f"Документ «{filename}»."
                     else:

@@ -15,6 +15,26 @@ from pypdf import PdfReader
 
 logger = structlog.get_logger(__name__)
 
+TEXT_LIKE_MIME_TYPES = {
+    "application/json",
+    "application/xml",
+    "text/csv",
+}
+
+PDF_MIME_TYPES = {"application/pdf"}
+
+DOCX_MIME_TYPES = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
+
+DOC_MIME_TYPES = {
+    "application/msword",
+    "application/ms-word",
+    "application/vnd.ms-word",
+    "application/vnd.ms-word.document.macroenabled.12",
+}
+
 try:  # pragma: no cover - optional dependency in some environments
     import docx2txt  # type: ignore
 except Exception:  # noqa: BLE001
@@ -127,3 +147,44 @@ def extract_pdf_text(data: bytes) -> str:
             chunks.append(extracted.strip())
 
     return "\n\n".join(part for part in chunks if part).strip()
+
+
+def _decode_text_payload(payload: bytes) -> str:
+    if not payload:
+        return ""
+    text = payload.decode("utf-8", errors="ignore").replace("\x00", " ").strip()
+    if text:
+        return text
+    fallback = payload.decode("latin-1", errors="ignore").replace("\x00", " ").strip()
+    return fallback
+
+
+def extract_best_effort_text(name: str, content_type: str | None, payload: bytes) -> str:
+    """Return textual content extracted from an arbitrary binary blob.
+
+    Falls back to heuristics when the payload does not match a known office format.
+    """
+
+    lowered = (content_type or "").lower()
+    safe_name = (name or "").lower()
+    if lowered.startswith("text/") or lowered in TEXT_LIKE_MIME_TYPES:
+        return _decode_text_payload(payload)
+    if lowered in PDF_MIME_TYPES or safe_name.endswith(".pdf"):
+        return extract_pdf_text(payload)
+    if lowered in DOCX_MIME_TYPES or safe_name.endswith(".docx"):
+        return extract_docx_text(payload)
+    if lowered in DOC_MIME_TYPES or safe_name.endswith(".doc"):
+        return extract_doc_text(payload)
+
+    decoded = _decode_text_payload(payload)
+    # Heuristic: treat as text only if it contains a reasonable number of printable chars
+    printable_ratio = 0.0
+    if decoded:
+        total = len(decoded)
+        if total:
+            printable = sum(1 for ch in decoded if ch.isprintable() or ch.isspace())
+            printable_ratio = printable / total
+    if decoded and printable_ratio >= 0.7:
+        cleaned = re.sub(r"\s{2,}", " ", decoded)
+        return cleaned.strip()
+    return ""

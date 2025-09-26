@@ -14,27 +14,10 @@ from pymongo import MongoClient
 from worker import celery, get_mongo_client, settings as worker_settings
 from models import Project
 from knowledge.summary import generate_document_summary
-from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from knowledge.text import extract_best_effort_text
 from backend.ollama_cluster import get_cluster_manager
 
 logger = structlog.get_logger(__name__)
-
-PDF_MIME_TYPES = {"application/pdf"}
-DOCX_MIME_TYPES = {
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-word.document.macroenabled.12",
-}
-DOC_MIME_TYPES = {
-    "application/msword",
-    "application/ms-word",
-    "application/vnd.ms-word",
-    "application/vnd.ms-word.document.macroenabled.12",
-}
-TEXT_LIKE_MIME_TYPES = {
-    "application/json",
-    "application/xml",
-    "text/csv",
-}
 
 
 def _build_mongo_client() -> MongoClient:
@@ -71,24 +54,6 @@ def _resolve_project(db, doc: dict[str, Any], explicit: str | None) -> Project |
         except Exception as exc:  # noqa: BLE001
             logger.warning("auto_description_project_parse_failed", project=project_name or raw.get("name"), error=str(exc))
     return None
-
-
-def _extract_text(name: str, content_type: str, payload: bytes) -> str:
-    lowered = (content_type or "").lower()
-    safe_name = (name or "").lower()
-    if lowered.startswith("text/") or lowered in TEXT_LIKE_MIME_TYPES:
-        try:
-            return payload.decode("utf-8", errors="ignore")
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("auto_description_decode_failed", name=name, error=str(exc))
-            return ""
-    if lowered in PDF_MIME_TYPES or safe_name.endswith(".pdf"):
-        return extract_pdf_text(payload)
-    if lowered in DOCX_MIME_TYPES or safe_name.endswith(".docx"):
-        return extract_docx_text(payload)
-    if lowered in DOC_MIME_TYPES or safe_name.endswith(".doc"):
-        return extract_doc_text(payload)
-    return ""
 
 
 @celery.task(name="knowledge.generate_auto_description", bind=True, max_retries=None)
@@ -147,7 +112,7 @@ def generate_auto_description(self, file_id: str, project: str | None = None) ->
 
         name = doc.get("name") or f"document-{file_id}"
         content_type = str(doc.get("content_type") or "").lower()
-        text = _extract_text(name, content_type, payload)
+        text = extract_best_effort_text(name, content_type, payload)
         project_model = _resolve_project(db, doc, project)
 
         try:

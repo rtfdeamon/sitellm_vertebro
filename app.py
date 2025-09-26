@@ -59,7 +59,7 @@ from bson import ObjectId
 from retrieval import search as retrieval_search
 from knowledge.summary import generate_document_summary
 from knowledge.tasks import queue_auto_description
-from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from knowledge.text import extract_best_effort_text
 from max_bot.config import get_settings as get_max_settings
 from vk_bot.config import get_settings as get_vk_settings
 import redis
@@ -176,17 +176,6 @@ ADMIN_PASSWORD_HASH = os.getenv(
 )
 ADMIN_PASSWORD_DIGEST = bytes.fromhex(ADMIN_PASSWORD_HASH)
 
-PDF_MIME_TYPES: set[str] = {"application/pdf"}
-DOCX_MIME_TYPES: set[str] = {
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-word.document.macroenabled.12",
-}
-DOC_MIME_TYPES: set[str] = {
-    "application/msword",
-    "application/ms-word",
-    "application/vnd.ms-word",
-    "application/vnd.ms-word.document.macroenabled.12",
-}
 
 
 @dataclass(frozen=True)
@@ -2679,7 +2668,7 @@ async def admin_knowledge(
     """Return knowledge base documents for the admin UI."""
 
     try:
-        limit = max(1, min(int(limit), 200))
+        limit = max(1, min(int(limit), 1000))
     except Exception:  # noqa: BLE001
         limit = 50
 
@@ -2701,7 +2690,7 @@ async def admin_knowledge(
             cursor = (
                 mongo_client.db[collection]
                 .find(filter_query, {"_id": False})
-                .sort("name", 1)
+                .sort([("ts", -1), ("name", 1)])
                 .limit(limit)
             )
             docs_models = [Document(**doc) async for doc in cursor]
@@ -3001,15 +2990,12 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
     if is_binary:
         description_value = description_input if description_input_provided else current_description
         if not description_value:
-            extracted_text = ""
             binary_payload = raw_content or b""
-            if current_content_type in PDF_MIME_TYPES or lower_name.endswith(".pdf"):
-                extracted_text = extract_pdf_text(binary_payload)
-            elif current_content_type in DOCX_MIME_TYPES or lower_name.endswith(".docx"):
-                extracted_text = extract_docx_text(binary_payload)
-            elif current_content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
-                extracted_text = extract_doc_text(binary_payload)
-            description_value = await generate_document_summary(new_name, extracted_text, project_model)
+            extracted_text = extract_best_effort_text(new_name, current_content_type, binary_payload)
+            summary_source = extracted_text or ""
+            description_value = await generate_document_summary(new_name, summary_source, project_model)
+            if not description_value.strip() and summary_source:
+                description_value = summary_source.replace("\n", " ").strip()[:200]
             auto_description = True
         update_doc: dict[str, Any] = {
             "name": new_name,
