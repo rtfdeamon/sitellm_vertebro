@@ -1309,8 +1309,6 @@ async def _collect_bitrix_snippet(
         logger.warning("bitrix_call_unexpected_failure", error=str(exc))
         debug_info["error"] = "unexpected_failure"
         return None, debug_info, None
-
-
 async def _plan_mail_action(
     question: str,
     project: Project | None,
@@ -1382,7 +1380,6 @@ async def _plan_mail_action(
             "action": "list_inbox",
             "limit": limit_value,
             "unread_only": unread_only,
-        }
     return None
 
 
@@ -1861,6 +1858,73 @@ def _limit_dialog_history(
                     trimmed.pop(0)
 
     return trimmed
+
+@llm_router.post("/bitrix/confirm", response_class=ORJSONResponse)
+async def confirm_bitrix_plan(request: Request, payload: BitrixPlanAction) -> ORJSONResponse:
+    try:
+        redis_client = _get_redis()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="redis_unavailable") from exc
+    key = f"bitrix:plan:{payload.plan_id}"
+    raw = await redis_client.get(key)
+    if raw is None:
+        raise HTTPException(status_code=404, detail="bitrix_plan_not_found")
+    try:
+        stored = json.loads(raw)
+    except Exception as exc:  # noqa: BLE001
+        await redis_client.delete(key)
+        raise HTTPException(status_code=410, detail="bitrix_plan_corrupted") from exc
+
+    expected_session = stored.get("session")
+    if expected_session and payload.session_id and expected_session != payload.session_id:
+        raise HTTPException(status_code=403, detail="session_mismatch")
+
+    project_name = _normalize_project(payload.project or stored.get("project"))
+    project_obj: Project | None = None
+    if project_name:
+        mongo_client = _get_mongo_client(request)
+        project_obj = await mongo_client.get_project(project_name)
+    if not project_obj or not getattr(project_obj, "bitrix_enabled", False):
+        raise HTTPException(status_code=400, detail="bitrix_not_configured")
+    webhook_url = getattr(project_obj, "bitrix_webhook_url", None)
+    if not isinstance(webhook_url, str) or not webhook_url.strip():
+        raise HTTPException(status_code=400, detail="bitrix_webhook_missing")
+
+    method = stored.get("method")
+    params = stored.get("params")
+    if not isinstance(method, str) or not method.strip():
+        await redis_client.delete(key)
+        raise HTTPException(status_code=410, detail="bitrix_plan_invalid")
+
+    try:
+        response = await call_bitrix_webhook(webhook_url, method, params if isinstance(params, dict) else {})
+    except BitrixError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    finally:
+        await redis_client.delete(key)
+
+    return ORJSONResponse({"status": "sent", "result": response})
+
+
+@llm_router.post("/bitrix/cancel", response_class=ORJSONResponse)
+async def cancel_bitrix_plan(payload: BitrixPlanAction) -> ORJSONResponse:
+    try:
+        redis_client = _get_redis()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="redis_unavailable") from exc
+    key = f"bitrix:plan:{payload.plan_id}"
+    raw = await redis_client.get(key)
+    if raw is None:
+        return ORJSONResponse({"status": "cancelled", "removed": False})
+    try:
+        stored = json.loads(raw)
+    except Exception:
+        stored = {}
+    expected_session = stored.get("session")
+    if expected_session and payload.session_id and expected_session != payload.session_id:
+        raise HTTPException(status_code=403, detail="session_mismatch")
+    await redis_client.delete(key)
+    return ORJSONResponse({"status": "cancelled", "removed": True})
 
 
 @llm_router.post("/ask", response_class=ORJSONResponse, response_model=LLMResponse)
