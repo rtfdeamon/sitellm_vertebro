@@ -12,7 +12,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-_MODEL_NAME = "sentence-transformers/sbert_large_nlu_ru"
+_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"
 _encoder: SentenceTransformer | None = None
 
 

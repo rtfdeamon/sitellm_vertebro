@@ -2290,6 +2290,7 @@
     const crawlerResetBtn = document.getElementById('crawlerResetBtn');
     const crawlerDedupBtn = document.getElementById('crawlerDedupBtn');
     const crawlerActionStatus = document.getElementById('crawlerActionStatus');
+    const feedbackTasksList = document.getElementById('feedbackTasksList');
     const kbModalBackdrop = document.getElementById('kbModal');
     const kbModalClose = document.getElementById('kbModalClose');
     const kbModalCancel = document.getElementById('kbModalCancel');
@@ -3230,6 +3231,8 @@
       });
     }
 
+    let feedbackTasksCache = [];
+
     function applyLanguage(lang) {
       if (!LANGUAGES[lang]) lang = FALLBACK_LANGUAGE;
       currentLanguage = lang;
@@ -3426,7 +3429,6 @@
     const projectStorageContexts = document.getElementById('projectStorageContexts');
     const projectStorageRedis = document.getElementById('projectStorageRedis');
     const feedbackSection = document.getElementById('block-feedback');
-    const feedbackTasksList = document.getElementById('feedbackTasksList');
     const feedbackRefreshBtn = document.getElementById('feedbackRefresh');
     const knowledgeServiceToggle = document.getElementById('knowledgeServiceToggle');
     const knowledgeServiceApply = document.getElementById('knowledgeServiceApply');
@@ -3753,7 +3755,6 @@
     let OLLAMA_INSTALLED_SET = new Set();
     let ollamaPollTimer = null;
     let OLLAMA_SERVERS = [];
-    let feedbackTasksCache = [];
     let qaPairsCache = [];
     let knowledgePriorityOrder = [];
     let draggingPriorityItem = null;

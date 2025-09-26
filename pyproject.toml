@@ -14,7 +14,8 @@ dependencies = [
     "huggingface-hub>=0.33.1",
     "langchain>=0.3.26",
     "langchain-community>=0.3.27",
-    "langchain-redis>=0.2.3",
+    "langchain-ollama>=0.1.2",
+    "langchain-huggingface>=0.1.1",
     "orjson>=3.10.18",
     "pydantic-settings>=2.2.1",
     "pymongo>=4.13.2",
@@ -37,6 +38,8 @@ dependencies = [
     "lxml>=5.2.0",
     "Pillow>=10.0",
     "openpyxl>=3.1.5",
+    "sentence-transformers>=5.1.1",
+    "torch>=2.8.0",
 ]
 
 [dependency-groups]
@@ -47,6 +50,15 @@ dev = [
     "ruff>=0.12.1",
 ]
 
-[tool.poetry.source]
-name = "pytorch_cpu"
-url = "https://download.pytorch.org/whl/cpu/simple"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu" },
+]

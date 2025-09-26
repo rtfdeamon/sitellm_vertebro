@@ -789,11 +789,11 @@ class MongoClient:
 
         query: dict[str, object] = {}
         if project:
-            query["project"] = project
+            query["project"] = project.strip().lower()
         try:
             cursor = (
                 self.db[self.unanswered_collection]
-                .find(query, {"_id": True, "question": True, "project": True, "hits": True, "created_at": True, "updated_at": True})
+                .find(query)
                 .sort([("updated_at", -1)])
                 .limit(max(10, min(int(limit), 5000)))
             )
@@ -804,9 +804,14 @@ class MongoClient:
                         "id": str(doc.get("_id")),
                         "question": doc.get("question", ""),
                         "project": doc.get("project"),
-                        "hits": int(doc.get("hits", 1)),
+                        "hits": int(doc.get("hits", doc.get("count", 1) or 1)),
+                        "count": int(doc.get("count", doc.get("hits", 1) or 1)),
+                        "channel": doc.get("channel"),
+                        "session_id": doc.get("session_id"),
                         "created_at": doc.get("created_at"),
                         "updated_at": doc.get("updated_at"),
+                        "created_at_iso": doc.get("created_at_iso"),
+                        "updated_at_iso": doc.get("updated_at_iso"),
                     }
                 )
             return items
@@ -837,29 +842,59 @@ class MongoClient:
             logger.error("mongo_unanswered_purge_failed", older_than=older_than, error=str(exc))
             raise
 
-    async def get_knowledge_priority(self, project: str | None) -> list[str]:
-        """Return knowledge source priority order for ``project``."""
+    async def get_knowledge_priority(self, project: str | None = None) -> list[str]:
+        """Return knowledge source priority order for ``project``.
 
-        key = f"knowledge_priority::{project or 'default'}"
-        try:
-            doc = await self.get_setting(key) or {}
-        except Exception:
-            doc = {}
-        order = doc.get("order") if isinstance(doc, dict) else None
-        if isinstance(order, list) and all(isinstance(item, str) for item in order):
-            return order
-        return []
+        Falls back to the default order and the legacy global setting when a
+        project-specific override is not found.
+        """
+
+        normalized = (project or "").strip().lower()
+        candidate_keys = []
+        if normalized:
+            candidate_keys.append(f"knowledge_priority::{normalized}")
+        candidate_keys.append("knowledge_priority::default")
+        candidate_keys.append("knowledge_priority")
+
+        for key in candidate_keys:
+            try:
+                doc = await self.get_setting(key) or {}
+            except Exception:
+                continue
+            order = doc.get("order") if isinstance(doc, dict) else None
+            if isinstance(order, list) and order:
+                cleaned = [str(item).strip() for item in order if str(item).strip()]
+                if cleaned:
+                    return cleaned
+
+        return ["qa", "text", "docs", "images", "vector"]
 
     async def set_knowledge_priority(self, project: str | None, order: list[str]) -> None:
         """Persist knowledge source priority order for ``project``."""
 
-        cleaned = [str(item).strip() for item in order if str(item).strip()]
-        key = f"knowledge_priority::{project or 'default'}"
+        normalized_order: list[str] = []
+        for item in order:
+            cleaned = str(item or "").strip()
+            if cleaned and cleaned not in normalized_order:
+                normalized_order.append(cleaned)
+
+        if not normalized_order:
+            normalized_order = ["qa", "text", "docs", "images", "vector"]
+
+        key = f"knowledge_priority::{(project or '').strip().lower() or 'default'}"
         payload = {
-            "order": cleaned,
+            "order": normalized_order,
             "updated_at": time.time(),
         }
-        await self.set_setting(key, payload)
+        try:
+            await self.set_setting(key, payload)
+        except Exception as exc:
+            logger.error(
+                "mongo_set_knowledge_priority_failed",
+                project=project,
+                error=str(exc),
+            )
+            raise
 
     async def list_project_names(self, documents_collection: str, limit: int = 100) -> list[str]:
         """Return a list of known project identifiers."""
@@ -1325,27 +1360,6 @@ class MongoClient:
             logger.error("mongo_set_setting_failed", key=key, error=str(exc))
             raise
 
-    async def get_knowledge_priority(self) -> list[str]:
-        try:
-            doc = await self.get_setting("knowledge_priority") or {}
-        except Exception:
-            doc = {}
-        order = doc.get("order") if isinstance(doc, dict) else None
-        if isinstance(order, list) and order:
-            return [str(item).strip().lower() for item in order if str(item).strip()]
-        # default priority order
-        return ["qa", "text", "docs", "images", "vector"]
-
-    async def set_knowledge_priority(self, order: list[str]) -> None:
-        normalized = []
-        for item in order:
-            cleaned = str(item or "").strip().lower()
-            if cleaned and cleaned not in normalized:
-                normalized.append(cleaned)
-        if not normalized:
-            normalized = ["qa", "text", "docs", "images", "vector"]
-        await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
-
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
             return None
@@ -1662,38 +1676,6 @@ class MongoClient:
             await self.db[self.unanswered_collection].delete_many({"updated_at": {"$lt": cutoff}})
         except Exception:  # noqa: BLE001
             pass
-
-    async def list_unanswered_questions(self, *, project: str | None = None, limit: int = 200) -> list[dict]:
-        filter_query: dict[str, object] = {}
-        if project:
-            filter_query["project"] = project.strip().lower()
-        try:
-            cursor = (
-                self.db[self.unanswered_collection]
-                .find(filter_query)
-                .sort("updated_at", -1)
-                .limit(max(10, min(int(limit), 500)))
-            )
-            results = []
-            async for doc in cursor:
-                results.append(
-                    {
-                        "id": str(doc.get("_id")),
-                        "question": doc.get("question"),
-                        "project": doc.get("project"),
-                        "channel": doc.get("channel"),
-                        "session_id": doc.get("session_id"),
-                        "count": doc.get("count", 1),
-                        "created_at": doc.get("created_at"),
-                        "updated_at": doc.get("updated_at"),
-                        "created_at_iso": doc.get("created_at_iso"),
-                        "updated_at_iso": doc.get("updated_at_iso"),
-                    }
-                )
-            return results
-        except Exception as exc:
-            logger.error("mongo_unanswered_list_failed", error=str(exc))
-            raise
 
     async def clear_unanswered_questions(self, *, project: str | None = None, older_than: float | None = None) -> int:
         filter_query: dict[str, object] = {}

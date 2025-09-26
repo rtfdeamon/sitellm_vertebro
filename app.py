@@ -23,6 +23,7 @@ import json
 import httpx
 import structlog
 from functools import lru_cache
+from types import SimpleNamespace
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
@@ -56,9 +57,10 @@ from backend.ollama import (
 from backend.ollama_cluster import init_cluster, reload_cluster, get_cluster_manager, shutdown_cluster
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
+from qdrant_client.http import models as qdrant_models
 from gridfs import GridFS
 from bson import ObjectId
-from retrieval import search as retrieval_search
+from retrieval import encode as retrieval_encode, search as retrieval_search
 from knowledge.summary import generate_document_summary
 from knowledge.tasks import queue_auto_description
 from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text , extract_best_effort_text
@@ -2187,7 +2189,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             except Exception as exc:  # noqa: BLE001
                 logger.warning("basic_auth_decode_failed", error=str(exc))
 
-        return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+        return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="admin"'})
 
 
 class OllamaLLM:
@@ -2217,6 +2219,59 @@ class OllamaLLM:
         return [self._Msg("".join(chunks))]
 
 
+class _QdrantSearchAdapter:
+    """Provide ``similarity`` interface used by retrieval layer."""
+
+    def __init__(self, client: QdrantClient, collection: str):
+        self._client = client
+        self._collection = collection
+
+    def similarity(self, query: str, top: int, method: str):
+        if method == "dense":
+            vector = retrieval_encode(query)
+            vector_list = vector.tolist() if hasattr(vector, "tolist") else list(vector)
+            results = self._client.search(
+                collection_name=self._collection,
+                query_vector=vector_list,
+                limit=top,
+                with_payload=True,
+            )
+        elif method == "bm25":
+            if hasattr(self._client, "text_search"):
+                results = self._client.text_search(
+                    collection_name=self._collection,
+                    query=query,
+                    with_payload=True,
+                    limit=top,
+                )
+            else:
+                # Fallback to dense search when BM25 isn't available
+                vector = retrieval_encode(query)
+                vector_list = vector.tolist() if hasattr(vector, "tolist") else list(vector)
+                results = self._client.search(
+                    collection_name=self._collection,
+                    query_vector=vector_list,
+                    limit=top,
+                    with_payload=True,
+                )
+        else:
+            raise ValueError(f"Unknown similarity method: {method}")
+
+        docs = []
+        for point in results:
+            docs.append(
+                SimpleNamespace(
+                    id=str(point.id),
+                    payload=getattr(point, "payload", None),
+                    score=getattr(point, "score", 0.0),
+                )
+            )
+        return docs
+
+    def close(self) -> None:
+        self._client.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     """Initialize and clean up application resources.
@@ -2232,7 +2287,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     embeddings = None
 
     qdrant_client = QdrantClient(url=base_settings.qdrant_url)
-    retrieval_search.qdrant = qdrant_client
+    qdrant_collection = getattr(base_settings, "qdrant_collection", "documents")
+    qdrant_adapter = _QdrantSearchAdapter(qdrant_client, qdrant_collection)
+    retrieval_search.qdrant = qdrant_adapter
 
     mongo_cfg = _mongo_settings()
     mongo_client = MongoClient(
@@ -2303,7 +2360,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     with suppress(Exception):
         await shutdown_cluster()
     mongo_client.client.close()
-    qdrant_client.close()
+    qdrant_adapter.close()
+    retrieval_search.qdrant = None
     with suppress(AttributeError):
         del app.state.mongo
         del app.state.contexts_collection
@@ -2871,7 +2929,7 @@ async def admin_knowledge(
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     filter_query = {"project": project_name} if project_name else {}
 
-    count_task: asyncio.Task[int] | None = None
+    count_task: asyncio.Future[int] | None = None
     try:
         if q:
             docs_models = await mongo_client.search_documents(
@@ -2881,7 +2939,7 @@ async def admin_knowledge(
             total = matched
             has_more = matched >= limit
         else:
-            count_task = asyncio.create_task(
+            count_task = asyncio.ensure_future(
                 mongo_client.db[collection].count_documents(filter_query or {})
             )
             cursor = (
@@ -5329,29 +5387,21 @@ def _build_prompt_fallback(role_label: str, url: str, page_text: str) -> str | N
 async def _purge_vector_entries(file_ids: list[str]) -> None:
     if not file_ids:
         return
-    index_name = settings.redis.vector
-    if not index_name:
-        return
     try:
-        redis_client = _get_redis()
+        client = QdrantClient(url=base_settings.qdrant_url)
     except Exception as exc:  # noqa: BLE001
         logger.debug("vector_cleanup_unavailable", error=str(exc))
         return
 
-    for file_id in file_ids:
-        doc_id = str(file_id)
-        try:
-            await redis_client.execute_command("FT.DEL", index_name, doc_id)
-        except Exception:  # noqa: BLE001
-            try:
-                await redis_client.execute_command("FT.DEL", index_name, f"doc:{doc_id}")
-            except Exception:
-                logger.debug("vector_entry_delete_failed", doc_id=doc_id)
-        for key in (doc_id, f"doc:{doc_id}"):
-            try:
-                await redis_client.delete(key)
-            except Exception:
-                continue
+    try:
+        client.delete(
+            collection_name=getattr(base_settings, "qdrant_collection", "documents"),
+            points_selector=qdrant_models.PointIdsList(points=[str(fid) for fid in file_ids]),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("vector_entry_delete_failed", error=str(exc))
+    finally:
+        client.close()
 
 
 @app.post("/api/v1/admin/projects/prompt", response_class=ORJSONResponse)

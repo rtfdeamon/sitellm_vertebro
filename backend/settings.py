@@ -37,6 +37,10 @@ class Settings(BaseSettings):
         default="http://qdrant:6333",
         env=["QDRANT_URL", "qdrant_url"],
     )
+    qdrant_collection: str = Field(
+        default="documents",
+        env=["QDRANT_COLLECTION", "qdrant.collection"],
+    )
 
     use_gpu: bool = Field(default=False, env=["USE_GPU", "use_gpu"])
     llm_model: str = Field(
