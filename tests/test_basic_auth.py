@@ -260,7 +260,7 @@ def client(monkeypatch):
 def test_admin_requires_auth(client):
     response = client.get("/admin")
     assert response.status_code == 401
-    assert response.headers["WWW-Authenticate"] == "Basic"
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="admin"'
 
 
 def test_admin_with_basic_auth(client):

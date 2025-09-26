@@ -75,9 +75,11 @@ class Settings(BaseSettings):
     debug: bool = False
     project_name: str | None = Field(default=None, alias="PROJECT_NAME")
     llm_url: str = "http://localhost:8000"
-    emb_model_name: str = "sentence-transformers/sbert_large_nlu_ru"
+    emb_model_name: str = "ai-forever/sbert_large_nlu_ru"
     rerank_model_name: str = "sbert_cross_ru"
     redis_url: AnyUrl | str = "redis://localhost:6379/0"
+    qdrant_url: AnyUrl | str = Field(default="http://qdrant:6333", alias="QDRANT_URL")
+    qdrant_collection: str = Field(default="documents", alias="QDRANT_COLLECTION")
     use_gpu: bool = False
     llm_model: str = "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
     telegram_api_base: AnyUrl | str = "http://app:8000"

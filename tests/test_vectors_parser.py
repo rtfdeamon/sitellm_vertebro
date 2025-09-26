@@ -1,121 +1,84 @@
-"""Tests for vectors.DocumentsParser.parse_document."""
+"""Tests for Qdrant-backed DocumentsParser."""
 
-import importlib.util
-import sys
+from __future__ import annotations
+
 from pathlib import Path
-import tempfile
-import types
-from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 import pytest
 
-# Load vectors module with stubbed dependencies
-module_path = Path(__file__).resolve().parents[1] / "vectors.py"
-spec = importlib.util.spec_from_file_location("vectors", module_path)
-vectors = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = vectors
+from models import Document
+import vectors
 
-# Stub external dependencies required by vectors.py
-# langchain_core.embeddings
-core_embeddings = types.ModuleType("langchain_core.embeddings")
-class Embeddings:  # minimal placeholder
-    pass
-core_embeddings.Embeddings = Embeddings
-sys.modules["langchain_core.embeddings"] = core_embeddings
 
-# langchain_redis
-redis_module = types.ModuleType("langchain_redis")
-class RedisVectorStore:
+class FakeEmbeddings:
+    def embed_query(self, _: str) -> list[float]:
+        return [0.0, 0.1, 0.2]
+
+    def embed_documents(self, texts):
+        return [[len(texts[0]), 0.2, 0.3]]
+
+
+class DummyLoader:
+    def __init__(self, path, **kwargs):
+        self.path = Path(path)
+
+    def load(self):
+        return [SimpleNamespace(page_content="loader content")]
+
+
+class FakeQdrantClient:
     def __init__(self, *_, **__):
+        self.created = False
+        self.points = []
+
+    def collection_exists(self, name):
+        return self.created
+
+    def recreate_collection(self, *_, **__):
+        self.created = True
+
+    def create_payload_index(self, *_, **__):
+        return None
+
+    def upsert(self, *, collection_name, points):
+        self.collection = collection_name
+        self.points.extend(points)
+
+    def close(self):
         pass
-    def add_documents(self, *args, **kwargs):  # pragma: no cover - replaced in tests
-        pass
-class RedisConfig:
-    def __init__(self, *_, **__):
-        pass
-redis_module.RedisVectorStore = RedisVectorStore
-redis_module.RedisConfig = RedisConfig
-sys.modules["langchain_redis"] = redis_module
-
-# redis and exceptions
-redis_root = types.ModuleType("redis")
-class Redis:  # minimal placeholder
-    pass
-redis_root.Redis = Redis
-redis_exceptions = types.ModuleType("redis.exceptions")
-class ResponseError(Exception):
-    pass
-redis_exceptions.ResponseError = ResponseError
-redis_root.exceptions = redis_exceptions
-sys.modules["redis"] = redis_root
-sys.modules["redis.exceptions"] = redis_exceptions
-
-# document loaders
-loaders = types.ModuleType("langchain_community.document_loaders")
-loaders.Docx2txtLoader = object  # replaced in tests
-loaders.PyPDFLoader = object
-loaders.TextLoader = object
-sys.modules["langchain_community.document_loaders"] = loaders
-
-# Execute module
-spec.loader.exec_module(vectors)
-DocumentsParser = vectors.DocumentsParser
 
 
-def _parser_with_mock(monkeypatch):
-    """Create DocumentsParser instance with mocked Redis store."""
-    mock_add = MagicMock()
-    monkeypatch.setattr(vectors.RedisVectorStore, "add_documents", mock_add)
-    parser = DocumentsParser.__new__(DocumentsParser)
-    parser.redis_store = vectors.RedisVectorStore()
-    return parser, mock_add
+@pytest.fixture
+def parser(monkeypatch):
+    monkeypatch.setattr(vectors, "QdrantClient", FakeQdrantClient)
+    monkeypatch.setattr(vectors, "TextLoader", DummyLoader)
+    monkeypatch.setattr(vectors, "Docx2txtLoader", DummyLoader)
+    monkeypatch.setattr(vectors, "PyPDFLoader", DummyLoader)
+    embeddings = FakeEmbeddings()
+    parser = vectors.DocumentsParser(embeddings, "test-collection", "http://qdrant")
+    return parser
 
 
-@pytest.mark.parametrize(
-    "filename, loader_attr",
-    [
-        ("sample.txt", "TextLoader"),
-        ("sample.docx", "Docx2txtLoader"),
-        ("sample.pdf", "PyPDFLoader"),
-    ],
-)
-def test_parse_document_selects_loader_and_cleans_tmp(monkeypatch, filename, loader_attr):
-    """`parse_document` should use correct loader and remove temp file."""
-    parser, mock_add = _parser_with_mock(monkeypatch)
+def test_parse_document_upserts_payload(parser, tmp_path):
+    doc = Document(
+        name="example.txt",
+        description="Sample description",
+        fileId="doc-1",
+    )
 
-    called = {}
+    parser.parse_document(doc, b"dummy")
 
-    class FakeLoader:
-        def __init__(self, *args, **kwargs):
-            path = args[0] if args else kwargs.get("file_path")
-            called["path"] = Path(path)
-        def load(self):
-            return []
-
-    monkeypatch.setattr(vectors, loader_attr, FakeLoader)
-
-    orig_named_tmp = tempfile.NamedTemporaryFile
-    tmp_holder = {}
-
-    def fake_named_tmp(*args, **kwargs):
-        tmp = orig_named_tmp(*args, **kwargs)
-        tmp_holder["path"] = Path(tmp.name)
-        return tmp
-
-    monkeypatch.setattr(vectors.tempfile, "NamedTemporaryFile", fake_named_tmp)
-
-    parser.parse_document(filename, "doc-id", b"data")
-
-    assert called["path"].suffix == Path(filename).suffix
-    assert not tmp_holder["path"].exists()
-    assert mock_add.called
+    assert isinstance(parser._client, FakeQdrantClient)
+    assert parser._client.collection == "test-collection"
+    assert parser._client.points
+    point = parser._client.points[0]
+    assert point.id == "doc-1"
+    assert "text" in point.payload
+    assert "Sample description" in point.payload["text"]
 
 
-def test_parse_document_unknown_extension(monkeypatch):
-    """Unsupported extension should raise ValueError."""
-    parser, mock_add = _parser_with_mock(monkeypatch)
-
+def test_parse_document_unsupported_extension(parser):
+    doc = Document(name="example.xyz", description="Nope", fileId="doc-2")
     with pytest.raises(ValueError):
-        parser.parse_document("file.unknown", "doc-id", b"data")
-
-    assert not mock_add.called
+        parser.parse_document(doc, b"dummy")
