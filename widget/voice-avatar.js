@@ -348,45 +348,6 @@
     return pleasantFallback || list[0] || null;
   }
 
-  function speak(text, lang, voiceHint, options = {}) {
-    if (!('speechSynthesis' in window)) return;
-    const {
-      flush = true,
-      rate = DEFAULT_SPEECH_RATE,
-      pitch = DEFAULT_SPEECH_PITCH,
-      voiceOverride,
-    } = options;
-    const sanitized = stripEmojis(text);
-    if (!sanitized.trim()) return;
-    const utterance = new SpeechSynthesisUtterance(sanitized);
-    if (lang) utterance.lang = lang;
-    utterance.rate = rate;
-    utterance.pitch = pitch;
-    const selectedVoice = resolveVoice(voiceOverride || voiceHint, lang);
-    if (selectedVoice) {
-      utterance.voice = selectedVoice;
-    }
-    if (flush) {
-      try {
-        speechSynthesis.cancel();
-      } catch (_) {}
-    }
-    currentUtterance = utterance;
-    stopVoiceVisualizer();
-    startVoiceVisualizer();
-    utterance.onend = () => {
-      currentUtterance = null;
-      awaitingResponse = false;
-      stopVoiceVisualizer();
-      renewIdleTimer();
-    };
-    utterance.onerror = () => {
-      currentUtterance = null;
-      stopVoiceVisualizer();
-    };
-    speechSynthesis.speak(utterance);
-  }
-
   function init(script) {
     const baseUrl = resolveBaseUrl(script);
     const project = script.dataset.project || '';
@@ -714,6 +675,45 @@
         voiceVisual.style.transform = 'scale(1)';
         voiceVisual.style.opacity = '0';
       }
+    }
+
+    function speak(text, lang, voiceHint, options = {}) {
+      if (!('speechSynthesis' in window)) return;
+      const {
+        flush = true,
+        rate = DEFAULT_SPEECH_RATE,
+        pitch = DEFAULT_SPEECH_PITCH,
+        voiceOverride,
+      } = options;
+      const sanitized = stripEmojis(text);
+      if (!sanitized.trim()) return;
+      const utterance = new SpeechSynthesisUtterance(sanitized);
+      if (lang) utterance.lang = lang;
+      utterance.rate = rate;
+      utterance.pitch = pitch;
+      const selectedVoice = resolveVoice(voiceOverride || voiceHint, lang);
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      if (flush) {
+        try {
+          speechSynthesis.cancel();
+        } catch (_) {}
+      }
+      currentUtterance = utterance;
+      stopVoiceVisualizer();
+      startVoiceVisualizer();
+      utterance.onend = () => {
+        currentUtterance = null;
+        awaitingResponse = false;
+        stopVoiceVisualizer();
+        renewIdleTimer();
+      };
+      utterance.onerror = () => {
+        currentUtterance = null;
+        stopVoiceVisualizer();
+      };
+      speechSynthesis.speak(utterance);
     }
 
     function applyMicLevel(level) {

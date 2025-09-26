@@ -155,6 +155,93 @@
     textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
     .btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+    body.modal-open { overflow: hidden; }
+    .auth-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+    }
+    .auth-modal[data-visible="true"] { display: flex; }
+    .auth-modal .auth-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(11, 17, 33, 0.72);
+      backdrop-filter: blur(6px);
+    }
+    .auth-modal .auth-card {
+      position: relative;
+      width: min(420px, 92%);
+      background: rgba(15, 23, 42, 0.94);
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      box-shadow: 0 28px 68px rgba(6, 10, 24, 0.55);
+      padding: 28px;
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      z-index: 1;
+    }
+    .auth-modal h3 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .auth-modal p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .auth-form label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(203, 213, 225, 0.86);
+    }
+    .auth-form input {
+      border-radius: 12px;
+      border: 1px solid rgba(96, 112, 152, 0.45);
+      background: rgba(12, 19, 34, 0.8);
+      color: var(--text-primary);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .auth-form input:focus {
+      outline: none;
+      border-color: rgba(96, 165, 250, 0.65);
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+    }
+    .auth-error {
+      min-height: 18px;
+      font-size: 13px;
+      color: var(--danger);
+    }
+    .auth-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+    .auth-actions .btn.secondary {
+      color: var(--text-muted);
+      border-color: rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .auth-actions .btn.secondary:hover {
+      border-color: rgba(96, 165, 250, 0.55);
+      color: var(--text-primary);
+    }
     .muted { color: var(--muted); font-size: 12px; }
     .project-panel { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: grid; gap: 12px; }
     .project-panel label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
@@ -470,6 +557,29 @@
   </style>
 </head>
 <body>
+<div class="auth-modal" id="admin-auth-modal" data-visible="false" role="dialog" aria-modal="true">
+  <div class="auth-backdrop"></div>
+  <div class="auth-card">
+    <h3 id="admin-auth-title" data-i18n="authTitle">Administrator sign-in</h3>
+    <p id="admin-auth-message" data-i18n="authPrompt">Enter administrator credentials to continue.</p>
+    <p id="admin-auth-hint">Credentials will be sent to localhost</p>
+    <form class="auth-form" id="admin-auth-form">
+      <label for="admin-auth-username">
+        <span data-i18n="authUsernameLabel">Username</span>
+        <input type="text" id="admin-auth-username" autocomplete="username" data-i18n-placeholder="authUsernamePlaceholder">
+      </label>
+      <label for="admin-auth-password">
+        <span data-i18n="authPasswordLabel">Password</span>
+        <input type="password" id="admin-auth-password" autocomplete="current-password" data-i18n-placeholder="authPasswordPlaceholder">
+      </label>
+      <div class="auth-error" id="admin-auth-error"></div>
+      <div class="auth-actions">
+        <button type="button" class="btn secondary" id="admin-auth-cancel" data-i18n="authCancel">Cancel</button>
+        <button type="submit" class="btn" id="admin-auth-submit" data-i18n="authSubmit">Sign in</button>
+      </div>
+    </form>
+  </div>
+</div>
   <div class="page-shell" id="pageShell">
     <section class="hero">
       <div class="hero-copy">
@@ -672,6 +782,15 @@ const sendBtn = document.getElementById('sendBtn');
 const banner = document.getElementById('banner');
 const bannerText = document.getElementById('bannerText');
 const bannerClose = document.getElementById('bannerClose');
+const authModal = document.getElementById('admin-auth-modal');
+const authForm = document.getElementById('admin-auth-form');
+const authUserInput = document.getElementById('admin-auth-username');
+const authPasswordInput = document.getElementById('admin-auth-password');
+const authSubmitBtn = document.getElementById('admin-auth-submit');
+const authCancelBtn = document.getElementById('admin-auth-cancel');
+const authError = document.getElementById('admin-auth-error');
+const authHint = document.getElementById('admin-auth-hint');
+const authMessage = document.getElementById('admin-auth-message');
 const themeToggle = document.getElementById('themeToggle');
 const projectSelect = document.getElementById('projectSelect');
 const refreshProjectsBtn = document.getElementById('refreshProjects');
@@ -794,6 +913,20 @@ const LANGUAGES = {
       statusOffline: 'offline',
       bannerConnectionError: 'Connection error',
       bannerDismiss: 'Dismiss',
+      authTitle: 'Administrator sign-in',
+      authPrompt: 'Enter administrator credentials to continue.',
+      authHint: 'Credentials are sent to {host}.',
+      authUsernameLabel: 'Username',
+      authUsernamePlaceholder: 'Admin username',
+      authPasswordLabel: 'Password',
+      authPasswordPlaceholder: 'Admin password',
+      authSubmit: 'Sign in',
+      authCancel: 'Cancel',
+      authStatusChecking: 'Checking credentials…',
+      authErrorMissing: 'Enter username and password',
+      authErrorInvalid: 'Invalid credentials',
+      authErrorNetwork: 'Could not verify credentials',
+      errorAuthRequired: 'Administrator credentials required',
       feedbackButton: 'Feedback',
       feedbackOpen: 'Open feedback form',
       feedbackClose: 'Close',
@@ -1296,6 +1429,20 @@ const LANGUAGES = {
       statusOffline: 'не в сети',
       bannerConnectionError: 'Ошибка подключения',
       bannerDismiss: 'Закрыть',
+      authTitle: 'Вход администратора',
+      authPrompt: 'Введите учётные данные администратора, чтобы продолжить.',
+      authHint: 'Учётные данные будут отправлены на {host}.',
+      authUsernameLabel: 'Логин',
+      authUsernamePlaceholder: 'Имя администратора',
+      authPasswordLabel: 'Пароль',
+      authPasswordPlaceholder: 'Пароль администратора',
+      authSubmit: 'Войти',
+      authCancel: 'Отмена',
+      authStatusChecking: 'Проверяем данные…',
+      authErrorMissing: 'Введите логин и пароль',
+      authErrorInvalid: 'Неверные учётные данные',
+      authErrorNetwork: 'Не удалось проверить учётные данные',
+      errorAuthRequired: 'Нужен вход администратора',
       projectLabel: 'Проект',
       reloadProjects: 'Обновить',
       projectInfoNone: 'Проект не выбран',
@@ -1605,6 +1752,280 @@ function translateStatus(key) {
   const target = map[normalized];
   if (target) return t(target);
   return key;
+}
+
+const AUTH_CANCELLED_CODE = 'AUTH_CANCELLED';
+const adminAuthHeaders = new Map();
+let authModalPromise = null;
+let authModalResolver = null;
+let authModalBase = '';
+const ADMIN_USER_STORAGE_KEY = 'chat_widget_admin_user';
+
+function getCurrentBaseValue() {
+  return (baseUrlInput?.value || '').trim();
+}
+
+function normalizeAuthBase(base) {
+  const raw = (base || '').trim();
+  if (!raw) return '';
+  return raw.replace(/\/$/, '');
+}
+
+function getBaseKey(base) {
+  const normalized = normalizeAuthBase(base);
+  if (!normalized) return window.location.origin;
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    try {
+      return new URL(normalized, window.location.origin).origin;
+    } catch {
+      return normalized;
+    }
+  }
+}
+
+function buildAdminUrl(path, base) {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = normalizeAuthBase(base);
+  if (!normalized) return path;
+  return `${normalized}${path}`;
+}
+
+function computeAuthHost(base) {
+  const normalized = normalizeAuthBase(base);
+  if (!normalized) return window.location.origin;
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    try {
+      return new URL(normalized, window.location.origin).origin;
+    } catch {
+      return normalized;
+    }
+  }
+}
+
+function getStoredAdminUser() {
+  try {
+    return localStorage.getItem(ADMIN_USER_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function setStoredAdminUser(username) {
+  try {
+    if (username) {
+      localStorage.setItem(ADMIN_USER_STORAGE_KEY, username);
+    } else {
+      localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function setAuthErrorKey(key) {
+  if (!authError) return;
+  if (key) {
+    authError.dataset.key = key;
+    authError.textContent = t(key);
+  } else {
+    delete authError.dataset.key;
+    authError.textContent = '';
+  }
+}
+
+function setAuthSubmitting(state) {
+  if (authSubmitBtn) authSubmitBtn.disabled = state;
+  if (authCancelBtn) authCancelBtn.disabled = state;
+  if (state) {
+    setAuthErrorKey('authStatusChecking');
+  } else if (authError && authError.dataset.key === 'authStatusChecking') {
+    setAuthErrorKey('');
+  }
+}
+
+function updateAuthHint(base) {
+  if (!authHint) return;
+  const host = computeAuthHost(base);
+  authHint.dataset.host = host;
+  authHint.textContent = t('authHint').replace('{host}', host);
+}
+
+function showAuthModal(base) {
+  if (!authModal) return;
+  authModalBase = normalizeAuthBase(base);
+  updateAuthHint(authModalBase || window.location.origin);
+  if (authModal.dataset.visible === 'true') return;
+  setAuthSubmitting(false);
+  setAuthErrorKey('');
+  if (authMessage) authMessage.textContent = t('authPrompt');
+  if (authPasswordInput) authPasswordInput.value = '';
+  if (authUserInput && !authUserInput.value) {
+    const storedUser = getStoredAdminUser();
+    if (storedUser) authUserInput.value = storedUser;
+  }
+  authModal.dataset.visible = 'true';
+  document.body.classList.add('modal-open');
+  setTimeout(() => {
+    authUserInput?.focus();
+    authUserInput?.select?.();
+  }, 20);
+}
+
+function hideAuthModal() {
+  if (!authModal) return;
+  authModal.dataset.visible = 'false';
+  document.body.classList.remove('modal-open');
+  setAuthSubmitting(false);
+}
+
+function cancelAuthModal() {
+  if (!authModal || authModal.dataset.visible !== 'true') return;
+  hideAuthModal();
+  if (authModalResolver) authModalResolver(false);
+}
+
+async function verifyAdminCredentials(base, header) {
+  const url = buildAdminUrl('/api/v1/admin/session', base);
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: header },
+      credentials: 'same-origin',
+    });
+    return { ok: response.ok, status: response.status };
+  } catch (error) {
+    return { ok: false, status: 0, error };
+  }
+}
+
+function setAuthHeaderForBase(base, header) {
+  adminAuthHeaders.set(getBaseKey(base), header);
+}
+
+function getAuthHeaderForBase(base) {
+  return adminAuthHeaders.get(getBaseKey(base)) || null;
+}
+
+function clearAuthHeaderForBase(base) {
+  adminAuthHeaders.delete(getBaseKey(base));
+}
+
+function requestAdminAuth(base) {
+  if (!authModal) return Promise.resolve(false);
+  if (authModalPromise) return authModalPromise;
+  showAuthModal(base);
+  authModalPromise = new Promise((resolve) => {
+    authModalResolver = (value) => {
+      resolve(Boolean(value));
+    };
+  }).finally(() => {
+    authModalPromise = null;
+    authModalResolver = null;
+  });
+  return authModalPromise;
+}
+
+function createAuthCancelledError() {
+  const error = new Error('admin-auth-cancelled');
+  error.code = AUTH_CANCELLED_CODE;
+  return error;
+}
+
+async function fetchAdmin(path, init = {}) {
+  const base = normalizeAuthBase(getCurrentBaseValue());
+  const url = /^https?:\/\//i.test(path) ? path : buildAdminUrl(path, base);
+  const attempt = async () => {
+    const headers = new Headers(init.headers || {});
+    const token = getAuthHeaderForBase(base);
+    if (token && !headers.has('Authorization')) {
+      headers.set('Authorization', token);
+    }
+    const options = { ...init, headers };
+    return fetch(url, options);
+  };
+
+  let response;
+  try {
+    response = await attempt();
+  } catch (error) {
+    throw error;
+  }
+
+  if (response.status !== 401) {
+    if (response.status === 403) {
+      clearAuthHeaderForBase(base);
+    }
+    return response;
+  }
+
+  const authenticated = await requestAdminAuth(base);
+  if (!authenticated) {
+    throw createAuthCancelledError();
+  }
+
+  response = await attempt();
+  if (response.status === 401) {
+    clearAuthHeaderForBase(base);
+  }
+  return response;
+}
+
+async function handleAuthSubmit(event) {
+  event?.preventDefault?.();
+  if (!authForm) return;
+  const username = (authUserInput?.value || '').trim();
+  const password = authPasswordInput?.value || '';
+  if (!username || !password) {
+    setAuthErrorKey('authErrorMissing');
+    if (!username) authUserInput?.focus();
+    else authPasswordInput?.focus();
+    return;
+  }
+
+  const header = `Basic ${btoa(`${username}:${password}`)}`;
+  setAuthSubmitting(true);
+  const result = await verifyAdminCredentials(authModalBase, header);
+  setAuthSubmitting(false);
+
+  if (!result.ok) {
+    if (result.status === 401) {
+      setAuthErrorKey('authErrorInvalid');
+      if (authPasswordInput) {
+        authPasswordInput.value = '';
+        authPasswordInput.focus();
+      }
+    } else {
+      setAuthErrorKey('authErrorNetwork');
+    }
+    return;
+  }
+
+  setAuthHeaderForBase(authModalBase, header);
+  setStoredAdminUser(username);
+  if (authPasswordInput) authPasswordInput.value = '';
+  hideAuthModal();
+  if (authModalResolver) authModalResolver(true);
+}
+
+if (authForm) {
+  authForm.addEventListener('submit', handleAuthSubmit);
+}
+
+if (authCancelBtn) {
+  authCancelBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    cancelAuthModal();
+  });
+}
+
+if (authModal) {
+  authModal.addEventListener('click', (event) => {
+    if (event.target === authModal || event.target.classList.contains('auth-backdrop')) {
+      event.preventDefault();
+      cancelAuthModal();
+    }
+  });
 }
 
 function populateLanguageOptions() {
@@ -2176,6 +2597,16 @@ function applyLanguage(lang) {
     node.setAttribute('aria-label', t(key));
   });
 
+  if (authHint) {
+    const hostValue = authHint.dataset.host || computeAuthHost(getCurrentBaseValue());
+    authHint.dataset.host = hostValue;
+    authHint.textContent = t('authHint').replace('{host}', hostValue);
+  }
+
+  if (authError && authError.dataset.key) {
+    authError.textContent = t(authError.dataset.key);
+  }
+
   if (healthText) {
     const statusKey = healthText.dataset.statusKey || 'unknown';
     healthText.textContent = translateStatus(statusKey);
@@ -2287,7 +2718,7 @@ let currentES = null;
 let streaming = false;
 let tokenChars = 0;
 let streamingMessageEl = null;
-let projectsCache = {};
+let projectsCache = [];
 
 if (isEmbed) {
   document.body.classList.add('embed');
@@ -2309,7 +2740,14 @@ if (widgetLauncher) widgetLauncher.addEventListener('click', openChat);
 if (chatClose) chatClose.addEventListener('click', closeChat);
 if (chatBackdrop) chatBackdrop.addEventListener('click', closeChat);
 document.addEventListener('keydown', (evt) => {
-  if (evt.key === 'Escape') closeChat();
+  if (evt.key === 'Escape') {
+    if (authModal?.dataset.visible === 'true') {
+      evt.preventDefault();
+      cancelAuthModal();
+      return;
+    }
+    closeChat();
+  }
 });
 
 // Load saved base URL
@@ -2485,28 +2923,37 @@ function setStreamingState(value) {
 }
 
 async function loadProjects() {
-  const base = baseUrlInput.value.trim();
-  const url = base ? `${base.replace(/\/$/, '')}/api/v1/admin/projects/names` : '/api/v1/admin/projects/names';
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Failed to load projects');
+    const resp = await fetchAdmin('/api/v1/admin/projects/names');
+    if (resp.status === 401) {
+      bannerError(t('errorAuthRequired'));
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    projectsCache = data.projects || [];
-    projectSelect.innerHTML = '';
-    projectsCache.forEach((name) => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
-      projectSelect.appendChild(option);
-    });
+    let items = data.projects || [];
+    if (!Array.isArray(items)) items = [];
+    projectsCache = items;
+    if (projectSelect) {
+      projectSelect.innerHTML = '';
+      projectsCache.forEach((name) => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        projectSelect.appendChild(option);
+      });
+    }
     if (currentProject && projectsCache.includes(currentProject)) {
       projectSelect.value = currentProject;
     } else if (projectsCache.length) {
       currentProject = projectsCache[0];
-      projectSelect.value = currentProject;
+      if (projectSelect) projectSelect.value = currentProject;
     }
     updateProjectInfo();
   } catch (error) {
+    if (error && error.code === AUTH_CANCELLED_CODE) {
+      return;
+    }
     console.error(error);
     bannerError(t('errorLoadProjects'));
   }
@@ -2537,23 +2984,34 @@ debugCheckbox.addEventListener('change', () => {
 });
 
 savePromptBtn.addEventListener('click', async () => {
-  const base = baseUrlInput.value.trim();
-  const url = base ? `${base.replace(/\/$/, '')}/api/v1/admin/projects/${encodeURIComponent(currentProject)}` : `/api/v1/admin/projects/${encodeURIComponent(currentProject)}`;
+  if (!currentProject) {
+    promptStatus.textContent = t('projectInfoNone');
+    return;
+  }
+  const path = `/api/v1/admin/projects/${encodeURIComponent(currentProject)}`;
   const payload = {
     name: currentProject,
     llm_prompt: startPromptInput.value,
   };
   promptStatus.textContent = t('statusSaving');
   try {
-    const resp = await fetch(url, {
+    const resp = await fetchAdmin(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!resp.ok) throw new Error('Failed');
+    if (resp.status === 401) {
+      promptStatus.textContent = t('errorAuthRequired');
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     promptStatus.textContent = t('statusSaved');
     setTimeout(() => (promptStatus.textContent = ''), 3000);
   } catch (error) {
+    if (error && error.code === AUTH_CANCELLED_CODE) {
+      promptStatus.textContent = '';
+      return;
+    }
     console.error(error);
     promptStatus.textContent = t('statusError');
   }

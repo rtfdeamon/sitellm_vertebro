@@ -170,6 +170,22 @@ BITRIX_RESPONSE_PREVIEW_LIMIT = 2400
 BITRIX_PARAMS_PREVIEW_LIMIT = 800
 
 
+llm_router = APIRouter(
+    prefix="/llm",
+    tags=["llm"],
+    responses={
+        200: {"description": "LLM response"},
+        404: {"description": "Can't find specified sessionId"},
+        500: {"description": "Internal Server Error"},
+    },
+)
+
+crawler_router = APIRouter(
+    prefix="/crawler",
+    tags=["crawler"],
+)
+
+
 def _normalize_priority_order(order: list[str] | None) -> list[str]:
     sanitized: list[str] = []
     if order:
@@ -953,22 +969,6 @@ def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_
     return list(reversed(kept))
 
 
-llm_router = APIRouter(
-    prefix="/llm",
-    tags=["llm"],
-    responses={
-        200: {"description": "LLM response"},
-        404: {"description": "Can't find specified sessionId"},
-        500: {"description": "Internal Server Error"},
-    },
-)
-
-crawler_router = APIRouter(
-    prefix="/crawler",
-    tags=["crawler"],
-)
-
-
 @llm_router.post("/ask", response_class=ORJSONResponse, response_model=LLMResponse)
 async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     """Return a response from the language model for the given session.
@@ -1706,9 +1706,6 @@ class CrawlRequest(BaseModel):
     max_depth: int = 3
     project: str | None = None
     domain: str | None = None
-
-
-crawler_router = APIRouter(prefix="/crawler", tags=["crawler"])
 
 
 def _spawn_crawler(

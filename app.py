@@ -2187,7 +2187,11 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             except Exception as exc:  # noqa: BLE001
                 logger.warning("basic_auth_decode_failed", error=str(exc))
 
-        return Response(status_code=401, headers={"WWW-Authenticate": "Basic"})
+        accept_header = (request.headers.get("accept") or "").lower()
+        headers: dict[str, str] = {}
+        if "text/html" in accept_header:
+            headers["WWW-Authenticate"] = 'Basic realm="admin"'
+        return Response(status_code=401, headers=headers)
 
 
 class OllamaLLM:
