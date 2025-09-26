@@ -23,6 +23,7 @@ import httpx
 import structlog
 import subprocess
 import shutil
+from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -3293,12 +3294,16 @@ async def admin_knowledge(
     mongo_cfg = MongoSettings()
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     filter_query = {"project": project_name} if project_name else {}
+
     count_task: asyncio.Task[int] | None = None
     try:
         if q:
             docs_models = await mongo_client.search_documents(
                 collection, q, project=project_name
             )
+            matched = len(docs_models)
+            total = matched
+            has_more = matched >= limit
         else:
             count_task = asyncio.create_task(
                 mongo_client.db[collection].count_documents(filter_query or {})
@@ -3306,10 +3311,16 @@ async def admin_knowledge(
             cursor = (
                 mongo_client.db[collection]
                 .find(filter_query, {"_id": False})
-                .sort("name", 1)
-                .limit(limit)
+                .sort([("ts", -1), ("name", 1)])
+                .limit(limit + 1)
             )
             docs_models = [Document(**doc) async for doc in cursor]
+            has_more = len(docs_models) > limit
+            if has_more:
+                docs_models = docs_models[:limit]
+            total = await count_task
+            matched = total
+            count_task = None
 
         documents = [
             doc.model_dump(by_alias=True) if isinstance(doc, Document) else doc
@@ -3319,16 +3330,6 @@ async def admin_knowledge(
             file_id = doc.get("fileId")
             if file_id:
                 doc["downloadUrl"] = _build_download_url(request, file_id)
-        if count_task is not None:
-            total = await count_task
-        else:
-            total = await mongo_client.db[collection].count_documents(filter_query or {})
-        if q:
-            matched = len(documents)
-            has_more = len(documents) >= limit
-        else:
-            matched = total
-            has_more = len(documents) < total
     except Exception as exc:  # noqa: BLE001
         if count_task is not None and not count_task.done():
             count_task.cancel()
@@ -3336,6 +3337,10 @@ async def admin_knowledge(
                 await count_task
         raise HTTPException(status_code=503, detail=f"MongoDB query failed: {exc}") from exc
     finally:
+        if count_task is not None:
+            count_task.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await count_task
         if owns_client:
             await mongo_client.close()
 

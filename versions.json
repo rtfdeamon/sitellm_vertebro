@@ -1,11 +1,11 @@
 {
   "backend": {
-    "hash": "1026e4232a5b1f52645979d1ed438c6d33ee73e53314b79835311fe71fec5390",
-    "version": 18
+    "hash": "1d0f2cfa7af182a445fe89e7d1ae467501e8b23daae78f60b3531ed90d3870fb",
+    "version": 19
   },
   "telegram": {
-    "version": 17,
-    "hash": "c8a2ba3123150afd1a1cbd44230dace4bed981cc0552cefd4025dd7b5969cf4a"
+    "version": 18,
+    "hash": "f3f96f6cb7e9161d1446903b6e0408beb864463cc85f0b519aa1c6456f61d665"
   },
   "stateful": {
     "version": 2,

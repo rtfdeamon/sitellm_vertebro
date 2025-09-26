@@ -1909,7 +1909,6 @@ class MongoClient:
         if not normalized:
             normalized = ["qa", "text", "docs", "images", "vector"]
         await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
-
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
             return None
@@ -2238,90 +2237,6 @@ class MongoClient:
             return int(result.deleted_count or 0)
         except Exception as exc:
             logger.error("mongo_unanswered_clear_failed", error=str(exc))
-            raise
-
-    def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
-        if not doc:
-            return None
-        payload: dict[str, object] = {
-            "id": str(doc.get("_id")),
-            "message": doc.get("message"),
-            "name": doc.get("name"),
-            "contact": doc.get("contact"),
-            "page": doc.get("page"),
-            "project": doc.get("project"),
-            "source": doc.get("source"),
-            "status": doc.get("status", "open"),
-            "created_at": doc.get("created_at"),
-            "updated_at": doc.get("updated_at"),
-            "created_at_iso": doc.get("created_at_iso"),
-            "updated_at_iso": doc.get("updated_at_iso"),
-        }
-        return payload
-
-    async def create_feedback_task(self, payload: dict[str, object]) -> dict:
-        now = time.time()
-        document = {
-            "message": str(payload.get("message") or "").strip(),
-            "name": (str(payload.get("name")).strip() or None) if payload.get("name") else None,
-            "contact": (str(payload.get("contact")).strip() or None) if payload.get("contact") else None,
-            "page": (str(payload.get("page")).strip() or None) if payload.get("page") else None,
-            "project": (str(payload.get("project")).strip() or None) if payload.get("project") else None,
-            "source": (str(payload.get("source")) or "web").strip(),
-            "status": "open",
-            "created_at": now,
-            "updated_at": now,
-            "created_at_iso": datetime.utcfromtimestamp(now).isoformat(),
-            "updated_at_iso": datetime.utcfromtimestamp(now).isoformat(),
-        }
-        try:
-            result = await self.db[self.feedback_collection].insert_one(document)
-            document["_id"] = result.inserted_id
-            return self._serialize_feedback_task(document) or {}
-        except Exception as exc:
-            logger.error("mongo_feedback_create_failed", error=str(exc))
-            raise
-
-    async def list_feedback_tasks(self, *, limit: int = 100) -> list[dict]:
-        try:
-            cursor = (
-                self.db[self.feedback_collection]
-                .find({}, {"_id": True, "message": True, "name": True, "contact": True, "page": True, "project": True, "source": True, "status": True, "created_at": True, "updated_at": True, "created_at_iso": True, "updated_at_iso": True})
-                .sort("created_at", -1)
-                .limit(max(10, min(int(limit), 200)))
-            )
-            tasks: list[dict] = []
-            async for doc in cursor:
-                serialized = self._serialize_feedback_task(doc)
-                if serialized:
-                    tasks.append(serialized)
-            return tasks
-        except Exception as exc:
-            logger.error("mongo_feedback_list_failed", error=str(exc))
-            raise
-
-    async def update_feedback_task(self, task_id: str, updates: dict[str, object]) -> dict | None:
-        try:
-            oid = ObjectId(task_id)
-        except Exception:
-            return None
-        payload: dict[str, object] = {}
-        if "status" in updates:
-            payload["status"] = str(updates["status"])
-        if "note" in updates and updates["note"] is not None:
-            payload["note"] = str(updates["note"])
-        now = time.time()
-        payload["updated_at"] = now
-        payload["updated_at_iso"] = datetime.utcfromtimestamp(now).isoformat()
-        try:
-            result = await self.db[self.feedback_collection].find_one_and_update(
-                {"_id": oid},
-                {"$set": payload},
-                return_document=True,
-            )
-            return self._serialize_feedback_task(result)
-        except Exception as exc:
-            logger.error("mongo_feedback_update_failed", task_id=task_id, error=str(exc))
             raise
 
     async def close(self) -> None:

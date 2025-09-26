@@ -2749,6 +2749,7 @@
     const voiceRecordBtn = document.getElementById('voiceRecordBtn');
     const voiceRecordStatus = document.getElementById('voiceRecordStatus');
     const voiceJobsContainer = document.getElementById('voiceJobsContainer');
+    const feedbackTasksList = document.getElementById('feedbackTasksList');
     const kbModalBackdrop = document.getElementById('kbModal');
     const kbModalClose = document.getElementById('kbModalClose');
     const kbModalCancel = document.getElementById('kbModalCancel');
@@ -4206,7 +4207,6 @@
     })();
 
     let feedbackTasksCache = [];
-    var feedbackTasksList = null;
 
     let backupState = null;
 
@@ -4465,7 +4465,6 @@
     const projectStorageContexts = document.getElementById('projectStorageContexts');
     const projectStorageRedis = document.getElementById('projectStorageRedis');
     const feedbackSection = document.getElementById('block-feedback');
-    feedbackTasksList = document.getElementById('feedbackTasksList');
     const feedbackRefreshBtn = document.getElementById('feedbackRefresh');
     const knowledgeServiceToggle = document.getElementById('knowledgeServiceToggle');
     const knowledgeServiceApply = document.getElementById('knowledgeServiceApply');

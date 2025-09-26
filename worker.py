@@ -1,4 +1,4 @@
-"""Celery worker tasks for vector store updates, backups, and voice models."""
+"""Celery worker tasks for updating the Qdrant vector store, backups, and voice models."""
 
 import asyncio
 import json

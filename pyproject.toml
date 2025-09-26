@@ -102,3 +102,19 @@ py-modules = [
     "worker",
     "yallm",
 ]
+
+[tool.poetry.source]
+name = "pytorch_cpu"
+url = "https://download.pytorch.org/whl/cpu/simple"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu" },
+]
