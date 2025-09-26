@@ -112,6 +112,16 @@
       border-color: rgba(96, 165, 250, 0.65);
       box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
     }
+    .dev-credit {
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(148, 163, 184, 0.6);
+      text-decoration: none;
+    }
+    .dev-credit:hover {
+      color: rgba(248, 250, 252, 0.85);
+    }
 
     h1 {
       margin: 0;
@@ -426,6 +436,25 @@
     }
 
     .knowledge-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .kb-priority-panel { margin-top: 14px; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 12px; padding: 12px; background: rgba(15, 23, 42, 0.35); display: grid; gap: 10px; }
+    .kb-priority-header { display: flex; justify-content: space-between; align-items: center; }
+    .kb-priority-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .kb-priority-item { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 10px; background: rgba(23, 37, 84, 0.25); cursor: grab; }
+    .kb-priority-item.dragging { opacity: 0.6; }
+    .kb-priority-item span { font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+    .kb-priority-controls { display: inline-flex; gap: 6px; }
+    .kb-priority-controls button { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(17, 24, 39, 0.6); color: rgba(226, 232, 240, 0.9); cursor: pointer; }
+    .kb-priority-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .kb-priority-handle { font-size: 18px; line-height: 1; opacity: 0.65; }
+
+    .feedback-list { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
+    .feedback-item { border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 12px; padding: 12px; background: rgba(15, 23, 42, 0.45); display: grid; gap: 8px; }
+    .feedback-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: rgba(148, 163, 184, 0.8); }
+    .feedback-message { font-size: 13px; color: #e2e8f0; white-space: pre-wrap; }
+    .feedback-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .feedback-actions-row select { background: rgba(17, 24, 39, 0.6); border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 999px; color: #e2e8f0; padding: 6px 12px; font-size: 12px; }
+    .feedback-status-badge { border-radius: 999px; padding: 2px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(79, 124, 255, 0.16); color: rgba(196, 210, 255, 0.95); }
+    .feedback-timestamp { font-size: 11px; color: rgba(148, 163, 184, 0.7); }
 
     #kbForm {
       display: grid !important;
@@ -720,6 +749,17 @@
       border-radius: 10px;
       background: rgba(11, 16, 34, 0.35);
     }
+    .qa-import { display: grid; gap: 12px; }
+    .qa-upload { display: grid; gap: 6px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
+    .qa-upload input { background: rgba(15, 23, 42, 0.55); border: 1px dashed rgba(148, 163, 184, 0.35); border-radius: 12px; padding: 14px; color: var(--text-primary); }
+    .qa-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .qa-actions button { padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(17, 24, 39, 0.6); color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; }
+    .qa-table textarea { width: 100%; min-height: 80px; resize: vertical; background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(148, 163, 184, 0.35); color: var(--text-primary); border-radius: 10px; font-family: inherit; padding: 8px 10px; }
+    .qa-table input[type="number"] { width: 72px; background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(148, 163, 184, 0.35); color: var(--text-primary); border-radius: 8px; padding: 6px; }
+    .qa-table .qa-actions-cell { display: flex; gap: 8px; }
+    .unanswered-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    .unanswered-table td { vertical-align: top; }
+    .unanswered-table td:first-child { max-width: 520px; }
 
     .kb-category {
       display: flex;
@@ -1395,6 +1435,7 @@
         <select id="adminLanguage" aria-label="Language" data-i18n-aria-label="languageLabel"></select>
         <button type="button" id="toggleLayoutOrdering" data-i18n="buttonReorder">Упорядочить блоки</button>
         <button type="button" id="adminLogout" data-i18n="buttonLogout">Выйти</button>
+        <a class="dev-credit" href="https://dev-bot.su" target="_blank" rel="noopener" data-i18n="developerCredit">Created by дев-бот-су</a>
       </div>
     </div>
 
@@ -1408,6 +1449,16 @@
             <button type="button" class="kb-tab-button active" id="kbTabOverview" data-kb-target="overview" role="tab" aria-selected="true" aria-controls="kbSectionOverview">Обзор</button>
             <button type="button" class="kb-tab-button" id="kbTabUpload" data-kb-target="upload" role="tab" aria-selected="false" aria-controls="kbSectionUpload" tabindex="-1">Загрузка</button>
             <button type="button" class="kb-tab-button" id="kbTabDocuments" data-kb-target="documents" role="tab" aria-selected="false" aria-controls="kbSectionDocuments" tabindex="-1">Документы</button>
+            <button type="button" class="kb-tab-button" id="kbTabQA" data-kb-target="qa" role="tab" aria-selected="false" aria-controls="kbSectionQA" tabindex="-1">Вопрос–ответ</button>
+            <button type="button" class="kb-tab-button" id="kbTabUnanswered" data-kb-target="unanswered" role="tab" aria-selected="false" aria-controls="kbSectionUnanswered" tabindex="-1">Вопросы без ответа</button>
+          </div>
+          <div class="kb-priority-panel">
+            <div class="kb-priority-header">
+              <strong data-i18n="kbPriorityTitle">Приоритет источников</strong>
+              <button type="button" id="kbPrioritySave" data-i18n="saveButton">Сохранить</button>
+            </div>
+            <ul class="kb-priority-list" id="kbPriorityList"></ul>
+            <span class="muted" id="kbPriorityStatus"></span>
           </div>
           <div id="kbThinkingOverlay" class="thinking-overlay">
             <div class="thinking-inner">
@@ -1520,6 +1571,62 @@
                 </table>
               </div>
             </div>
+          </div>
+          <div class="kb-section" data-kb-section="qa" id="kbSectionQA" role="tabpanel" aria-labelledby="kbTabQA" aria-hidden="true">
+            <div class="qa-import">
+              <form id="kbQaImportForm">
+                <label class="qa-upload">
+                  <span>Excel файл с колонками «Вопрос» и «Ответ»</span>
+                  <input type="file" id="kbQaFile" accept=".xlsx,.xlsm,.xltx,.xltm,.csv" required>
+                </label>
+                <div class="qa-actions">
+                  <button type="submit">Импортировать</button>
+                  <button type="button" id="kbQaAddRow">Добавить вручную</button>
+                  <span class="muted" id="kbQaStatus"></span>
+                </div>
+              </form>
+            </div>
+            <div class="kb-meta-line">
+              <span>Всего пар:</span>
+              <span class="muted" id="kbCountQa">—</span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table class="qa-table">
+                <thead>
+                  <tr>
+                    <th>Вопрос</th>
+                    <th>Ответ</th>
+                    <th class="nowrap">Приоритет</th>
+                    <th class="nowrap">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="kbTableQa"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="kb-section" data-kb-section="unanswered" id="kbSectionUnanswered" role="tabpanel" aria-labelledby="kbTabUnanswered" aria-hidden="true">
+            <div class="kb-meta-line">
+              <span>Всего вопросов без ответа:</span>
+              <span class="muted" id="kbCountUnanswered">—</span>
+            </div>
+            <div class="unanswered-actions">
+              <button type="button" id="kbUnansweredExport">Экспорт CSV</button>
+              <button type="button" id="kbUnansweredClear">Очистить список</button>
+              <span class="muted" id="kbUnansweredStatus"></span>
+            </div>
+            <div class="kb-table-wrapper">
+              <table class="unanswered-table">
+                <thead>
+                  <tr>
+                    <th>Вопрос</th>
+                    <th class="nowrap">Количество</th>
+                    <th class="nowrap">Последний раз</th>
+                  </tr>
+                </thead>
+                <tbody id="kbTableUnanswered"></tbody>
+              </table>
+            </div>
+            <p class="muted" style="margin-top:12px;">Вопросы старше 30 дней удаляются автоматически.</p>
           </div>
         </div>
       </section>
@@ -1938,6 +2045,17 @@
               <span class="muted" id="projectWidgetMessage"></span>
             </div>
           </div>
+          <div class="project-bitrix" style="flex:1 1 260px; min-width:240px;">
+            <b style="display:block; margin-bottom:8px;">Bitrix24</b>
+            <label style="display:block; margin-bottom:8px;">Webhook URL
+              <input type="url" id="projectBitrixWebhook" placeholder="https://example.bitrix24.ru/rest/1/xxxxxxxxx/" style="width:100%;">
+            </label>
+            <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+              <input type="checkbox" id="projectBitrixEnabled">
+              Активировать интеграцию
+            </label>
+            <span class="muted" id="projectBitrixHint">Webhook используется для запросов модели и хранится на сервере.</span>
+          </div>
         </div>
       </div>
       </details>
@@ -1999,6 +2117,18 @@
               </form>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="block-feedback" class="dashboard-stack span-4" data-block-id="feedback" data-block-group="manage">
+      <div class="card control-card">
+        <div class="card-header">
+          <b data-i18n="feedbackSectionTitle">Feedback</b>
+          <button type="button" id="feedbackRefresh" data-i18n="reloadProjects">Reload</button>
+        </div>
+        <div class="feedback-list" id="feedbackTasksList">
+          <div class="muted" data-i18n="feedbackNoItems">No feedback yet.</div>
         </div>
       </div>
     </section>
@@ -2181,6 +2311,9 @@
     const projectTelegramSaveBtn = document.getElementById('projectTelegramSave');
     const projectTelegramStartBtn = document.getElementById('projectTelegramStart');
     const projectTelegramStopBtn = document.getElementById('projectTelegramStop');
+    const projectBitrixWebhookInput = document.getElementById('projectBitrixWebhook');
+    const projectBitrixEnabled = document.getElementById('projectBitrixEnabled');
+    const projectBitrixHint = document.getElementById('projectBitrixHint');
     const projectMaxTokenInput = document.getElementById('projectMaxToken');
     const projectMaxAutoStart = document.getElementById('projectMaxAutoStart');
     const projectMaxStatus = document.getElementById('projectMaxStatus');
@@ -2291,7 +2424,16 @@
       knowledgeServiceFetchError: 'Failed to fetch status',
       knowledgeServiceSaving: 'Saving…',
       knowledgeServiceSaved: 'Saved',
-      knowledgeServiceSaveError: 'Save failed'
+      knowledgeServiceSaveError: 'Save failed',
+      developerCredit: 'Created by дев-бот-су',
+      feedbackSectionTitle: 'Feedback',
+      feedbackStatusOpen: 'Open',
+      feedbackStatusInProgress: 'In progress',
+      feedbackStatusDone: 'Resolved',
+      feedbackStatusDismissed: 'Dismissed',
+      feedbackNoItems: 'No feedback yet.',
+      feedbackUpdated: 'Updated',
+      feedbackError: 'Failed to load feedback'
     };
 
     function createLanguage(name, dir, overrides = {}) {
@@ -3137,6 +3279,8 @@
           if (className) newValueNode.className = className;
         }
       });
+
+      renderFeedbackTasks(feedbackTasksCache);
     }
 
     if (languageSelect) {
@@ -3281,6 +3425,9 @@
     const projectStorageFiles = document.getElementById('projectStorageFiles');
     const projectStorageContexts = document.getElementById('projectStorageContexts');
     const projectStorageRedis = document.getElementById('projectStorageRedis');
+    const feedbackSection = document.getElementById('block-feedback');
+    const feedbackTasksList = document.getElementById('feedbackTasksList');
+    const feedbackRefreshBtn = document.getElementById('feedbackRefresh');
     const knowledgeServiceToggle = document.getElementById('knowledgeServiceToggle');
     const knowledgeServiceApply = document.getElementById('knowledgeServiceApply');
     const knowledgeServiceRefresh = document.getElementById('knowledgeServiceRefresh');
@@ -3475,6 +3622,7 @@
         if (knowledgeServiceCard) knowledgeServiceCard.style.display = 'none';
         if (promptsCard) promptsCard.style.display = 'none';
         if (logsCard) logsCard.style.display = 'none';
+        if (feedbackSection) feedbackSection.style.display = 'none';
         setKnowledgeServiceControlsDisabled(true);
         const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
         const modalAdminPass = projectModalAdminPassword ? projectModalAdminPassword.closest('label') : null;
@@ -3508,6 +3656,7 @@
         if (llmSection) llmSection.style.display = '';
         if (promptsCard) promptsCard.style.display = '';
         if (logsCard) logsCard.style.display = '';
+        if (feedbackSection) feedbackSection.style.display = '';
         if (ollamaCatalog) ollamaCatalog.classList.add('show');
       }
     };
@@ -3604,6 +3753,10 @@
     let OLLAMA_INSTALLED_SET = new Set();
     let ollamaPollTimer = null;
     let OLLAMA_SERVERS = [];
+    let feedbackTasksCache = [];
+    let qaPairsCache = [];
+    let knowledgePriorityOrder = [];
+    let draggingPriorityItem = null;
 
     async function performAdminLogout() {
       if (logoutButton) {
@@ -3683,12 +3836,31 @@
     const kbTableText = document.getElementById('kbTableText');
     const kbTableDocs = document.getElementById('kbTableDocs');
     const kbTableImages = document.getElementById('kbTableImages');
+    const kbTableQa = document.getElementById('kbTableQa');
     const kbCountText = document.getElementById('kbCountText');
     const kbCountDocs = document.getElementById('kbCountDocs');
     const kbCountImages = document.getElementById('kbCountImages');
+    const kbCountQa = document.getElementById('kbCountQa');
+    const kbQaStatus = document.getElementById('kbQaStatus');
+    const kbQaImportForm = document.getElementById('kbQaImportForm');
+    const kbQaFileInput = document.getElementById('kbQaFile');
+    const kbQaAddRowBtn = document.getElementById('kbQaAddRow');
+    const kbPriorityList = document.getElementById('kbPriorityList');
+    const kbPrioritySave = document.getElementById('kbPrioritySave');
+    const kbPriorityStatus = document.getElementById('kbPriorityStatus');
+    const kbTableUnanswered = document.getElementById('kbTableUnanswered');
+    const kbCountUnanswered = document.getElementById('kbCountUnanswered');
+    const kbUnansweredExportBtn = document.getElementById('kbUnansweredExport');
+    const kbUnansweredClearBtn = document.getElementById('kbUnansweredClear');
+    const kbUnansweredStatus = document.getElementById('kbUnansweredStatus');
     const KB_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
     const KB_TEXT_LIKE_TYPES = new Set(['application/json', 'application/xml', 'text/csv']);
     const KB_STATUS_PENDING = new Set(['pending_auto_description', 'auto_description_in_progress']);
+    const KNOWLEDGE_SOURCES = [
+      { id: 'qa', label: 'FAQ (Вопрос–ответ)' },
+      { id: 'qdrant', label: 'Векторный поиск' },
+      { id: 'mongo', label: 'Документы и файлы' },
+    ];
 
     const kbTables = {
       text: { body: kbTableText, counter: kbCountText, empty: 'Текстовые документы отсутствуют' },
@@ -3792,6 +3964,134 @@
       row.appendChild(cell);
       tbody.appendChild(row);
     };
+
+    const normalizeKnowledgePriority = (order) => {
+      const known = new Set(KNOWLEDGE_SOURCES.map((item) => item.id));
+      const sanitized = Array.isArray(order)
+        ? order.map((value) => String(value || '').trim()).filter((value) => known.has(value))
+        : [];
+      KNOWLEDGE_SOURCES.forEach((source) => {
+        if (!sanitized.includes(source.id)) sanitized.push(source.id);
+      });
+      return sanitized;
+    };
+
+    const renderKnowledgePriority = (order) => {
+      if (!kbPriorityList) return;
+      kbPriorityList.innerHTML = '';
+      knowledgePriorityOrder = normalizeKnowledgePriority(order);
+      knowledgePriorityOrder.forEach((sourceId) => {
+        const source = KNOWLEDGE_SOURCES.find((item) => item.id === sourceId);
+        if (!source) return;
+        const li = document.createElement('li');
+        li.className = 'kb-priority-item';
+        li.draggable = true;
+        li.dataset.source = source.id;
+        const label = document.createElement('span');
+        label.textContent = source.label;
+        li.appendChild(label);
+        const handle = document.createElement('span');
+        handle.className = 'kb-priority-handle';
+        handle.textContent = '⋮⋮';
+        li.appendChild(handle);
+        kbPriorityList.appendChild(li);
+      });
+
+      kbPriorityList.querySelectorAll('.kb-priority-item').forEach((item) => {
+        item.addEventListener('dragstart', (event) => {
+          draggingPriorityItem = item;
+          item.classList.add('dragging');
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', item.dataset.source || '');
+          }
+        });
+        item.addEventListener('dragend', () => {
+          item.classList.remove('dragging');
+          draggingPriorityItem = null;
+        });
+      });
+
+      if (!kbPriorityList.dataset.dragBound) {
+        kbPriorityList.addEventListener('dragover', (event) => {
+          if (!draggingPriorityItem) return;
+          event.preventDefault();
+          const target = event.target.closest('.kb-priority-item');
+          if (!target || target === draggingPriorityItem) return;
+          const rect = target.getBoundingClientRect();
+          const after = event.clientY - rect.top > rect.height / 2;
+          kbPriorityList.insertBefore(
+            draggingPriorityItem,
+            after ? target.nextSibling : target,
+          );
+        });
+        kbPriorityList.dataset.dragBound = '1';
+      }
+    };
+
+    const getKnowledgePriorityOrder = () => {
+      if (!kbPriorityList) return knowledgePriorityOrder;
+      const order = Array.from(kbPriorityList.querySelectorAll('.kb-priority-item'))
+        .map((item) => item.dataset.source || '')
+        .filter(Boolean);
+      knowledgePriorityOrder = normalizeKnowledgePriority(order);
+      return knowledgePriorityOrder;
+    };
+
+    async function loadKnowledgePriority(projectName) {
+      if (!kbPriorityList) return;
+      try {
+        const params = new URLSearchParams();
+        if (projectName) params.set('project', projectName);
+        const query = params.toString();
+        const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('priority_load_failed');
+        const data = await resp.json();
+        renderKnowledgePriority(data.order || []);
+      } catch (error) {
+        console.error('knowledge_priority_load_failed', error);
+        renderKnowledgePriority(knowledgePriorityOrder);
+        if (kbPriorityStatus) {
+          kbPriorityStatus.textContent = 'Не удалось загрузить приоритеты';
+        }
+      }
+    }
+
+    async function saveKnowledgePriority() {
+      if (!kbPriorityList || !kbPrioritySave) return;
+      const order = getKnowledgePriorityOrder();
+      if (kbPriorityStatus) {
+        kbPriorityStatus.textContent = 'Сохраняем...';
+      }
+      kbPrioritySave.disabled = true;
+      try {
+        const payload = { order };
+        const params = new URLSearchParams();
+        if (currentProject) params.set('project', currentProject);
+        const query = params.toString();
+        const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        if (kbPriorityStatus) {
+          kbPriorityStatus.textContent = 'Приоритеты обновлены';
+        }
+      } catch (error) {
+        console.error('knowledge_priority_save_failed', error);
+        if (kbPriorityStatus) {
+          kbPriorityStatus.textContent = 'Не удалось сохранить приоритеты';
+        }
+      } finally {
+        kbPrioritySave.disabled = false;
+        setTimeout(() => {
+          if (kbPriorityStatus) kbPriorityStatus.textContent = '';
+        }, 4000);
+      }
+    }
     const kbNavButtons = Array.from(document.querySelectorAll('[data-kb-target]'));
     const kbSections = Array.from(document.querySelectorAll('[data-kb-section]'));
 
@@ -5256,6 +5556,136 @@
       }
     }
 
+    const FEEDBACK_STATUS_OPTIONS = ['open', 'in_progress', 'done', 'dismissed'];
+
+    function feedbackStatusLabel(value) {
+      const map = {
+        open: 'feedbackStatusOpen',
+        in_progress: 'feedbackStatusInProgress',
+        done: 'feedbackStatusDone',
+        dismissed: 'feedbackStatusDismissed',
+      };
+      return t(map[value] || value || 'feedbackStatusOpen');
+    }
+
+    function renderFeedbackTasks(tasks) {
+      if (!feedbackTasksList) return;
+      feedbackTasksCache = tasks || [];
+      feedbackTasksList.innerHTML = '';
+      if (!tasks || !tasks.length) {
+        const empty = document.createElement('div');
+        empty.className = 'muted';
+        empty.textContent = t('feedbackNoItems');
+        feedbackTasksList.appendChild(empty);
+        return;
+      }
+      tasks.forEach((task) => {
+        const item = document.createElement('div');
+        item.className = 'feedback-item';
+
+        const metaRow = document.createElement('div');
+        metaRow.className = 'feedback-meta';
+        if (task.project) {
+          const badge = document.createElement('span');
+          badge.className = 'feedback-status-badge';
+          badge.textContent = `#${task.project}`;
+          metaRow.appendChild(badge);
+        }
+        const statusBadge = document.createElement('span');
+        statusBadge.className = 'feedback-status-badge';
+        statusBadge.textContent = feedbackStatusLabel(task.status);
+        metaRow.appendChild(statusBadge);
+        const created = document.createElement('span');
+        created.className = 'feedback-timestamp';
+        const createdIso = task.created_at_iso || (task.created_at ? new Date(task.created_at * 1000).toISOString() : null);
+        if (createdIso) created.textContent = new Date(createdIso).toLocaleString();
+        metaRow.appendChild(created);
+        item.appendChild(metaRow);
+
+        const messageEl = document.createElement('div');
+        messageEl.className = 'feedback-message';
+        messageEl.textContent = task.message || '';
+        item.appendChild(messageEl);
+
+        if (task.contact || task.name || task.page) {
+          const infoRow = document.createElement('div');
+          infoRow.className = 'feedback-meta';
+          if (task.name) infoRow.appendChild(document.createTextNode(task.name));
+          if (task.contact) infoRow.appendChild(document.createTextNode(task.contact));
+          if (task.page) {
+            const link = document.createElement('a');
+            link.href = task.page;
+            link.target = '_blank';
+            link.rel = 'noopener';
+            link.textContent = task.page;
+            infoRow.appendChild(link);
+          }
+          item.appendChild(infoRow);
+        }
+
+        const actionsRow = document.createElement('div');
+        actionsRow.className = 'feedback-actions-row';
+        const select = document.createElement('select');
+        FEEDBACK_STATUS_OPTIONS.forEach((status) => {
+          const option = document.createElement('option');
+          option.value = status;
+          option.textContent = feedbackStatusLabel(status);
+          if (status === task.status) option.selected = true;
+          select.appendChild(option);
+        });
+        select.addEventListener('change', () => {
+          updateFeedbackTask(task.id, select.value);
+        });
+        actionsRow.appendChild(select);
+
+        const updated = document.createElement('span');
+        updated.className = 'feedback-timestamp';
+        const updatedIso = task.updated_at_iso || (task.updated_at ? new Date(task.updated_at * 1000).toISOString() : null);
+        if (updatedIso) updated.textContent = `${t('feedbackUpdated')}: ${new Date(updatedIso).toLocaleString()}`;
+        actionsRow.appendChild(updated);
+
+        item.appendChild(actionsRow);
+        feedbackTasksList.appendChild(item);
+      });
+    }
+
+    async function fetchFeedbackTasks() {
+      if (!adminSession.is_super) {
+        if (feedbackSection) feedbackSection.style.display = 'none';
+        return;
+      }
+      if (feedbackSection) feedbackSection.style.display = '';
+      try {
+        const resp = await fetch('/api/v1/admin/feedback', { cache: 'no-store' });
+        if (!resp.ok) throw new Error(await resp.text());
+        const data = await resp.json();
+        renderFeedbackTasks(Array.isArray(data.tasks) ? data.tasks : []);
+      } catch (error) {
+        console.error('feedback_tasks_fetch_failed', error);
+        if (feedbackTasksList) {
+          feedbackTasksList.innerHTML = '';
+          const fallback = document.createElement('div');
+          fallback.className = 'muted';
+          fallback.textContent = t('feedbackError');
+          feedbackTasksList.appendChild(fallback);
+        }
+      }
+    }
+
+    async function updateFeedbackTask(id, status) {
+      try {
+        const resp = await fetch(`/api/v1/admin/feedback/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status }),
+        });
+        if (!resp.ok) throw new Error(await resp.text());
+        await fetchFeedbackTasks();
+      } catch (error) {
+        console.error('feedback_task_update_failed', error);
+      }
+    }
+
     async function submitOllamaServerForm(event) {
       event.preventDefault();
       if (!ollamaServerForm) return;
@@ -5843,6 +6273,9 @@
         const projectId = currentProject.trim().toLowerCase();
         params.set('project', projectId);
       }
+      if (kbPriorityList) {
+        await loadKnowledgePriority(currentProject);
+      }
       try {
         const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`);
         if (!resp.ok) throw new Error('knowledge request failed');
@@ -5880,9 +6313,310 @@
         if (currentProject) infoParts.push(`Проект: ${currentProject}`);
         if (query) infoParts.push(`Фильтр: "${query}"`);
         document.getElementById('kbInfo').textContent = infoParts.join(' · ');
+        await loadKnowledgeQa();
+        await loadUnansweredQuestions();
       } catch (error) {
         document.getElementById('kbInfo').textContent = 'Ошибка загрузки базы знаний';
         console.error(error);
+      }
+    }
+
+    function renderQaEmpty(text) {
+      if (!kbTableQa) return;
+      kbTableQa.innerHTML = '';
+      const row = document.createElement('tr');
+      const cell = document.createElement('td');
+      cell.colSpan = 4;
+      cell.textContent = text;
+      cell.className = 'muted';
+      row.appendChild(cell);
+      kbTableQa.appendChild(row);
+    }
+
+    function renderQaTable(items) {
+      if (!kbTableQa) return;
+      kbTableQa.innerHTML = '';
+      if (!Array.isArray(items) || !items.length) {
+        renderQaEmpty(currentProject ? 'Добавьте вопросы вручную или импортируйте файл' : 'Выберите проект');
+        return;
+      }
+      items.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.dataset.qaId = item.id || '';
+        tr.dataset.qaPriority = String(item.priority ?? 0);
+        const questionTd = document.createElement('td');
+        const questionInput = document.createElement('textarea');
+        questionInput.value = item.question || '';
+        questionInput.dataset.qaField = 'question';
+        questionInput.rows = 3;
+        questionTd.appendChild(questionInput);
+        const answerTd = document.createElement('td');
+        const answerInput = document.createElement('textarea');
+        answerInput.value = item.answer || '';
+        answerInput.dataset.qaField = 'answer';
+        answerInput.rows = 3;
+        answerTd.appendChild(answerInput);
+        const priorityTd = document.createElement('td');
+        priorityTd.className = 'qa-priority-cell';
+        const priorityInput = document.createElement('input');
+        priorityInput.type = 'number';
+        priorityInput.dataset.qaField = 'priority';
+        priorityInput.value = Number.isFinite(item.priority) ? String(item.priority) : String(items.length - index);
+        priorityTd.appendChild(priorityInput);
+        const actionsTd = document.createElement('td');
+        actionsTd.className = 'qa-actions-cell';
+        const saveBtn = document.createElement('button');
+        saveBtn.type = 'button';
+        saveBtn.textContent = 'Сохранить';
+        saveBtn.dataset.action = 'save';
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Удалить';
+        deleteBtn.dataset.action = 'delete';
+        const upBtn = document.createElement('button');
+        upBtn.type = 'button';
+        upBtn.textContent = '↑';
+        upBtn.dataset.action = 'move-up';
+        if (index === 0) upBtn.disabled = true;
+        const downBtn = document.createElement('button');
+        downBtn.type = 'button';
+        downBtn.textContent = '↓';
+        downBtn.dataset.action = 'move-down';
+        if (index === items.length - 1) downBtn.disabled = true;
+        actionsTd.append(saveBtn, deleteBtn, upBtn, downBtn);
+        tr.append(questionTd, answerTd, priorityTd, actionsTd);
+        kbTableQa.appendChild(tr);
+      });
+    }
+
+    function addQaDraftRow() {
+      if (!kbTableQa) return;
+      if (!currentProject) {
+        if (kbQaStatus) kbQaStatus.textContent = 'Сначала выберите проект';
+        setTimeout(() => { if (kbQaStatus) kbQaStatus.textContent = ''; }, 3000);
+        return;
+      }
+      const tr = document.createElement('tr');
+      tr.dataset.qaId = `new-${Date.now()}`;
+      tr.dataset.qaNew = '1';
+      const questionTd = document.createElement('td');
+      const questionInput = document.createElement('textarea');
+      questionInput.dataset.qaField = 'question';
+      questionInput.placeholder = 'Вопрос';
+      questionTd.appendChild(questionInput);
+      const answerTd = document.createElement('td');
+      const answerInput = document.createElement('textarea');
+      answerInput.dataset.qaField = 'answer';
+      answerInput.placeholder = 'Ответ';
+      answerTd.appendChild(answerInput);
+      const priorityTd = document.createElement('td');
+      const priorityInput = document.createElement('input');
+      priorityInput.type = 'number';
+      priorityInput.dataset.qaField = 'priority';
+      priorityInput.value = qaPairsCache.length ? String(qaPairsCache[0].priority + 1) : '1';
+      priorityTd.appendChild(priorityInput);
+      const actionsTd = document.createElement('td');
+      actionsTd.className = 'qa-actions-cell';
+      const saveBtn = document.createElement('button');
+      saveBtn.type = 'button';
+      saveBtn.textContent = 'Сохранить';
+      saveBtn.dataset.action = 'save';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.type = 'button';
+      cancelBtn.textContent = 'Отмена';
+      cancelBtn.dataset.action = 'cancel';
+      actionsTd.append(saveBtn, cancelBtn);
+      tr.append(questionTd, answerTd, priorityTd, actionsTd);
+      const firstRow = kbTableQa.querySelector('tr');
+      if (firstRow && firstRow.querySelector('.muted')) {
+        kbTableQa.innerHTML = '';
+      }
+      kbTableQa.insertBefore(tr, kbTableQa.firstChild);
+      questionInput.focus();
+    }
+
+    async function loadKnowledgeQa() {
+      if (!kbTableQa) return;
+      if (!currentProject) {
+        renderQaEmpty('Выберите проект');
+        if (kbCountQa) kbCountQa.textContent = '—';
+        qaPairsCache = [];
+        return;
+      }
+      try {
+        const params = new URLSearchParams();
+        params.set('project', currentProject);
+        params.set('limit', '500');
+        const resp = await fetch(`/api/v1/admin/knowledge/qa?${params.toString()}`);
+        if (!resp.ok) throw new Error('qa_load_failed');
+        const data = await resp.json();
+        qaPairsCache = Array.isArray(data.items) ? data.items.slice() : [];
+        if (Array.isArray(data.priority) && data.priority.length) {
+          renderKnowledgePriority(data.priority);
+        }
+        renderQaTable(qaPairsCache);
+        if (kbCountQa) kbCountQa.textContent = qaPairsCache.length ? String(qaPairsCache.length) : '0';
+      } catch (error) {
+        console.error('knowledge_qa_load_failed', error);
+        renderQaEmpty('Не удалось загрузить вопросы');
+        if (kbQaStatus) {
+          kbQaStatus.textContent = 'Ошибка загрузки';
+          setTimeout(() => { kbQaStatus.textContent = ''; }, 3000);
+        }
+      }
+    }
+
+    async function saveQaRow(row) {
+      if (!row) return;
+      const question = row.querySelector('[data-qa-field="question"]').value.trim();
+      const answer = row.querySelector('[data-qa-field="answer"]').value.trim();
+      const priority = parseInt(row.querySelector('[data-qa-field="priority"]').value || '0', 10) || 0;
+      if (!question || !answer) {
+        if (kbQaStatus) {
+          kbQaStatus.textContent = 'Заполните вопрос и ответ';
+          setTimeout(() => { kbQaStatus.textContent = ''; }, 3000);
+        }
+        return;
+      }
+      const isNew = row.dataset.qaNew === '1' || !(row.dataset.qaId || '').trim();
+      const payload = { question, answer, priority };
+      if (kbQaStatus) kbQaStatus.textContent = 'Сохраняем...';
+      try {
+        if (isNew) {
+          const params = new URLSearchParams();
+          if (currentProject) params.set('project', currentProject);
+          const query = params.toString();
+          const url = query ? `/api/v1/admin/knowledge/qa?${query}` : '/api/v1/admin/knowledge/qa';
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+        } else {
+          const id = row.dataset.qaId;
+          const resp = await fetch(`/api/v1/admin/knowledge/qa/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+        }
+        if (kbQaStatus) kbQaStatus.textContent = 'Сохранено';
+        await loadKnowledgeQa();
+      } catch (error) {
+        console.error('knowledge_qa_save_failed', error);
+        if (kbQaStatus) kbQaStatus.textContent = 'Ошибка сохранения';
+      } finally {
+        setTimeout(() => { if (kbQaStatus) kbQaStatus.textContent = ''; }, 4000);
+      }
+    }
+
+    async function deleteQaRow(row) {
+      if (!row) return;
+      const id = (row.dataset.qaId || '').trim();
+      if (!id || row.dataset.qaNew === '1') {
+        row.remove();
+        if (!kbTableQa.querySelector('tr')) {
+          renderQaEmpty('Добавьте вопросы вручную или импортируйте файл');
+        }
+        return;
+      }
+      if (!confirm('Удалить эту пару вопрос-ответ?')) return;
+      if (kbQaStatus) kbQaStatus.textContent = 'Удаляем...';
+      try {
+        const resp = await fetch(`/api/v1/admin/knowledge/qa/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!resp.ok) throw new Error(await resp.text());
+        await loadKnowledgeQa();
+        if (kbQaStatus) kbQaStatus.textContent = 'Удалено';
+      } catch (error) {
+        console.error('knowledge_qa_delete_failed', error);
+        if (kbQaStatus) kbQaStatus.textContent = 'Не удалось удалить';
+      } finally {
+        setTimeout(() => { if (kbQaStatus) kbQaStatus.textContent = ''; }, 4000);
+      }
+    }
+
+    async function reorderQaPair(id, direction) {
+      if (!id) return;
+      const index = qaPairsCache.findIndex((item) => item.id === id);
+      if (index === -1) return;
+      const targetIndex = index + direction;
+      if (targetIndex < 0 || targetIndex >= qaPairsCache.length) return;
+      const [moved] = qaPairsCache.splice(index, 1);
+      qaPairsCache.splice(targetIndex, 0, moved);
+      const order = qaPairsCache.map((item) => item.id).filter(Boolean);
+      if (!order.length) return;
+      if (kbQaStatus) kbQaStatus.textContent = 'Сохраняем порядок...';
+      try {
+      const params = new URLSearchParams();
+      if (currentProject) params.set('project', currentProject);
+      const query = params.toString();
+      const url = query ? `/api/v1/admin/knowledge/qa/reorder?${query}` : '/api/v1/admin/knowledge/qa/reorder';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      });
+        if (!resp.ok) throw new Error(await resp.text());
+        await loadKnowledgeQa();
+        if (kbQaStatus) kbQaStatus.textContent = 'Порядок обновлён';
+      } catch (error) {
+        console.error('knowledge_qa_reorder_failed', error);
+        if (kbQaStatus) kbQaStatus.textContent = 'Не удалось изменить порядок';
+      } finally {
+        setTimeout(() => { if (kbQaStatus) kbQaStatus.textContent = ''; }, 4000);
+      }
+    }
+
+    function renderUnansweredTable(items) {
+      if (!kbTableUnanswered) return;
+      kbTableUnanswered.innerHTML = '';
+      if (!Array.isArray(items) || !items.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 3;
+        cell.className = 'muted';
+        cell.textContent = currentProject ? 'Пока пусто — все вопросы с ответами' : 'Выберите проект';
+        row.appendChild(cell);
+        kbTableUnanswered.appendChild(row);
+        if (kbCountUnanswered) kbCountUnanswered.textContent = '0';
+        return;
+      }
+      items.forEach((item) => {
+        const row = document.createElement('tr');
+        const questionTd = document.createElement('td');
+        questionTd.textContent = item.question || '';
+        const hitsTd = document.createElement('td');
+        hitsTd.textContent = String(item.hits || 1);
+        const updatedTd = document.createElement('td');
+        updatedTd.textContent = formatTimestamp(item.updated_at);
+        row.append(questionTd, hitsTd, updatedTd);
+        kbTableUnanswered.appendChild(row);
+      });
+      if (kbCountUnanswered) kbCountUnanswered.textContent = String(items.length);
+    }
+
+    async function loadUnansweredQuestions() {
+      if (!kbTableUnanswered) return;
+      if (!currentProject) {
+        renderUnansweredTable([]);
+        return;
+      }
+      try {
+        const params = new URLSearchParams();
+        params.set('project', currentProject);
+        const resp = await fetch(`/api/v1/admin/knowledge/unanswered?${params.toString()}`);
+        if (!resp.ok) throw new Error('unanswered_load_failed');
+        const data = await resp.json();
+        renderUnansweredTable(data.items || []);
+      } catch (error) {
+        console.error('knowledge_unanswered_load_failed', error);
+        renderUnansweredTable([]);
+        if (kbUnansweredStatus) {
+          kbUnansweredStatus.textContent = 'Ошибка загрузки';
+          setTimeout(() => { kbUnansweredStatus.textContent = ''; }, 4000);
+        }
       }
     }
 
@@ -6339,6 +7073,111 @@
       });
       kbNewFileInput.addEventListener('change', () => updateDropZonePreview(kbNewFileInput.files));
       updateDropZonePreview(kbNewFileInput.files);
+    }
+
+    if (kbPrioritySave) {
+      kbPrioritySave.addEventListener('click', () => {
+        saveKnowledgePriority();
+      });
+    }
+
+    if (kbQaImportForm) {
+      kbQaImportForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!currentProject) {
+          if (kbQaStatus) {
+            kbQaStatus.textContent = 'Выберите проект';
+            setTimeout(() => { kbQaStatus.textContent = ''; }, 3000);
+          }
+          return;
+        }
+        const file = kbQaFileInput?.files?.[0];
+        if (!file) {
+          if (kbQaStatus) {
+            kbQaStatus.textContent = 'Выберите файл';
+            setTimeout(() => { kbQaStatus.textContent = ''; }, 3000);
+          }
+          return;
+        }
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('project', currentProject);
+        if (kbQaStatus) kbQaStatus.textContent = 'Импортируем...';
+        try {
+          const resp = await fetch('/api/v1/admin/knowledge/qa/upload', {
+            method: 'POST',
+            body: fd,
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+          kbQaFileInput.value = '';
+          await loadKnowledgeQa();
+          if (kbQaStatus) kbQaStatus.textContent = 'Импорт выполнен';
+        } catch (error) {
+          console.error('knowledge_qa_import_failed', error);
+          if (kbQaStatus) kbQaStatus.textContent = 'Ошибка импорта';
+        } finally {
+          setTimeout(() => { if (kbQaStatus) kbQaStatus.textContent = ''; }, 4000);
+        }
+      });
+    }
+
+    if (kbQaAddRowBtn) {
+      kbQaAddRowBtn.addEventListener('click', () => addQaDraftRow());
+    }
+
+    if (kbTableQa) {
+      kbTableQa.addEventListener('click', (event) => {
+        const actionButton = event.target.closest('button[data-action]');
+        if (!actionButton) return;
+        const row = actionButton.closest('tr');
+        const action = actionButton.dataset.action;
+        if (action === 'save') {
+          saveQaRow(row);
+        } else if (action === 'delete') {
+          deleteQaRow(row);
+        } else if (action === 'cancel') {
+          row.remove();
+          if (!kbTableQa.querySelector('tr')) {
+            renderQaEmpty('Добавьте вопросы вручную или импортируйте файл');
+          }
+        } else if (action === 'move-up') {
+          reorderQaPair(row?.dataset.qaId || '', -1);
+        } else if (action === 'move-down') {
+          reorderQaPair(row?.dataset.qaId || '', 1);
+        }
+      });
+    }
+
+    if (kbUnansweredExportBtn) {
+      kbUnansweredExportBtn.addEventListener('click', () => {
+        const params = new URLSearchParams();
+        if (currentProject) params.set('project', currentProject);
+        const query = params.toString();
+        const url = query ? `/api/v1/admin/knowledge/unanswered/export?${query}` : '/api/v1/admin/knowledge/unanswered/export';
+        window.open(url, '_blank');
+      });
+    }
+
+    if (kbUnansweredClearBtn) {
+      kbUnansweredClearBtn.addEventListener('click', async () => {
+        if (!confirm('Очистить список вопросов без ответа?')) return;
+        if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Очищаем...';
+        try {
+          const resp = await fetch('/api/v1/admin/knowledge/unanswered/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project: currentProject || null }),
+          });
+          if (!resp.ok) throw new Error(await resp.text());
+          await loadUnansweredQuestions();
+          if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Список очищен';
+        } catch (error) {
+          console.error('knowledge_unanswered_clear_failed', error);
+          if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Не удалось очистить';
+        } finally {
+          setTimeout(() => { if (kbUnansweredStatus) kbUnansweredStatus.textContent = ''; }, 4000);
+        }
+      });
     }
 
     kbModalClose.addEventListener('click', hideKnowledgeModal);
@@ -7020,6 +7859,23 @@
       if (projectVkAutoStart) {
         projectVkAutoStart.checked = !!project?.vk_auto_start;
       }
+      if (projectBitrixEnabled) {
+        projectBitrixEnabled.checked = !!project?.bitrix_enabled;
+      }
+      if (projectBitrixWebhookInput) {
+        projectBitrixWebhookInput.value = project?.bitrix_webhook_url || '';
+      }
+      if (projectBitrixHint) {
+        if (!project) {
+          projectBitrixHint.textContent = 'Webhook используется для запросов модели и хранится на сервере.';
+        } else if (project?.bitrix_webhook_url) {
+          projectBitrixHint.textContent = project?.bitrix_enabled
+            ? 'Webhook сохранён. Измените поле, чтобы обновить значение или оставьте его для работы интеграции.'
+            : 'Webhook сохранён, но интеграция выключена. Измените поле или включите интеграцию, чтобы использовать Bitrix.';
+        } else {
+          projectBitrixHint.textContent = 'Укажите URL вебхука Bitrix24, чтобы включить интеграцию.';
+        }
+      }
       if (projectAdminSection) {
         projectAdminSection.style.display = project ? 'flex' : 'none';
       }
@@ -7169,6 +8025,8 @@
             knowledge_image_caption_enabled: p.knowledge_image_caption_enabled === undefined ? true : !!p.knowledge_image_caption_enabled,
             admin_username: typeof p.admin_username === 'string' ? p.admin_username.trim() : '',
             admin_password_set: Boolean(p.admin_password_set),
+            bitrix_enabled: p.bitrix_enabled === undefined ? false : !!p.bitrix_enabled,
+            bitrix_webhook_url: typeof p.bitrix_webhook_url === 'string' ? p.bitrix_webhook_url.trim() : p.bitrix_webhook_url,
           };
           delete cleaned.telegram_token;
           projectsCache[key] = cleaned;
@@ -7204,6 +8062,36 @@
       projectForm.requestSubmit();
     });
 
+    if (projectBitrixEnabled && projectBitrixHint) {
+      projectBitrixEnabled.addEventListener('change', () => {
+        const hasWebhook = projectBitrixWebhookInput && projectBitrixWebhookInput.value.trim().length > 0;
+        if (projectBitrixEnabled.checked) {
+          projectBitrixHint.textContent = hasWebhook
+            ? 'Интеграция активна. Модель сможет запрашивать Bitrix24.'
+            : 'Интеграция включена. Укажите webhook, чтобы запросы выполнялись корректно.';
+        } else {
+          projectBitrixHint.textContent = hasWebhook
+            ? 'Webhook сохранён, но интеграция выключена. Включите переключатель, чтобы использовать Bitrix.'
+            : 'Укажите URL вебхука Bitrix24, чтобы включить интеграцию.';
+        }
+      });
+    }
+
+    if (projectBitrixWebhookInput && projectBitrixHint) {
+      projectBitrixWebhookInput.addEventListener('input', () => {
+        const hasWebhook = projectBitrixWebhookInput.value.trim().length > 0;
+        if (projectBitrixEnabled && projectBitrixEnabled.checked) {
+          projectBitrixHint.textContent = hasWebhook
+            ? 'Интеграция активна. Модель сможет запрашивать Bitrix24.'
+            : 'Интеграция включена. Укажите webhook, чтобы запросы выполнялись корректно.';
+        } else {
+          projectBitrixHint.textContent = hasWebhook
+            ? 'Webhook сохранён, но интеграция выключена. Включите переключатель, чтобы использовать Bitrix.'
+            : 'Укажите URL вебхука Bitrix24, чтобы включить интеграцию.';
+        }
+      });
+    }
+
     projectForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = projectNameInput.value.trim().toLowerCase();
@@ -7225,6 +8113,13 @@
         debug_enabled: projectDebugInput ? projectDebugInput.checked : false,
         widget_url: projectWidgetUrl && projectWidgetUrl.value.trim() ? projectWidgetUrl.value.trim() : null,
       };
+      if (projectBitrixEnabled) {
+        payload.bitrix_enabled = projectBitrixEnabled.checked;
+      }
+      if (projectBitrixWebhookInput) {
+        const webhook = projectBitrixWebhookInput.value.trim();
+        payload.bitrix_webhook_url = webhook ? webhook : null;
+      }
       if (projectVoiceInput && !projectVoiceInput.checked) {
         payload.llm_voice_model = null;
       } else if (projectVoiceModelInput) {
@@ -7347,6 +8242,9 @@
     if (ollamaServerForm) {
       ollamaServerForm.addEventListener('submit', submitOllamaServerForm);
     }
+    if (feedbackRefreshBtn) {
+      feedbackRefreshBtn.addEventListener('click', () => fetchFeedbackTasks());
+    }
 
     const promptAiHandlers = [];
     const mainPromptAiHandler = initPromptAiControls({
@@ -7400,6 +8298,7 @@
       await loadRequestStats();
       if (adminSession.is_super) {
         await fetchKnowledgeServiceStatus();
+        await fetchFeedbackTasks();
       }
       if (currentProject) {
         populateProjectForm(currentProject);

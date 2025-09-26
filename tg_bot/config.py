@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     status_url: AnyUrl | None = None
     project_sync_interval: int = 30
     request_timeout: int = 30
+    speech_to_text_url: AnyUrl | None = None
+    speech_to_text_language: str | None = None
+    speech_to_text_api_key: str | None = None
 
     model_config = ConfigDict(env_file=".env", env_file_encoding="utf-8")
 

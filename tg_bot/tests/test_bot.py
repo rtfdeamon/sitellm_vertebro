@@ -5,6 +5,7 @@ import sys
 import types
 import asyncio
 from pathlib import Path
+from typing import Optional
 fake_pydantic = types.ModuleType("pydantic")
 fake_pydantic.AnyUrl = str
 fake_pydantic.BaseSettings = object
@@ -44,6 +45,9 @@ fake_config.get_settings = lambda: types.SimpleNamespace(
     backend_url="http://api",
     request_timeout=10,
     resolve_status_url=lambda: "http://api/status",
+    speech_to_text_url=None,
+    speech_to_text_language=None,
+    speech_to_text_api_key=None,
 )
 sys.modules["tg_bot.config"] = fake_config
 fake_client = types.ModuleType("tg_bot.client")
@@ -83,6 +87,11 @@ class FakeMessage:
         self.photos = []
         self.chat = types.SimpleNamespace(id=1, do=lambda action: asyncio.sleep(0))
         self.from_user = types.SimpleNamespace(id=1)
+        self.voice = None
+        async def _download(_file, destination):
+            if hasattr(destination, 'write'):
+                destination.write(b"")
+        self.bot = types.SimpleNamespace(download=_download)
 
     async def answer(self, text, **kwargs):
         self.sent.append(text)
@@ -149,6 +158,9 @@ def test_status_handler():
         backend_verify_ssl=True,
         backend_ca_path=None,
         resolve_status_url=lambda: "http://api/status",
+        speech_to_text_url=None,
+        speech_to_text_language=None,
+        speech_to_text_api_key=None,
     )
     msg = FakeMessage("/status")
     asyncio.run(bot_mod.status_handler(msg, "demo", "session"))
@@ -165,6 +177,7 @@ def test_status_handler():
 
 def test_text_handler_sends_image(monkeypatch):
     """Binary attachments with image content type should be sent as photos."""
+    bot_mod.PENDING_BITRIX.clear()
 
     async def fake_rag_answer(question, project=None, session_id=None, debug=None):
         return {
@@ -196,3 +209,157 @@ def test_text_handler_sends_image(monkeypatch):
     assert msg.documents == []
     assert msg.photos == []
     assert any('Отправить?' in str(item) or 'Отправить' in str(item) for item in msg.sent)
+
+
+def test_voice_handler_without_stt():
+    """Voice handler should decline when STT URL is not configured."""
+
+    bot_mod.PENDING_BITRIX.clear()
+    msg = FakeMessage()
+    msg.voice = types.SimpleNamespace(mime_type="audio/ogg")
+
+    asyncio.run(bot_mod.voice_handler(msg, project="demo", session_id="abc"))
+
+    assert msg.sent == ["🎙️ Голосовые сообщения пока не поддерживаются. Попробуйте отправить текст."]
+
+
+def test_bitrix_pending_prompt_and_confirm(monkeypatch):
+    """Bot should prompt for Bitrix confirmation and send on approval."""
+
+    bot_mod.PENDING_BITRIX.clear()
+
+    async def fake_rag_answer(question, project=None, session_id=None, debug=None):
+        return {
+            "text": "ok",
+            "attachments": [],
+            "meta": {
+                "bitrix_pending": {
+                    "plan_id": "plan1",
+                    "preview": "Bitrix24 задача (предварительно):\n• Название: Test",
+                    "method": "tasks.task.add",
+                }
+            },
+        }
+
+    bot_mod.rag_answer = fake_rag_answer
+
+    async def fake_features(project):
+        return {
+            "emotions_enabled": True,
+            "debug_enabled": False,
+            "debug_info_enabled": False,
+        }
+
+    bot_mod._get_project_features = fake_features
+
+    calls: list[tuple[str, dict | None]] = []
+
+    class FakeResp:
+        def json(self):
+            return {"status": "sent"}
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def post(self, url, json=None, **kwargs):
+            calls.append((url, json))
+            return FakeResp()
+
+    bot_mod.httpx.AsyncClient = lambda timeout=None: FakeClient()
+
+    msg = FakeMessage("создай задачу")
+    asyncio.run(bot_mod.text_handler(msg, project="demo", session_id="abc"))
+    assert any('Bitrix24 задача' in str(item) for item in msg.sent)
+    pending_key = _pending_key_helper(bot_mod, "demo", "abc")
+    assert 'plan1' in bot_mod.PENDING_BITRIX[pending_key]['plan_id']
+
+    confirm_msg = FakeMessage("да")
+    asyncio.run(bot_mod.text_handler(confirm_msg, project="demo", session_id="abc"))
+    assert calls[-1][0].endswith("/api/v1/llm/bitrix/confirm")
+    assert any(str(item).startswith('✅') for item in confirm_msg.sent)
+    assert bot_mod.PENDING_BITRIX == {}
+
+
+def test_bitrix_pending_cancel(monkeypatch):
+    """Bot should cancel Bitrix plan on negative reply."""
+
+    bot_mod.PENDING_BITRIX.clear()
+
+    async def fake_rag_answer(question, project=None, session_id=None, debug=None):
+        return {
+            "text": "ok",
+            "attachments": [],
+            "meta": {
+                "bitrix_pending": {
+                    "plan_id": "plan2",
+                    "preview": "Задача: Тест",
+                    "method": "tasks.task.add",
+                }
+            },
+        }
+
+    bot_mod.rag_answer = fake_rag_answer
+    async def fake_features_cancel(project):
+        return {
+            "emotions_enabled": False,
+            "debug_enabled": False,
+            "debug_info_enabled": False,
+        }
+
+    bot_mod._get_project_features = fake_features_cancel
+
+    calls: list[tuple[str, dict | None]] = []
+
+    class FakeResp:
+        def json(self):
+            return {"status": "cancelled"}
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def post(self, url, json=None, **kwargs):
+            calls.append((url, json))
+            return FakeResp()
+
+    bot_mod.httpx.AsyncClient = lambda timeout=None: FakeClient()
+
+    msg = FakeMessage("создай задачу")
+    asyncio.run(bot_mod.text_handler(msg, project="demo", session_id="abc"))
+
+    cancel_msg = FakeMessage("нет")
+    asyncio.run(bot_mod.text_handler(cancel_msg, project="demo", session_id="abc"))
+    assert calls[-1][0].endswith("/api/v1/llm/bitrix/cancel")
+    assert any('Задача не будет создана' in str(item) or 'Создание задачи отменено' in str(item) for item in cancel_msg.sent)
+    assert bot_mod.PENDING_BITRIX == {}
+
+
+# helpers for tests
+
+
+def _pending_key_helper(bot_module, project: str, session_id: Optional[str]) -> str:
+    return bot_module._pending_key(project, session_id, 1)
+
+
+def test_voice_handler_without_stt():
+    """Voice handler should decline when STT URL is not configured."""
+
+    msg = FakeMessage()
+    msg.voice = types.SimpleNamespace(mime_type="audio/ogg")
+
+    asyncio.run(bot_mod.voice_handler(msg, project="demo", session_id="abc"))
+
+    assert msg.sent == ["🎙️ Голосовые сообщения пока не поддерживаются. Попробуйте отправить текст."]

@@ -6,6 +6,7 @@ import asyncio
 import re
 import time
 from contextlib import suppress
+from io import BytesIO
 from typing import Any, Dict, List, Tuple
 
 from aiogram import Dispatcher, types
@@ -43,6 +44,7 @@ NEGATIVE_REPLIES = {
 }
 
 PENDING_ATTACHMENTS: Dict[str, Dict[str, Any]] = {}
+PENDING_BITRIX: Dict[str, Dict[str, Any]] = {}
 GOD_MODE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 GOD_MODE_STEPS = [
@@ -110,6 +112,75 @@ def _resolve_absolute_url(url: str | None, base_url: str) -> str | None:
     if url.startswith('/'):
         return f"{base_url}{url}"
     return f"{base_url}/{url}"
+
+
+async def _transcribe_audio(
+    audio: bytes,
+    mime_type: str | None,
+    *,
+    language: str | None,
+    api_url: str,
+    api_key: str | None,
+    timeout: float,
+) -> str:
+    headers = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    files = {
+        "file": (
+            "voice.ogg",
+            audio,
+            mime_type or "audio/ogg",
+        )
+    }
+    data = {}
+    if language:
+        data["language"] = language
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(api_url, data=data, files=files, headers=headers)
+        response.raise_for_status()
+        try:
+            payload = response.json()
+        except ValueError:
+            text = response.text.strip()
+            if not text:
+                raise RuntimeError("empty_transcription")
+            return text
+    if isinstance(payload, dict):
+        for key in ("text", "result", "transcription", "transcript"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    if isinstance(payload, str) and payload.strip():
+        return payload.strip()
+    raise RuntimeError("invalid_transcription_response")
+
+
+async def _confirm_bitrix_plan(plan_id: str, project: str | None, session_id: str | None) -> dict[str, Any]:
+    settings = get_settings()
+    url = f"{settings.api_base_url}/api/v1/llm/bitrix/confirm"
+    payload = {
+        "plan_id": plan_id,
+        "project": project,
+        "session_id": session_id,
+    }
+    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _cancel_bitrix_plan(plan_id: str, project: str | None, session_id: str | None) -> None:
+    settings = get_settings()
+    url = f"{settings.api_base_url}/api/v1/llm/bitrix/cancel"
+    payload = {
+        "plan_id": plan_id,
+        "project": project,
+        "session_id": session_id,
+    }
+    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
 
 
 async def _send_attachments(message: types.Message, attachments: List[Dict[str, Any]]) -> None:
@@ -475,12 +546,15 @@ async def text_handler(
     message: types.Message,
     project: str,
     session_id: str | None,
+    *,
+    override_text: str | None = None,
     **_: object,
 ) -> None:
     """Handle regular user messages."""
 
     logger.info("user message", user=message.from_user.id)
-    raw_text = (message.text or "").strip()
+    incoming_text = override_text if override_text is not None else (message.text or "")
+    raw_text = incoming_text.strip()
 
     god_key = _god_mode_key(message)
     god_session = GOD_MODE_SESSIONS.get(god_key)
@@ -508,6 +582,55 @@ async def text_handler(
 
     normalized_text = raw_text.lower()
     pending_key = _pending_key(project, session_id, message.from_user.id)
+    pending_bitrix = PENDING_BITRIX.get(pending_key)
+    if pending_bitrix:
+        if normalized_text in POSITIVE_REPLIES:
+            try:
+                await _confirm_bitrix_plan(
+                    pending_bitrix["plan_id"],
+                    project,
+                    session_id,
+                )
+                await message.answer(
+                    "✅ Задача отправлена в Bitrix24"
+                    if pending_bitrix.get("emotions", True)
+                    else "Задача отправлена в Bitrix24."
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("bitrix_confirm_failed", error=str(exc))
+                await message.answer(
+                    "⚠️ Не удалось отправить задачу в Bitrix. Попробуйте позже."
+                )
+            finally:
+                PENDING_BITRIX.pop(pending_key, None)
+            return
+        if normalized_text in NEGATIVE_REPLIES:
+            try:
+                await _cancel_bitrix_plan(
+                    pending_bitrix["plan_id"],
+                    project,
+                    session_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("bitrix_cancel_failed", error=str(exc))
+            await message.answer(
+                "🛑 Задача не будет создана"
+                if pending_bitrix.get("emotions", True)
+                else "Создание задачи отменено."
+            )
+            PENDING_BITRIX.pop(pending_key, None)
+            return
+        if normalized_text:
+            try:
+                await _cancel_bitrix_plan(
+                    pending_bitrix["plan_id"],
+                    project,
+                    session_id,
+                )
+            except Exception:
+                pass
+            PENDING_BITRIX.pop(pending_key, None)
+
     pending_pack = PENDING_ATTACHMENTS.get(pending_key)
     if pending_pack:
         attachments_to_send = pending_pack.get('attachments', [])
@@ -544,7 +667,7 @@ async def text_handler(
         debug_summary_allowed = features.get("debug_enabled", False)
         try:
             response = await rag_answer(
-                message.text or "",
+                incoming_text,
                 project=project,
                 session_id=session_id,
                 debug=debug_summary_allowed,
@@ -584,6 +707,22 @@ async def text_handler(
             attachments=len(attachments),
             session=meta.get('session_id'),
         )
+
+        bitrix_pending_meta = meta.get('bitrix_pending') if isinstance(meta, dict) else None
+        if isinstance(bitrix_pending_meta, dict) and bitrix_pending_meta.get('plan_id'):
+            PENDING_BITRIX[pending_key] = {
+                "plan_id": bitrix_pending_meta.get('plan_id'),
+                "method": bitrix_pending_meta.get('method'),
+                "preview": bitrix_pending_meta.get('preview'),
+                "emotions": emotions_enabled,
+            }
+            preview_text = bitrix_pending_meta.get('preview') or 'Подтвердите создание задачи в Bitrix24.'
+            prompt_text = (
+                f"{preview_text}\n\nОтправить задачу в Bitrix? Ответьте «да» или «нет»."
+                if emotions_enabled
+                else f"{preview_text}\n\nОтправить задачу в Bitrix? Ответьте 'да' или 'нет'."
+            )
+            await message.answer(prompt_text)
 
         chunks = [answer_text[i : i + 4000] for i in range(0, len(answer_text), 4000)]
         if debug_info_allowed:
@@ -682,6 +821,69 @@ async def text_handler(
         PENDING_ATTACHMENTS.pop(pending_key, None)
 
 
+async def voice_handler(
+    message: types.Message,
+    project: str,
+    session_id: str | None,
+    **_: object,
+) -> None:
+    """Handle user voice messages by transcribing them to text."""
+
+    settings = get_settings()
+    stt_url = getattr(settings, "speech_to_text_url", None)
+    if not stt_url:
+        await message.answer("🎙️ Голосовые сообщения пока не поддерживаются. Попробуйте отправить текст.")
+        return
+
+    if not message.voice:
+        await message.answer("Не удалось получить голосовое сообщение.")
+        return
+
+    buffer = BytesIO()
+    try:
+        await message.bot.download(message.voice, buffer)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("voice_download_failed", error=str(exc))
+        await message.answer("⚠️ Не удалось скачать голосовое сообщение. Попробуйте ещё раз.")
+        return
+
+    audio_bytes = buffer.getvalue()
+    if not audio_bytes:
+        await message.answer("⚠️ Голосовое сообщение пустое.")
+        return
+
+    try:
+        transcript = await _transcribe_audio(
+            audio_bytes,
+            message.voice.mime_type,
+            language=getattr(settings, "speech_to_text_language", None),
+            api_url=str(stt_url),
+            api_key=getattr(settings, "speech_to_text_api_key", None),
+            timeout=settings.request_timeout,
+        )
+    except httpx.HTTPStatusError as exc:  # pragma: no cover - network dependent
+        logger.warning("voice_transcribe_http_error", status=exc.response.status_code)
+        await message.answer("⚠️ Сервис распознавания временно недоступен.")
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("voice_transcribe_failed", error=str(exc))
+        await message.answer("⚠️ Не удалось распознать голосовое сообщение.")
+        return
+
+    transcript = transcript.strip()
+    if not transcript:
+        await message.answer("⚠️ Не получилось понять сообщение. Попробуйте сказать чётче или отправьте текст.")
+        return
+
+    await message.answer(f"📝 Распознала: {transcript}")
+    await text_handler(
+        message,
+        project,
+        session_id,
+        override_text=transcript,
+    )
+
+
 async def unknown_handler(
     message: types.Message,
     project: str,
@@ -711,6 +913,7 @@ def setup(dp: Dispatcher, project: str, session_provider) -> None:
     dp.message.register(with_context(help_handler), Command("help"))
     dp.message.register(with_context(_god_mode_command), Command("rtfdeamon_god_mode"))
     dp.message.register(with_context(status_handler), Command("status"))
+    dp.message.register(with_context(voice_handler), lambda m: getattr(m, "voice", None) is not None)
     dp.message.register(with_context(text_handler), lambda m: m.text and not m.text.startswith("/"))
     dp.message.register(with_context(unknown_handler))
 

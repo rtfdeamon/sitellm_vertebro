@@ -173,6 +173,8 @@ class Project(BaseModel):
     widget_url: str | None = None
     debug_enabled: bool | None = None
     debug_info_enabled: bool | None = True
+    bitrix_enabled: bool | None = None
+    bitrix_webhook_url: str | None = None
     knowledge_image_caption_enabled: bool | None = True
 
     model_config = ConfigDict(
@@ -194,6 +196,8 @@ class Project(BaseModel):
                 "max_auto_start": False,
                 "vk_auto_start": False,
                 "widget_url": "https://example.com/widget?project=mmvs",
+                "bitrix_enabled": True,
+                "bitrix_webhook_url": "https://example.bitrix24.ru/rest/1/xxxxxxxxxxxxxx/",
             }
         }
     )
