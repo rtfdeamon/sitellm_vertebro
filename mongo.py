@@ -1681,6 +1681,7 @@ class MongoClient:
             logger.error("mongo_set_setting_failed", key=key, error=str(exc))
             raise
 
+=======
     async def get_backup_settings(self) -> BackupSettings:
         stored = await self.get_setting("backup_settings") or {}
         return self._serialize_backup_settings(stored)
@@ -1887,6 +1888,27 @@ class MongoClient:
             sort=[("created_at", -1)],
         )
         return self._serialize_backup_job(doc)
+
+    async def get_knowledge_priority(self) -> list[str]:
+        try:
+            doc = await self.get_setting("knowledge_priority") or {}
+        except Exception:
+            doc = {}
+        order = doc.get("order") if isinstance(doc, dict) else None
+        if isinstance(order, list) and order:
+            return [str(item).strip().lower() for item in order if str(item).strip()]
+        # default priority order
+        return ["qa", "text", "docs", "images", "vector"]
+
+    async def set_knowledge_priority(self, order: list[str]) -> None:
+        normalized = []
+        for item in order:
+            cleaned = str(item or "").strip().lower()
+            if cleaned and cleaned not in normalized:
+                normalized.append(cleaned)
+        if not normalized:
+            normalized = ["qa", "text", "docs", "images", "vector"]
+        await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
             return None
@@ -2204,88 +2226,17 @@ class MongoClient:
         except Exception:  # noqa: BLE001
             pass
 
-    def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
-        if not doc:
-            return None
-        payload: dict[str, object] = {
-            "id": str(doc.get("_id")),
-            "message": doc.get("message"),
-            "name": doc.get("name"),
-            "contact": doc.get("contact"),
-            "page": doc.get("page"),
-            "project": doc.get("project"),
-            "source": doc.get("source"),
-            "status": doc.get("status", "open"),
-            "created_at": doc.get("created_at"),
-            "updated_at": doc.get("updated_at"),
-            "created_at_iso": doc.get("created_at_iso"),
-            "updated_at_iso": doc.get("updated_at_iso"),
-        }
-        return payload
-
-    async def create_feedback_task(self, payload: dict[str, object]) -> dict:
-        now = time.time()
-        document = {
-            "message": str(payload.get("message") or "").strip(),
-            "name": (str(payload.get("name")).strip() or None) if payload.get("name") else None,
-            "contact": (str(payload.get("contact")).strip() or None) if payload.get("contact") else None,
-            "page": (str(payload.get("page")).strip() or None) if payload.get("page") else None,
-            "project": (str(payload.get("project")).strip() or None) if payload.get("project") else None,
-            "source": (str(payload.get("source")) or "web").strip(),
-            "status": "open",
-            "created_at": now,
-            "updated_at": now,
-            "created_at_iso": datetime.utcfromtimestamp(now).isoformat(),
-            "updated_at_iso": datetime.utcfromtimestamp(now).isoformat(),
-        }
+    async def clear_unanswered_questions(self, *, project: str | None = None, older_than: float | None = None) -> int:
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project.strip().lower()
+        if older_than is not None:
+            filter_query["updated_at"] = {"$lte": older_than}
         try:
-            result = await self.db[self.feedback_collection].insert_one(document)
-            document["_id"] = result.inserted_id
-            return self._serialize_feedback_task(document) or {}
+            result = await self.db[self.unanswered_collection].delete_many(filter_query)
+            return int(result.deleted_count or 0)
         except Exception as exc:
-            logger.error("mongo_feedback_create_failed", error=str(exc))
-            raise
-
-    async def list_feedback_tasks(self, *, limit: int = 100) -> list[dict]:
-        try:
-            cursor = (
-                self.db[self.feedback_collection]
-                .find({}, {"_id": True, "message": True, "name": True, "contact": True, "page": True, "project": True, "source": True, "status": True, "created_at": True, "updated_at": True, "created_at_iso": True, "updated_at_iso": True})
-                .sort("created_at", -1)
-                .limit(max(10, min(int(limit), 200)))
-            )
-            tasks: list[dict] = []
-            async for doc in cursor:
-                serialized = self._serialize_feedback_task(doc)
-                if serialized:
-                    tasks.append(serialized)
-            return tasks
-        except Exception as exc:
-            logger.error("mongo_feedback_list_failed", error=str(exc))
-            raise
-
-    async def update_feedback_task(self, task_id: str, updates: dict[str, object]) -> dict | None:
-        try:
-            oid = ObjectId(task_id)
-        except Exception:
-            return None
-        payload: dict[str, object] = {}
-        if "status" in updates:
-            payload["status"] = str(updates["status"])
-        if "note" in updates and updates["note"] is not None:
-            payload["note"] = str(updates["note"])
-        now = time.time()
-        payload["updated_at"] = now
-        payload["updated_at_iso"] = datetime.utcfromtimestamp(now).isoformat()
-        try:
-            result = await self.db[self.feedback_collection].find_one_and_update(
-                {"_id": oid},
-                {"$set": payload},
-                return_document=True,
-            )
-            return self._serialize_feedback_task(result)
-        except Exception as exc:
-            logger.error("mongo_feedback_update_failed", task_id=task_id, error=str(exc))
+            logger.error("mongo_unanswered_clear_failed", error=str(exc))
             raise
 
     async def close(self) -> None:
