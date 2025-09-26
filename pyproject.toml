@@ -30,6 +30,7 @@ dependencies = [
     "uvloop>=0.17.0",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
+    # sentence-transformers (and torch) removed for Ollama-only runtime
     "nltk>=3.8.1",
     "prometheus-client>=0.20.0",
     "requests>=2.32,<3",
@@ -55,19 +56,6 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=8.4.1",
     "ruff>=0.12.1",
-]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[tool.uv.sources]
-torch = [
-  { index = "pytorch-cpu" },
-]
-torchvision = [
-  { index = "pytorch-cpu" },
 ]
 
 [build-system]
@@ -101,4 +89,20 @@ py-modules = [
     "vectors",
     "worker",
     "yallm",
+]
+
+[tool.poetry.source]
+name = "pytorch_cpu"
+url = "https://download.pytorch.org/whl/cpu/simple"
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu" },
+]
+torchvision = [
+  { index = "pytorch-cpu" },
 ]
