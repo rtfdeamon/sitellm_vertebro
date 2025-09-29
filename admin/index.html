@@ -2762,6 +2762,7 @@
     const FALLBACK_LANGUAGE = 'en';
     const nativeFetch = window.fetch.bind(window);
     const ADMIN_PREFIX = '/api/v1/admin/';
+    const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/'];
     const AUTH_CANCELLED_CODE = 'ADMIN_AUTH_CANCELLED';
     const ADMIN_AUTH_HEADER_SESSION_KEY = 'admin_auth_header_v1';
     const ADMIN_AUTH_USER_STORAGE_KEY = 'admin_auth_user_v1';
@@ -2993,6 +2994,11 @@
       }
     }, true);
 
+    function requiresAdminAuth(url) {
+      if (!url) return false;
+      return ADMIN_PROTECTED_PREFIXES.some((prefix) => url.startsWith(prefix) || url.startsWith(`${ADMIN_BASE_KEY}${prefix}`));
+    }
+
     async function fetchAdmin(url, init = {}) {
       const attempt = async () => {
         const headers = new Headers(init.headers || {});
@@ -3032,24 +3038,11 @@
     }
 
     window.fetch = async function wrappedFetch(input, init = {}) {
-      if (typeof input === 'string') {
-        if (input.startsWith(ADMIN_PREFIX)) {
-          return fetchAdmin(input, init);
-        }
-        if (input.startsWith(`${ADMIN_BASE_KEY}${ADMIN_PREFIX}`)) {
-          return fetchAdmin(input, init);
-        }
+      if (typeof input === 'string' && requiresAdminAuth(input)) {
+        return fetchAdmin(input, init);
       }
-      return nativeFetch(input, init);
-    };
-
-    window.fetch = function basicFetch(input, init = {}) {
-      if (typeof input === 'string') {
-        if (input.startsWith(ADMIN_PREFIX) || input.startsWith(`${ADMIN_BASE_KEY}${ADMIN_PREFIX}`)) {
-          const options = { ...init };
-          if (!options.credentials) options.credentials = 'same-origin';
-          return nativeFetch(input, options);
-        }
+      if (typeof input === 'string' && requiresAdminAuth(`${ADMIN_BASE_KEY}${input}`)) {
+        return fetchAdmin(input, init);
       }
       return nativeFetch(input, init);
     };
@@ -5011,6 +5004,15 @@
         const query = params.toString();
         const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
         const resp = await fetch(url);
+        if (resp.status === 404) {
+          console.info('knowledge_priority_unavailable');
+          renderKnowledgePriority(knowledgePriorityOrder);
+          if (kbPriorityStatus) {
+            kbPriorityStatus.textContent = 'Приоритеты недоступны';
+            setTimeout(() => { kbPriorityStatus.textContent = ''; }, 4000);
+          }
+          return;
+        }
         if (!resp.ok) throw new Error('priority_load_failed');
         const data = await resp.json();
         renderKnowledgePriority(data.order || []);
@@ -5041,6 +5043,14 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+        if (resp.status === 404) {
+          console.info('knowledge_priority_save_unavailable');
+          if (kbPriorityStatus) {
+            kbPriorityStatus.textContent = 'Сохранение недоступно';
+            setTimeout(() => { kbPriorityStatus.textContent = ''; }, 4000);
+          }
+          return;
+        }
         if (!resp.ok) throw new Error(await resp.text());
         if (kbPriorityStatus) {
           kbPriorityStatus.textContent = 'Приоритеты обновлены';
@@ -7014,6 +7024,11 @@
       if (feedbackSection) feedbackSection.style.display = '';
       try {
         const resp = await fetch('/api/v1/admin/feedback', { cache: 'no-store' });
+        if (resp.status === 404) {
+          console.info('feedback_tasks_unavailable');
+          if (feedbackSection) feedbackSection.style.display = 'none';
+          return;
+        }
         if (!resp.ok) throw new Error(await resp.text());
         const data = await resp.json();
         renderFeedbackTasks(Array.isArray(data.tasks) ? data.tasks : []);
@@ -7036,6 +7051,11 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status }),
         });
+        if (resp.status === 404) {
+          console.info('feedback_update_unavailable');
+          if (feedbackSection) feedbackSection.style.display = 'none';
+          return;
+        }
         if (!resp.ok) throw new Error(await resp.text());
         await fetchFeedbackTasks();
       } catch (error) {
@@ -7805,6 +7825,13 @@
         params.set('project', currentProject);
         params.set('limit', '500');
         const resp = await fetch(`/api/v1/admin/knowledge/qa?${params.toString()}`);
+        if (resp.status === 404) {
+          console.info('knowledge_qa_unavailable');
+          renderQaEmpty('Модуль Q&A недоступен');
+          qaPairsCache = [];
+          if (kbCountQa) kbCountQa.textContent = '0';
+          return;
+        }
         if (!resp.ok) throw new Error('qa_load_failed');
         const data = await resp.json();
         qaPairsCache = Array.isArray(data.items) ? data.items.slice() : [];
@@ -7849,6 +7876,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
+          if (resp.status === 404) {
+            console.info('knowledge_qa_create_unavailable');
+            if (kbQaStatus) kbQaStatus.textContent = 'Добавление недоступно';
+            return;
+          }
           if (!resp.ok) throw new Error(await resp.text());
         } else {
           const id = row.dataset.qaId;
@@ -7857,6 +7889,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
+          if (resp.status === 404) {
+            console.info('knowledge_qa_update_unavailable');
+            if (kbQaStatus) kbQaStatus.textContent = 'Изменение недоступно';
+            return;
+          }
           if (!resp.ok) throw new Error(await resp.text());
         }
         if (kbQaStatus) kbQaStatus.textContent = 'Сохранено';
@@ -7883,6 +7920,10 @@
       if (kbQaStatus) kbQaStatus.textContent = 'Удаляем...';
       try {
         const resp = await fetch(`/api/v1/admin/knowledge/qa/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (resp.status === 404) {
+          console.info('knowledge_qa_delete_unavailable');
+          return;
+        }
         if (!resp.ok) throw new Error(await resp.text());
         await loadKnowledgeQa();
         if (kbQaStatus) kbQaStatus.textContent = 'Удалено';
@@ -7915,9 +7956,14 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ order }),
       });
-        if (!resp.ok) throw new Error(await resp.text());
-        await loadKnowledgeQa();
-        if (kbQaStatus) kbQaStatus.textContent = 'Порядок обновлён';
+      if (resp.status === 404) {
+        console.info('knowledge_qa_reorder_unavailable');
+        if (kbQaStatus) kbQaStatus.textContent = 'Изменение порядка недоступно';
+        return;
+      }
+      if (!resp.ok) throw new Error(await resp.text());
+      await loadKnowledgeQa();
+      if (kbQaStatus) kbQaStatus.textContent = 'Порядок обновлён';
       } catch (error) {
         console.error('knowledge_qa_reorder_failed', error);
         if (kbQaStatus) kbQaStatus.textContent = 'Не удалось изменить порядок';
@@ -7964,6 +8010,15 @@
         const params = new URLSearchParams();
         params.set('project', currentProject);
         const resp = await fetch(`/api/v1/admin/knowledge/unanswered?${params.toString()}`);
+        if (resp.status === 404) {
+          console.info('knowledge_unanswered_unavailable');
+          renderUnansweredTable([]);
+          if (kbUnansweredStatus) {
+            kbUnansweredStatus.textContent = 'Раздел недоступен';
+            setTimeout(() => { kbUnansweredStatus.textContent = ''; }, 4000);
+          }
+          return;
+        }
         if (!resp.ok) throw new Error('unanswered_load_failed');
         const data = await resp.json();
         renderUnansweredTable(data.items || []);
@@ -8465,6 +8520,11 @@
             method: 'POST',
             body: fd,
           });
+          if (resp.status === 404) {
+            console.info('knowledge_qa_import_unavailable');
+            if (kbQaStatus) kbQaStatus.textContent = 'Импорт недоступен';
+            return;
+          }
           if (!resp.ok) throw new Error(await resp.text());
           kbQaFileInput.value = '';
           await loadKnowledgeQa();
@@ -8525,6 +8585,11 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ project: currentProject || null }),
           });
+          if (resp.status === 404) {
+            console.info('knowledge_unanswered_clear_unavailable');
+            if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Очистка недоступна';
+            return;
+          }
           if (!resp.ok) throw new Error(await resp.text());
           await loadUnansweredQuestions();
           if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Список очищен';

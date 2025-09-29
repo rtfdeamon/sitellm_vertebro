@@ -43,7 +43,15 @@ from crawler.run_crawl import (
     deduplicate_recent_urls,
     get_crawler_note,
 )
+from bson import ObjectId
+
 from worker import voice_train_model
+
+try:  # pragma: no cover - optional during unit tests where worker is stubbed
+    from worker import get_mongo_client as worker_mongo_client, settings as worker_settings
+except Exception:  # noqa: BLE001 - fallback for lightweight worker stubs
+    worker_mongo_client = None  # type: ignore[assignment]
+    worker_settings = None  # type: ignore[assignment]
 
 from models import (
     Attachment,
@@ -128,6 +136,8 @@ VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
     ConnectionError,
     TimeoutError,
 )
+VOICE_INLINE_FALLBACK_DELAY = float(os.getenv("VOICE_INLINE_FALLBACK_DELAY", "2.0"))
+VOICE_PENDING_STATUSES = {"", VoiceTrainingStatus.queued.value, "pending"}
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -2575,6 +2585,43 @@ def _spawn_voice_training_thread(job_id: str) -> None:
     thread.start()
 
 
+def _schedule_voice_job_watchdog(job_id: str) -> None:
+    if VOICE_INLINE_FALLBACK_DELAY <= 0 or worker_mongo_client is None or worker_settings is None:
+        return
+
+    def _target() -> None:
+        time.sleep(VOICE_INLINE_FALLBACK_DELAY)
+        try:
+            client = worker_mongo_client()
+        except Exception as exc:  # noqa: BLE001 - guard against misconfigured worker settings
+            logger.warning("voice_training_watchdog_client_failed", job_id=job_id, error=str(exc))
+            return
+        try:
+            try:
+                collection = client[worker_settings.mongo.database][worker_settings.mongo.voice_jobs]
+                job_doc = collection.find_one({"_id": ObjectId(job_id)})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("voice_training_watchdog_fetch_failed", job_id=job_id, error=str(exc))
+                return
+            if not job_doc:
+                return
+            status_value = job_doc.get("status")
+            normalized_status = (status_value.value if isinstance(status_value, VoiceTrainingStatus) else str(status_value or "")).lower()
+            if normalized_status in VOICE_PENDING_STATUSES:
+                logger.info("voice_training_watchdog_trigger", job_id=job_id)
+                try:
+                    voice_train_model.run(job_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("voice_training_watchdog_failed", job_id=job_id, error=str(exc))
+        finally:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001 - best effort cleanup
+                pass
+
+    threading.Thread(target=_target, name=f"voice-watchdog-{job_id}", daemon=True).start()
+
+
 def _queue_voice_training_job(job_id: str) -> bool:
     try:
         voice_train_model.delay(job_id)
@@ -2696,6 +2743,8 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
     queued = _queue_voice_training_job(job.id)
     if not queued:
         _spawn_voice_training_thread(job.id)
+    else:
+        _schedule_voice_job_watchdog(job.id)
     logger.info(
         "voice_training_queued",
         project=project_name,
