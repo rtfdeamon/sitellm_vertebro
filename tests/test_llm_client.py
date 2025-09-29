@@ -29,6 +29,8 @@ def _collect(async_iterable):
 def _setup(monkeypatch, manager: DummyManager):
     from backend import llm_client
 
+    import sys
+    sys.modules['backend.llm_client'] = llm_client
     importlib.reload(llm_client)
     monkeypatch.setattr(llm_client, "get_cluster_manager", lambda: manager)
     return llm_client

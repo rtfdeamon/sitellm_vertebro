@@ -31,6 +31,11 @@ if old_redis is None:
 else:
     sys.modules["redis.asyncio"] = old_redis
 
+from redis.asyncio import ConnectionPool as _RealConnectionPool, Redis as _RealRedis
+
+cache.ConnectionPool = _RealConnectionPool
+cache.Redis = _RealRedis
+
 
 class FakeRedis:
     """Minimal in-memory Redis replacement used in tests."""

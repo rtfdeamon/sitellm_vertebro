@@ -23,6 +23,14 @@ SUMMARY_PROMPT_TEMPLATE = (
     "\nНазвание: {name}\nТекст:\n{body}\n\nОписание:"
 )
 
+READING_SEGMENT_BODY_LIMIT = 1600
+READING_SEGMENT_MAX_LEN = 160
+READING_SEGMENT_PROMPT_TEMPLATE = (
+    "Ты готовишь короткий анонс для чтения фрагмента книги."
+    " Передай настроение и суть в одном предложении до 160 символов, без спойлеров и списков."
+    "\nФрагмент:\n{body}\n\nАнонс:"
+)
+
 IMAGE_CONTEXT_LIMIT = 800
 IMAGE_CAPTION_MAX_LEN = 220
 IMAGE_CAPTION_PROMPT_TEMPLATE = (
@@ -85,6 +93,53 @@ async def generate_document_summary(
         return fallback
     if len(summary) > SUMMARY_MAX_LEN:
         summary = summary[: SUMMARY_MAX_LEN - 1].rstrip() + "…"
+    return summary
+
+
+async def generate_reading_segment_summary(
+    content: str,
+    project: Project | None = None,
+) -> str:
+    """Return a teaser-style summary for a reading segment."""
+
+    text = (content or "").strip()
+    if not text:
+        return ""
+
+    cleaned = re.sub(r"\s+", " ", text)
+    excerpt = cleaned[:READING_SEGMENT_BODY_LIMIT]
+    prompt = READING_SEGMENT_PROMPT_TEMPLATE.format(body=excerpt)
+
+    model_override = None
+    if project and isinstance(project.llm_model, str):
+        trimmed = project.llm_model.strip()
+        if trimmed:
+            model_override = trimmed
+
+    chunks: list[str] = []
+    try:
+        async for token in llm_client.generate(prompt, model=model_override):
+            chunks.append(token)
+            if len("".join(chunks)) >= READING_SEGMENT_MAX_LEN + 80:
+                break
+    except ModelNotFoundError:
+        logger.error(
+            "reading_segment_model_not_found",
+            model=model_override or llm_client.MODEL_NAME,
+        )
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "reading_segment_summary_failed",
+            error=str(exc),
+        )
+        return ""
+
+    summary = re.sub(r"\s+", " ", "".join(chunks).strip())
+    if not summary:
+        return ""
+    if len(summary) > READING_SEGMENT_MAX_LEN:
+        summary = summary[: READING_SEGMENT_MAX_LEN - 1].rstrip() + "…"
     return summary
 
 

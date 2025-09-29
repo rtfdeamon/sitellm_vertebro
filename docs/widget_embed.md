@@ -73,6 +73,7 @@ through `/api/v1/llm/chat`.
     src="https://example.com/widget/voice-avatar.js"
     data-base-url="https://example.com"
     data-project="acme"
+    data-mode="voice"
     data-lang="ru-RU"
     data-voice="Milena"
     data-label="AI"
@@ -83,14 +84,48 @@ through `/api/v1/llm/chat`.
 </section>
 ```
 
+Set `data-mode` to control how visitors interact:
+
+* `text` – text chat only, microphone and speech synthesis stay disabled.
+* `voice` – default voice chat with speech recognition and audio replies.
+* `avatar` – voice chat with an animated persona. Combine with
+  `data-avatar-character="luna"` (or `amir`, `sofia`, `nova`, `atlas`, `cosmo`)
+  to select a preset character. The legacy `data-avatar-animated="1"` flag
+  remains supported for backwards compatibility.
+* Optional `data-speech-rate="1.00"` tweaks playback speed (0.5–2.0). The
+  preview console slider in `/widget/index.html` writes this attribute when
+  you adjust the control.
+
 Behaviour highlights:
 
 * Uses browser speech recognition (`SpeechRecognition`/`webkitSpeechRecognition`)
   when available, falling back to a manual text form.
 * Streams tokens via `EventSource` and reads the aggregated reply aloud using
-  `speechSynthesis`. Pass `data-voice` with a speech-synthesis voice name or
-  locale to steer the voice selection.
+  `speechSynthesis` (unless `data-mode="text"`). Pass `data-voice` with a
+  speech-synthesis voice name or locale to steer the voice selection.
 * Stores a session identifier in `localStorage` so conversations retain context.
+
+Book reading mode
+-----------------
+
+Set `data-reading-mode="1"` on the voice avatar script (or tick *Enable book
+reading mode* in the embed generator) to surface long-form content that the
+crawler harvested with header/footer stripping. When the flag is active the
+avatar shows a compact “Материалы для чтения” panel with the next pages and a
+“Книжный режим” button. Clicking it opens a full-screen reader that supports
+keyboard navigation (←/→), paragraph-level summaries, and inline illustrations.
+Visitors can request more pages without leaving the widget while keeping the
+chat dialogue visible alongside the book view. Each page highlights the
+original source URL so readers can jump back to the canonical document.
+
+Knowledge sources
+-----------------
+
+When the project option *Показывать источники ответов* is enabled (or when a
+visitor explicitly asks for links), the chat stream includes a compact card
+with the top knowledge snippets that shaped the reply. Each entry is rendered
+as a clickable URL so operators can audit the context and users can open the
+original material in a new tab.
 
 Cross-Origin Notes
 ------------------

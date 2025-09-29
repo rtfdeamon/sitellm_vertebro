@@ -58,6 +58,15 @@ COMPONENTS: tuple[Component, ...] = (
             "uv.lock",
         ),
     ),
+    Component(
+        name="stateful",
+        env_var="STATEFUL_VERSION",
+        paths=(
+            "compose.yaml",
+            "compose.gpu.yaml",
+            "docker-compose.override.windows.yml",
+        ),
+    ),
 )
 
 IGNORE_DIRS = {".git", "__pycache__", ".pytest_cache", "node_modules", ".ruff_cache"}

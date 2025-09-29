@@ -133,8 +133,11 @@ class Document(BaseModel):
     auto_description_pending: bool | None = Field(default=None, alias="autoDescriptionPending")
     auto_description_generated_at: float | None = Field(default=None, alias="autoDescriptionGeneratedAt")
     content_hash: str | None = None
+    reading_mode: bool | None = Field(default=None, alias="readingMode")
+    reading_title: str | None = Field(default=None, alias="readingTitle")
 
     model_config = ConfigDict(
+        extra="allow",
         json_schema_extra={
             "example": {
                 "name": "document.pdf",
@@ -151,6 +154,131 @@ class Document(BaseModel):
     )
 
 
+class ReadingImage(BaseModel):
+    """Reference to an illustration used in book-reading mode."""
+
+    url: str
+    file_id: str | None = Field(default=None, alias="fileId")
+
+
+class ReadingSegment(BaseModel):
+    """Single chunk of text prepared for sequential reading."""
+
+    index: int
+    text: str
+    summary: str | None = None
+    chars: int | None = None
+
+
+class ReadingPage(BaseModel):
+    """Aggregated payload exposed to the widget for book-reading mode."""
+
+    url: str
+    order: int
+    title: str | None = None
+    project: str | None = None
+    file_id: str | None = Field(default=None, alias="fileId")
+    text: str | None = None
+    html: str | None = None
+    segments: list[ReadingSegment] = Field(default_factory=list)
+    images: list[ReadingImage] = Field(default_factory=list)
+    segment_count: int | None = Field(default=None, alias="segmentCount")
+    image_count: int | None = Field(default=None, alias="imageCount")
+    updated_at: float | None = Field(default=None, alias="updatedAt")
+
+    model_config = ConfigDict(extra="allow")
+
+
+class VoiceSample(BaseModel):
+    """Audio sample uploaded for voice fine-tuning."""
+
+    id: str = Field(alias="id")
+    project: str
+    file_id: str = Field(alias="fileId")
+    filename: str
+    content_type: str | None = Field(default=None, alias="contentType")
+    size_bytes: int | None = Field(default=None, alias="sizeBytes")
+    duration_seconds: float | None = Field(default=None, alias="durationSeconds")
+    uploaded_at: float | None = Field(default=None, alias="uploadedAt")
+
+    model_config = ConfigDict(extra="allow")
+
+
+class VoiceTrainingStatus(_StrEnum):
+    queued = "queued"
+    preparing = "preparing"
+    training = "training"
+    validating = "validating"
+    completed = "completed"
+    failed = "failed"
+
+
+class VoiceTrainingJob(BaseModel):
+    """Represents a single voice fine-tuning job."""
+
+    id: str = Field(alias="id")
+    project: str
+    status: VoiceTrainingStatus
+    progress: float | None = None
+    message: str | None = None
+    created_at: float | None = Field(default=None, alias="createdAt")
+    started_at: float | None = Field(default=None, alias="startedAt")
+    finished_at: float | None = Field(default=None, alias="finishedAt")
+
+    model_config = ConfigDict(extra="allow")
+
+
+class BackupOperation(_StrEnum):
+    backup = "backup"
+    restore = "restore"
+
+
+class BackupStatus(_StrEnum):
+    queued = "queued"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+
+class BackupJob(BaseModel):
+    """Represents a database backup or restore job entry."""
+
+    id: str = Field(alias="id")
+    operation: BackupOperation
+    status: BackupStatus
+    remote_path: str | None = Field(default=None, alias="remotePath")
+    size_bytes: int | None = Field(default=None, alias="sizeBytes")
+    created_at: float = Field(alias="createdAt")
+    created_at_iso: str = Field(alias="createdAtIso")
+    started_at: float | None = Field(default=None, alias="startedAt")
+    started_at_iso: str | None = Field(default=None, alias="startedAtIso")
+    finished_at: float | None = Field(default=None, alias="finishedAt")
+    finished_at_iso: str | None = Field(default=None, alias="finishedAtIso")
+    triggered_by: str | None = Field(default=None, alias="triggeredBy")
+    error: str | None = None
+    source_job_id: str | None = Field(default=None, alias="sourceJobId")
+
+    model_config = ConfigDict(extra="allow")
+
+
+class BackupSettings(BaseModel):
+    """User-configurable backup scheduler options."""
+
+    enabled: bool = False
+    hour: int = 3
+    minute: int = 0
+    timezone: str | None = "UTC"
+    ya_disk_folder: str = Field(default="sitellm-backups", alias="yaDiskFolder")
+    token_set: bool = Field(default=False, alias="tokenSet")
+    last_run_at: float | None = Field(default=None, alias="lastRunAt")
+    last_run_at_iso: str | None = Field(default=None, alias="lastRunAtIso")
+    last_success_at: float | None = Field(default=None, alias="lastSuccessAt")
+    last_success_at_iso: str | None = Field(default=None, alias="lastSuccessAtIso")
+    last_attempt_date: str | None = Field(default=None, alias="lastAttemptDate")
+
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
 class Project(BaseModel):
     """Configuration of a logical project within the deployment."""
 
@@ -164,6 +292,7 @@ class Project(BaseModel):
     llm_emotions_enabled: bool | None = True
     llm_voice_enabled: bool | None = True
     llm_voice_model: str | None = None
+    llm_sources_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -176,6 +305,17 @@ class Project(BaseModel):
     bitrix_enabled: bool | None = None
     bitrix_webhook_url: str | None = None
     knowledge_image_caption_enabled: bool | None = True
+    mail_enabled: bool | None = None
+    mail_imap_host: str | None = None
+    mail_imap_port: int | None = None
+    mail_imap_ssl: bool | None = True
+    mail_smtp_host: str | None = None
+    mail_smtp_port: int | None = None
+    mail_smtp_tls: bool | None = True
+    mail_username: str | None = None
+    mail_password: str | None = None
+    mail_from: str | None = None
+    mail_signature: str | None = None
 
     model_config = ConfigDict(
         json_schema_extra={

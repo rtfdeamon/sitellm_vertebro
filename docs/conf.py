@@ -19,6 +19,7 @@ author = 'sitellm developers'
 
 extensions = [
     "sphinx.ext.autodoc",
+    "sphinx.ext.graphviz",
 ]
 
 templates_path = ['_templates']

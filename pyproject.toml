@@ -30,7 +30,6 @@ dependencies = [
     "uvloop>=0.17.0",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
-    # sentence-transformers (and torch) removed for Ollama-only runtime
     "nltk>=3.8.1",
     "prometheus-client>=0.20.0",
     "requests>=2.32,<3",
@@ -50,6 +49,14 @@ dev = [
     "ruff>=0.12.1",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "celery-types>=0.23.0",
+    "httpx>=0.28.1",
+    "pytest>=8.4.1",
+    "ruff>=0.12.1",
+]
+
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
@@ -61,4 +68,37 @@ torch = [
 ]
 torchvision = [
   { index = "pytorch-cpu" },
+]
+
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = [
+    "backend*",
+    "backup*",
+    "core*",
+    "crawler*",
+    "integrations*",
+    "knowledge*",
+    "knowledge_service*",
+    "max_bot*",
+    "retrieval*",
+    "safety*",
+    "tg_bot*",
+    "vk_bot*",
+]
+
+[tool.setuptools]
+py-modules = [
+    "api",
+    "app",
+    "models",
+    "mongo",
+    "settings",
+    "textnorm",
+    "vectors",
+    "worker",
+    "yallm",
 ]

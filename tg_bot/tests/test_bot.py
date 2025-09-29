@@ -347,6 +347,129 @@ def test_bitrix_pending_cancel(monkeypatch):
     assert bot_mod.PENDING_BITRIX == {}
 
 
+def test_mail_pending_prompt_and_confirm(monkeypatch):
+    """Bot should prompt for mail confirmation and send on approval."""
+
+    bot_mod.PENDING_MAIL.clear()
+
+    async def fake_rag_answer(question, project=None, session_id=None, debug=None):
+        return {
+            "text": "Проверьте письмо",
+            "attachments": [],
+            "meta": {
+                "mail_pending": {
+                    "plan_id": "mail-plan-1",
+                    "preview": "Черновик письма:\n• Кому: user@example.com",
+                }
+            },
+        }
+
+    bot_mod.rag_answer = fake_rag_answer
+
+    async def fake_features(project):
+        return {
+            "emotions_enabled": True,
+            "debug_enabled": False,
+            "debug_info_enabled": False,
+        }
+
+    bot_mod._get_project_features = fake_features
+
+    calls: list[tuple[str, dict | None]] = []
+
+    class FakeResp:
+        def json(self):
+            return {"status": "sent", "message_id": "msg-1"}
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def post(self, url, json=None, **kwargs):
+            calls.append((url, json))
+            return FakeResp()
+
+    bot_mod.httpx.AsyncClient = lambda timeout=None: FakeClient()
+
+    msg = FakeMessage("отправь письмо")
+    asyncio.run(bot_mod.text_handler(msg, project="demo", session_id="abc"))
+    assert any('Черновик письма' in str(item) for item in msg.sent)
+    pending_key = _pending_key_helper(bot_mod, "demo", "abc")
+    assert 'mail-plan-1' in bot_mod.PENDING_MAIL[pending_key]['plan_id']
+
+    confirm_msg = FakeMessage("да")
+    asyncio.run(bot_mod.text_handler(confirm_msg, project="demo", session_id="abc"))
+    assert calls[-1][0].endswith("/api/v1/llm/mail/confirm")
+    assert any('Письмо отправлено' in str(item) for item in confirm_msg.sent)
+    assert bot_mod.PENDING_MAIL == {}
+
+
+def test_mail_pending_cancel(monkeypatch):
+    """Bot should cancel mail plan on negative reply."""
+
+    bot_mod.PENDING_MAIL.clear()
+
+    async def fake_rag_answer(question, project=None, session_id=None, debug=None):
+        return {
+            "text": "Проверьте письмо",
+            "attachments": [],
+            "meta": {
+                "mail_pending": {
+                    "plan_id": "mail-plan-2",
+                    "preview": "Черновик письма",
+                }
+            },
+        }
+
+    bot_mod.rag_answer = fake_rag_answer
+
+    async def fake_features(project):
+        return {
+            "emotions_enabled": False,
+            "debug_enabled": False,
+            "debug_info_enabled": False,
+        }
+
+    bot_mod._get_project_features = fake_features
+
+    calls: list[tuple[str, dict | None]] = []
+
+    class FakeResp:
+        def json(self):
+            return {"status": "cancelled"}
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            pass
+
+        async def post(self, url, json=None, **kwargs):
+            calls.append((url, json))
+            return FakeResp()
+
+    bot_mod.httpx.AsyncClient = lambda timeout=None: FakeClient()
+
+    msg = FakeMessage("отправь письмо")
+    asyncio.run(bot_mod.text_handler(msg, project="demo", session_id="abc"))
+
+    cancel_msg = FakeMessage("нет")
+    asyncio.run(bot_mod.text_handler(cancel_msg, project="demo", session_id="abc"))
+    assert calls[-1][0].endswith("/api/v1/llm/mail/cancel")
+    assert any('письмо не будет отправлено' in str(item).lower() or 'отправка письма отменена' in str(item) for item in cancel_msg.sent)
+    assert bot_mod.PENDING_MAIL == {}
+
+
 # helpers for tests
 
 

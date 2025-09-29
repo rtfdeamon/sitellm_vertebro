@@ -26,7 +26,7 @@ from typing import Any, AsyncIterator, Callable, Iterable, List, Optional, Set, 
 
 import httpx
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 from contextlib import contextmanager, suppress
 from gridfs import GridFS
 from pypdf import PdfReader
@@ -39,7 +39,11 @@ import xml.etree.ElementTree as ET
 from bson import ObjectId
 from PIL import Image
 
-from knowledge.summary import generate_document_summary, generate_image_caption
+from knowledge.summary import (
+    generate_document_summary,
+    generate_image_caption,
+    generate_reading_segment_summary,
+)
 from knowledge.text import extract_best_effort_text, extract_doc_text, extract_docx_text
 from models import Project
 
@@ -57,6 +61,61 @@ DEFAULT_MAX_DEPTH: int = int(os.getenv("CRAWL_MAX_DEPTH", "3"))
 DEFAULT_START_URL: str | None = os.getenv("CRAWL_START_URL")
 DEFAULT_MONGO_URI: str = os.getenv(
     "MONGO_URI", "mongodb://root:changeme@mongo:27017"
+)
+
+
+def _parse_bool_env(value: str | None) -> bool:
+    if not value:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+MEDEX_INTEGRATION_ENABLED_DEFAULT = _parse_bool_env(os.getenv("CRAWL_COLLECT_MEDEX"))
+_medex_hosts_raw = os.getenv(
+    "CRAWL_MEDEX_HOSTS",
+    "medesk,med-ex,medex",
+)
+MEDEX_HOST_PATTERNS: set[str] = {
+    token.strip().lower()
+    for token in _medex_hosts_raw.split(',')
+    if token.strip()
+}
+BOOK_READING_ENABLED_DEFAULT = _parse_bool_env(os.getenv("CRAWL_COLLECT_BOOKS"))
+READING_NOISE_KEYWORDS: tuple[str, ...] = (
+    "header",
+    "topbar",
+    "appbar",
+    "navbar",
+    "breadcrumbs",
+    "breadcrumb",
+    "sidebar",
+    "footer",
+    "copyright",
+    "cookie",
+    "subscribe",
+    "social",
+    "share",
+    "widget",
+    "menu",
+    "login",
+    "signup",
+    "search",
+    "promo",
+)
+READING_COLLECTION_DEFAULT = os.getenv("MONGO_READING_COLLECTION", "reading_pages")
+READING_ALLOWED_BLOCK_TAGS: tuple[str, ...] = (
+    "p",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "blockquote",
+    "pre",
+    "code",
+    "li",
+    "figcaption",
 )
 DEFAULT_SITEMAP_URL: str | None = os.getenv("CRAWL_SITEMAP_URL")
 DEFAULT_IGNORE_ROBOTS: bool = os.getenv("CRAWL_IGNORE_ROBOTS", "0") == "1"
@@ -454,6 +513,7 @@ ESSENTIAL_QUERY_PARAMS = _essential_params_default
 
 RE_CAMEL_CASE = re.compile(r"(?<=[a-zа-яё])(?=[A-ZА-ЯЁ])")
 RE_DIGIT_BOUNDARY = re.compile(r"(?<=[0-9])(?=[A-Za-zА-Яа-яЁё])|(?<=[A-Za-zА-Яа-яЁё])(?=[0-9])")
+PHONE_WITH_SPACES_RE = re.compile(r"(?<!\w)(\+?\d[\d\s\-()]{5,}\d)(?!\w)")
 
 # ------------------------- Вспомогательные функции ------------------- #
 
@@ -485,8 +545,21 @@ def fetch(url: str) -> Tuple[str | None, str | None]:
         return None, None
 
 
-def extract_image_links(html: str, base_url: str) -> List[dict[str, str]]:
-    """Extract image URLs (including lazy-loaded variants) from ``html``."""
+def extract_image_links(
+    html: str,
+    base_url: str,
+    *,
+    require_alt: bool = True,
+) -> List[dict[str, str]]:
+    """Extract image URLs (including lazy-loaded variants) from ``html``.
+
+    Parameters
+    ----------
+    require_alt:
+        When ``True`` only images with a non-empty ``alt`` attribute are returned.
+        Reading mode disables this requirement to keep illustration assets even
+        when the source markup omits alternative text.
+    """
 
     soup = BeautifulSoup(html, "html.parser")
     found: list[dict[str, str]] = []
@@ -505,9 +578,11 @@ def extract_image_links(html: str, base_url: str) -> List[dict[str, str]]:
         if absolute in seen:
             return
         alt_clean = (alt_text or "").strip()
-        if not alt_clean:
+        if require_alt and not alt_clean:
             return
-        entry: dict[str, str] = {"url": absolute, "alt": alt_clean}
+        entry: dict[str, str] = {"url": absolute}
+        if alt_clean:
+            entry["alt"] = alt_clean
         found.append(entry)
         seen.add(absolute)
 
@@ -538,11 +613,94 @@ def extract_image_links(html: str, base_url: str) -> List[dict[str, str]]:
         return list(dict.fromkeys(candidates))
 
     for img in soup.find_all("img"):
-        alt_text = img.get("alt") or ""
+        alt_text = img.get("alt") or img.get("title") or img.get("aria-label") or ""
         for candidate in _iter_src_candidates(img):
             _push(candidate, alt_text)
 
     return found
+
+
+def _is_medex_url(url: str, patterns: set[str]) -> bool:
+    if not patterns:
+        return False
+    try:
+        host = urlparse.urlsplit(url).hostname or ""
+    except Exception:
+        return False
+    host = host.lower()
+    if not host:
+        return False
+    return any(pattern and pattern in host for pattern in patterns)
+
+
+def extract_medex_integrations(
+    html: str,
+    base_url: str,
+    patterns: set[str],
+) -> List[dict[str, str]]:
+    """Return MedEx CRM integration links detected on the page."""
+
+    if not html or not patterns:
+        return []
+
+    soup = BeautifulSoup(html, "html.parser")
+    integrations: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+
+    def _register(raw_url: str | None, label: str | None, kind: str) -> None:
+        if not raw_url:
+            return
+        candidate = raw_url.strip()
+        if not candidate:
+            return
+        absolute = urlparse.urljoin(base_url, candidate).split('#', 1)[0]
+        if not absolute.lower().startswith(("http://", "https://")):
+            return
+        if not _is_medex_url(absolute, patterns):
+            return
+        key = (absolute, kind)
+        if key in seen:
+            return
+        seen.add(key)
+        entry = {"url": absolute, "type": kind}
+        if label:
+            stripped = label.strip()
+            if stripped:
+                entry["label"] = stripped
+        integrations.append(entry)
+
+    for anchor in soup.find_all('a', href=True):
+        label = anchor.get_text(" ", strip=True) or anchor.get('title')
+        _register(anchor['href'], label, 'link')
+
+    for form in soup.find_all('form', action=True):
+        label = form.get('data-title') or form.get('title') or form.get('aria-label')
+        if not label:
+            submit = form.find('button') or form.find('input', attrs={'type': 'submit'})
+            if submit is not None:
+                label = submit.get_text(" ", strip=True) or submit.get('value')
+        _register(form['action'], label, 'form')
+
+    for iframe in soup.find_all('iframe', src=True):
+        label = iframe.get('title') or iframe.get('aria-label')
+        _register(iframe['src'], label, 'iframe')
+
+    for script in soup.find_all('script', src=True):
+        _register(script['src'], None, 'script')
+
+    for element in soup.find_all(attrs={'data-src': True}):
+        value = element.get('data-src')
+        label = element.get('data-title') or element.get('title') or element.get_text(' ', strip=True)
+        if isinstance(value, str):
+            _register(value, label, 'data-src')
+
+    for element in soup.find_all(attrs={'data-url': True}):
+        value = element.get('data-url')
+        label = element.get('data-title') or element.get('title') or element.get_text(' ', strip=True)
+        if isinstance(value, str):
+            _register(value, label, 'data-url')
+
+    return integrations
 
 
 def extract_links(
@@ -603,6 +761,172 @@ def html_to_text(html: str) -> str:
     # Collapse multiple blank lines and remove empties
     cleaned = "\n".join(line for line in lines if line)
     return cleaned.strip()
+
+
+def _iter_attr_values(node: Tag, attr: str) -> list[str]:
+    value = node.get(attr)
+    if isinstance(value, (list, tuple, set)):
+        return [str(item) for item in value if item]
+    if isinstance(value, str):
+        return [value]
+    return []
+
+
+def _prepare_reading_root(soup: BeautifulSoup) -> Tag:
+    for element in soup(["script", "style", "noscript", "template", "svg", "canvas"]):
+        element.decompose()
+    for selector in ("header", "footer", "nav", "aside", "form", "button"):
+        for node in soup.select(selector):
+            node.decompose()
+
+    for node in list(soup.find_all(True)):
+        if not isinstance(node, Tag):
+            continue
+        if node.name in {"html", "body", "main", "article"}:
+            continue
+        attr_parts: list[str] = []
+        for attr in ("id", "class", "role", "data-role", "data-testid", "aria-label", "aria-labelledby"):
+            attr_parts.extend(_iter_attr_values(node, attr))
+        haystack = " ".join(attr_parts).lower()
+        if haystack and any(keyword in haystack for keyword in READING_NOISE_KEYWORDS):
+            node.decompose()
+
+    root: Tag | None = soup.body if isinstance(soup.body, Tag) else None
+    if root is None and isinstance(soup, Tag):
+        root = soup
+    for candidate_name in ("main", "article", "section"):
+        if not root:
+            break
+        candidate = root.find(candidate_name)
+        if isinstance(candidate, Tag):
+            root = candidate
+            break
+
+    if root is None:
+        root = soup
+    return root if isinstance(root, Tag) else soup
+
+
+def prepare_reading_material(html: str, base_url: str) -> dict[str, Any]:
+    """Return cleaned text/html blocks suitable for book reading mode."""
+
+    if not html or not isinstance(html, str):
+        return {}
+
+    soup = BeautifulSoup(html, "html.parser")
+    root = _prepare_reading_root(soup)
+
+    # Drop potentially unsafe inline handlers and normalize image sources
+    for element in root.find_all(True):
+        for attr in list(element.attrs):
+            if attr.lower().startswith("on"):
+                del element.attrs[attr]
+        if element.name == "img":
+            src = element.get("src") or element.get("data-src")
+            if src:
+                absolute = urlparse.urljoin(base_url, src).split("#")[0]
+                element["src"] = absolute
+                element.attrs.pop("data-src", None)
+                element.attrs.pop("data-original", None)
+
+    raw_text = root.get_text("\n")
+    paragraphs: list[str] = []
+    current: list[str] = []
+
+    for raw_line in raw_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if current:
+                paragraph = " ".join(current).strip()
+                if paragraph:
+                    paragraphs.append(paragraph)
+                current = []
+            continue
+        normalized_line = re.sub(r"\s{2,}", " ", line)
+        if _is_probably_navigation(normalized_line):
+            continue
+        current.append(normalized_line)
+
+    if current:
+        paragraph = " ".join(current).strip()
+        if paragraph:
+            paragraphs.append(paragraph)
+
+    cleaned_paragraphs = [para for para in paragraphs if para]
+    text = "\n\n".join(cleaned_paragraphs).strip()
+
+    title_candidates: list[str] = []
+    if soup.title and soup.title.string:
+        title_candidates.append(soup.title.string.strip())
+    heading = root.find(["h1", "h2"])
+    if heading:
+        heading_text = heading.get_text(" ", strip=True)
+        if heading_text:
+            title_candidates.insert(0, heading_text)
+    title = next((candidate for candidate in title_candidates if candidate), None)
+
+    reading_html = root.decode() if isinstance(root, Tag) else ""
+    images = extract_image_links(reading_html or str(root), base_url, require_alt=False)
+
+    return {
+        "text": text,
+        "title": title,
+        "html": reading_html,
+        "blocks": cleaned_paragraphs,
+        "images": images,
+    }
+
+
+def chunk_reading_blocks(blocks: list[str], max_chars: int = 1500) -> list[str]:
+    """Split ``blocks`` into chunks roughly ``max_chars`` long preserving order."""
+
+    if not blocks:
+        return []
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for block in blocks:
+        normalized = (block or "").strip()
+        if not normalized:
+            continue
+        block_len = len(normalized)
+        # Allow slight overflow to avoid tiny trailing segments
+        if current:
+            projected_len = current_len + block_len + 2
+            if projected_len > max_chars:
+                overflow = projected_len - max_chars
+                # Allow up to 20% overflow to avoid overly short trailing segments
+                if overflow <= max_chars * 0.2:
+                    current.append(normalized)
+                    current_len = projected_len
+                    continue
+                chunks.append("\n\n".join(current).strip())
+                current = [normalized]
+                current_len = block_len
+                continue
+            current.append(normalized)
+            current_len = projected_len
+            continue
+        else:
+            current.append(normalized)
+            current_len = block_len
+
+    if current:
+        chunks.append("\n\n".join(current).strip())
+
+    # Merge undersized trailing chunks with previous ones when possible
+    merged: list[str] = []
+    for chunk in chunks:
+        if not chunk:
+            continue
+        if merged and len(chunk) < max_chars // 3:
+            merged[-1] = f"{merged[-1]}\n\n{chunk}".strip()
+        else:
+            merged.append(chunk)
+
+    return merged
 
 
 def pdf_to_text(data: bytes) -> str:
@@ -703,7 +1027,20 @@ def clean_text(raw: str) -> str:
 
     cleaned = "\n".join(lines)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
-    return cleaned
+    return _normalize_phone_numbers(cleaned)
+
+
+def _normalize_phone_numbers(text: str) -> str:
+    def _strip_spaces(match: re.Match[str]) -> str:
+        candidate = match.group(0)
+        if not candidate or ' ' not in candidate:
+            return candidate
+        digits = sum(char.isdigit() for char in candidate)
+        if digits < 6:
+            return candidate
+        return candidate.replace(' ', '')
+
+    return PHONE_WITH_SPACES_RE.sub(_strip_spaces, text)
 
 
 def normalize_url(
@@ -1409,7 +1746,7 @@ async def crawl(
                 try:
                     item = await asyncio.wait_for(result_queue.get(), timeout=1)
                 except asyncio.TimeoutError:
-                    if url_queue.empty():
+                    if url_queue.empty() and not enqueued:
                         break
                     continue
                 url, payload, ctype, is_html, binary_data = item
@@ -1431,6 +1768,8 @@ def run(
     progress_callback: Callable[[str, dict[str, int]], None] | None = None,
     project_name: str | None = None,
     ignore_robots: bool | None = None,
+    collect_medex: bool | None = None,
+    collect_books: bool | None = None,
 ) -> None:
     """Synchronous entry point that stores crawled pages as plain text.
 
@@ -1450,6 +1789,13 @@ def run(
     document_project = (project_name or allowed_domain or MongoSettings().host or "default").lower()
     document_domain = allowed_domain or None
 
+    effective_collect_medex = (
+        MEDEX_INTEGRATION_ENABLED_DEFAULT if collect_medex is None else collect_medex
+    )
+    effective_collect_books = (
+        BOOK_READING_ENABLED_DEFAULT if collect_books is None else collect_books
+    )
+
     logger.info(
         "run crawler",
         start_url=start_url,
@@ -1457,6 +1803,8 @@ def run(
         max_depth=max_depth,
         allowed_domain=allowed_domain,
         project=document_project,
+        collect_medex=effective_collect_medex,
+        collect_books=effective_collect_books,
     )
 
     clear_crawler_state(document_project)
@@ -1527,6 +1875,30 @@ def run(
         except Exception:
             pass
 
+        medex_collection = None
+        if effective_collect_medex:
+            medex_collection = db[os.getenv("MONGO_MEDEX_COLLECTION", "crm_integrations")]
+            try:
+                medex_collection.create_index(
+                    [("project", 1), ("integration_url", 1)],
+                    unique=True,
+                    name="project_integration_unique",
+                )
+            except Exception:
+                pass
+
+        reading_collection = None
+        if effective_collect_books:
+            reading_collection = db[READING_COLLECTION_DEFAULT]
+            try:
+                reading_collection.create_index(
+                    [("project", 1), ("url", 1)],
+                    unique=True,
+                    name="project_url_unique",
+                )
+            except Exception:
+                pass
+
         try:
             db[os.getenv("MONGO_PROJECTS", "projects")].update_one(
                 {"name": document_project},
@@ -1552,6 +1924,9 @@ def run(
         except Exception as exc:
             logger.debug("project_model_load_failed", project=document_project, error=str(exc))
 
+        reading_records: list[dict[str, Any]] = []
+        image_file_map: dict[str, str] = {}
+
         async def _store() -> None:
             seen_text_hashes: set[str] = set()
             seen_binary_hashes: set[str] = set()
@@ -1572,14 +1947,55 @@ def run(
                     project_label=document_project,
                     ignore_robots=ignore_robots,
                 ):
+                    reading_payload: dict[str, Any] | None = None
                     raw_text = html_to_text(raw_payload) if is_html else raw_payload
                     text = clean_text(raw_text) if raw_text else ""
+                    if effective_collect_books and is_html and isinstance(raw_payload, str):
+                        reading_payload = prepare_reading_material(raw_payload, page_url)
+                        reading_text = (reading_payload.get("text") or "").strip()
+                        if reading_text:
+                            text = reading_text
 
                     main_type = (source_ct or "").split(";")[0].strip().lower()
                     lower_url = page_url.lower()
                     is_binary = not is_html and binary_payload is not None
 
-                    image_links = extract_image_links(raw_payload, page_url) if is_html else []
+                    if is_html:
+                        image_links = extract_image_links(
+                            raw_payload,
+                            page_url,
+                            require_alt=not effective_collect_books,
+                        )
+                    else:
+                        image_links = []
+                    medex_entries: list[dict[str, str]] = []
+                    if effective_collect_medex and is_html and isinstance(raw_payload, str):
+                        medex_entries = extract_medex_integrations(
+                            raw_payload,
+                            page_url,
+                            MEDEX_HOST_PATTERNS,
+                        )
+                        if medex_collection and medex_entries:
+                            for item in medex_entries:
+                                integration_url = item.get("url")
+                                if not integration_url:
+                                    continue
+                                medex_links_seen.add(integration_url)
+                                update_payload = {
+                                    "$set": {
+                                        "project": document_project,
+                                        "integration_url": integration_url,
+                                        "label": item.get("label"),
+                                        "type": item.get("type"),
+                                        "last_seen": time.time(),
+                                    },
+                                    "$addToSet": {"sources": page_url},
+                                }
+                                medex_collection.update_one(
+                                    {"project": document_project, "integration_url": integration_url},
+                                    update_payload,
+                                    upsert=True,
+                                )
 
                     if not text and not is_binary and not image_links:
                         logger.info("empty_page", url=page_url)
@@ -1629,18 +2045,32 @@ def run(
                     else:
                         payload_source = text if text else raw_payload
                         payload_bytes = payload_source.encode("utf-8") if isinstance(payload_source, str) else (payload_source or b"")
-                        if _should_skip_text_document(text):
-                            store_document = False
-                            skip_reason = "low_value_text"
+                        if effective_collect_books:
+                            if not text:
+                                store_document = False
+                                skip_reason = "empty_text"
+                            else:
+                                canonical = _normalize_for_hash(text)
+                                if canonical:
+                                    content_hash = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
+                                    if content_hash in seen_text_hashes:
+                                        store_document = False
+                                        skip_reason = "duplicate_text"
+                                    else:
+                                        seen_text_hashes.add(content_hash)
                         else:
-                            canonical = _normalize_for_hash(text)
-                            if canonical:
-                                content_hash = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
-                                if content_hash in seen_text_hashes:
-                                    store_document = False
-                                    skip_reason = "duplicate_text"
-                                else:
-                                    seen_text_hashes.add(content_hash)
+                            if _should_skip_text_document(text):
+                                store_document = False
+                                skip_reason = "low_value_text"
+                            else:
+                                canonical = _normalize_for_hash(text)
+                                if canonical:
+                                    content_hash = hashlib.sha1(canonical.encode("utf-8")).hexdigest()
+                                    if content_hash in seen_text_hashes:
+                                        store_document = False
+                                        skip_reason = "duplicate_text"
+                                    else:
+                                        seen_text_hashes.add(content_hash)
                         description = text.replace("\n", " ").strip()[:200]
 
                     if store_document:
@@ -1679,6 +2109,11 @@ def run(
                             doc["source_content_type"] = "text/html"
                         if content_hash:
                             doc["content_hash"] = content_hash
+                        if medex_entries:
+                            doc["crmIntegrations"] = medex_entries
+                        if reading_payload and reading_payload.get("text"):
+                            doc["readingMode"] = True
+                            doc["readingTitle"] = reading_payload.get("title")
 
                         operations.append(
                             UpdateOne(
@@ -1687,6 +2122,20 @@ def run(
                                 upsert=True,
                             )
                         )
+
+                        if reading_payload and reading_payload.get("text"):
+                            reading_records.append(
+                                {
+                                    "url": page_url,
+                                    "project": document_project,
+                                    "file_id": str(file_id),
+                                    "title": reading_payload.get("title"),
+                                    "text": reading_payload.get("text"),
+                                    "html": reading_payload.get("html"),
+                                    "blocks": reading_payload.get("blocks") or [],
+                                    "image_urls": [item.get("url") for item in reading_payload.get("images", []) if item.get("url")],
+                                }
+                            )
                     else:
                         logger.info(
                             "knowledge_document_skipped",
@@ -1742,6 +2191,7 @@ def run(
                         }
                         if original_type:
                             image_doc["source_content_type"] = original_type
+                        image_file_map[image_url] = str(image_file_id)
                         operations.append(
                             UpdateOne(
                                 {"url": image_url, "project": document_project},
@@ -1765,6 +2215,87 @@ def run(
                     await _shutdown_playwright()
                 await img_client.aclose()
 
+        async def _process_reading_pages() -> None:
+            if not effective_collect_books:
+                return
+            if not reading_collection or not reading_records:
+                return
+
+            now_ts = time.time()
+            for order, record in enumerate(reading_records, start=1):
+                blocks = record.get("blocks") or []
+                segments = chunk_reading_blocks(blocks)
+                if not segments and record.get("text"):
+                    segments = [record["text"]]
+                record.pop("blocks", None)
+
+                segment_payloads: list[dict[str, Any]] = []
+                for index, segment_text in enumerate(segments):
+                    try:
+                        summary = await generate_reading_segment_summary(segment_text, project_model)
+                    except ModelNotFoundError as exc:  # noqa: PERF203 - surface model issues
+                        logger.error(
+                            "reading_segment_model_missing",
+                            project=document_project,
+                            url=record.get("url"),
+                            error=str(exc),
+                        )
+                        summary = ""
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "reading_segment_summary_failed_runtime",
+                            project=document_project,
+                            url=record.get("url"),
+                            error=str(exc),
+                        )
+                        summary = ""
+
+                    segment_payloads.append(
+                        {
+                            "index": index,
+                            "text": segment_text,
+                            "chars": len(segment_text),
+                            "summary": summary,
+                        }
+                    )
+
+                page_images: list[dict[str, str]] = []
+                for url in record.get("image_urls") or []:
+                    entry: dict[str, str] = {"url": url}
+                    file_id = image_file_map.get(url)
+                    if file_id:
+                        entry["fileId"] = file_id
+                    page_images.append(entry)
+
+                payload = {
+                    "project": document_project,
+                    "url": record.get("url"),
+                    "fileId": record.get("file_id"),
+                    "title": record.get("title"),
+                    "order": order,
+                    "text": record.get("text"),
+                    "html": record.get("html"),
+                    "segments": segment_payloads,
+                    "segmentCount": len(segment_payloads),
+                    "images": page_images,
+                    "imageCount": len(page_images),
+                    "updatedAt": now_ts,
+                }
+
+                reading_collection.update_one(
+                    {"project": document_project, "url": record.get("url")},
+                    {"$set": payload},
+                    upsert=True,
+                )
+
+                logger.info(
+                    "reading_page_compiled",
+                    project=document_project,
+                    url=record.get("url"),
+                    segments=len(segment_payloads),
+                    images=len(page_images),
+                )
+
         abort_note: str | None = None
         try:
             asyncio.run(_store())
@@ -1780,6 +2311,16 @@ def run(
                 model=getattr(exc, "model", None),
                 base=getattr(exc, "base_url", None),
             )
+
+        if effective_collect_books and reading_records:
+            try:
+                asyncio.run(_process_reading_pages())
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "reading_page_process_failed",
+                    project=document_project,
+                    error=str(exc),
+                )
 
         if operations:
             try:

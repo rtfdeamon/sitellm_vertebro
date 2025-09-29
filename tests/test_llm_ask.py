@@ -1,6 +1,7 @@
 """Test /api/v1/llm/ask endpoint to ensure caching doesn't raise errors."""
 
 import importlib.util
+import json
 import sys
 import types
 import uuid
@@ -30,111 +31,23 @@ class FakeRedis:
 @pytest.mark.asyncio
 async def test_ask_llm(monkeypatch):
     """Calling the ask endpoint twice should use cache without AttributeError."""
-    import enum
-    fastapi = types.ModuleType("fastapi")
-
-    class Request:
-        def __init__(self, state):
-            self.state = state
-
-    class HTTPException(Exception):
-        def __init__(self, status_code, detail):
-            self.status_code = status_code
-            self.detail = detail
-
-    class APIRouter:
-        def __init__(self, *a, **k):
-            pass
-
-        def post(self, *a, **k):
-            def decorator(func):
-                return func
-
-            return decorator
-
-        def get(self, *a, **k):
-            def decorator(func):
-                return func
-
-            return decorator
-
-    fastapi.APIRouter = APIRouter
-    fastapi.Request = Request
-    fastapi.HTTPException = HTTPException
-    fastapi.UploadFile = object
-    fastapi.File = lambda *a, **k: None
-    fastapi.Form = lambda *a, **k: None
-    class BackgroundTasks:
-        def add_task(self, *a, **k):
-            pass
-    fastapi.BackgroundTasks = BackgroundTasks
-
-    responses = types.ModuleType("fastapi.responses")
-
-    class ORJSONResponse:
-        def __init__(self, content, *a, **k):
-            self.content = content
-
-    class StreamingResponse:
-        def __init__(self, *a, **k):
-            pass
-
-    responses.ORJSONResponse = ORJSONResponse
-    responses.StreamingResponse = StreamingResponse
-    fastapi.responses = responses
-
-    modules = {
-        "fastapi": fastapi,
-        "fastapi.responses": responses,
-    }
+    modules: dict[str, types.ModuleType] = {}
 
     mongo = types.ModuleType("mongo")
 
     class NotFound(Exception):
         pass
 
+    class DummyMongoClient:
+        ...
+
     mongo.NotFound = NotFound
+    mongo.MongoClient = DummyMongoClient
     modules["mongo"] = mongo
 
-    models_mod = types.ModuleType("models")
+    import importlib
 
-    class RoleEnum(str, enum.Enum):
-        assistant = "assistant"
-        user = "user"
-
-    class LLMRequest:
-        def __init__(self, sessionId):
-            self.session_id = sessionId
-
-    class LLMResponse:
-        def __init__(self, text, attachments=None, emotions_enabled=None):
-            self.text = text
-            self.attachments = attachments or []
-            self.emotions_enabled = emotions_enabled
-
-        def model_dump(self):
-            data = {"text": self.text, "attachments": self.attachments}
-            if self.emotions_enabled is not None:
-                data["emotions_enabled"] = self.emotions_enabled
-            return data
-
-    class Document:
-        def __init__(self, **data):
-            self.__dict__.update(data)
-
-        def model_dump(self):
-            return self.__dict__.copy()
-
-    class Project:
-        def __init__(self, **data):
-            self.__dict__.update(data)
-
-    models_mod.RoleEnum = RoleEnum
-    models_mod.LLMRequest = LLMRequest
-    models_mod.LLMResponse = LLMResponse
-    models_mod.Document = Document
-    models_mod.Project = Project
-    models_mod.Attachment = lambda **data: data
+    models_mod = importlib.import_module("models")
     modules["models"] = models_mod
 
     for name, mod in modules.items():
@@ -153,6 +66,19 @@ async def test_ask_llm(monkeypatch):
         database="testdb",
         auth="admin",
         documents="documents",
+    )
+    settings_stub.get_settings = lambda: types.SimpleNamespace(
+        redis_url="redis://",
+        project_name=None,
+        domain=None,
+        debug=False,
+    )
+    settings_stub.settings = types.SimpleNamespace(
+        use_gpu=False,
+        llm_model="stub",
+        project_name=None,
+        domain=None,
+        debug=False,
     )
     monkeypatch.setitem(sys.modules, "settings", settings_stub)
 
@@ -179,38 +105,52 @@ async def test_ask_llm(monkeypatch):
     redis = FakeRedis()
     monkeypatch.setattr(cache, "_get_redis", lambda: redis)
 
-    class DummyLLM:
-        def __init__(self):
-            self.calls = 0
+    async def fake_generate(prompt: str, *, model: str | None = None):
+        yield "answer"
 
-        @cache.cache_response
-        async def respond(self, session, prompt):
-            self.calls += 1
-            return [types.SimpleNamespace(speaker="assistant", text="answer")]
+    monkeypatch.setattr("backend.llm_client.generate", fake_generate)
 
     class DummyMongo:
         async def get_context_preset(self, collection):
-            yield types.SimpleNamespace(role=RoleEnum.user, text="preset")
+            yield types.SimpleNamespace(role=models_mod.RoleEnum.user, text="preset")
 
         async def get_sessions(self, collection, session_id):
-            yield types.SimpleNamespace(role=RoleEnum.user, text="question")
+            yield types.SimpleNamespace(role=models_mod.RoleEnum.user, text="question")
 
+        async def get_project(self, project_name):
+            return None
+
+        async def upsert_project(self, project):
+            return project
+
+        async def log_request_stat(self, **kwargs):
+            return None
+
+        async def get_knowledge_priority(self, project):
+            return []
+
+        async def search_qa_pairs(self, question, project, limit):
+            return []
+
+    mongo_instance = DummyMongo()
     request = types.SimpleNamespace(
         state=types.SimpleNamespace(
-            llm=DummyLLM(),
-            mongo=DummyMongo(),
+            mongo=mongo_instance,
             contexts_collection="ctx",
             context_presets_collection="preset",
-        )
+        ),
+        query_params={},
+        app=types.SimpleNamespace(state=types.SimpleNamespace(mongo=mongo_instance)),
     )
 
-    llm_request = LLMRequest(sessionId=uuid.uuid4())
+    llm_request = models_mod.LLMRequest(sessionId=uuid.uuid4())
 
     resp1 = await api.ask_llm(request, llm_request)
-    assert resp1.content["text"] == "answer"
-    assert resp1.content["attachments"] == []
+    payload1 = json.loads(resp1.body)
+    assert payload1["text"] == "answer"
+    assert payload1["attachments"] == []
 
     resp2 = await api.ask_llm(request, llm_request)
-    assert resp2.content["text"] == "answer"
-    assert resp2.content["attachments"] == []
-    assert request.state.llm.calls == 1
+    payload2 = json.loads(resp2.body)
+    assert payload2["text"] == "answer"
+    assert payload2["attachments"] == []

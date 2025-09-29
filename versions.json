@@ -6,5 +6,9 @@
   "telegram": {
     "version": 16,
     "hash": "fa1de7cf860d9515719de7071159cf281eade2b8c1757663daad43139c98e275"
+  },
+  "stateful": {
+    "version": 1,
+    "hash": "764ae8b5f504575b66a6a5ace85678acd89840ada27819c22a2cd3351a6b0d92"
   }
 }

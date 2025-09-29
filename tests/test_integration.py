@@ -1,5 +1,6 @@
 """Integration test covering prompt building and LLM output."""
 
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -28,38 +29,46 @@ class DummyRouter:
         return decorator
 
 
-fake_fastapi = types.ModuleType("fastapi")
-fake_fastapi.APIRouter = DummyRouter
-fake_fastapi.Request = Request
-fake_fastapi.HTTPException = HTTPException
-
-fake_responses = types.ModuleType("fastapi.responses")
-
-class ORJSONResponse:  # minimal placeholder
+class ORJSONResponse:  # minimal placeholder for fallback
     def __init__(self, content):
         self.content = content
 
 
-class StreamingResponse:  # placeholder
+class StreamingResponse:  # placeholder for fallback
     def __init__(self, *a, **k):
         pass
 
 
-fake_responses.ORJSONResponse = ORJSONResponse
-fake_responses.StreamingResponse = StreamingResponse
-fake_fastapi.responses = fake_responses
+try:
+    fastapi_module = importlib.import_module("fastapi")
+    fastapi_responses = importlib.import_module("fastapi.responses")
+except Exception:  # pragma: no cover - fallback for stripped setups
+    fastapi_module = types.ModuleType("fastapi")
+    fastapi_module.APIRouter = DummyRouter
+    fastapi_module.Request = Request
+    fastapi_module.HTTPException = HTTPException
 
-sys.modules["fastapi"] = fake_fastapi
-sys.modules["fastapi.responses"] = fake_responses
+    fastapi_responses = types.ModuleType("fastapi.responses")
+    fastapi_responses.ORJSONResponse = ORJSONResponse
+    fastapi_responses.StreamingResponse = StreamingResponse
+    fastapi_module.responses = fastapi_responses
 
-fake_mongo = types.ModuleType("mongo")
+sys.modules["fastapi"] = fastapi_module
+sys.modules["fastapi.responses"] = fastapi_responses
 
-class NotFound(Exception):
-    pass
+try:
+    mongo_module = importlib.import_module("mongo")
+except Exception:  # pragma: no cover - fallback for stripped setups
+    fake_mongo = types.ModuleType("mongo")
+
+    class NotFound(Exception):
+        pass
 
 
-fake_mongo.NotFound = NotFound
-sys.modules["mongo"] = fake_mongo
+    fake_mongo.NotFound = NotFound
+    sys.modules["mongo"] = fake_mongo
+else:
+    sys.modules["mongo"] = mongo_module
 
 
 fake_structlog = types.ModuleType("structlog")

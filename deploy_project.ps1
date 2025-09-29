@@ -13,7 +13,8 @@ param(
   [string]$Model = "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it",
   [string]$MongoUser = "root",
   [string]$MongoPassword,              # если пусто — сгенерируем
-  [string]$CrawlUrl,                   # опционально; если не задано — шаг пропустим
+  [string]$CrawlUrl,                   # URL для краулера (используется с -EnableInitialCrawl)
+  [switch]$EnableInitialCrawl,
   [switch]$NoBuild,                    # пропустить сборку образов
   [string]$ProjectName = "sitellm_vertebro",
   [int]$AppPort = 8000,
@@ -117,6 +118,7 @@ try {
   Set-EnvVarInFile ".env" "MONGO_INITDB_ROOT_PASSWORD" $MongoPassword
   Set-EnvVarInFile ".env" "APP_PORT" "$AppPort"
   Set-EnvVarInFile ".env" "CRAWL_START_URL" $CrawlUrl
+  Set-EnvVarInFile ".env" "ENABLE_INITIAL_CRAWL" ([int]$EnableInitialCrawl.IsPresent)
   Set-EnvVarInFile ".env" "BACKEND_IMAGE" "sitellm/backend"
   Set-EnvVarInFile ".env" "TELEGRAM_IMAGE" "sitellm/telegram"
 
@@ -144,10 +146,15 @@ try {
     }
     $versionData = $versionJson | ConvertFrom-Json
     $backendVersion = [string]$versionData.versions.BACKEND_VERSION
+    if (-not $backendVersion) { $backendVersion = "1" }
     $telegramVersion = [string]$versionData.versions.TELEGRAM_VERSION
+    if (-not $telegramVersion) { $telegramVersion = "1" }
+    $statefulVersion = [string]$versionData.versions.STATEFUL_VERSION
+    if (-not $statefulVersion) { $statefulVersion = "1" }
     Set-EnvVarInFile ".env" "BACKEND_VERSION" $backendVersion
     Set-EnvVarInFile ".env" "TELEGRAM_VERSION" $telegramVersion
-    Write-Info ("Версии образов: backend={0} telegram={1}" -f $backendVersion, $telegramVersion)
+    Set-EnvVarInFile ".env" "STATEFUL_VERSION" $statefulVersion
+    Write-Info ("Версии образов: backend={0} telegram={1} stateful={2}" -f $backendVersion, $telegramVersion, $statefulVersion)
     if ($versionData.changed){
       $changedComponents = @($versionData.changed)
     }
@@ -170,6 +177,9 @@ try {
     }
     if (-not (Get-Content ".env" -Raw | Select-String '^TELEGRAM_VERSION=' -Quiet)){
       Set-EnvVarInFile ".env" "TELEGRAM_VERSION" "1"
+    }
+    if (-not (Get-Content ".env" -Raw | Select-String '^STATEFUL_VERSION=' -Quiet)){
+      Set-EnvVarInFile ".env" "STATEFUL_VERSION" "1"
     }
   }
 
@@ -210,7 +220,7 @@ try {
   }
 
   # Первичный crawl (опционально)
-  if ($CrawlUrl){
+  if ($EnableInitialCrawl -and $CrawlUrl){
     Write-Info "Старт первичного crawl по $CrawlUrl"
     Write-Warn "Если имя CLI-модуля проекта иное — поправьте команду ниже под ваш код."
     try {
@@ -219,7 +229,7 @@ try {
       Write-Warn "CLI для crawl не найден или завершился с ошибкой. Шаг можно выполнить вручную позднее."
     }
   } else {
-    Write-Warn "CRAWL_START_URL не задан — шаг crawl пропущен."
+    Write-Info "Начальный crawl пропущен (флаг -EnableInitialCrawl не задан или URL отсутствует)."
   }
 
   Write-Ok "Готово! Приложение должно отвечать на http://localhost:$AppPort/"

@@ -8,14 +8,12 @@ from knowledge import summary
 
 
 @pytest.mark.asyncio
-async def test_generate_image_caption_uses_llm(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_prompt: dict[str, str] = {}
+async def test_generate_image_caption_prefers_alt_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fail_if_called(*args, **kwargs):  # noqa: D401
+        raise AssertionError("LLM should not be invoked for image captions")
+        yield
 
-    async def fake_generate(prompt: str, model: str | None = None):  # noqa: D401
-        captured_prompt["value"] = prompt
-        yield "краткое описание"
-
-    monkeypatch.setattr(summary.llm_client, "generate", fake_generate)
+    monkeypatch.setattr(summary.llm_client, "generate", fail_if_called)
 
     result = await summary.generate_image_caption(
         "photo.jpg",
@@ -24,24 +22,22 @@ async def test_generate_image_caption_uses_llm(monkeypatch: pytest.MonkeyPatch) 
         project=None,
     )
 
-    assert "краткое описание" in result
-    assert result.endswith(".")
-    assert "Alt-текст" in captured_prompt["value"]
+    assert result == "Команда на выставке."
 
 
 @pytest.mark.asyncio
-async def test_generate_image_caption_falls_back_on_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def failing_generate(prompt: str, model: str | None = None):  # noqa: D401
-        raise RuntimeError("boom")
-        yield  # pragma: no cover - make this an async generator
+async def test_generate_image_caption_fallback_without_alt(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fail_if_called(*args, **kwargs):  # noqa: D401
+        raise AssertionError("LLM should not be invoked for image captions")
+        yield
 
-    monkeypatch.setattr(summary.llm_client, "generate", failing_generate)
+    monkeypatch.setattr(summary.llm_client, "generate", fail_if_called)
 
     result = await summary.generate_image_caption(
         "diagram.png",
-        alt_text="Диаграмма",
+        alt_text=None,
         page_context="Сводные данные о росте продаж",
         project=None,
     )
 
-    assert result.startswith("Диаграмма") or result.startswith("Изображение")
+    assert result == "Изображение «diagram.png»."
