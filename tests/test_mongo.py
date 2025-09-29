@@ -25,6 +25,9 @@ class _FakeGridFS:
     async def delete(self, file_id: ObjectId):  # pragma: no cover - simple stub
         self.deleted = file_id
 
+    async def upload_from_stream(self, filename: str, payload: bytes, metadata: dict | None = None):
+        return self._id
+
 
 class _FakeCollection:
     def __init__(self):

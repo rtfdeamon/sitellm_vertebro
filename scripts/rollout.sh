@@ -119,7 +119,25 @@ printf '[+] Stopping running stack (if any) ...\n'
 if [ "${PRESERVE_STATEFUL_SERVICES}" = "1" ]; then
   echo '[i] Skipping docker compose down to preserve databases'
 else
-  "${COMPOSE_CMD[@]}" down --remove-orphans || true
+  stop_timeout=${ROLLING_STOP_TIMEOUT:-45}
+  echo "[i] Stopping services with timeout ${stop_timeout}s"
+  "${COMPOSE_CMD[@]}" stop --timeout "${stop_timeout}" || true
+  end_ts=$(( $(date +%s) + stop_timeout ))
+  running_services=""
+  while [ "$(date +%s)" -lt "${end_ts}" ]; do
+    running_services=$("${COMPOSE_CMD[@]}" ps --services --status=running 2>/dev/null | tr '\n' ' ')
+    if [ -z "${running_services// }" ]; then
+      running_services=""
+      break
+    fi
+    sleep 2
+  done
+  if [ -n "${running_services// }" ]; then
+    echo "[i] Services still stopping: ${running_services}" 
+  else
+    echo '[✓] All services stopped gracefully'
+  fi
+  "${COMPOSE_CMD[@]}" rm -f || true
 fi
 
 if [ "${PRESERVE_STATEFUL_SERVICES}" = "1" ]; then

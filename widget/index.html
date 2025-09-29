@@ -151,6 +151,11 @@
     .msg-attachments .attachment-image { background: rgba(59, 130, 246, 0.12); }
     .msg-attachments .attachment-image img { display: block; max-width: 180px; border-radius: 8px; }
     .msg-attachments .attachment-caption { font-size: 11px; color: var(--muted); }
+    .msg-sources { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+    .msg-sources-list { display: flex; flex-direction: column; gap: 4px; }
+    .msg-sources a { color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+    .msg-sources a::before { content: '\1F517'; font-size: 12px; }
+    .msg-sources a:hover { text-decoration: underline; }
     form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; }
     textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
@@ -481,6 +486,13 @@
     .voice-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
     .voice-preview { min-height: 260px; display: flex; align-items: center; justify-content: center; }
     .voice-controls { display: grid; gap: 16px; }
+    .voice-mode-select { display: grid; gap: 8px; }
+    .voice-mode-label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .voice-mode-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .voice-mode-option { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 17, 23, 0.55); color: var(--text); font-size: 13px; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease; }
+    .voice-mode-option input { display: none; }
+    .voice-mode-option.is-active { background: rgba(79, 124, 255, 0.18); border-color: rgba(79, 124, 255, 0.55); color: #e0e7ff; box-shadow: 0 10px 24px rgba(79, 124, 255, 0.18); }
+    .voice-mode-option.is-disabled { opacity: 0.55; cursor: not-allowed; }
     .voice-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -488,8 +500,25 @@
     }
     .voice-grid label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
     .voice-grid input { background: rgba(15, 17, 23, 0.55); border: 1px solid rgba(148, 163, 184, 0.25); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .voice-grid.is-disabled input { opacity: 0.4; cursor: not-allowed; }
     .voice-choice { position: relative; }
     .voice-choice input { width: 100%; }
+    .avatar-character-panel { display: grid; gap: 12px; }
+    .avatar-character-panel[hidden] { display: none; }
+    .avatar-character-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .avatar-character-card { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 17, 23, 0.55); color: var(--text); text-align: left; cursor: pointer; transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease; font-size: 13px; }
+    .avatar-character-card:hover { transform: translateY(-1px); border-color: rgba(79, 124, 255, 0.45); }
+    .avatar-character-card.is-active { border-color: rgba(79, 124, 255, 0.6); background: rgba(79, 124, 255, 0.18); box-shadow: 0 12px 24px rgba(79, 124, 255, 0.18); }
+    .avatar-character-name { font-weight: 600; letter-spacing: 0.02em; }
+    .avatar-character-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    .voice-tuning { display: grid; gap: 12px; }
+    .voice-speed { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .voice-speed input[type="range"] { width: 100%; accent-color: rgba(79, 124, 255, 0.8); }
+    .voice-speed output { justify-self: flex-start; font-size: 12px; color: var(--text); background: rgba(79,124,255,0.18); border-radius: 999px; padding: 4px 10px; letter-spacing: 0.04em; }
+    .voice-test { display: grid; gap: 8px; }
+    .voice-test textarea { width: 100%; min-height: 64px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 17, 23, 0.55); color: var(--text); padding: 10px 12px; font-size: 13px; resize: vertical; }
+    .voice-test button { justify-self: flex-start; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(79, 124, 255, 0.45); background: rgba(79, 124, 255, 0.18); color: var(--text); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease; }
+    .voice-test button:hover { background: rgba(79, 124, 255, 0.28); border-color: rgba(79, 124, 255, 0.65); }
     .developer-credit { display:block; margin:32px auto 12px; text-align:center; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:rgba(226,232,240,0.45); text-decoration:none; transition:color 0.2s ease; }
     .developer-credit:hover { color: rgba(226,232,240,0.75); }
     .feedback-trigger { position:fixed; left:24px; bottom:24px; z-index:9999; display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:999px; border:1px solid rgba(148,163,184,0.3); background:rgba(15,17,23,0.6); color:rgba(226,232,240,0.78); font-size:12px; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; backdrop-filter:blur(6px); transition:background 0.2s ease, color 0.2s ease; }
@@ -650,6 +679,52 @@
           <div class="voice-preview-placeholder" data-i18n="avatarPreviewSelect">Select a project to preview the voice assistant.</div>
         </div>
         <div class="voice-controls">
+          <div class="voice-mode-select">
+            <span class="voice-mode-label" id="voiceModeLabel" data-i18n="avatarModeLabel">Interaction mode</span>
+            <div class="voice-mode-options" role="radiogroup" aria-labelledby="voiceModeLabel">
+              <label class="voice-mode-option" data-mode-option="text">
+                <input type="radio" name="avatarMode" value="text">
+                <span data-i18n="avatarModeText">Text chat</span>
+              </label>
+              <label class="voice-mode-option is-active" data-mode-option="voice">
+                <input type="radio" name="avatarMode" value="voice" checked>
+                <span data-i18n="avatarModeVoice">Voice chat</span>
+              </label>
+              <label class="voice-mode-option" data-mode-option="avatar">
+                <input type="radio" name="avatarMode" value="avatar">
+                <span data-i18n="avatarModeAvatar">Voice + avatar</span>
+              </label>
+            </div>
+          </div>
+          <div class="avatar-character-panel" id="characterPanel" hidden>
+            <span class="voice-mode-label" data-i18n="avatarCharacterLabel">Choose an avatar</span>
+            <div class="avatar-character-grid">
+              <button type="button" class="avatar-character-card is-active" data-avatar-option="luna">
+                <span class="avatar-character-name" data-i18n="avatarCharacterLunaName">Luna</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterLunaDesc">Warm customer success partner</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="amir">
+                <span class="avatar-character-name" data-i18n="avatarCharacterAmirName">Amir</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterAmirDesc">Thoughtful technical guide</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="sofia">
+                <span class="avatar-character-name" data-i18n="avatarCharacterSofiaName">Sofia</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterSofiaDesc">Confident sales lead</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="nova">
+                <span class="avatar-character-name" data-i18n="avatarCharacterNovaName">Nova</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterNovaDesc">Empathic product specialist</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="atlas">
+                <span class="avatar-character-name" data-i18n="avatarCharacterAtlasName">Atlas</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterAtlasDesc">Calm operations engineer</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="cosmo">
+                <span class="avatar-character-name" data-i18n="avatarCharacterCosmoName">Cosmo</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterCosmoDesc">Futuristic guide</span>
+              </button>
+            </div>
+          </div>
           <div class="voice-grid">
             <label>
               <span data-i18n="avatarLangLabel">Recognition language</span>
@@ -660,6 +735,17 @@
               <input type="text" id="avatarVoice" placeholder="Milena" autocomplete="off" list="avatarVoiceList" />
               <datalist id="avatarVoiceList"></datalist>
             </label>
+          </div>
+          <div class="voice-tuning">
+            <label class="voice-speed">
+              <span data-i18n="avatarSpeechRateLabel">Speech speed</span>
+              <input type="range" id="speechRate" min="0.6" max="1.4" step="0.05" value="1.0">
+              <output id="speechRateDisplay">×1.00</output>
+            </label>
+            <div class="voice-test">
+              <textarea id="voiceTestText" data-i18n-placeholder="avatarTestPlaceholder" placeholder="Enter a short line to preview the voice…"></textarea>
+              <button type="button" id="voiceTestBtn" data-i18n="avatarTestButton">Play sample</button>
+            </div>
           </div>
           <div class="code-card">
             <button type="button" class="copy-btn" id="avatarCopy" data-i18n="avatarCopy">Copy widget snippet</button>
@@ -821,6 +907,15 @@ const voiceAvatarHost = document.getElementById('voiceAvatarHost');
 const avatarLangInput = document.getElementById('avatarLang');
 const avatarVoiceInput = document.getElementById('avatarVoice');
 const avatarVoiceList = document.getElementById('avatarVoiceList');
+const avatarModeOptions = Array.from(document.querySelectorAll('[data-mode-option]'));
+const avatarModeInputs = Array.from(document.querySelectorAll('input[name="avatarMode"]'));
+const avatarCharacterPanel = document.getElementById('characterPanel');
+const avatarCharacterCards = Array.from(document.querySelectorAll('[data-avatar-option]'));
+const voiceGridEl = document.querySelector('.voice-grid');
+const speechRateInput = document.getElementById('speechRate');
+const speechRateDisplay = document.getElementById('speechRateDisplay');
+const voiceTestTextarea = document.getElementById('voiceTestText');
+const voiceTestBtn = document.getElementById('voiceTestBtn');
 const avatarCodeEl = document.getElementById('avatarCode');
 const avatarCopyBtn = document.getElementById('avatarCopy');
 const voiceFeatureHint = document.getElementById('voiceFeatureHint');
@@ -845,14 +940,18 @@ const voiceHintState = { status: 'select', model: null };
 let remoteVoiceState = { key: '', enabled: true, model: null };
 let voicePreviewToken = 0;
 let voicePlaceholderState = { key: 'avatarPreviewSelect', params: null };
+let selectedVoiceMode = 'voice';
+let selectedAvatarCharacter = 'luna';
 
 const LANGUAGE_STORAGE_KEY = 'chat_language';
 const VOICE_STORAGE_KEY = 'chat_voice_preference';
+const SPEECH_RATE_STORAGE_KEY = 'chat_voice_speed';
 const DEFAULT_VOICE_HINT = 'Milena';
 let voiceOptionsPending = false;
 const FALLBACK_LANGUAGE = 'en';
 const pageReadingMode = urlParams.get('reading') === '1';
 let widgetReadingMode = pageReadingMode;
+let currentVoicePreviewInstance = null;
 
 if (isEmbed) {
   document.querySelectorAll('.feedback-trigger, .feedback-panel, .developer-credit').forEach((node) => {
@@ -885,7 +984,27 @@ const LANGUAGES = {
       avatarSectionTitle: 'Voice-enabled avatar',
       avatarSectionSubtitle: 'Let visitors speak with an animated assistant that streams and reads answers aloud.',
       avatarLangLabel: 'Recognition language',
+      avatarModeLabel: 'Interaction mode',
+      avatarModeText: 'Text chat',
+      avatarModeVoice: 'Voice chat',
+      avatarModeAvatar: 'Voice + avatar',
+      avatarCharacterLabel: 'Choose an avatar',
+      avatarCharacterLunaName: 'Luna',
+      avatarCharacterLunaDesc: 'Warm customer success partner',
+      avatarCharacterAmirName: 'Amir',
+      avatarCharacterAmirDesc: 'Thoughtful technical guide',
+      avatarCharacterSofiaName: 'Sofia',
+      avatarCharacterSofiaDesc: 'Confident sales lead',
+      avatarCharacterNovaName: 'Nova',
+      avatarCharacterNovaDesc: 'Empathic product specialist',
+      avatarCharacterAtlasName: 'Atlas',
+      avatarCharacterAtlasDesc: 'Calm operations engineer',
+      avatarCharacterCosmoName: 'Cosmo',
+      avatarCharacterCosmoDesc: 'Futuristic guide',
       avatarVoiceLabel: 'Speech voice (optional)',
+      avatarSpeechRateLabel: 'Speech speed',
+      avatarTestPlaceholder: 'Enter a short line to preview the voice…',
+      avatarTestButton: 'Play sample',
       avatarCopy: 'Copy widget snippet',
       avatarPreviewSelect: 'Select a project to preview the voice assistant.',
       avatarHintSelectProject: 'Select a project to preview the voice assistant.',
@@ -894,6 +1013,9 @@ const LANGUAGES = {
       avatarHintEnabled: 'Voice assistant is enabled for this project.',
       avatarHintEnabledModel: 'Voice assistant uses model {model}.',
       avatarHintError: 'Unable to load voice settings.',
+      avatarHintTextMode: 'Text-only chat mode is active. Visitors will type instead of speaking.',
+      avatarHintAvatarMode: 'Avatar mode enabled. Animated persona mirrors the assistant during replies.',
+      avatarHintAvatarAppend: 'Animated persona will accompany spoken responses.',
       avatarHintReadingMode: 'Book reading mode is active.',
       copiedLabel: 'Copied!',
       chatPreviewTitle: 'Live chat preview',
@@ -972,6 +1094,7 @@ const LANGUAGES = {
       errorStreaming: 'Streaming error, see console.',
       errorNoSSE: 'SSE not supported by this browser.',
       attachmentLabel: 'Attachment',
+      sourcesTitle: 'Sources',
       roleUser: 'user',
       roleAssistant: 'assistant',
       roleSystem: 'system',
@@ -1052,6 +1175,7 @@ const LANGUAGES = {
       errorStreaming: 'Error de streaming, revisa la consola.',
       errorNoSSE: 'Este navegador no admite SSE.',
       attachmentLabel: 'Adjunto',
+      sourcesTitle: 'Fuentes',
       roleUser: 'usuario',
       roleAssistant: 'asistente',
       roleSystem: 'sistema',
@@ -1132,6 +1256,7 @@ const LANGUAGES = {
       errorStreaming: 'Streaming-Fehler, siehe Konsole.',
       errorNoSSE: 'Dieser Browser unterstützt kein SSE.',
       attachmentLabel: 'Anhang',
+      sourcesTitle: 'Quellen',
       roleUser: 'benutzer',
       roleAssistant: 'assistent',
       roleSystem: 'system',
@@ -1212,6 +1337,7 @@ const LANGUAGES = {
       errorStreaming: 'Erreur de streaming, voir la console.',
       errorNoSSE: 'Ce navigateur ne prend pas en charge SSE.',
       attachmentLabel: 'Pièce jointe',
+      sourcesTitle: 'Sources',
       roleUser: 'utilisateur',
       roleAssistant: 'assistant',
       roleSystem: 'système',
@@ -1292,6 +1418,7 @@ const LANGUAGES = {
       errorStreaming: 'Errore di streaming, controlla la console.',
       errorNoSSE: 'Questo browser non supporta SSE.',
       attachmentLabel: 'Allegato',
+      sourcesTitle: 'Fonti',
       roleUser: 'utente',
       roleAssistant: 'assistente',
       roleSystem: 'sistema',
@@ -1372,6 +1499,7 @@ const LANGUAGES = {
       errorStreaming: 'Erro de streaming, veja o console.',
       errorNoSSE: 'Este navegador não suporta SSE.',
       attachmentLabel: 'Anexo',
+      sourcesTitle: 'Fontes',
       roleUser: 'usuário',
       roleAssistant: 'assistente',
       roleSystem: 'sistema',
@@ -1402,7 +1530,27 @@ const LANGUAGES = {
       avatarSectionTitle: 'Голосовой аватар',
       avatarSectionSubtitle: 'Дайте посетителям возможность говорить с анимированным ассистентом в реальном времени.',
       avatarLangLabel: 'Язык распознавания',
+      avatarModeLabel: 'Режим взаимодействия',
+      avatarModeText: 'Только переписка',
+      avatarModeVoice: 'Переписка + голос',
+      avatarModeAvatar: 'Голос + аватар',
+      avatarCharacterLabel: 'Выберите персонажа',
+      avatarCharacterLunaName: 'Луна',
+      avatarCharacterLunaDesc: 'Доброжелательный менеджер поддержки',
+      avatarCharacterAmirName: 'Амир',
+      avatarCharacterAmirDesc: 'Вдумчивый технический консультант',
+      avatarCharacterSofiaName: 'София',
+      avatarCharacterSofiaDesc: 'Уверенный руководитель продаж',
+      avatarCharacterNovaName: 'Нова',
+      avatarCharacterNovaDesc: 'Эмпатичный продуктовый эксперт',
+      avatarCharacterAtlasName: 'Атлас',
+      avatarCharacterAtlasDesc: 'Спокойный инженер по операциям',
+      avatarCharacterCosmoName: 'Космо',
+      avatarCharacterCosmoDesc: 'Футуристичный проводник',
       avatarVoiceLabel: 'Голос синтеза (опционально)',
+      avatarSpeechRateLabel: 'Скорость озвучивания',
+      avatarTestPlaceholder: 'Введите короткий текст, чтобы прослушать пример…',
+      avatarTestButton: 'Прослушать',
       avatarCopy: 'Скопировать виджет',
       avatarPreviewSelect: 'Выберите проект, чтобы увидеть голосового ассистента.',
       avatarHintSelectProject: 'Выберите проект, чтобы увидеть голосового ассистента.',
@@ -1411,6 +1559,9 @@ const LANGUAGES = {
       avatarHintEnabled: 'Голосовой ассистент включён для этого проекта.',
       avatarHintEnabledModel: 'Голосовой ассистент использует модель {model}.',
       avatarHintError: 'Не удалось загрузить настройки голосового режима.',
+      avatarHintTextMode: 'Активен режим только переписки. Посетители будут писать сообщения вместо голосовых запросов.',
+      avatarHintAvatarMode: 'Включён режим с визуальным аватаром. Персонаж отображает ответы помощника.',
+      avatarHintAvatarAppend: 'Аватар сопровождает голосовые ответы.',
       copiedLabel: 'Скопировано!',
       chatPreviewTitle: 'Предпросмотр живого чата',
       launcherTitle: 'AI‑помощник',
@@ -1466,6 +1617,7 @@ const LANGUAGES = {
       errorStreaming: 'Ошибка потоковой передачи, смотрите консоль.',
       errorNoSSE: 'Этот браузер не поддерживает SSE.',
       attachmentLabel: 'Вложение',
+      sourcesTitle: 'Источники',
       roleUser: 'пользователь',
       roleAssistant: 'ассистент',
       roleSystem: 'система',
@@ -1546,6 +1698,7 @@ const LANGUAGES = {
       errorStreaming: '流式传输错误，请查看控制台。',
       errorNoSSE: '此浏览器不支持 SSE。',
       attachmentLabel: '附件',
+      sourcesTitle: '来源',
       roleUser: '用户',
       roleAssistant: '助手',
       roleSystem: '系统',
@@ -1626,6 +1779,7 @@ const LANGUAGES = {
       errorStreaming: 'ストリーミングエラー。コンソールを確認してください。',
       errorNoSSE: 'このブラウザは SSE をサポートしていません。',
       attachmentLabel: '添付ファイル',
+      sourcesTitle: '出典',
       roleUser: 'ユーザー',
       roleAssistant: 'アシスタント',
       roleSystem: 'システム',
@@ -1706,6 +1860,7 @@ const LANGUAGES = {
       errorStreaming: 'خطأ في البث، راجع وحدة التحكم.',
       errorNoSSE: 'هذا المتصفح لا يدعم SSE.',
       attachmentLabel: 'مرفق',
+      sourcesTitle: 'المصادر',
       roleUser: 'مستخدم',
       roleAssistant: 'مساعد',
       roleSystem: 'نظام',
@@ -2124,6 +2279,47 @@ function initVoiceOptions() {
   }
 }
 
+function initSpeechRateControl() {
+  if (!speechRateInput) return;
+  try {
+    const stored = localStorage.getItem(SPEECH_RATE_STORAGE_KEY);
+    if (stored) {
+      speechRateInput.value = stored;
+    }
+  } catch {}
+  updateSpeechRateDisplay();
+  const applyRate = () => {
+    const value = getSpeechRateValue();
+    if (speechRateInput) {
+      speechRateInput.value = value.toFixed(2);
+    }
+    updateSpeechRateDisplay();
+    try {
+      localStorage.setItem(SPEECH_RATE_STORAGE_KEY, value.toFixed(2));
+    } catch {}
+    if (currentVoicePreviewInstance?.setSpeechRate) {
+      currentVoicePreviewInstance.setSpeechRate(value);
+    }
+    refreshVoiceSnippet();
+  };
+  speechRateInput.addEventListener('input', applyRate);
+  speechRateInput.addEventListener('change', applyRate);
+  if (voiceTestBtn) {
+    voiceTestBtn.disabled = selectedVoiceMode === 'text' || !currentVoicePreviewInstance;
+    voiceTestBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      const text = (voiceTestTextarea?.value || '').trim();
+      if (!text) {
+        voiceTestTextarea?.focus();
+        return;
+      }
+      if (!currentVoicePreviewInstance?.speakTest || !currentVoicePreviewInstance.speakTest(text)) {
+        console.warn('Voice preview is unavailable for the current mode.');
+      }
+    });
+  }
+}
+
 function openFeedbackPanel() {
   if (!feedbackPanel) return;
   feedbackPanel.classList.add('show');
@@ -2211,11 +2407,26 @@ function getEmbedConfig() {
   return { baseUrl: base, project, accent, theme, reading };
 }
 
+function getSpeechRateValue() {
+  const raw = parseFloat(speechRateInput?.value || '1');
+  if (!Number.isFinite(raw)) return 1;
+  return Math.min(2, Math.max(0.5, raw));
+}
+
+function updateSpeechRateDisplay() {
+  if (!speechRateDisplay) return;
+  const rate = getSpeechRateValue();
+  speechRateDisplay.textContent = `×${rate.toFixed(2)}`;
+}
+
 function getVoiceConfig() {
   const core = getEmbedConfig();
   const lang = (avatarLangInput?.value || 'ru-RU').trim() || 'ru-RU';
   const voice = (avatarVoiceInput?.value || '').trim();
-  return { ...core, lang, voice };
+  const mode = selectedVoiceMode;
+  const avatarCharacter = mode === 'avatar' ? (selectedAvatarCharacter || 'luna') : '';
+  const speechRate = getSpeechRateValue();
+  return { ...core, lang, voice, mode, avatarCharacter, speechRate };
 }
 
 function indentAttributes(attrs) {
@@ -2269,14 +2480,18 @@ function buildVoiceSnippet(cfg) {
     `src="${cfg.baseUrl}/widget/voice-avatar.js"`,
     `data-base-url="${cfg.baseUrl}"`,
     cfg.project ? `data-project="${cfg.project}"` : '',
+    `data-mode="${cfg.mode || 'voice'}"`,
     `data-lang="${cfg.lang}"`,
     cfg.voice ? `data-voice="${cfg.voice}"` : '',
     cfg.voiceModel ? `data-voice-model="${cfg.voiceModel}"` : '',
+    Math.abs((cfg.speechRate ?? 1) - 1) > 0.001 ? `data-speech-rate="${Number(cfg.speechRate).toFixed(2)}"` : '',
     `data-label="AI"`,
     `data-headline="${t('chatTitle')}"`,
     `data-subtitle="${t('chatSubtitle')}"`,
     `data-color="${cfg.accent}"`,
-    cfg.reading ? 'data-reading-mode="1"' : ''
+    cfg.reading ? 'data-reading-mode="1"' : '',
+    cfg.mode === 'avatar' ? 'data-avatar-animated="1"' : '',
+    cfg.mode === 'avatar' && cfg.avatarCharacter ? `data-avatar-character="${cfg.avatarCharacter}"` : ''
   ];
   return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
@@ -2291,6 +2506,13 @@ function translateVoiceMessage(key, params) {
 
 function renderVoiceHint() {
   if (!voiceFeatureHint) return;
+  if (selectedVoiceMode === 'text') {
+    let message = t('avatarHintTextMode');
+    voiceFeatureHint.textContent = widgetReadingMode || pageReadingMode
+      ? `${message} ${t('avatarHintReadingMode')}`
+      : message;
+    return;
+  }
   let key = 'avatarHintSelectProject';
   let params = null;
   switch (voiceHintState.status) {
@@ -2314,7 +2536,13 @@ function renderVoiceHint() {
     default:
       key = 'avatarHintSelectProject';
   }
+  if (selectedVoiceMode === 'avatar' && key === 'avatarHintEnabled') {
+    key = 'avatarHintAvatarMode';
+  }
   let text = translateVoiceMessage(key, params);
+  if (selectedVoiceMode === 'avatar' && key !== 'avatarHintAvatarMode') {
+    text = `${text} ${t('avatarHintAvatarAppend')}`;
+  }
   if (widgetReadingMode || pageReadingMode) {
     text = `${text} ${t('avatarHintReadingMode')}`;
   }
@@ -2326,6 +2554,86 @@ function setVoiceHint(status, model) {
   voiceHintState.model = model || null;
   renderVoiceHint();
 }
+
+function applyVoiceModeUi() {
+  const mode = selectedVoiceMode;
+  avatarModeOptions.forEach((option) => {
+    const value = (option.dataset.modeOption || '').toLowerCase();
+    const isActive = value === mode;
+    option.classList.toggle('is-active', isActive);
+    const radio = option.querySelector('input[type="radio"]');
+    if (radio) {
+      radio.checked = isActive;
+    }
+  });
+  const disableVoice = mode === 'text';
+  if (avatarLangInput) {
+    avatarLangInput.disabled = disableVoice;
+  }
+  if (avatarVoiceInput) {
+    avatarVoiceInput.disabled = disableVoice;
+  }
+  if (voiceGridEl) {
+    voiceGridEl.classList.toggle('is-disabled', disableVoice);
+  }
+  if (speechRateInput) {
+    speechRateInput.disabled = disableVoice;
+  }
+  if (speechRateDisplay) {
+    speechRateDisplay.style.opacity = disableVoice ? '0.4' : '1';
+  }
+  if (voiceTestTextarea) {
+    voiceTestTextarea.disabled = disableVoice;
+  }
+  if (voiceTestBtn) {
+    voiceTestBtn.disabled = disableVoice || !currentVoicePreviewInstance;
+  }
+  updateSpeechRateDisplay();
+  const showCharacters = mode === 'avatar';
+  if (showCharacters && !selectedAvatarCharacter) {
+    selectedAvatarCharacter = 'luna';
+  }
+  if (avatarCharacterPanel) {
+    avatarCharacterPanel.hidden = !showCharacters;
+  }
+  avatarCharacterCards.forEach((card) => {
+    const value = (card.dataset.avatarOption || '').toLowerCase();
+    const isActive = showCharacters && (value === selectedAvatarCharacter || (!selectedAvatarCharacter && value === 'luna'));
+    card.classList.toggle('is-active', isActive);
+    card.disabled = !showCharacters;
+    card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function setVoiceMode(mode, options = {}) {
+  const normalized = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
+  const allowed = normalized === 'text' || normalized === 'avatar' ? normalized : 'voice';
+  selectedVoiceMode = allowed;
+  applyVoiceModeUi();
+  if (!options.skipHint) {
+    renderVoiceHint();
+  }
+  if (!options.skipRefresh) {
+    refreshVoiceSnippet();
+  }
+}
+
+document.addEventListener('sitellm-voice-avatar-ready', (event) => {
+  const detail = event.detail || null;
+  if (!detail) return;
+  currentVoicePreviewInstance = detail;
+  if (currentVoicePreviewInstance.setSpeechRate) {
+    currentVoicePreviewInstance.setSpeechRate(getSpeechRateValue());
+  }
+  applyVoiceModeUi();
+});
+
+document.addEventListener('sitellm-voice-avatar-destroyed', (event) => {
+  if (event.detail && event.detail === currentVoicePreviewInstance) {
+    currentVoicePreviewInstance = null;
+    applyVoiceModeUi();
+  }
+});
 
 function renderVoicePlaceholderFromState() {
   if (!voiceAvatarHost || !voicePlaceholderState.key) return;
@@ -2412,16 +2720,18 @@ async function updateVoicePreview() {
     if (token !== voicePreviewToken) return;
     remoteVoiceState = { key: stateKey, enabled: remote.enabled, model: remote.model };
     setVoiceSnippetText();
-    if (!remote.enabled) {
+    const voiceAllowed = remote.enabled || selectedVoiceMode === 'text';
+    if (!voiceAllowed) {
       showVoicePlaceholder('avatarHintDisabled');
       setVoiceHint('disabled');
       if (avatarCopyBtn) avatarCopyBtn.disabled = true;
       return;
     }
-    setVoiceHint(remote.model ? 'enabled-model' : 'enabled', remote.model);
+    const hintStatus = remote.enabled && remote.model ? 'enabled-model' : 'enabled';
+    setVoiceHint(hintStatus, remote.enabled ? remote.model : null);
     if (avatarCopyBtn) avatarCopyBtn.disabled = false;
     voicePlaceholderState = { key: null, params: null };
-    renderVoiceAvatarDemo({ ...cfg, voiceModel: remote.model });
+    renderVoiceAvatarDemo({ ...cfg, voiceModel: remote.enabled ? remote.model : null });
   } catch (error) {
     if (token !== voicePreviewToken) return;
     console.error(error);
@@ -2429,7 +2739,9 @@ async function updateVoicePreview() {
     setVoiceSnippetText();
     showVoicePlaceholder('avatarHintError');
     setVoiceHint('error');
-    if (avatarCopyBtn) avatarCopyBtn.disabled = true;
+    if (avatarCopyBtn) {
+      avatarCopyBtn.disabled = selectedVoiceMode !== 'text';
+    }
   }
 }
 
@@ -2470,13 +2782,22 @@ function renderVoiceAvatarDemo(cfgOverride) {
   voicePlaceholderState = { key: null, params: null };
   voiceAvatarHost.innerHTML = '';
   const script = document.createElement('script');
-  script.src = 'voice-avatar.js';
+  const cacheBuster = Date.now().toString(36);
+  script.src = `voice-avatar.js?v=${cacheBuster}`;
   script.dataset.baseUrl = cfg.baseUrl;
   if (cfg.project) script.dataset.project = cfg.project;
   script.dataset.lang = cfg.lang;
+  script.dataset.mode = cfg.mode || 'voice';
   if (cfg.voice) script.dataset.voice = cfg.voice;
   if (cfg.voiceModel) script.dataset.voiceModel = cfg.voiceModel;
-   if (cfg.reading) script.dataset.readingMode = '1';
+  if (cfg.speechRate) script.dataset.speechRate = String(cfg.speechRate);
+  if (cfg.reading) script.dataset.readingMode = '1';
+  if (cfg.mode === 'avatar') {
+    script.dataset.avatarAnimated = '1';
+    if (cfg.avatarCharacter) {
+      script.dataset.avatarCharacter = cfg.avatarCharacter;
+    }
+  }
   script.dataset.label = 'AI';
   script.dataset.headline = t('chatTitle');
   script.dataset.subtitle = t('chatSubtitle');
@@ -2554,6 +2875,23 @@ function initEmbedShowcase() {
   };
   avatarVoiceInput?.addEventListener('input', handleVoiceInput);
   avatarVoiceInput?.addEventListener('change', handleVoiceInput);
+  avatarModeInputs.forEach((input) => {
+    input?.addEventListener('change', () => {
+      if (input.checked) {
+        setVoiceMode(input.value);
+      }
+    });
+  });
+  avatarCharacterCards.forEach((card) => {
+    card?.addEventListener('click', () => {
+      if (card.disabled) return;
+      const value = (card.dataset.avatarOption || '').toLowerCase();
+      if (!value) return;
+      selectedAvatarCharacter = value;
+      applyVoiceModeUi();
+      refreshVoiceSnippet();
+    });
+  });
 
   if (embedCopyBtn) {
     embedCopyBtn.addEventListener('click', () => {
@@ -2566,6 +2904,9 @@ function initEmbedShowcase() {
     });
   }
 
+  applyVoiceModeUi();
+  renderVoiceHint();
+  initSpeechRateControl();
   initVoiceOptions();
   refreshEmbedSnippet();
   refreshVoiceSnippet();
@@ -2841,7 +3182,11 @@ function appendMessage(text, role = 'assistant', meta = {}) {
   wrapper.appendChild(head);
   const body = document.createElement('div');
   body.className = 'msg-body';
-  body.textContent = text;
+  let displayText = text;
+  if ((!displayText || !String(displayText).trim()) && Array.isArray(meta.sources) && meta.sources.length) {
+    displayText = t('sourcesTitle');
+  }
+  body.textContent = displayText || '';
   wrapper.appendChild(body);
   if (meta.attachments?.length) {
     const attachmentsRoot = document.createElement('div');
@@ -2879,6 +3224,26 @@ function appendMessage(text, role = 'assistant', meta = {}) {
       attachmentsRoot.appendChild(attEl);
     });
     wrapper.appendChild(attachmentsRoot);
+  }
+  if (Array.isArray(meta.sources) && meta.sources.length) {
+    const sourcesRoot = document.createElement('div');
+    sourcesRoot.className = 'msg-sources';
+    const list = document.createElement('div');
+    list.className = 'msg-sources-list';
+    meta.sources.forEach((entry, index) => {
+      if (!entry || !entry.url) return;
+      const link = document.createElement('a');
+      link.href = entry.url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = entry.name || entry.url;
+      link.dataset.index = String(index + 1);
+      list.appendChild(link);
+    });
+    if (list.children.length) {
+      sourcesRoot.appendChild(list);
+      wrapper.appendChild(sourcesRoot);
+    }
   }
   messages.appendChild(wrapper);
   messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
@@ -3101,6 +3466,18 @@ async function sendQuestion(question) {
       saveHistory();
     } catch (error) {
       console.error('debug parse error', error);
+    }
+  });
+
+  currentES.addEventListener('sources', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      const entries = Array.isArray(data?.entries) ? data.entries : [];
+      if (!entries.length) return;
+      appendMessage('', 'assistant', { sources: entries });
+      saveHistory();
+    } catch (error) {
+      console.error('sources parse error', error, event.data);
     }
   });
 

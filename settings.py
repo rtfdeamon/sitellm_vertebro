@@ -27,6 +27,9 @@ class MongoSettings(BaseSettings):
     vectors: str = "vectors"
     documents: str = "documents"
     settings: str = "app_settings"
+    voice_samples: str = "voice_samples"
+    voice_jobs: str = "voice_training_jobs"
+    backups: str = "backup_jobs"
 
     model_config = ConfigDict(extra="ignore")
 

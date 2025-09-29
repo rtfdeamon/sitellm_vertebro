@@ -3,7 +3,7 @@
 Provides ``get_recent_logs(limit)`` used by the admin UI to display the last
 N log lines without touching files or Docker logs. The buffer captures standard
 library logging records as plain text in FIFO order while automatically
-dropping entries older than three days.
+dropping entries older than seven days.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import structlog
 
 _ring: deque[str] | None = None
 
-LOG_RETENTION_DAYS = 3
+LOG_RETENTION_DAYS = 7
 _TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S,%f"
 
 
@@ -77,7 +77,7 @@ def configure_logging() -> None:
 
 
 def get_recent_logs(limit: int = 200) -> List[str]:
-    """Return up to ``limit`` log lines from the last three days.
+    """Return up to ``limit`` log lines from the last seven days.
 
     Entries older than ``LOG_RETENTION_DAYS`` are ignored to keep the
     in-memory buffer small and reduce noise in the admin UI.

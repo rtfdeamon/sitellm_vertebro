@@ -773,8 +773,121 @@
       cursor: pointer;
     }
 
+    .crawler-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: rgba(148, 163, 184, 0.95);
+    }
+
+    .crawler-option input[type="checkbox"] {
+      accent-color: rgba(96, 165, 250, 0.85);
+    }
+
     .crawler-actions button:hover {
       border-color: rgba(147, 197, 253, 0.7);
+    }
+
+    .crawler-option {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: rgba(148, 163, 184, 0.95);
+    }
+
+    .crawler-option input[type="checkbox"] {
+      accent-color: rgba(96, 165, 250, 0.85);
+    }
+
+    .voice-training-card {
+      margin-top: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .voice-upload {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .voice-upload input[type="file"] {
+      flex: 1 1 240px;
+    }
+
+    .voice-samples-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow-y: auto;
+      padding: 6px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: rgba(15, 23, 42, 0.25);
+    }
+
+    .voice-sample-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      font-size: 13px;
+      padding: 4px 6px;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.3);
+    }
+
+    .voice-sample-row button {
+      border: none;
+      background: rgba(248, 113, 113, 0.2);
+      color: #fecaca;
+      border-radius: 8px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+
+    .voice-train-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .voice-jobs {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+    }
+
+    .voice-job-entry {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 8px;
+      border-radius: 8px;
+      background: rgba(30, 64, 175, 0.18);
+    }
+
+    .voice-progress-bar {
+      flex: 1 1 auto;
+      height: 6px;
+      background: rgba(148, 163, 184, 0.3);
+      border-radius: 999px;
+      overflow: hidden;
+      margin-left: 12px;
+    }
+
+    .voice-progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, rgba(96, 165, 250, 0.95), rgba(129, 140, 248, 0.95));
+      width: 0%;
     }
 
     .muted { color: var(--text-muted); font-size: 12px; }
@@ -1524,32 +1637,139 @@
       .kb-tab-button { font-size: 13px; }
       th, td { padding: 8px 6px; }
     }
+    .backup-card {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .backup-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .backup-section b {
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(15, 23, 42, 0.72);
+    }
+
+    .backup-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: rgba(15, 23, 42, 0.72);
+    }
+
+    .backup-field-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .backup-field-grid label,
+    .backup-token-row label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 13px;
+      color: rgba(15, 23, 42, 0.72);
+    }
+
+    .backup-token-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .backup-token-row button {
+      min-width: 120px;
+    }
+
+    .backup-status-line {
+      font-size: 12px;
+      color: rgba(15, 23, 42, 0.58);
+    }
+
+    .backup-action-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .backup-jobs-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .backup-job {
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(15, 23, 42, 0.08);
+      background: rgba(248, 250, 255, 0.78);
+      box-shadow: 0 6px 12px rgba(15, 23, 42, 0.04);
+      display: grid;
+      gap: 4px;
+    }
+
+    .backup-job.primary {
+      border-color: rgba(79, 124, 255, 0.28);
+      background: rgba(79, 124, 255, 0.12);
+      box-shadow: 0 10px 18px rgba(79, 124, 255, 0.18);
+    }
+
+    .backup-job strong {
+      font-size: 13px;
+      color: rgba(15, 23, 42, 0.78);
+    }
+
+    .backup-job small {
+      font-size: 11px;
+      color: rgba(15, 23, 42, 0.6);
+    }
+
+    .backup-job-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .backup-job-actions button {
+      padding: 6px 10px;
+      font-size: 12px;
+      border-radius: 10px;
+    }
+
+    .backup-empty {
+      font-size: 12px;
+      color: rgba(15, 23, 42, 0.55);
+    }
+
+    @media (max-width: 1280px) {
+      .backup-field-grid { grid-template-columns: minmax(0, 1fr); }
+      .backup-token-row { grid-template-columns: minmax(0, 1fr); }
+      .backup-token-row button { width: 100%; }
+    }
+
+    @media (max-width: 960px) {
+      .backup-action-buttons { flex-direction: column; }
+      .backup-action-buttons button { width: 100%; }
+    }
+
+    @media (max-width: 720px) {
+      .backup-field-grid { grid-template-columns: minmax(0, 1fr); }
+    }
   </style>
   </head>
   <body>
-    <div class="auth-modal" id="adminAuthModal" data-visible="false" role="dialog" aria-modal="true">
-      <div class="auth-backdrop"></div>
-      <div class="auth-card">
-        <h3 id="adminAuthTitle" data-i18n="authTitle">Administrator sign-in</h3>
-        <p id="adminAuthMessage" data-i18n="authPrompt">Enter administrator credentials to continue.</p>
-        <p id="adminAuthHint">Credentials are sent to localhost</p>
-        <form class="auth-form" id="adminAuthForm">
-          <label for="adminAuthUsername">
-            <span data-i18n="authUsernameLabel">Username</span>
-            <input type="text" id="adminAuthUsername" autocomplete="username" data-i18n-placeholder="authUsernamePlaceholder">
-          </label>
-          <label for="adminAuthPassword">
-            <span data-i18n="authPasswordLabel">Password</span>
-            <input type="password" id="adminAuthPassword" autocomplete="current-password" data-i18n-placeholder="authPasswordPlaceholder">
-          </label>
-          <div class="auth-error" id="adminAuthError"></div>
-          <div class="auth-actions">
-            <button type="button" class="btn secondary" id="adminAuthCancel" data-i18n="authCancel">Cancel</button>
-            <button type="submit" class="btn" id="adminAuthSubmit" data-i18n="authSubmit">Sign in</button>
-          </div>
-        </form>
-      </div>
-    </div>
   <div id="clusterWarning" class="cluster-warning" style="display:none;">Работа с LLM приостановлена. Нет доступных серверов Ollama.</div>
   <div class="page-shell">
     <div class="page-header">
@@ -1878,6 +2098,10 @@
           <label data-i18n="crawlerPages">Pages
             <input type="number" id="pages" min="1" value="100" style="width:80px;">
           </label>
+          <label class="crawler-option">
+            <input type="checkbox" id="crawlerCollectBooks">
+            <span data-i18n="crawlerCollectBooks">Store full pages for book reading</span>
+          </label>
           <button type="submit" data-i18n="crawlerStartButton">Запустить</button>
           <button type="button" id="stopBtn" data-i18n="crawlerStopButton">Остановить</button>
           <span id="launchMsg" class="muted"></span>
@@ -1955,6 +2179,13 @@
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="projectSourcesEnabled">
+              Показывать источники ответов
+            </label>
+            <span class="muted" id="projectSourcesHint">После ответа будет отображаться список ссылок на использованные материалы.</span>
+          </div>
+          <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
+            <label style="display:flex; align-items:center; gap:8px;">
               <input type="checkbox" id="projectDebugInfo" checked>
               Служебная справка перед ответом
             </label>
@@ -1976,23 +2207,42 @@
             </label>
             <span class="muted" id="projectAdminHint" style="flex:1 1 100%;">Укажите логин и пароль администратора проекта.</span>
           </div>
-          <div class="project-storage-panel">
-            <div>Тексты: <span id="projectStorageText">—</span></div>
-            <div>Файлы: <span id="projectStorageFiles">—</span></div>
-            <div>Контексты: <span id="projectStorageContexts">—</span></div>
-            <div>Redis: <span id="projectStorageRedis">—</span></div>
-          </div>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button type="submit">Сохранить</button>
-            <button type="button" id="projectPromptSave">Сохранить промпт</button>
-            <button type="button" id="projectTest">Тест</button>
-          </div>
-        </form>
-        <div class="project-danger" id="projectDangerZone">
-          <div>
-            <strong>Опасная зона</strong>
-            <p>Удаление проекта безвозвратно очищает документы, файлы, контексты и статистику. Действие нельзя отменить.</p>
-          </div>
+        <div class="project-storage-panel">
+          <div>Тексты: <span id="projectStorageText">—</span></div>
+          <div>Файлы: <span id="projectStorageFiles">—</span></div>
+          <div>Контексты: <span id="projectStorageContexts">—</span></div>
+          <div>Redis: <span id="projectStorageRedis">—</span></div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button type="submit">Сохранить</button>
+          <button type="button" id="projectPromptSave">Сохранить промпт</button>
+          <button type="button" id="projectTest">Тест</button>
+        </div>
+      </form>
+      <div class="card voice-training-card" id="voiceTrainingCard">
+        <div>
+          <b data-i18n="voiceTrainingTitle">Обучение голоса</b>
+          <div class="muted" id="voiceTrainingSummary" data-i18n="voiceTrainingSummary">Загрузите 3+ аудиодорожки с чистой речью, чтобы обучить ассистента говорить голосом проекта.</div>
+        </div>
+        <div class="voice-upload">
+          <input type="file" id="voiceSampleInput" accept="audio/*" multiple>
+          <button type="button" id="voiceSampleUpload" data-i18n="voiceUploadButton">Загрузить дорожки</button>
+          <span class="muted" id="voiceUploadStatus">—</span>
+        </div>
+        <div class="voice-samples" id="voiceSamplesContainer">
+          <div class="muted" id="voiceSamplesEmpty" data-i18n="voiceSamplesEmpty">Дорожки не загружены.</div>
+        </div>
+        <div class="voice-train-actions">
+          <button type="button" id="voiceTrainButton" data-i18n="voiceTrainButton">Обучить голос</button>
+          <span class="muted" id="voiceTrainStatus">—</span>
+        </div>
+        <div class="voice-jobs" id="voiceJobsContainer"></div>
+      </div>
+      <div class="project-danger" id="projectDangerZone">
+        <div>
+          <strong>Опасная зона</strong>
+          <p>Удаление проекта безвозвратно очищает документы, файлы, контексты и статистику. Действие нельзя отменить.</p>
+        </div>
           <button type="button" id="projectDelete" class="project-delete-btn" disabled>Удалить проект</button>
           <span class="muted" id="projectDeleteInfo">Выберите проект, чтобы увидеть объём данных.</span>
         </div>
@@ -2071,8 +2321,114 @@
             </label>
             <span class="muted" id="projectBitrixHint">Webhook используется для запросов модели и хранится на сервере.</span>
           </div>
+          <div class="project-mail" style="flex:1 1 320px; min-width:280px;">
+            <b style="display:block; margin-bottom:8px;">Почтовый коннектор</b>
+            <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+              <input type="checkbox" id="projectMailEnabled">
+              Включить интеграцию
+            </label>
+            <div class="muted" id="projectMailHint">Укажите параметры IMAP/SMTP, чтобы ассистент мог отправлять и просматривать письма.</div>
+            <div style="display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top:10px;">
+              <label>IMAP хост
+                <input type="text" id="projectMailImapHost" placeholder="imap.example.com">
+              </label>
+              <label>IMAP порт
+                <input type="number" id="projectMailImapPort" placeholder="993" min="1" max="65535">
+              </label>
+              <label style="display:flex; gap:6px; align-items:center;">
+                <input type="checkbox" id="projectMailImapSsl" checked>
+                IMAP SSL
+              </label>
+              <label>SMTP хост
+                <input type="text" id="projectMailSmtpHost" placeholder="smtp.example.com">
+              </label>
+              <label>SMTP порт
+                <input type="number" id="projectMailSmtpPort" placeholder="587" min="1" max="65535">
+              </label>
+              <label style="display:flex; gap:6px; align-items:center;">
+                <input type="checkbox" id="projectMailSmtpTls" checked>
+                SMTP STARTTLS
+              </label>
+              <label>Имя пользователя
+                <input type="text" id="projectMailUsername" placeholder="user@example.com">
+              </label>
+              <label>Пароль
+                <input type="password" id="projectMailPassword" placeholder="Пароль" autocomplete="new-password">
+              </label>
+              <label>Отправитель (From)
+                <input type="email" id="projectMailFrom" placeholder="support@example.com">
+              </label>
+            </div>
+            <label style="display:block; margin-top:10px;">Подпись в письмах
+              <textarea id="projectMailSignature" rows="3" placeholder="С уважением, команда Example" style="width:100%; resize:vertical;"></textarea>
+            </label>
+          </div>
         </div>
       </div>
+      </details>
+    </section>
+
+    <section id="block-backup" class="dashboard-stack span-4" data-block-id="backup" data-block-group="manage">
+      <details class="card control-card collapsible-card" data-collapsible="backup">
+        <summary class="collapsible-summary">
+          <span class="collapsible-title" data-i18n="backupCardTitle">Резервные копии</span>
+          <span class="collapsible-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="collapsible-body backup-card">
+          <div class="backup-section">
+            <b data-i18n="backupScheduleTitle">Расписание</b>
+            <label class="backup-toggle">
+              <input type="checkbox" id="backupEnabled">
+              <span data-i18n="backupEnableLabel">Включить ежедневное резервирование</span>
+            </label>
+            <div class="backup-field-grid">
+              <label>
+                <span data-i18n="backupTimeLabel">Время запуска</span>
+                <input type="time" id="backupTime" min="00:00" max="23:59">
+              </label>
+              <label>
+                <span data-i18n="backupTimezoneLabel">Часовой пояс</span>
+                <select id="backupTimezone"></select>
+              </label>
+              <label>
+                <span data-i18n="backupFolderLabel">Папка на Яндекс.Диске</span>
+                <input type="text" id="backupFolder" placeholder="sitellm-backups" data-i18n-placeholder="backupFolderPlaceholder">
+              </label>
+            </div>
+            <div class="backup-token-row">
+              <label>
+                <span data-i18n="backupTokenLabel">OAuth токен</span>
+                <input type="password" id="backupToken" autocomplete="off" data-i18n-placeholder="backupTokenPlaceholder">
+              </label>
+              <button type="button" id="backupTokenSave" data-i18n="backupTokenSave">Сохранить</button>
+              <button type="button" id="backupTokenClear" data-i18n="backupTokenClear">Удалить</button>
+              <span class="backup-status-line" id="backupTokenStatus"></span>
+            </div>
+            <div class="backup-action-buttons">
+              <button type="button" id="backupSettingsApply" data-i18n="backupScheduleSave">Сохранить расписание</button>
+            </div>
+            <span class="backup-status-line" id="backupStatusLine"></span>
+          </div>
+          <div class="backup-section">
+            <b data-i18n="backupManualTitle">Ручные действия</b>
+            <div class="backup-action-buttons">
+              <button type="button" id="backupRunBtn" data-i18n="backupRunNow">Создать резервную копию</button>
+              <button type="button" id="backupRefreshBtn" data-i18n="backupRefresh">Обновить статус</button>
+            </div>
+            <label>
+              <span data-i18n="backupRestoreLabel">Восстановление по пути</span>
+              <input type="text" id="backupRestorePath" data-i18n-placeholder="backupRestorePlaceholder" placeholder="/sitellm-backups/backup.archive.gz">
+            </label>
+            <button type="button" id="backupRestoreBtn" data-i18n="backupRestoreButton">Восстановить</button>
+          </div>
+          <div class="backup-section">
+            <b data-i18n="backupJobsTitle">Журнал операций</b>
+            <div class="backup-jobs-list" id="backupJobsList">
+              <div class="backup-empty" data-i18n="backupJobsEmpty">Пока нет записей.</div>
+            </div>
+          </div>
+          <div class="backup-status-line" id="backupErrorLine"></div>
+        </div>
       </details>
     </section>
 
@@ -2314,6 +2670,17 @@
     const crawlerResetBtn = document.getElementById('crawlerResetBtn');
     const crawlerDedupBtn = document.getElementById('crawlerDedupBtn');
     const crawlerActionStatus = document.getElementById('crawlerActionStatus');
+    const crawlerCollectBooks = document.getElementById('crawlerCollectBooks');
+    const voiceTrainingCard = document.getElementById('voiceTrainingCard');
+    const voiceSampleInput = document.getElementById('voiceSampleInput');
+    const voiceSampleUploadBtn = document.getElementById('voiceSampleUpload');
+    const voiceUploadStatus = document.getElementById('voiceUploadStatus');
+    const voiceTrainingSummary = document.getElementById('voiceTrainingSummary');
+    const voiceSamplesContainer = document.getElementById('voiceSamplesContainer');
+    const voiceSamplesEmpty = document.getElementById('voiceSamplesEmpty');
+    const voiceTrainButton = document.getElementById('voiceTrainButton');
+    const voiceTrainStatus = document.getElementById('voiceTrainStatus');
+    const voiceJobsContainer = document.getElementById('voiceJobsContainer');
     const kbModalBackdrop = document.getElementById('kbModal');
     const kbModalClose = document.getElementById('kbModalClose');
     const kbModalCancel = document.getElementById('kbModalCancel');
@@ -2327,6 +2694,23 @@
     const kbModalProject = document.getElementById('kbModalProject');
     const kbModalContent = document.getElementById('kbModalContent');
     const kbModalStatus = document.getElementById('kbModalStatus');
+    const backupEnabledInput = document.getElementById('backupEnabled');
+    const backupTimeInput = document.getElementById('backupTime');
+    const backupTimezoneSelect = document.getElementById('backupTimezone');
+    const backupFolderInput = document.getElementById('backupFolder');
+    const backupTokenInput = document.getElementById('backupToken');
+    const backupTokenSaveBtn = document.getElementById('backupTokenSave');
+    const backupTokenClearBtn = document.getElementById('backupTokenClear');
+    const backupTokenStatus = document.getElementById('backupTokenStatus');
+    const backupSettingsApplyBtn = document.getElementById('backupSettingsApply');
+    const backupStatusLine = document.getElementById('backupStatusLine');
+    const backupRunBtn = document.getElementById('backupRunBtn');
+    const backupRefreshBtn = document.getElementById('backupRefreshBtn');
+    const backupRestorePathInput = document.getElementById('backupRestorePath');
+    const backupRestoreBtn = document.getElementById('backupRestoreBtn');
+    const backupJobsList = document.getElementById('backupJobsList');
+    const backupErrorLine = document.getElementById('backupErrorLine');
+    const backupCard = document.getElementById('block-backup');
     const projectTelegramTokenInput = document.getElementById('projectTelegramToken');
     const projectTelegramAutoStart = document.getElementById('projectTelegramAutoStart');
     const projectTelegramStatus = document.getElementById('projectTelegramStatus');
@@ -2338,6 +2722,18 @@
     const projectBitrixWebhookInput = document.getElementById('projectBitrixWebhook');
     const projectBitrixEnabled = document.getElementById('projectBitrixEnabled');
     const projectBitrixHint = document.getElementById('projectBitrixHint');
+    const projectMailEnabled = document.getElementById('projectMailEnabled');
+    const projectMailHint = document.getElementById('projectMailHint');
+    const projectMailImapHostInput = document.getElementById('projectMailImapHost');
+    const projectMailImapPortInput = document.getElementById('projectMailImapPort');
+    const projectMailImapSslInput = document.getElementById('projectMailImapSsl');
+    const projectMailSmtpHostInput = document.getElementById('projectMailSmtpHost');
+    const projectMailSmtpPortInput = document.getElementById('projectMailSmtpPort');
+    const projectMailSmtpTlsInput = document.getElementById('projectMailSmtpTls');
+    const projectMailUsernameInput = document.getElementById('projectMailUsername');
+    const projectMailPasswordInput = document.getElementById('projectMailPassword');
+    const projectMailFromInput = document.getElementById('projectMailFrom');
+    const projectMailSignatureInput = document.getElementById('projectMailSignature');
     const projectMaxTokenInput = document.getElementById('projectMaxToken');
     const projectMaxAutoStart = document.getElementById('projectMaxAutoStart');
     const projectMaxStatus = document.getElementById('projectMaxStatus');
@@ -2647,6 +3043,17 @@
       return nativeFetch(input, init);
     };
 
+    window.fetch = function basicFetch(input, init = {}) {
+      if (typeof input === 'string') {
+        if (input.startsWith(ADMIN_PREFIX) || input.startsWith(`${ADMIN_BASE_KEY}${ADMIN_PREFIX}`)) {
+          const options = { ...init };
+          if (!options.credentials) options.credentials = 'same-origin';
+          return nativeFetch(input, options);
+        }
+      }
+      return nativeFetch(input, init);
+    };
+
     const BASE_STRINGS = {
       pillOperations: 'Operations',
       headerTitle: 'Crawler Control Panel',
@@ -2712,6 +3119,12 @@
       crawlerStartUrl: 'Start URL',
       crawlerDepth: 'Depth',
       crawlerPages: 'Pages',
+      crawlerCollectBooks: 'Store full pages for book reading',
+      voiceTrainingTitle: 'Voice training',
+      voiceTrainingSummary: 'Upload 3+ clean voice clips to teach the assistant to speak like your project.',
+      voiceUploadButton: 'Upload clips',
+      voiceSamplesEmpty: 'No audio clips uploaded yet.',
+      voiceTrainButton: 'Train custom voice',
       promptAiStart: 'Generating…',
       promptAiReady: 'Prompt ready',
       promptAiStopped: 'Stopped',
@@ -2753,7 +3166,51 @@
       feedbackStatusDismissed: 'Dismissed',
       feedbackNoItems: 'No feedback yet.',
       feedbackUpdated: 'Updated',
-      feedbackError: 'Failed to load feedback'
+      feedbackError: 'Failed to load feedback',
+      backupCardTitle: 'Backups',
+      backupScheduleTitle: 'Schedule',
+      backupEnableLabel: 'Enable daily backup',
+      backupTimeLabel: 'Run at',
+      backupTimezoneLabel: 'Timezone',
+      backupFolderLabel: 'Remote folder',
+      backupFolderPlaceholder: 'sitellm-backups',
+      backupTokenLabel: 'OAuth token',
+      backupTokenPlaceholder: 'Paste Yandex.Disk OAuth token',
+      backupTokenSave: 'Save token',
+      backupTokenClear: 'Remove token',
+      backupTokenSaved: 'Token saved',
+      backupTokenRequired: 'Enter OAuth token',
+      backupScheduleSave: 'Save schedule',
+      backupManualTitle: 'Manual actions',
+      backupRunNow: 'Create backup now',
+      backupRefresh: 'Refresh status',
+      backupRestoreLabel: 'Restore from path',
+      backupRestorePlaceholder: '/backups/archive.gz',
+      backupRestoreButton: 'Restore',
+      backupJobsTitle: 'Recent jobs',
+      backupJobsEmpty: 'No jobs yet.',
+      backupStatusLineWaiting: 'Backups disabled',
+      backupStatusLineQueued: 'Next run queued',
+      backupStatusLineActive: 'Backup in progress…',
+      backupTokenMissing: 'Token not configured',
+      backupStatusLastRun: 'Last run: {value}',
+      backupStatusLastSuccess: 'Last success: {value}',
+      backupStatusNever: 'No backups performed yet',
+      backupJobStatusQueued: 'Status: queued',
+      backupJobStatusRunning: 'Status: running',
+      backupJobStatusCompleted: 'Status: completed',
+      backupJobStatusFailed: 'Status: failed',
+      backupJobOperationBackup: 'Backup',
+      backupJobOperationRestore: 'Restore',
+      backupJobRestore: 'Restore',
+      backupJobCopyPath: 'Copy path',
+      backupJobsFetchError: 'Failed to load backup status',
+      backupSaveSuccess: 'Backup settings saved',
+      backupSaveError: 'Could not save settings',
+      backupRunQueued: 'Backup job queued',
+      backupRestoreQueued: 'Restore job queued',
+      backupRestorePathMissing: 'Specify remote path',
+      backupActiveJobMessage: 'An operation is already running'
     };
 
     function createLanguage(name, dir, overrides = {}) {
@@ -2827,6 +3284,13 @@
         crawlerStartUrl: 'URL inicial',
         crawlerDepth: 'Profundidad',
         crawlerPages: 'Páginas',
+        crawlerCollectBooks: 'Guardar páginas completas para modo lectura',
+        voiceTrainingTitle: 'Entrenamiento de voz',
+        voiceTrainingSummary: 'Sube 3 o más clips limpios para que el asistente hable con la voz de tu proyecto.',
+        voiceUploadButton: 'Subir clips',
+        voiceSamplesEmpty: 'Aún no hay audios cargados.',
+        voiceTrainButton: 'Entrenar voz personalizada',
+        crawlerCollectBooks: 'Guardar páginas completas para modo lectura',
         promptAiStart: 'Generando…',
         promptAiReady: 'Prompt listo',
         promptAiStopped: 'Detenido',
@@ -2912,6 +3376,13 @@
         crawlerStartUrl: 'Start-URL',
         crawlerDepth: 'Tiefe',
         crawlerPages: 'Seiten',
+        crawlerCollectBooks: 'Komplette Seiten für Lesemodus speichern',
+        voiceTrainingTitle: 'Stimmtraining',
+        voiceTrainingSummary: 'Laden Sie mindestens 3 saubere Sprachaufnahmen hoch, damit der Assistent mit Ihrer Stimme spricht.',
+        voiceUploadButton: 'Clips hochladen',
+        voiceSamplesEmpty: 'Noch keine Audiodateien hochgeladen.',
+        voiceTrainButton: 'Eigene Stimme trainieren',
+        crawlerCollectBooks: 'Komplette Seiten für Lesemodus speichern',
         promptAiStart: 'Generiere…',
         promptAiReady: 'Prompt bereit',
         promptAiStopped: 'Gestoppt',
@@ -2997,6 +3468,13 @@
         crawlerStartUrl: 'URL de départ',
         crawlerDepth: 'Profondeur',
         crawlerPages: 'Pages',
+        crawlerCollectBooks: 'Conserver les pages complètes pour la lecture',
+        voiceTrainingTitle: 'Entraînement vocal',
+        voiceTrainingSummary: 'Importez au moins 3 extraits audio propres pour que l’assistant parle avec la voix de votre projet.',
+        voiceUploadButton: 'Téléverser des extraits',
+        voiceSamplesEmpty: 'Aucun extrait audio téléversé pour le moment.',
+        voiceTrainButton: 'Entraîner la voix personnalisée',
+        crawlerCollectBooks: 'Conserver les pages complètes pour la lecture',
         promptAiStart: 'Génération…',
         promptAiReady: 'Invite prête',
         promptAiStopped: 'Arrêté',
@@ -3082,6 +3560,13 @@
         crawlerStartUrl: 'URL iniziale',
         crawlerDepth: 'Profondità',
         crawlerPages: 'Pagine',
+        crawlerCollectBooks: 'Salva le pagine complete per la lettura',
+        voiceTrainingTitle: 'Addestramento voce',
+        voiceTrainingSummary: 'Carica almeno 3 clip pulite per far parlare l’assistente con la voce del progetto.',
+        voiceUploadButton: 'Carica clip',
+        voiceSamplesEmpty: 'Nessuna traccia caricata.',
+        voiceTrainButton: 'Addestra voce personalizzata',
+        crawlerCollectBooks: 'Salva le pagine complete per la lettura',
         promptAiStart: 'Generazione…',
         promptAiReady: 'Prompt pronto',
         promptAiStopped: 'Interrotto',
@@ -3167,6 +3652,13 @@
         crawlerStartUrl: 'URL inicial',
         crawlerDepth: 'Profundidade',
         crawlerPages: 'Páginas',
+        crawlerCollectBooks: 'Guardar páginas completas para modo leitura',
+        voiceTrainingTitle: 'Treinamento de voz',
+        voiceTrainingSummary: 'Envie 3+ clipes limpos para que o assistente fale com a voz do projeto.',
+        voiceUploadButton: 'Enviar clipes',
+        voiceSamplesEmpty: 'Nenhum áudio enviado ainda.',
+        voiceTrainButton: 'Treinar voz personalizada',
+        crawlerCollectBooks: 'Guardar páginas completas para modo leitura',
         promptAiStart: 'Gerando…',
         promptAiReady: 'Prompt pronto',
         promptAiStopped: 'Parado',
@@ -3252,6 +3744,12 @@
         crawlerStartUrl: 'Стартовый URL',
         crawlerDepth: 'Глубина',
         crawlerPages: 'Страницы',
+        crawlerCollectBooks: 'Сохранять страницы целиком для режима чтения',
+        voiceTrainingTitle: 'Обучение голоса',
+        voiceTrainingSummary: 'Загрузите 3+ аудиодорожки с чистой речью, чтобы ассистент говорил голосом проекта.',
+        voiceUploadButton: 'Загрузить дорожки',
+        voiceSamplesEmpty: 'Дорожки не загружены.',
+        voiceTrainButton: 'Обучить голос',
         promptAiStart: 'Генерируем…',
         promptAiReady: 'Промт готов',
         promptAiStopped: 'Остановлено',
@@ -3271,6 +3769,50 @@
         knowledgeServiceSaving: 'Сохраняем…',
         knowledgeServiceSaved: 'Сохранено',
         knowledgeServiceSaveError: 'Ошибка сохранения',
+        backupCardTitle: 'Резервные копии',
+        backupScheduleTitle: 'Расписание',
+        backupEnableLabel: 'Включить ежедневное резервирование',
+        backupTimeLabel: 'Время запуска',
+        backupTimezoneLabel: 'Часовой пояс',
+        backupFolderLabel: 'Папка на Яндекс.Диске',
+        backupFolderPlaceholder: 'sitellm-backups',
+        backupTokenLabel: 'OAuth токен',
+        backupTokenPlaceholder: 'Вставьте OAuth токен Яндекс.Диска',
+        backupTokenSave: 'Сохранить токен',
+        backupTokenClear: 'Удалить токен',
+        backupTokenSaved: 'Токен сохранён',
+        backupTokenRequired: 'Введите OAuth токен',
+        backupScheduleSave: 'Сохранить расписание',
+        backupManualTitle: 'Ручные действия',
+        backupRunNow: 'Создать резервную копию',
+        backupRefresh: 'Обновить статус',
+        backupRestoreLabel: 'Восстановить по пути',
+        backupRestorePlaceholder: '/backups/archive.gz',
+        backupRestoreButton: 'Восстановить',
+        backupJobsTitle: 'Журнал операций',
+        backupJobsEmpty: 'Пока нет записей.',
+        backupStatusLineWaiting: 'Резервирование выключено',
+        backupStatusLineQueued: 'Задача поставлена в очередь',
+        backupStatusLineActive: 'Резервное копирование выполняется…',
+        backupTokenMissing: 'Токен не настроен',
+        backupStatusLastRun: 'Последний запуск: {value}',
+        backupStatusLastSuccess: 'Последний успешный запуск: {value}',
+        backupStatusNever: 'Резервные копии ещё не создавались',
+        backupJobStatusQueued: 'Статус: в очереди',
+        backupJobStatusRunning: 'Статус: выполняется',
+        backupJobStatusCompleted: 'Статус: завершено',
+        backupJobStatusFailed: 'Статус: ошибка',
+        backupJobOperationBackup: 'Резервная копия',
+        backupJobOperationRestore: 'Восстановление',
+        backupJobRestore: 'Восстановить',
+        backupJobCopyPath: 'Скопировать путь',
+        backupJobsFetchError: 'Не удалось загрузить статус резервирования',
+        backupSaveSuccess: 'Настройки сохранены',
+        backupSaveError: 'Не удалось сохранить настройки',
+        backupRunQueued: 'Задача резервирования поставлена',
+        backupRestoreQueued: 'Задача восстановления поставлена',
+        backupRestorePathMissing: 'Укажите путь на диске',
+        backupActiveJobMessage: 'Уже выполняется операция',
         authTitle: 'Вход администратора',
         authPrompt: 'Введите учетные данные администратора, чтобы продолжить.',
         authHint: 'Учетные данные будут отправлены на {host}.',
@@ -3351,6 +3893,12 @@
         crawlerStartUrl: '起始 URL',
         crawlerDepth: '深度',
         crawlerPages: '页面',
+        crawlerCollectBooks: '为阅读模式保存完整页面',
+        voiceTrainingTitle: '语音训练',
+        voiceTrainingSummary: '上传至少 3 段干净语音，帮助助手学会项目专属的声音。',
+        voiceUploadButton: '上传音频',
+        voiceSamplesEmpty: '尚未上传音频片段。',
+        voiceTrainButton: '训练自定义语音',
         promptAiStart: '正在生成…',
         promptAiReady: '提示词已就绪',
         promptAiStopped: '已停止',
@@ -3436,6 +3984,12 @@
         crawlerStartUrl: '開始 URL',
         crawlerDepth: '深さ',
         crawlerPages: 'ページ',
+        crawlerCollectBooks: '読書モード用にページ全体を保存',
+        voiceTrainingTitle: '音声トレーニング',
+        voiceTrainingSummary: 'クリアな音声クリップを3つ以上アップロードして、アシスタントにプロジェクトの声を学習させましょう。',
+        voiceUploadButton: 'クリップをアップロード',
+        voiceSamplesEmpty: '音声クリップがまだありません。',
+        voiceTrainButton: 'カスタム音声を学習',
         promptAiStart: '生成中…',
         promptAiReady: 'プロンプトの準備完了',
         promptAiStopped: '停止しました',
@@ -3521,6 +4075,12 @@
         crawlerStartUrl: 'رابط البداية',
         crawlerDepth: 'العمق',
         crawlerPages: 'الصفحات',
+        crawlerCollectBooks: 'حفظ الصفحات كاملة لوضع القراءة',
+        voiceTrainingTitle: 'تدريب الصوت',
+        voiceTrainingSummary: 'حمّل 3 مقاطع صوتية نظيفة على الأقل ليكتسب المساعد صوت مشروعك.',
+        voiceUploadButton: 'رفع المقاطع',
+        voiceSamplesEmpty: 'لا توجد مقاطع صوتية بعد.',
+        voiceTrainButton: 'تدريب الصوت المخصص',
         promptAiStart: 'جاري التوليد…',
         promptAiReady: 'المطالبة جاهزة',
         promptAiStopped: 'تم الإيقاف',
@@ -3628,6 +4188,16 @@
         authError.textContent = t(authError.dataset.key);
       }
 
+      if (backupState) {
+        renderBackupState(backupState);
+      } else if (backupJobsList) {
+        backupJobsList.innerHTML = '';
+        const empty = document.createElement('div');
+        empty.className = 'backup-empty';
+        empty.textContent = t('backupJobsEmpty');
+        backupJobsList.appendChild(empty);
+      }
+
       renderFeedbackTasks(feedbackTasksCache);
     }
 
@@ -3639,6 +4209,24 @@
 
     applyLanguage(currentLanguage);
     const STATS_DAYS = 14;
+    const BACKUP_TIMEZONES = [
+      'UTC',
+      'Europe/Kaliningrad',
+      'Europe/Moscow',
+      'Europe/Samara',
+      'Asia/Yekaterinburg',
+      'Asia/Omsk',
+      'Asia/Novosibirsk',
+      'Asia/Krasnoyarsk',
+      'Asia/Irkutsk',
+      'Asia/Yakutsk',
+      'Asia/Vladivostok',
+      'Asia/Sakhalin',
+      'Asia/Magadan',
+      'Asia/Kamchatka'
+    ];
+    let backupState = null;
+    let backupRefreshTimer = null;
     let projectStorageCache = {};
     const CRAWLER_LOG_REFRESH_INTERVAL = 5000;
     let lastCrawlerLogFetch = 0;
@@ -3652,6 +4240,9 @@
         max_depth: Number(document.getElementById('depth').value),
         max_pages: Number(document.getElementById('pages').value),
       };
+      if (crawlerCollectBooks) {
+        payload.collect_books = crawlerCollectBooks.checked;
+      }
       if (!currentProject) {
         launchMsg.textContent = 'Выберите проект';
         return;
@@ -3759,6 +4350,8 @@
     const projectEmotionsInput = document.getElementById('projectEmotions');
     const projectImageCaptionsInput = document.getElementById('projectImageCaptions');
     const projectImageCaptionsHint = document.getElementById('projectImageCaptionsHint');
+    const projectSourcesInput = document.getElementById('projectSourcesEnabled');
+    const projectSourcesHint = document.getElementById('projectSourcesHint');
     const projectDebugInfoInput = document.getElementById('projectDebugInfo');
     const projectDebugInfoHint = document.getElementById('projectDebugInfoHint');
     const projectDebugInput = document.getElementById('projectDebug');
@@ -3981,6 +4574,19 @@
         if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = true;
         if (projectModalPromptRole) projectModalPromptRole.disabled = true;
         if (ollamaCatalog) ollamaCatalog.classList.remove('show');
+        if (backupCard) backupCard.style.display = 'none';
+        backupState = null;
+        if (backupStatusLine) backupStatusLine.textContent = '';
+        if (backupJobsList) {
+          backupJobsList.innerHTML = '';
+          const empty = document.createElement('div');
+          empty.className = 'backup-empty';
+          empty.textContent = t('backupJobsEmpty');
+          backupJobsList.appendChild(empty);
+        }
+        pushBackupMessage('', 'info');
+        setBackupControlsDisabled(true);
+        scheduleBackupRefresh(false);
       } else {
         setKnowledgeServiceControlsDisabled(false);
         const modalAdminLogin = projectModalAdminUsername ? projectModalAdminUsername.closest('label') : null;
@@ -4006,6 +4612,11 @@
         if (logsCard) logsCard.style.display = '';
         if (feedbackSection) feedbackSection.style.display = '';
         if (ollamaCatalog) ollamaCatalog.classList.add('show');
+        if (backupCard) backupCard.style.display = '';
+        setBackupControlsDisabled(false);
+        ensureBackupTimezones();
+        refreshBackupStatus(false);
+        updateBackupActionButtons();
       }
     };
 
@@ -4092,6 +4703,10 @@
       startUrlInput.addEventListener('input', () => { startUrlManual = true; });
     }
     let projectsCache = {};
+    let voiceSamplesCache = [];
+    let voiceJobsCache = [];
+    let voiceJobsPollTimer = null;
+    const VOICE_MIN_SAMPLE_COUNT = 3;
     let projectStatusTimer = null;
     let projectStatusLocked = false;
     let lastProjectCount = 0;
@@ -4632,6 +5247,398 @@
       if (Number.isNaN(dt.getTime())) return '—';
       return dt.toLocaleString();
     };
+
+    const ensureBackupTimezones = () => {
+      if (!backupTimezoneSelect || backupTimezoneSelect.options.length) return;
+      BACKUP_TIMEZONES.forEach((tz) => {
+        const option = document.createElement('option');
+        option.value = tz;
+        option.textContent = tz;
+        backupTimezoneSelect.appendChild(option);
+      });
+    };
+
+    const setBackupControlsDisabled = (disabled) => {
+      const nodes = [
+        backupEnabledInput,
+        backupTimeInput,
+        backupTimezoneSelect,
+        backupFolderInput,
+        backupTokenInput,
+        backupTokenSaveBtn,
+        backupTokenClearBtn,
+        backupSettingsApplyBtn,
+        backupRunBtn,
+        backupRefreshBtn,
+        backupRestorePathInput,
+        backupRestoreBtn,
+      ];
+      nodes.forEach((node) => {
+        if (node) node.disabled = disabled;
+      });
+    };
+
+    const formatBackupTimeValue = (hour, minute) => {
+      const safeHour = Math.max(0, Math.min(23, Number.isFinite(Number(hour)) ? Number(hour) : 0));
+      const safeMinute = Math.max(0, Math.min(59, Number.isFinite(Number(minute)) ? Number(minute) : 0));
+      return `${String(safeHour).padStart(2, '0')}:${String(safeMinute).padStart(2, '0')}`;
+    };
+
+    const parseBackupTime = (value) => {
+      if (typeof value !== 'string') return { hour: 3, minute: 0 };
+      const [hours, minutes] = value.split(':');
+      const hour = Number(hours);
+      const minute = Number(minutes);
+      if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+        return { hour: 3, minute: 0 };
+      }
+      return {
+        hour: Math.max(0, Math.min(23, Math.trunc(hour))),
+        minute: Math.max(0, Math.min(59, Math.trunc(minute))),
+      };
+    };
+
+    const formatBackupTimestamp = (value) => {
+      if (!value) return null;
+      try {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return null;
+        return date.toLocaleString();
+      } catch (error) {
+        return null;
+      }
+    };
+
+    const pushBackupMessage = (key, type = 'info') => {
+      if (!backupErrorLine) return;
+      const message = key ? t(key) : '';
+      backupErrorLine.textContent = message;
+      backupErrorLine.classList.remove('bad', 'ok');
+      if (!message) return;
+      if (type === 'error') {
+        backupErrorLine.classList.add('bad');
+      } else if (type === 'success') {
+        backupErrorLine.classList.add('ok');
+      }
+    };
+
+    const scheduleBackupRefresh = (active) => {
+      if (backupRefreshTimer) {
+        clearTimeout(backupRefreshTimer);
+        backupRefreshTimer = null;
+      }
+      if (active) {
+        backupRefreshTimer = setTimeout(() => {
+          refreshBackupStatus(false);
+        }, 5000);
+      }
+    };
+
+    const updateBackupActionButtons = () => {
+      const tokenSet = Boolean(backupState?.settings?.tokenSet);
+      const activeJob = Boolean(backupState?.activeJob);
+      const hasRestorePath = Boolean(backupRestorePathInput?.value.trim());
+      if (backupRunBtn) backupRunBtn.disabled = !adminSession.is_super || !tokenSet || activeJob;
+      if (backupRefreshBtn) backupRefreshBtn.disabled = !adminSession.is_super;
+      if (backupSettingsApplyBtn) backupSettingsApplyBtn.disabled = !adminSession.is_super;
+      if (backupTokenSaveBtn) backupTokenSaveBtn.disabled = !adminSession.is_super;
+      if (backupTokenClearBtn) backupTokenClearBtn.disabled = !adminSession.is_super;
+      if (backupRestoreBtn) backupRestoreBtn.disabled = !adminSession.is_super || !tokenSet || activeJob || !hasRestorePath;
+    };
+
+    const renderBackupState = (data) => {
+      if (!adminSession.is_super) {
+        scheduleBackupRefresh(false);
+        return;
+      }
+      ensureBackupTimezones();
+      backupState = {
+        settings: data?.settings || {},
+        activeJob: data?.activeJob || null,
+        jobs: Array.isArray(data?.jobs) ? data.jobs : [],
+      };
+      const settings = backupState.settings;
+      if (backupEnabledInput) {
+        backupEnabledInput.checked = settings.enabled === undefined ? false : Boolean(settings.enabled);
+      }
+      if (backupTimeInput) {
+        backupTimeInput.value = formatBackupTimeValue(settings.hour ?? 3, settings.minute ?? 0);
+      }
+      if (backupTimezoneSelect) {
+        const tzValue = settings.timezone || 'UTC';
+        if (!Array.from(backupTimezoneSelect.options).some((option) => option.value === tzValue)) {
+          const option = document.createElement('option');
+          option.value = tzValue;
+          option.textContent = tzValue;
+          backupTimezoneSelect.appendChild(option);
+        }
+        backupTimezoneSelect.value = tzValue;
+      }
+      if (backupFolderInput) {
+        backupFolderInput.value = settings.yaDiskFolder || '';
+      }
+      if (backupTokenStatus) {
+        if (settings.tokenSet) {
+          backupTokenStatus.textContent = t('backupTokenSaved');
+          backupTokenStatus.classList.add('ok');
+          backupTokenStatus.classList.remove('bad');
+        } else {
+          backupTokenStatus.textContent = t('backupTokenMissing');
+          backupTokenStatus.classList.add('bad');
+          backupTokenStatus.classList.remove('ok');
+        }
+      }
+
+      const lines = [];
+      const activeJob = backupState.activeJob;
+      if (activeJob) {
+        const statusKey = activeJob.status === 'running' ? 'backupStatusLineActive' : 'backupStatusLineQueued';
+        lines.push(t(statusKey));
+      } else if (!settings.enabled) {
+        lines.push(t('backupStatusLineWaiting'));
+      }
+      const lastRunText = formatBackupTimestamp(settings.lastRunAtIso || settings.lastRunAt);
+      if (lastRunText) {
+        lines.push(t('backupStatusLastRun', { value: lastRunText }));
+      }
+      const lastSuccessText = formatBackupTimestamp(settings.lastSuccessAtIso || settings.lastSuccessAt);
+      if (lastSuccessText) {
+        lines.push(t('backupStatusLastSuccess', { value: lastSuccessText }));
+      }
+      if (!lastRunText && !lastSuccessText && !activeJob) {
+        lines.push(t('backupStatusNever'));
+      }
+      if (backupStatusLine) {
+        backupStatusLine.textContent = lines.join(' • ');
+      }
+
+      if (backupJobsList) {
+        backupJobsList.innerHTML = '';
+        const jobs = backupState.jobs;
+        if (!jobs.length) {
+          const empty = document.createElement('div');
+          empty.className = 'backup-empty';
+          empty.textContent = t('backupJobsEmpty');
+          backupJobsList.appendChild(empty);
+        } else {
+          jobs.forEach((job) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'backup-job';
+            if (activeJob && job.id === activeJob.id) {
+              wrapper.classList.add('primary');
+            }
+            const operationLabel = job.operation === 'restore'
+              ? t('backupJobOperationRestore')
+              : t('backupJobOperationBackup');
+            let statusKey = 'backupJobStatusQueued';
+            if (job.status === 'running') statusKey = 'backupJobStatusRunning';
+            else if (job.status === 'completed') statusKey = 'backupJobStatusCompleted';
+            else if (job.status === 'failed') statusKey = 'backupJobStatusFailed';
+
+            const title = document.createElement('strong');
+            title.textContent = `${operationLabel} — ${t(statusKey)}`;
+            wrapper.appendChild(title);
+
+            if (job.remotePath) {
+              const remote = document.createElement('small');
+              remote.textContent = job.remotePath;
+              wrapper.appendChild(remote);
+            }
+
+            if (job.createdAtIso || job.createdAt) {
+              const created = document.createElement('small');
+              created.textContent = formatBackupTimestamp(job.createdAtIso || job.createdAt) || '';
+              wrapper.appendChild(created);
+            }
+
+            if (job.error) {
+              const errorRow = document.createElement('small');
+              errorRow.className = 'bad';
+              errorRow.textContent = job.error;
+              wrapper.appendChild(errorRow);
+            }
+
+            if (job.remotePath) {
+              const actions = document.createElement('div');
+              actions.className = 'backup-job-actions';
+              if (job.operation === 'backup' && backupRestorePathInput) {
+                const useBtn = document.createElement('button');
+                useBtn.type = 'button';
+                useBtn.textContent = t('backupJobRestore');
+                useBtn.addEventListener('click', () => {
+                  backupRestorePathInput.value = job.remotePath;
+                  updateBackupActionButtons();
+                  backupRestorePathInput.focus();
+                });
+                actions.appendChild(useBtn);
+              }
+              const copyBtn = document.createElement('button');
+              copyBtn.type = 'button';
+              copyBtn.textContent = t('backupJobCopyPath');
+              copyBtn.addEventListener('click', async () => {
+                try {
+                  if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(job.remotePath);
+                  } else {
+                    const temp = document.createElement('textarea');
+                    temp.value = job.remotePath;
+                    document.body.appendChild(temp);
+                    temp.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(temp);
+                  }
+                  pushBackupMessage('logCopySuccess', 'success');
+                } catch (error) {
+                  console.error('backup_copy_path_failed', error);
+                  pushBackupMessage('logCopyError', 'error');
+                }
+              });
+              actions.appendChild(copyBtn);
+              wrapper.appendChild(actions);
+            }
+
+            backupJobsList.appendChild(wrapper);
+          });
+        }
+      }
+
+      updateBackupActionButtons();
+      scheduleBackupRefresh(Boolean(activeJob));
+    };
+
+    const refreshBackupStatus = async (clearMessage = false) => {
+      if (!adminSession.is_super) {
+        scheduleBackupRefresh(false);
+        return;
+      }
+      ensureBackupTimezones();
+      if (backupRefreshTimer) {
+        clearTimeout(backupRefreshTimer);
+        backupRefreshTimer = null;
+      }
+      try {
+        const resp = await fetch('/api/v1/backup/status?limit=6');
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const data = await resp.json();
+        renderBackupState(data);
+        if (clearMessage) pushBackupMessage('', 'info');
+      } catch (error) {
+        console.error('backup_status_failed', error);
+        pushBackupMessage('backupJobsFetchError', 'error');
+      }
+    };
+
+    const handleBackupSettingsSave = async ({ tokenAction } = {}) => {
+      if (!adminSession.is_super) return;
+      ensureBackupTimezones();
+      const { hour, minute } = parseBackupTime(backupTimeInput?.value || '03:00');
+      const payload = {
+        enabled: Boolean(backupEnabledInput?.checked),
+        hour,
+        minute,
+        timezone: backupTimezoneSelect?.value || 'UTC',
+        yaDiskFolder: backupFolderInput?.value?.trim() || 'sitellm-backups',
+      };
+      if (tokenAction === 'save') {
+        const tokenValue = (backupTokenInput?.value || '').trim();
+        if (!tokenValue) {
+          pushBackupMessage('backupTokenRequired', 'error');
+          return;
+        }
+        payload.token = tokenValue;
+      } else if (tokenAction === 'clear') {
+        payload.clearToken = true;
+      }
+      try {
+        const resp = await fetch('/api/v1/backup/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        if (tokenAction === 'save' && backupTokenInput) {
+          backupTokenInput.value = '';
+        }
+        pushBackupMessage('backupSaveSuccess', 'success');
+        await refreshBackupStatus(false);
+      } catch (error) {
+        console.error('backup_settings_save_failed', error);
+        pushBackupMessage('backupSaveError', 'error');
+      }
+    };
+
+    const handleBackupRun = async () => {
+      if (!adminSession.is_super || backupRunBtn?.disabled) return;
+      try {
+        backupRunBtn.disabled = true;
+        const resp = await fetch('/api/v1/backup/run', { method: 'POST' });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => null);
+          throw new Error(detail?.detail || `HTTP ${resp.status}`);
+        }
+        pushBackupMessage('backupRunQueued', 'success');
+        await refreshBackupStatus(false);
+      } catch (error) {
+        console.error('backup_run_failed', error);
+        pushBackupMessage('backupSaveError', 'error');
+      } finally {
+        updateBackupActionButtons();
+      }
+    };
+
+    const handleBackupRestore = async () => {
+      if (!adminSession.is_super || backupRestoreBtn?.disabled) return;
+      const remotePath = (backupRestorePathInput?.value || '').trim();
+      if (!remotePath) {
+        pushBackupMessage('backupRestorePathMissing', 'error');
+        return;
+      }
+      try {
+        backupRestoreBtn.disabled = true;
+        const resp = await fetch('/api/v1/backup/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ remotePath }),
+        });
+        if (!resp.ok) {
+          const detail = await resp.json().catch(() => null);
+          throw new Error(detail?.detail || `HTTP ${resp.status}`);
+        }
+        pushBackupMessage('backupRestoreQueued', 'success');
+        await refreshBackupStatus(false);
+      } catch (error) {
+        console.error('backup_restore_failed', error);
+        pushBackupMessage('backupSaveError', 'error');
+      } finally {
+        updateBackupActionButtons();
+      }
+    };
+
+    if (backupSettingsApplyBtn) {
+      backupSettingsApplyBtn.addEventListener('click', () => handleBackupSettingsSave());
+    }
+    if (backupTokenSaveBtn) {
+      backupTokenSaveBtn.addEventListener('click', () => handleBackupSettingsSave({ tokenAction: 'save' }));
+    }
+    if (backupTokenClearBtn) {
+      backupTokenClearBtn.addEventListener('click', () => handleBackupSettingsSave({ tokenAction: 'clear' }));
+    }
+    if (backupRunBtn) {
+      backupRunBtn.addEventListener('click', handleBackupRun);
+    }
+    if (backupRefreshBtn) {
+      backupRefreshBtn.addEventListener('click', () => refreshBackupStatus(true));
+    }
+    if (backupRestoreBtn) {
+      backupRestoreBtn.addEventListener('click', handleBackupRestore);
+    }
+    if (backupRestorePathInput) {
+      backupRestorePathInput.addEventListener('input', () => updateBackupActionButtons());
+    }
 
     function parseLogLineTimestamp(line) {
       if (!line) return null;
@@ -8068,6 +9075,13 @@
         : 'Подписи не генерируются, изображения сохраняются без описания.';
     };
 
+    const refreshSourcesHint = (enabled) => {
+      if (!projectSourcesHint) return;
+      projectSourcesHint.textContent = enabled
+        ? 'После каждого ответа бот покажет ссылки на использованные материалы.'
+        : 'Список источников будет скрыт, если пользователь явно не попросит о нём.';
+    };
+
     const refreshDebugInfoHint = (enabled) => {
       if (!projectDebugInfoHint) return;
       projectDebugInfoHint.textContent = enabled
@@ -8109,6 +9123,13 @@
       });
       refreshImageCaptionsHint(projectImageCaptionsInput.checked);
     }
+    if (projectSourcesInput) {
+      projectSourcesInput.addEventListener('change', () => {
+        refreshSourcesHint(projectSourcesInput.checked);
+        submitProjectForm();
+      });
+      refreshSourcesHint(projectSourcesInput.checked);
+    }
     if (projectDebugInfoInput) {
       projectDebugInfoInput.addEventListener('change', () => {
         refreshDebugInfoHint(projectDebugInfoInput.checked);
@@ -8129,6 +9150,214 @@
     resetProjectMaxUI();
     resetProjectVkUI();
 
+    function refreshMailIntegrationHint() {
+      if (!projectMailHint) return;
+      const enabled = projectMailEnabled ? projectMailEnabled.checked : false;
+      const hasImap = projectMailImapHostInput && projectMailImapHostInput.value.trim().length > 0;
+      const hasSmtp = projectMailSmtpHostInput && projectMailSmtpHostInput.value.trim().length > 0;
+      if (!hasImap && !hasSmtp) {
+        projectMailHint.textContent = 'Укажите параметры IMAP/SMTP, чтобы ассистент мог работать с почтой.';
+      } else if (enabled) {
+        projectMailHint.textContent = 'Интеграция активна. Ассистент может отправлять и читать почту.';
+      } else {
+        projectMailHint.textContent = 'Параметры сохранены, но интеграция выключена. Включите переключатель, чтобы активировать почтовый коннектор.';
+      }
+    }
+
+    function resetVoiceTrainingUi(message) {
+      if (voiceUploadStatus) voiceUploadStatus.textContent = '—';
+      if (voiceTrainStatus) voiceTrainStatus.textContent = '—';
+      if (voiceTrainingSummary) {
+        voiceTrainingSummary.textContent = message || 'Выберите проект, чтобы загрузить дорожки.';
+      }
+      voiceSamplesCache = [];
+      voiceJobsCache = [];
+      if (voiceSamplesContainer) {
+        voiceSamplesContainer.innerHTML = '';
+        if (voiceSamplesEmpty) {
+          voiceSamplesEmpty.textContent = 'Дорожки не загружены.';
+          voiceSamplesContainer.appendChild(voiceSamplesEmpty);
+        }
+      }
+      if (voiceTrainButton) voiceTrainButton.disabled = true;
+      if (voiceSampleUploadBtn) voiceSampleUploadBtn.disabled = true;
+      if (voiceSampleInput) voiceSampleInput.disabled = true;
+      if (voiceJobsContainer) voiceJobsContainer.innerHTML = '';
+    }
+
+    function renderVoiceSamples(samples) {
+      voiceSamplesCache = samples;
+      if (!voiceSamplesContainer) return;
+      voiceSamplesContainer.innerHTML = '';
+      if (voiceTrainingSummary) {
+        const total = samples.length;
+        const remaining = Math.max(0, VOICE_MIN_SAMPLE_COUNT - total);
+        voiceTrainingSummary.textContent = remaining > 0
+          ? `Загрузите как минимум ${VOICE_MIN_SAMPLE_COUNT} дорожки. Осталось добавить ${remaining}.`
+          : 'Собрано достаточно дорожек. Можно запускать обучение.';
+      }
+      if (!samples.length) {
+        if (voiceSamplesEmpty) {
+          voiceSamplesEmpty.textContent = 'Дорожки не загружены.';
+          voiceSamplesContainer.appendChild(voiceSamplesEmpty);
+        }
+        if (voiceTrainButton) voiceTrainButton.disabled = true;
+        return;
+      }
+      const list = document.createElement('div');
+      list.className = 'voice-samples-list';
+      samples.forEach((sample) => {
+        const row = document.createElement('div');
+        row.className = 'voice-sample-row';
+        const label = document.createElement('div');
+        label.style.display = 'flex';
+        label.style.flexDirection = 'column';
+        label.style.gap = '2px';
+        label.innerHTML = `<strong>${sample.filename}</strong><span class="muted">${formatBytesOptional(sample.sizeBytes || 0)}</span>`;
+        const removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.textContent = 'Удалить';
+        removeBtn.addEventListener('click', () => deleteVoiceSample(sample.id));
+        row.appendChild(label);
+        row.appendChild(removeBtn);
+        list.appendChild(row);
+      });
+      voiceSamplesContainer.appendChild(list);
+      if (voiceTrainButton) voiceTrainButton.disabled = samples.length < VOICE_MIN_SAMPLE_COUNT;
+    }
+
+    function renderVoiceJobs(jobs) {
+      voiceJobsCache = jobs;
+      if (!voiceJobsContainer) return;
+      voiceJobsContainer.innerHTML = '';
+      if (!jobs.length) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'muted';
+        placeholder.textContent = 'История запусков появится после обучения.';
+        voiceJobsContainer.appendChild(placeholder);
+        return;
+      }
+      jobs.forEach((job) => {
+        const row = document.createElement('div');
+        row.className = 'voice-job-entry';
+        const statusLabel = document.createElement('div');
+        statusLabel.textContent = `${job.status} · ${(job.progress != null ? Math.round(job.progress * 100) : 0)}%`;
+        if (job.message) {
+          const hint = document.createElement('div');
+          hint.className = 'muted';
+          hint.textContent = job.message;
+          statusLabel.appendChild(document.createElement('br'));
+          statusLabel.appendChild(hint);
+        }
+        const progressContainer = document.createElement('div');
+        progressContainer.className = 'voice-progress-bar';
+        const progressFill = document.createElement('div');
+        progressFill.className = 'voice-progress-fill';
+        const pct = job.progress != null ? Math.max(0, Math.min(1, job.progress)) * 100 : 0;
+        progressFill.style.width = `${pct}%`;
+        progressContainer.appendChild(progressFill);
+        row.appendChild(statusLabel);
+        row.appendChild(progressContainer);
+        voiceJobsContainer.appendChild(row);
+      });
+    }
+
+    function clearVoiceJobsPoll() {
+      if (voiceJobsPollTimer) {
+        clearInterval(voiceJobsPollTimer);
+        voiceJobsPollTimer = null;
+      }
+    }
+
+    async function refreshVoiceTraining(projectName) {
+      clearVoiceJobsPoll();
+      if (!projectName) {
+        resetVoiceTrainingUi('Выберите проект, чтобы загрузить дорожки.');
+        return;
+      }
+      if (voiceSampleUploadBtn) voiceSampleUploadBtn.disabled = false;
+      if (voiceSampleInput) voiceSampleInput.disabled = false;
+      try {
+        const [samplesRes, jobsRes] = await Promise.all([
+          fetch(`/api/v1/voice/samples?project=${encodeURIComponent(projectName)}`),
+          fetch(`/api/v1/voice/jobs?project=${encodeURIComponent(projectName)}&limit=5`),
+        ]);
+        if (!samplesRes.ok) throw new Error('samples_fetch_failed');
+        if (!jobsRes.ok) throw new Error('jobs_fetch_failed');
+        const samplesData = await samplesRes.json();
+        const jobsData = await jobsRes.json();
+        renderVoiceSamples(samplesData.samples || []);
+        renderVoiceJobs(jobsData.jobs || []);
+        const shouldPoll = jobsData.jobs?.length && ['queued', 'preparing', 'training', 'validating'].includes((jobsData.jobs[0]?.status || '').toLowerCase());
+        if (shouldPoll) {
+          voiceJobsPollTimer = setInterval(() => refreshVoiceTraining(projectName), 5000);
+        }
+      } catch (error) {
+        console.error('voice_training_refresh_failed', error);
+        resetVoiceTrainingUi('Не удалось загрузить данные по голосовому обучению.');
+      }
+    }
+
+    async function uploadVoiceSamples(projectName) {
+      if (!voiceSampleInput || !voiceSampleInput.files?.length) {
+        if (voiceUploadStatus) voiceUploadStatus.textContent = 'Выберите файлы для загрузки.';
+        return;
+      }
+      const formData = new FormData();
+      formData.append('project', projectName);
+      Array.from(voiceSampleInput.files).forEach((file) => formData.append('files', file));
+      if (voiceUploadStatus) voiceUploadStatus.textContent = 'Загрузка…';
+      try {
+        const response = await fetch('/api/v1/voice/samples', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) {
+          const detail = await response.text();
+          throw new Error(detail || 'upload_failed');
+        }
+        const data = await response.json();
+        renderVoiceSamples(data.samples || []);
+        voiceSampleInput.value = '';
+        if (voiceUploadStatus) voiceUploadStatus.textContent = 'Готово';
+      } catch (error) {
+        console.error('voice_upload_failed', error);
+        if (voiceUploadStatus) voiceUploadStatus.textContent = 'Ошибка при загрузке дорожек';
+      }
+    }
+
+    async function deleteVoiceSample(sampleId) {
+      if (!currentProject) return;
+      try {
+        const res = await fetch(`/api/v1/voice/samples/${sampleId}?project=${encodeURIComponent(currentProject)}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('delete_failed');
+        const data = await res.json();
+        renderVoiceSamples(data.samples || []);
+      } catch (error) {
+        console.error('voice_sample_delete_failed', error);
+      }
+    }
+
+    async function triggerVoiceTraining(projectName) {
+      if (voiceTrainStatus) voiceTrainStatus.textContent = 'Подготовка…';
+      try {
+        const formData = new FormData();
+        formData.append('project', projectName);
+        const res = await fetch('/api/v1/voice/train', {
+          method: 'POST',
+          body: formData,
+        });
+        if (!res.ok) {
+          const detail = await res.text();
+          throw new Error(detail || 'train_failed');
+        }
+        if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение запущено';
+        await refreshVoiceTraining(projectName);
+      } catch (error) {
+        console.error('voice_train_failed', error);
+        if (voiceTrainStatus) voiceTrainStatus.textContent = 'Не удалось запустить обучение';
+      }
+    }
     function populateProjectForm(projectName){
       if (mainPromptAiHandler && typeof mainPromptAiHandler.abort === 'function') {
         mainPromptAiHandler.abort();
@@ -8176,6 +9405,11 @@
         const captionsEnabled = project?.knowledge_image_caption_enabled !== false;
         projectImageCaptionsInput.checked = captionsEnabled;
         refreshImageCaptionsHint(captionsEnabled);
+      }
+      if (projectSourcesInput) {
+        const sourcesEnabled = project?.llm_sources_enabled ? true : false;
+        projectSourcesInput.checked = sourcesEnabled;
+        refreshSourcesHint(sourcesEnabled);
       }
       if (projectDebugInfoInput) {
         const infoEnabled = project?.debug_info_enabled !== false;
@@ -8225,6 +9459,52 @@
           projectBitrixHint.textContent = 'Укажите URL вебхука Bitrix24, чтобы включить интеграцию.';
         }
       }
+      refreshVoiceTraining(project ? project.name : null);
+      if (projectMailEnabled) {
+        projectMailEnabled.checked = !!project?.mail_enabled;
+      }
+      if (projectMailImapHostInput) {
+        projectMailImapHostInput.value = project?.mail_imap_host || '';
+      }
+      if (projectMailImapPortInput) {
+        projectMailImapPortInput.value = project?.mail_imap_port != null ? project.mail_imap_port : '';
+      }
+      if (projectMailImapSslInput) {
+        projectMailImapSslInput.checked = project?.mail_imap_ssl !== false;
+      }
+      if (projectMailSmtpHostInput) {
+        projectMailSmtpHostInput.value = project?.mail_smtp_host || '';
+      }
+      if (projectMailSmtpPortInput) {
+        projectMailSmtpPortInput.value = project?.mail_smtp_port != null ? project.mail_smtp_port : '';
+      }
+      if (projectMailSmtpTlsInput) {
+        projectMailSmtpTlsInput.checked = project?.mail_smtp_tls !== false;
+      }
+      if (projectMailUsernameInput) {
+        projectMailUsernameInput.value = project?.mail_username || '';
+      }
+      if (projectMailPasswordInput) {
+        projectMailPasswordInput.value = '';
+        projectMailPasswordInput.placeholder = project?.mail_password_set ? 'Пароль сохранён' : 'Пароль';
+      }
+      if (projectMailFromInput) {
+        projectMailFromInput.value = project?.mail_from || '';
+      }
+      if (projectMailSignatureInput) {
+        projectMailSignatureInput.value = project?.mail_signature || '';
+      }
+      if (projectMailHint) {
+        if (!project) {
+          projectMailHint.textContent = 'Укажите параметры IMAP/SMTP, чтобы ассистент мог работать с почтой.';
+        } else if (project.mail_enabled) {
+          projectMailHint.textContent = 'Интеграция активна. Ассистент может отправлять и читать почту.';
+        } else if (project.mail_imap_host || project.mail_smtp_host) {
+          projectMailHint.textContent = 'Параметры сохранены, но интеграция выключена. Включите переключатель, чтобы активировать почтовый коннектор.';
+        } else {
+          projectMailHint.textContent = 'Заполните параметры сервера и включите интеграцию, чтобы активировать почтовый коннектор.';
+        }
+      }
       if (projectAdminSection) {
         projectAdminSection.style.display = project ? 'flex' : 'none';
       }
@@ -8264,6 +9544,7 @@
         metaBits.push(emoText);
         metaBits.push(project.debug_info_enabled ? 'Справка: вкл' : 'Справка: выкл');
         metaBits.push(project.debug_enabled ? 'Отладка: вкл' : 'Отладка: выкл');
+        metaBits.push(project.llm_sources_enabled ? 'Источники: вкл' : 'Источники: выкл');
         metaBits.push(
           project.knowledge_image_caption_enabled === false
             ? 'Подписи изображений: выкл'
@@ -8376,6 +9657,17 @@
             admin_password_set: Boolean(p.admin_password_set),
             bitrix_enabled: p.bitrix_enabled === undefined ? false : !!p.bitrix_enabled,
             bitrix_webhook_url: typeof p.bitrix_webhook_url === 'string' ? p.bitrix_webhook_url.trim() : p.bitrix_webhook_url,
+            mail_enabled: p.mail_enabled === undefined ? false : !!p.mail_enabled,
+            mail_imap_host: typeof p.mail_imap_host === 'string' ? p.mail_imap_host.trim() : '',
+            mail_imap_port: typeof p.mail_imap_port === 'number' ? p.mail_imap_port : null,
+            mail_imap_ssl: p.mail_imap_ssl === undefined ? true : !!p.mail_imap_ssl,
+            mail_smtp_host: typeof p.mail_smtp_host === 'string' ? p.mail_smtp_host.trim() : '',
+            mail_smtp_port: typeof p.mail_smtp_port === 'number' ? p.mail_smtp_port : null,
+            mail_smtp_tls: p.mail_smtp_tls === undefined ? true : !!p.mail_smtp_tls,
+            mail_username: typeof p.mail_username === 'string' ? p.mail_username.trim() : '',
+            mail_from: typeof p.mail_from === 'string' ? p.mail_from.trim() : '',
+            mail_signature: typeof p.mail_signature === 'string' ? p.mail_signature : '',
+            mail_password_set: Boolean(p.mail_password_set),
           };
           delete cleaned.telegram_token;
           projectsCache[key] = cleaned;
@@ -8441,6 +9733,40 @@
       });
     }
 
+    if (projectMailEnabled && projectMailHint) {
+      projectMailEnabled.addEventListener('change', () => {
+        refreshMailIntegrationHint();
+      });
+    }
+    [projectMailImapHostInput, projectMailSmtpHostInput].forEach((input) => {
+      if (!input || !projectMailHint) return;
+      input.addEventListener('input', () => {
+        refreshMailIntegrationHint();
+      });
+    });
+
+    if (voiceSampleUploadBtn) {
+      voiceSampleUploadBtn.addEventListener('click', () => {
+        if (!currentProject) {
+          if (voiceUploadStatus) voiceUploadStatus.textContent = 'Выберите проект, чтобы загрузить дорожки.';
+          return;
+        }
+        uploadVoiceSamples(currentProject);
+      });
+    }
+
+    if (voiceTrainButton) {
+      voiceTrainButton.addEventListener('click', () => {
+        if (!currentProject) {
+          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Выберите проект для обучения.';
+          return;
+        }
+        triggerVoiceTraining(currentProject);
+      });
+    }
+
+    refreshMailIntegrationHint();
+
     projectForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = projectNameInput.value.trim().toLowerCase();
@@ -8458,6 +9784,7 @@
         llm_voice_enabled: projectVoiceInput ? projectVoiceInput.checked : true,
         llm_voice_model: null,
         knowledge_image_caption_enabled: projectImageCaptionsInput ? projectImageCaptionsInput.checked : true,
+        llm_sources_enabled: projectSourcesInput ? projectSourcesInput.checked : false,
         debug_info_enabled: projectDebugInfoInput ? projectDebugInfoInput.checked : true,
         debug_enabled: projectDebugInput ? projectDebugInput.checked : false,
         widget_url: projectWidgetUrl && projectWidgetUrl.value.trim() ? projectWidgetUrl.value.trim() : null,
@@ -8468,6 +9795,49 @@
       if (projectBitrixWebhookInput) {
         const webhook = projectBitrixWebhookInput.value.trim();
         payload.bitrix_webhook_url = webhook ? webhook : null;
+      }
+      if (projectMailEnabled) {
+        payload.mail_enabled = projectMailEnabled.checked;
+      }
+      if (projectMailImapHostInput) {
+        const imapHost = projectMailImapHostInput.value.trim();
+        payload.mail_imap_host = imapHost || null;
+      }
+      if (projectMailImapPortInput) {
+        const portValue = parseInt(projectMailImapPortInput.value, 10);
+        payload.mail_imap_port = Number.isFinite(portValue) ? portValue : null;
+      }
+      if (projectMailImapSslInput) {
+        payload.mail_imap_ssl = projectMailImapSslInput.checked;
+      }
+      if (projectMailSmtpHostInput) {
+        const smtpHost = projectMailSmtpHostInput.value.trim();
+        payload.mail_smtp_host = smtpHost || null;
+      }
+      if (projectMailSmtpPortInput) {
+        const smtpPort = parseInt(projectMailSmtpPortInput.value, 10);
+        payload.mail_smtp_port = Number.isFinite(smtpPort) ? smtpPort : null;
+      }
+      if (projectMailSmtpTlsInput) {
+        payload.mail_smtp_tls = projectMailSmtpTlsInput.checked;
+      }
+      if (projectMailUsernameInput) {
+        const userValue = projectMailUsernameInput.value.trim();
+        payload.mail_username = userValue || null;
+      }
+      if (projectMailFromInput) {
+        const fromValue = projectMailFromInput.value.trim();
+        payload.mail_from = fromValue || null;
+      }
+      if (projectMailSignatureInput) {
+        const signatureValue = projectMailSignatureInput.value;
+        payload.mail_signature = signatureValue ? signatureValue : null;
+      }
+      if (projectMailPasswordInput) {
+        const rawPass = projectMailPasswordInput.value;
+        if (rawPass && rawPass.trim()) {
+          payload.mail_password = rawPass;
+        }
       }
       if (projectVoiceInput && !projectVoiceInput.checked) {
         payload.llm_voice_model = null;
@@ -8594,6 +9964,10 @@
     if (feedbackRefreshBtn) {
       feedbackRefreshBtn.addEventListener('click', () => fetchFeedbackTasks());
     }
+
+    ensureBackupTimezones();
+    setBackupControlsDisabled(true);
+    updateBackupActionButtons();
 
     const promptAiHandlers = [];
     const mainPromptAiHandler = initPromptAiControls({

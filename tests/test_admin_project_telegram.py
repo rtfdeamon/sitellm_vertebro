@@ -25,6 +25,9 @@ class _FakeHub:
     def is_project_running(self, project: str | None) -> bool:
         return bool(project and self.running.get(project))
 
+    def get_last_error(self, project: str | None) -> str | None:  # pragma: no cover - simple stub
+        return None
+
     async def ensure_runner(self, project: Project) -> None:
         token = project.telegram_token
         if token:

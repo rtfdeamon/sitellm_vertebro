@@ -107,6 +107,10 @@ port = int(sys.argv[1])
 def can_bind(sock_family, address):
     sock = socket.socket(sock_family, socket.SOCK_STREAM)
     try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "IPPROTO_IPV6") and hasattr(socket, "IPV6_V6ONLY") \
+                and sock_family == socket.AF_INET6:
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
         sock.bind(address)
     except OSError:
         return False
@@ -202,6 +206,10 @@ listening_pids_for_port() {
   if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
     pids=$(ss -lntp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print $NF}' | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | sort -u)
   fi
+  if [ -n "$pids" ]; then
+    pids=$(printf '%s\n' "$pids" | tr ' ' '\n' | grep -E '^[0-9]+$' || true)
+    pids=$(printf '%s\n' "$pids" | sed '/^$/d' | sort -u)
+  fi
   echo "$pids"
 }
 
@@ -223,7 +231,28 @@ terminate_port_processes() {
     printf '[✓] Port %s released without forcing termination.\n' "$port"
     return 0
   fi
-  printf '[✗] Port %s is still busy. Stop blocking processes manually and rerun.\n' "$port"
+  printf '[✗] Port %s is still busy. Attempting graceful termination of PID(s): %s\n' "$port" "$pids"
+  local pid
+  for pid in $pids; do
+    if kill "$pid" 2>/dev/null; then
+      printf '[i] Sent SIGTERM to %s\n' "$pid"
+    fi
+  done
+  if wait_until_port_free "$port" 6; then
+    printf '[✓] Port %s freed after terminating PID(s).\n' "$port"
+    return 0
+  fi
+  printf '[!] Forcing termination with SIGKILL\n'
+  for pid in $pids; do
+    if kill -9 "$pid" 2>/dev/null; then
+      printf '[i] Sent SIGKILL to %s\n' "$pid"
+    fi
+  done
+  if wait_until_port_free "$port" 6; then
+    printf '[✓] Port %s freed after SIGKILL.\n' "$port"
+    return 0
+  fi
+  printf '[✗] Port %s is still busy. Stop conflicting service and rerun.\n' "$port"
   return 1
 }
 
@@ -485,11 +514,12 @@ APP_PORT_CANDIDATE=${APP_PORT_CANDIDATE:-18000}
 
 if ! is_port_free "$APP_PORT_CANDIDATE"; then
   printf '[!] Port %s is currently in use. Attempting to free it for the application...\n' "$APP_PORT_CANDIDATE"
-  if ! terminate_port_processes "$APP_PORT_CANDIDATE" 18; then
-    echo '[✗] Failed to free the main application port automatically. Stop conflicting service and rerun.'
+  printf '[i] Port %s is busy; waiting for the existing service to stop...\n' "$APP_PORT_CANDIDATE"
+  if ! wait_until_port_free "$APP_PORT_CANDIDATE" 60 2; then
+    printf '[✗] Port %s is still in use after waiting. Stop the conflicting service and rerun.\n' "$APP_PORT_CANDIDATE"
     exit 1
   fi
-  printf '[✓] Port %s successfully freed.\n' "$APP_PORT_CANDIDATE"
+  printf '[✓] Port %s became available.\n' "$APP_PORT_CANDIDATE"
 fi
 
 if ! wait_until_port_free "$APP_PORT_CANDIDATE" 5; then

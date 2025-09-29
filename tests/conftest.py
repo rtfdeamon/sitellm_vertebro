@@ -13,6 +13,7 @@ fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
     info=lambda *args, **kw: None,
     warning=lambda *args, **kw: None,
     debug=lambda *args, **kw: None,
+    error=lambda *args, **kw: None,
 )
 sys.modules.setdefault("structlog", fake_structlog)
 
@@ -23,42 +24,91 @@ backend_pkg = types.ModuleType("backend")
 backend_pkg.__path__ = [str(Path(__file__).resolve().parents[1] / "backend")]
 sys.modules.setdefault("backend", backend_pkg)
 backend_settings = types.ModuleType("backend.settings")
-backend_settings.get_settings = lambda: types.SimpleNamespace(redis_url="redis://")
-backend_settings.settings = types.SimpleNamespace(use_gpu=False, llm_model="stub")
+backend_settings.get_settings = lambda: types.SimpleNamespace(
+    redis_url="redis://",
+    project_name=None,
+    domain=None,
+)
+backend_settings.settings = types.SimpleNamespace(
+    use_gpu=False,
+    llm_model="stub",
+    project_name=None,
+    domain=None,
+)
 sys.modules.setdefault("backend.settings", backend_settings)
 
-# Stub out ``redis.asyncio`` used by caching module.
-fake_redis = types.ModuleType("redis.asyncio")
-fake_redis.ConnectionPool = object
-fake_redis.Redis = object
-sys.modules.setdefault("redis.asyncio", fake_redis)
+# Stub out ``redis.asyncio`` used by caching module only if the real package is
+# unavailable (older minimal test setups).
+try:
+    import redis.asyncio as _redis_async
+except Exception:  # pragma: no cover - fallback path for minimal envs
+    fake_redis = types.ModuleType("redis.asyncio")
+    fake_redis.ConnectionPool = object
+    fake_redis.Redis = object
+    sys.modules.setdefault("redis.asyncio", fake_redis)
+else:
+    sys.modules.setdefault("redis.asyncio", _redis_async)
 
-# Minimal FastAPI ``TestClient`` stub and related modules to avoid external deps.
-fastapi_module = types.ModuleType("fastapi")
-fastapi_testclient = types.ModuleType("fastapi.testclient")
+# Minimal FastAPI/TestClient fallbacks when the real dependency is unavailable.
+try:  # prefer the real FastAPI package when installed
+    import fastapi as _real_fastapi
+except Exception:  # pragma: no cover - exercised only in stripped test envs
+    fastapi_module = types.ModuleType("fastapi")
+    fastapi_testclient = types.ModuleType("fastapi.testclient")
 
-class DummyClient:
-    def __init__(self, app):
-        self.app = app
+    class DummyClient:
+        def __init__(self, app):
+            self.app = app
 
-    def get(self, path):
-        if path == "/widget/":
-            html = (
-                Path(__file__).resolve().parents[1]
-                / "widget"
-                / "index.html"
-            ).read_text(encoding="utf-8")
-            return types.SimpleNamespace(status_code=200, text=html)
-        return types.SimpleNamespace(status_code=404, text="")
+        def get(self, path):
+            if path == "/widget/":
+                html = (
+                    Path(__file__).resolve().parents[1]
+                    / "widget"
+                    / "index.html"
+                ).read_text(encoding="utf-8")
+                return types.SimpleNamespace(status_code=200, text=html)
+            return types.SimpleNamespace(status_code=404, text="")
 
-fastapi_testclient.TestClient = DummyClient
-sys.modules.setdefault("fastapi", fastapi_module)
-sys.modules.setdefault("fastapi.testclient", fastapi_testclient)
+    fastapi_testclient.TestClient = DummyClient
+    sys.modules.setdefault("fastapi", fastapi_module)
+    sys.modules.setdefault("fastapi.testclient", fastapi_testclient)
+else:
+    sys.modules.setdefault("fastapi", _real_fastapi)
+    try:
+        import fastapi.testclient as _real_testclient
+    except Exception:  # pragma: no cover - fallback to stub TestClient
+        fastapi_testclient = types.ModuleType("fastapi.testclient")
 
-# Provide minimal ``app`` module expected by widget tests.
-app_stub = types.ModuleType("app")
-app_stub.app = object()
-sys.modules.setdefault("app", app_stub)
+        class DummyClient:
+            def __init__(self, app):
+                self.app = app
+
+            def get(self, path):  # pragma: no cover - parity with stub above
+                if path == "/widget/":
+                    html = (
+                        Path(__file__).resolve().parents[1]
+                        / "widget"
+                        / "index.html"
+                    ).read_text(encoding="utf-8")
+                    return types.SimpleNamespace(status_code=200, text=html)
+                return types.SimpleNamespace(status_code=404, text="")
+
+        fastapi_testclient.TestClient = DummyClient
+        sys.modules.setdefault("fastapi.testclient", fastapi_testclient)
+    else:
+        sys.modules.setdefault("fastapi.testclient", _real_testclient)
+
+# Provide minimal ``app`` module expected by widget tests when the real one is
+# unavailable (e.g. stripped dependency environments).
+try:
+    import app as _real_app
+except Exception:  # pragma: no cover - fallback only when app import fails
+    app_stub = types.ModuleType("app")
+    app_stub.app = object()
+    sys.modules.setdefault("app", app_stub)
+else:
+    sys.modules.setdefault("app", _real_app)
 
 # Simple ``requests`` stub for modules that import it.
 fake_requests = types.ModuleType("requests")
