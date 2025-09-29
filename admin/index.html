@@ -2089,13 +2089,16 @@
           <div class="crawler-progress-note" id="crawlerProgressNote"></div>
         </div>
         <form id="crawler-form" style="margin-top:4px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
-          <label style="flex:1 1 200px;" data-i18n="crawlerStartUrl">Start URL
+          <label style="flex:1 1 200px;">
+            <span data-i18n="crawlerStartUrl">Start URL</span>
             <input type="url" id="url" placeholder="https://example.com" required style="width:100%;">
           </label>
-          <label data-i18n="crawlerDepth">Depth
+          <label>
+            <span data-i18n="crawlerDepth">Depth</span>
             <input type="number" id="depth" min="1" value="2" style="width:80px;">
           </label>
-          <label data-i18n="crawlerPages">Pages
+          <label>
+            <span data-i18n="crawlerPages">Pages</span>
             <input type="number" id="pages" min="1" value="100" style="width:80px;">
           </label>
           <label class="crawler-option">
