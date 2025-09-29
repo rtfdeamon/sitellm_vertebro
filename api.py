@@ -11,6 +11,7 @@ import os
 import signal
 import time
 import re
+import threading
 import urllib.parse as urlparse
 from typing import Any
 from uuid import uuid4
@@ -93,6 +94,20 @@ READING_MODE_PROMPT = (
 READING_COLLECTION_NAME = os.getenv("MONGO_READING_COLLECTION", "reading_pages")
 READING_PAGE_MAX_LIMIT = 20
 
+try:  # pragma: no cover - optional when Celery/kombu unavailable in tests
+    from celery.exceptions import CeleryError
+except Exception:  # noqa: BLE001 - fallback for minimal test stubs
+    class CeleryError(Exception):  # type: ignore[override]
+        """Fallback Celery error type used when Celery is not installed."""
+
+
+try:  # pragma: no cover - optional when kombu is not installed
+    from kombu.exceptions import OperationalError as KombuOperationalError
+except Exception:  # noqa: BLE001 - fallback for minimal test stubs
+    class KombuOperationalError(Exception):  # type: ignore[override]
+        """Fallback kombu operational error when kombu is absent."""
+
+
 VOICE_ALLOWED_CONTENT_TYPES = {
     "audio/mpeg",
     "audio/mp3",
@@ -107,6 +122,12 @@ VOICE_ALLOWED_CONTENT_TYPES = {
 }
 VOICE_MAX_SAMPLE_BYTES = int(os.getenv("VOICE_SAMPLE_MAX_BYTES", str(25 * 1024 * 1024)))
 VOICE_MIN_SAMPLE_COUNT = int(os.getenv("VOICE_MIN_SAMPLE_COUNT", "3"))
+VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
+    CeleryError,
+    KombuOperationalError,
+    ConnectionError,
+    TimeoutError,
+)
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -2536,6 +2557,33 @@ def _validate_voice_project(project: str | None) -> str:
     return project_name
 
 
+def _spawn_voice_training_thread(job_id: str) -> None:
+    """Run simulated voice training in a background thread when Celery is down."""
+
+    runner = getattr(voice_train_model, "run", None)
+    if not callable(runner):
+        logger.error("voice_training_runner_missing", job_id=job_id)
+        return
+
+    def _target() -> None:
+        try:
+            runner(job_id)
+        except Exception as exc:  # noqa: BLE001 - log unexpected training failure
+            logger.exception("voice_training_fallback_failed", job_id=job_id, error=str(exc))
+
+    thread = threading.Thread(target=_target, name=f"voice-train-{job_id}", daemon=True)
+    thread.start()
+
+
+def _queue_voice_training_job(job_id: str) -> bool:
+    try:
+        voice_train_model.delay(job_id)
+        return True
+    except VOICE_QUEUE_ERRORS as exc:
+        logger.warning("voice_training_enqueue_failed", job_id=job_id, error=str(exc))
+        return False
+
+
 def _validate_voice_payload(
     filename: str | None,
     content_type: str | None,
@@ -2645,8 +2693,15 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
         raise HTTPException(status_code=409, detail="job_in_progress")
 
     job = await mongo_client.create_voice_training_job(project_name)
-    voice_train_model.delay(job.id)
-    logger.info("voice_training_queued", project=project_name, job_id=job.id)
+    queued = _queue_voice_training_job(job.id)
+    if not queued:
+        _spawn_voice_training_thread(job.id)
+    logger.info(
+        "voice_training_queued",
+        project=project_name,
+        job_id=job.id,
+        transport="celery" if queued else "inline",
+    )
     return ORJSONResponse({"job": job.model_dump(by_alias=True)})
 
 
