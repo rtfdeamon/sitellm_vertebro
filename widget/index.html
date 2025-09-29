@@ -151,10 +151,102 @@
     .msg-attachments .attachment-image { background: rgba(59, 130, 246, 0.12); }
     .msg-attachments .attachment-image img { display: block; max-width: 180px; border-radius: 8px; }
     .msg-attachments .attachment-caption { font-size: 11px; color: var(--muted); }
+    .msg-sources { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+    .msg-sources-list { display: flex; flex-direction: column; gap: 4px; }
+    .msg-sources a { color: var(--accent); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+    .msg-sources a::before { content: '\1F517'; font-size: 12px; }
+    .msg-sources a:hover { text-decoration: underline; }
     form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; }
     textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
     .btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+    body.modal-open { overflow: hidden; }
+    .auth-modal {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1200;
+    }
+    .auth-modal[data-visible="true"] { display: flex; }
+    .auth-modal .auth-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(11, 17, 33, 0.72);
+      backdrop-filter: blur(6px);
+    }
+    .auth-modal .auth-card {
+      position: relative;
+      width: min(420px, 92%);
+      background: rgba(15, 23, 42, 0.94);
+      border-radius: 18px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      box-shadow: 0 28px 68px rgba(6, 10, 24, 0.55);
+      padding: 28px;
+      color: var(--text-primary);
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      z-index: 1;
+    }
+    .auth-modal h3 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+    .auth-modal p {
+      margin: 0;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .auth-form label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(203, 213, 225, 0.86);
+    }
+    .auth-form input {
+      border-radius: 12px;
+      border: 1px solid rgba(96, 112, 152, 0.45);
+      background: rgba(12, 19, 34, 0.8);
+      color: var(--text-primary);
+      padding: 10px 12px;
+      font-size: 14px;
+    }
+    .auth-form input:focus {
+      outline: none;
+      border-color: rgba(96, 165, 250, 0.65);
+      box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+    }
+    .auth-error {
+      min-height: 18px;
+      font-size: 13px;
+      color: var(--danger);
+    }
+    .auth-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+    .auth-actions .btn.secondary {
+      color: var(--text-muted);
+      border-color: rgba(148, 163, 184, 0.35);
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .auth-actions .btn.secondary:hover {
+      border-color: rgba(96, 165, 250, 0.55);
+      color: var(--text-primary);
+    }
     .muted { color: var(--muted); font-size: 12px; }
     .project-panel { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; margin-bottom: 12px; display: grid; gap: 12px; }
     .project-panel label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
@@ -394,6 +486,13 @@
     .voice-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
     .voice-preview { min-height: 260px; display: flex; align-items: center; justify-content: center; }
     .voice-controls { display: grid; gap: 16px; }
+    .voice-mode-select { display: grid; gap: 8px; }
+    .voice-mode-label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .voice-mode-options { display: flex; flex-wrap: wrap; gap: 8px; }
+    .voice-mode-option { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 17, 23, 0.55); color: var(--text); font-size: 13px; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease; }
+    .voice-mode-option input { display: none; }
+    .voice-mode-option.is-active { background: rgba(79, 124, 255, 0.18); border-color: rgba(79, 124, 255, 0.55); color: #e0e7ff; box-shadow: 0 10px 24px rgba(79, 124, 255, 0.18); }
+    .voice-mode-option.is-disabled { opacity: 0.55; cursor: not-allowed; }
     .voice-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -401,8 +500,25 @@
     }
     .voice-grid label { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
     .voice-grid input { background: rgba(15, 17, 23, 0.55); border: 1px solid rgba(148, 163, 184, 0.25); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+    .voice-grid.is-disabled input { opacity: 0.4; cursor: not-allowed; }
     .voice-choice { position: relative; }
     .voice-choice input { width: 100%; }
+    .avatar-character-panel { display: grid; gap: 12px; }
+    .avatar-character-panel[hidden] { display: none; }
+    .avatar-character-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .avatar-character-card { display: grid; gap: 4px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 17, 23, 0.55); color: var(--text); text-align: left; cursor: pointer; transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease; font-size: 13px; }
+    .avatar-character-card:hover { transform: translateY(-1px); border-color: rgba(79, 124, 255, 0.45); }
+    .avatar-character-card.is-active { border-color: rgba(79, 124, 255, 0.6); background: rgba(79, 124, 255, 0.18); box-shadow: 0 12px 24px rgba(79, 124, 255, 0.18); }
+    .avatar-character-name { font-weight: 600; letter-spacing: 0.02em; }
+    .avatar-character-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+    .voice-tuning { display: grid; gap: 12px; }
+    .voice-speed { display: grid; gap: 6px; font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+    .voice-speed input[type="range"] { width: 100%; accent-color: rgba(79, 124, 255, 0.8); }
+    .voice-speed output { justify-self: flex-start; font-size: 12px; color: var(--text); background: rgba(79,124,255,0.18); border-radius: 999px; padding: 4px 10px; letter-spacing: 0.04em; }
+    .voice-test { display: grid; gap: 8px; }
+    .voice-test textarea { width: 100%; min-height: 64px; border-radius: 12px; border: 1px solid rgba(148, 163, 184, 0.25); background: rgba(15, 17, 23, 0.55); color: var(--text); padding: 10px 12px; font-size: 13px; resize: vertical; }
+    .voice-test button { justify-self: flex-start; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(79, 124, 255, 0.45); background: rgba(79, 124, 255, 0.18); color: var(--text); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; transition: background 0.2s ease, border-color 0.2s ease; }
+    .voice-test button:hover { background: rgba(79, 124, 255, 0.28); border-color: rgba(79, 124, 255, 0.65); }
     .developer-credit { display:block; margin:32px auto 12px; text-align:center; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:rgba(226,232,240,0.45); text-decoration:none; transition:color 0.2s ease; }
     .developer-credit:hover { color: rgba(226,232,240,0.75); }
     .feedback-trigger { position:fixed; left:24px; bottom:24px; z-index:9999; display:inline-flex; align-items:center; gap:8px; padding:10px 14px; border-radius:999px; border:1px solid rgba(148,163,184,0.3); background:rgba(15,17,23,0.6); color:rgba(226,232,240,0.78); font-size:12px; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; backdrop-filter:blur(6px); transition:background 0.2s ease, color 0.2s ease; }
@@ -470,6 +586,29 @@
   </style>
 </head>
 <body>
+<div class="auth-modal" id="admin-auth-modal" data-visible="false" role="dialog" aria-modal="true">
+  <div class="auth-backdrop"></div>
+  <div class="auth-card">
+    <h3 id="admin-auth-title" data-i18n="authTitle">Administrator sign-in</h3>
+    <p id="admin-auth-message" data-i18n="authPrompt">Enter administrator credentials to continue.</p>
+    <p id="admin-auth-hint">Credentials will be sent to localhost</p>
+    <form class="auth-form" id="admin-auth-form">
+      <label for="admin-auth-username">
+        <span data-i18n="authUsernameLabel">Username</span>
+        <input type="text" id="admin-auth-username" autocomplete="username" data-i18n-placeholder="authUsernamePlaceholder">
+      </label>
+      <label for="admin-auth-password">
+        <span data-i18n="authPasswordLabel">Password</span>
+        <input type="password" id="admin-auth-password" autocomplete="current-password" data-i18n-placeholder="authPasswordPlaceholder">
+      </label>
+      <div class="auth-error" id="admin-auth-error"></div>
+      <div class="auth-actions">
+        <button type="button" class="btn secondary" id="admin-auth-cancel" data-i18n="authCancel">Cancel</button>
+        <button type="submit" class="btn" id="admin-auth-submit" data-i18n="authSubmit">Sign in</button>
+      </div>
+    </form>
+  </div>
+</div>
   <div class="page-shell" id="pageShell">
     <section class="hero">
       <div class="hero-copy">
@@ -540,6 +679,52 @@
           <div class="voice-preview-placeholder" data-i18n="avatarPreviewSelect">Select a project to preview the voice assistant.</div>
         </div>
         <div class="voice-controls">
+          <div class="voice-mode-select">
+            <span class="voice-mode-label" id="voiceModeLabel" data-i18n="avatarModeLabel">Interaction mode</span>
+            <div class="voice-mode-options" role="radiogroup" aria-labelledby="voiceModeLabel">
+              <label class="voice-mode-option" data-mode-option="text">
+                <input type="radio" name="avatarMode" value="text">
+                <span data-i18n="avatarModeText">Text chat</span>
+              </label>
+              <label class="voice-mode-option is-active" data-mode-option="voice">
+                <input type="radio" name="avatarMode" value="voice" checked>
+                <span data-i18n="avatarModeVoice">Voice chat</span>
+              </label>
+              <label class="voice-mode-option" data-mode-option="avatar">
+                <input type="radio" name="avatarMode" value="avatar">
+                <span data-i18n="avatarModeAvatar">Voice + avatar</span>
+              </label>
+            </div>
+          </div>
+          <div class="avatar-character-panel" id="characterPanel" hidden>
+            <span class="voice-mode-label" data-i18n="avatarCharacterLabel">Choose an avatar</span>
+            <div class="avatar-character-grid">
+              <button type="button" class="avatar-character-card is-active" data-avatar-option="luna">
+                <span class="avatar-character-name" data-i18n="avatarCharacterLunaName">Luna</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterLunaDesc">Warm customer success partner</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="amir">
+                <span class="avatar-character-name" data-i18n="avatarCharacterAmirName">Amir</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterAmirDesc">Thoughtful technical guide</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="sofia">
+                <span class="avatar-character-name" data-i18n="avatarCharacterSofiaName">Sofia</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterSofiaDesc">Confident sales lead</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="nova">
+                <span class="avatar-character-name" data-i18n="avatarCharacterNovaName">Nova</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterNovaDesc">Empathic product specialist</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="atlas">
+                <span class="avatar-character-name" data-i18n="avatarCharacterAtlasName">Atlas</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterAtlasDesc">Calm operations engineer</span>
+              </button>
+              <button type="button" class="avatar-character-card" data-avatar-option="cosmo">
+                <span class="avatar-character-name" data-i18n="avatarCharacterCosmoName">Cosmo</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterCosmoDesc">Futuristic guide</span>
+              </button>
+            </div>
+          </div>
           <div class="voice-grid">
             <label>
               <span data-i18n="avatarLangLabel">Recognition language</span>
@@ -550,6 +735,17 @@
               <input type="text" id="avatarVoice" placeholder="Milena" autocomplete="off" list="avatarVoiceList" />
               <datalist id="avatarVoiceList"></datalist>
             </label>
+          </div>
+          <div class="voice-tuning">
+            <label class="voice-speed">
+              <span data-i18n="avatarSpeechRateLabel">Speech speed</span>
+              <input type="range" id="speechRate" min="0.6" max="1.4" step="0.05" value="1.0">
+              <output id="speechRateDisplay">×1.00</output>
+            </label>
+            <div class="voice-test">
+              <textarea id="voiceTestText" data-i18n-placeholder="avatarTestPlaceholder" placeholder="Enter a short line to preview the voice…"></textarea>
+              <button type="button" id="voiceTestBtn" data-i18n="avatarTestButton">Play sample</button>
+            </div>
           </div>
           <div class="code-card">
             <button type="button" class="copy-btn" id="avatarCopy" data-i18n="avatarCopy">Copy widget snippet</button>
@@ -672,6 +868,15 @@ const sendBtn = document.getElementById('sendBtn');
 const banner = document.getElementById('banner');
 const bannerText = document.getElementById('bannerText');
 const bannerClose = document.getElementById('bannerClose');
+const authModal = document.getElementById('admin-auth-modal');
+const authForm = document.getElementById('admin-auth-form');
+const authUserInput = document.getElementById('admin-auth-username');
+const authPasswordInput = document.getElementById('admin-auth-password');
+const authSubmitBtn = document.getElementById('admin-auth-submit');
+const authCancelBtn = document.getElementById('admin-auth-cancel');
+const authError = document.getElementById('admin-auth-error');
+const authHint = document.getElementById('admin-auth-hint');
+const authMessage = document.getElementById('admin-auth-message');
 const themeToggle = document.getElementById('themeToggle');
 const projectSelect = document.getElementById('projectSelect');
 const refreshProjectsBtn = document.getElementById('refreshProjects');
@@ -702,6 +907,15 @@ const voiceAvatarHost = document.getElementById('voiceAvatarHost');
 const avatarLangInput = document.getElementById('avatarLang');
 const avatarVoiceInput = document.getElementById('avatarVoice');
 const avatarVoiceList = document.getElementById('avatarVoiceList');
+const avatarModeOptions = Array.from(document.querySelectorAll('[data-mode-option]'));
+const avatarModeInputs = Array.from(document.querySelectorAll('input[name="avatarMode"]'));
+const avatarCharacterPanel = document.getElementById('characterPanel');
+const avatarCharacterCards = Array.from(document.querySelectorAll('[data-avatar-option]'));
+const voiceGridEl = document.querySelector('.voice-grid');
+const speechRateInput = document.getElementById('speechRate');
+const speechRateDisplay = document.getElementById('speechRateDisplay');
+const voiceTestTextarea = document.getElementById('voiceTestText');
+const voiceTestBtn = document.getElementById('voiceTestBtn');
 const avatarCodeEl = document.getElementById('avatarCode');
 const avatarCopyBtn = document.getElementById('avatarCopy');
 const voiceFeatureHint = document.getElementById('voiceFeatureHint');
@@ -726,14 +940,18 @@ const voiceHintState = { status: 'select', model: null };
 let remoteVoiceState = { key: '', enabled: true, model: null };
 let voicePreviewToken = 0;
 let voicePlaceholderState = { key: 'avatarPreviewSelect', params: null };
+let selectedVoiceMode = 'voice';
+let selectedAvatarCharacter = 'luna';
 
 const LANGUAGE_STORAGE_KEY = 'chat_language';
 const VOICE_STORAGE_KEY = 'chat_voice_preference';
+const SPEECH_RATE_STORAGE_KEY = 'chat_voice_speed';
 const DEFAULT_VOICE_HINT = 'Milena';
 let voiceOptionsPending = false;
 const FALLBACK_LANGUAGE = 'en';
 const pageReadingMode = urlParams.get('reading') === '1';
 let widgetReadingMode = pageReadingMode;
+let currentVoicePreviewInstance = null;
 
 if (isEmbed) {
   document.querySelectorAll('.feedback-trigger, .feedback-panel, .developer-credit').forEach((node) => {
@@ -766,7 +984,27 @@ const LANGUAGES = {
       avatarSectionTitle: 'Voice-enabled avatar',
       avatarSectionSubtitle: 'Let visitors speak with an animated assistant that streams and reads answers aloud.',
       avatarLangLabel: 'Recognition language',
+      avatarModeLabel: 'Interaction mode',
+      avatarModeText: 'Text chat',
+      avatarModeVoice: 'Voice chat',
+      avatarModeAvatar: 'Voice + avatar',
+      avatarCharacterLabel: 'Choose an avatar',
+      avatarCharacterLunaName: 'Luna',
+      avatarCharacterLunaDesc: 'Warm customer success partner',
+      avatarCharacterAmirName: 'Amir',
+      avatarCharacterAmirDesc: 'Thoughtful technical guide',
+      avatarCharacterSofiaName: 'Sofia',
+      avatarCharacterSofiaDesc: 'Confident sales lead',
+      avatarCharacterNovaName: 'Nova',
+      avatarCharacterNovaDesc: 'Empathic product specialist',
+      avatarCharacterAtlasName: 'Atlas',
+      avatarCharacterAtlasDesc: 'Calm operations engineer',
+      avatarCharacterCosmoName: 'Cosmo',
+      avatarCharacterCosmoDesc: 'Futuristic guide',
       avatarVoiceLabel: 'Speech voice (optional)',
+      avatarSpeechRateLabel: 'Speech speed',
+      avatarTestPlaceholder: 'Enter a short line to preview the voice…',
+      avatarTestButton: 'Play sample',
       avatarCopy: 'Copy widget snippet',
       avatarPreviewSelect: 'Select a project to preview the voice assistant.',
       avatarHintSelectProject: 'Select a project to preview the voice assistant.',
@@ -775,6 +1013,9 @@ const LANGUAGES = {
       avatarHintEnabled: 'Voice assistant is enabled for this project.',
       avatarHintEnabledModel: 'Voice assistant uses model {model}.',
       avatarHintError: 'Unable to load voice settings.',
+      avatarHintTextMode: 'Text-only chat mode is active. Visitors will type instead of speaking.',
+      avatarHintAvatarMode: 'Avatar mode enabled. Animated persona mirrors the assistant during replies.',
+      avatarHintAvatarAppend: 'Animated persona will accompany spoken responses.',
       avatarHintReadingMode: 'Book reading mode is active.',
       copiedLabel: 'Copied!',
       chatPreviewTitle: 'Live chat preview',
@@ -794,6 +1035,20 @@ const LANGUAGES = {
       statusOffline: 'offline',
       bannerConnectionError: 'Connection error',
       bannerDismiss: 'Dismiss',
+      authTitle: 'Administrator sign-in',
+      authPrompt: 'Enter administrator credentials to continue.',
+      authHint: 'Credentials are sent to {host}.',
+      authUsernameLabel: 'Username',
+      authUsernamePlaceholder: 'Admin username',
+      authPasswordLabel: 'Password',
+      authPasswordPlaceholder: 'Admin password',
+      authSubmit: 'Sign in',
+      authCancel: 'Cancel',
+      authStatusChecking: 'Checking credentials…',
+      authErrorMissing: 'Enter username and password',
+      authErrorInvalid: 'Invalid credentials',
+      authErrorNetwork: 'Could not verify credentials',
+      errorAuthRequired: 'Administrator credentials required',
       feedbackButton: 'Feedback',
       feedbackOpen: 'Open feedback form',
       feedbackClose: 'Close',
@@ -839,6 +1094,7 @@ const LANGUAGES = {
       errorStreaming: 'Streaming error, see console.',
       errorNoSSE: 'SSE not supported by this browser.',
       attachmentLabel: 'Attachment',
+      sourcesTitle: 'Sources',
       roleUser: 'user',
       roleAssistant: 'assistant',
       roleSystem: 'system',
@@ -919,6 +1175,7 @@ const LANGUAGES = {
       errorStreaming: 'Error de streaming, revisa la consola.',
       errorNoSSE: 'Este navegador no admite SSE.',
       attachmentLabel: 'Adjunto',
+      sourcesTitle: 'Fuentes',
       roleUser: 'usuario',
       roleAssistant: 'asistente',
       roleSystem: 'sistema',
@@ -999,6 +1256,7 @@ const LANGUAGES = {
       errorStreaming: 'Streaming-Fehler, siehe Konsole.',
       errorNoSSE: 'Dieser Browser unterstützt kein SSE.',
       attachmentLabel: 'Anhang',
+      sourcesTitle: 'Quellen',
       roleUser: 'benutzer',
       roleAssistant: 'assistent',
       roleSystem: 'system',
@@ -1079,6 +1337,7 @@ const LANGUAGES = {
       errorStreaming: 'Erreur de streaming, voir la console.',
       errorNoSSE: 'Ce navigateur ne prend pas en charge SSE.',
       attachmentLabel: 'Pièce jointe',
+      sourcesTitle: 'Sources',
       roleUser: 'utilisateur',
       roleAssistant: 'assistant',
       roleSystem: 'système',
@@ -1159,6 +1418,7 @@ const LANGUAGES = {
       errorStreaming: 'Errore di streaming, controlla la console.',
       errorNoSSE: 'Questo browser non supporta SSE.',
       attachmentLabel: 'Allegato',
+      sourcesTitle: 'Fonti',
       roleUser: 'utente',
       roleAssistant: 'assistente',
       roleSystem: 'sistema',
@@ -1239,6 +1499,7 @@ const LANGUAGES = {
       errorStreaming: 'Erro de streaming, veja o console.',
       errorNoSSE: 'Este navegador não suporta SSE.',
       attachmentLabel: 'Anexo',
+      sourcesTitle: 'Fontes',
       roleUser: 'usuário',
       roleAssistant: 'assistente',
       roleSystem: 'sistema',
@@ -1269,7 +1530,27 @@ const LANGUAGES = {
       avatarSectionTitle: 'Голосовой аватар',
       avatarSectionSubtitle: 'Дайте посетителям возможность говорить с анимированным ассистентом в реальном времени.',
       avatarLangLabel: 'Язык распознавания',
+      avatarModeLabel: 'Режим взаимодействия',
+      avatarModeText: 'Только переписка',
+      avatarModeVoice: 'Переписка + голос',
+      avatarModeAvatar: 'Голос + аватар',
+      avatarCharacterLabel: 'Выберите персонажа',
+      avatarCharacterLunaName: 'Луна',
+      avatarCharacterLunaDesc: 'Доброжелательный менеджер поддержки',
+      avatarCharacterAmirName: 'Амир',
+      avatarCharacterAmirDesc: 'Вдумчивый технический консультант',
+      avatarCharacterSofiaName: 'София',
+      avatarCharacterSofiaDesc: 'Уверенный руководитель продаж',
+      avatarCharacterNovaName: 'Нова',
+      avatarCharacterNovaDesc: 'Эмпатичный продуктовый эксперт',
+      avatarCharacterAtlasName: 'Атлас',
+      avatarCharacterAtlasDesc: 'Спокойный инженер по операциям',
+      avatarCharacterCosmoName: 'Космо',
+      avatarCharacterCosmoDesc: 'Футуристичный проводник',
       avatarVoiceLabel: 'Голос синтеза (опционально)',
+      avatarSpeechRateLabel: 'Скорость озвучивания',
+      avatarTestPlaceholder: 'Введите короткий текст, чтобы прослушать пример…',
+      avatarTestButton: 'Прослушать',
       avatarCopy: 'Скопировать виджет',
       avatarPreviewSelect: 'Выберите проект, чтобы увидеть голосового ассистента.',
       avatarHintSelectProject: 'Выберите проект, чтобы увидеть голосового ассистента.',
@@ -1278,6 +1559,9 @@ const LANGUAGES = {
       avatarHintEnabled: 'Голосовой ассистент включён для этого проекта.',
       avatarHintEnabledModel: 'Голосовой ассистент использует модель {model}.',
       avatarHintError: 'Не удалось загрузить настройки голосового режима.',
+      avatarHintTextMode: 'Активен режим только переписки. Посетители будут писать сообщения вместо голосовых запросов.',
+      avatarHintAvatarMode: 'Включён режим с визуальным аватаром. Персонаж отображает ответы помощника.',
+      avatarHintAvatarAppend: 'Аватар сопровождает голосовые ответы.',
       copiedLabel: 'Скопировано!',
       chatPreviewTitle: 'Предпросмотр живого чата',
       launcherTitle: 'AI‑помощник',
@@ -1296,6 +1580,20 @@ const LANGUAGES = {
       statusOffline: 'не в сети',
       bannerConnectionError: 'Ошибка подключения',
       bannerDismiss: 'Закрыть',
+      authTitle: 'Вход администратора',
+      authPrompt: 'Введите учётные данные администратора, чтобы продолжить.',
+      authHint: 'Учётные данные будут отправлены на {host}.',
+      authUsernameLabel: 'Логин',
+      authUsernamePlaceholder: 'Имя администратора',
+      authPasswordLabel: 'Пароль',
+      authPasswordPlaceholder: 'Пароль администратора',
+      authSubmit: 'Войти',
+      authCancel: 'Отмена',
+      authStatusChecking: 'Проверяем данные…',
+      authErrorMissing: 'Введите логин и пароль',
+      authErrorInvalid: 'Неверные учётные данные',
+      authErrorNetwork: 'Не удалось проверить учётные данные',
+      errorAuthRequired: 'Нужен вход администратора',
       projectLabel: 'Проект',
       reloadProjects: 'Обновить',
       projectInfoNone: 'Проект не выбран',
@@ -1319,6 +1617,7 @@ const LANGUAGES = {
       errorStreaming: 'Ошибка потоковой передачи, смотрите консоль.',
       errorNoSSE: 'Этот браузер не поддерживает SSE.',
       attachmentLabel: 'Вложение',
+      sourcesTitle: 'Источники',
       roleUser: 'пользователь',
       roleAssistant: 'ассистент',
       roleSystem: 'система',
@@ -1399,6 +1698,7 @@ const LANGUAGES = {
       errorStreaming: '流式传输错误，请查看控制台。',
       errorNoSSE: '此浏览器不支持 SSE。',
       attachmentLabel: '附件',
+      sourcesTitle: '来源',
       roleUser: '用户',
       roleAssistant: '助手',
       roleSystem: '系统',
@@ -1479,6 +1779,7 @@ const LANGUAGES = {
       errorStreaming: 'ストリーミングエラー。コンソールを確認してください。',
       errorNoSSE: 'このブラウザは SSE をサポートしていません。',
       attachmentLabel: '添付ファイル',
+      sourcesTitle: '出典',
       roleUser: 'ユーザー',
       roleAssistant: 'アシスタント',
       roleSystem: 'システム',
@@ -1559,6 +1860,7 @@ const LANGUAGES = {
       errorStreaming: 'خطأ في البث، راجع وحدة التحكم.',
       errorNoSSE: 'هذا المتصفح لا يدعم SSE.',
       attachmentLabel: 'مرفق',
+      sourcesTitle: 'المصادر',
       roleUser: 'مستخدم',
       roleAssistant: 'مساعد',
       roleSystem: 'نظام',
@@ -1605,6 +1907,280 @@ function translateStatus(key) {
   const target = map[normalized];
   if (target) return t(target);
   return key;
+}
+
+const AUTH_CANCELLED_CODE = 'AUTH_CANCELLED';
+const adminAuthHeaders = new Map();
+let authModalPromise = null;
+let authModalResolver = null;
+let authModalBase = '';
+const ADMIN_USER_STORAGE_KEY = 'chat_widget_admin_user';
+
+function getCurrentBaseValue() {
+  return (baseUrlInput?.value || '').trim();
+}
+
+function normalizeAuthBase(base) {
+  const raw = (base || '').trim();
+  if (!raw) return '';
+  return raw.replace(/\/$/, '');
+}
+
+function getBaseKey(base) {
+  const normalized = normalizeAuthBase(base);
+  if (!normalized) return window.location.origin;
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    try {
+      return new URL(normalized, window.location.origin).origin;
+    } catch {
+      return normalized;
+    }
+  }
+}
+
+function buildAdminUrl(path, base) {
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = normalizeAuthBase(base);
+  if (!normalized) return path;
+  return `${normalized}${path}`;
+}
+
+function computeAuthHost(base) {
+  const normalized = normalizeAuthBase(base);
+  if (!normalized) return window.location.origin;
+  try {
+    return new URL(normalized).origin;
+  } catch {
+    try {
+      return new URL(normalized, window.location.origin).origin;
+    } catch {
+      return normalized;
+    }
+  }
+}
+
+function getStoredAdminUser() {
+  try {
+    return localStorage.getItem(ADMIN_USER_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function setStoredAdminUser(username) {
+  try {
+    if (username) {
+      localStorage.setItem(ADMIN_USER_STORAGE_KEY, username);
+    } else {
+      localStorage.removeItem(ADMIN_USER_STORAGE_KEY);
+    }
+  } catch {}
+}
+
+function setAuthErrorKey(key) {
+  if (!authError) return;
+  if (key) {
+    authError.dataset.key = key;
+    authError.textContent = t(key);
+  } else {
+    delete authError.dataset.key;
+    authError.textContent = '';
+  }
+}
+
+function setAuthSubmitting(state) {
+  if (authSubmitBtn) authSubmitBtn.disabled = state;
+  if (authCancelBtn) authCancelBtn.disabled = state;
+  if (state) {
+    setAuthErrorKey('authStatusChecking');
+  } else if (authError && authError.dataset.key === 'authStatusChecking') {
+    setAuthErrorKey('');
+  }
+}
+
+function updateAuthHint(base) {
+  if (!authHint) return;
+  const host = computeAuthHost(base);
+  authHint.dataset.host = host;
+  authHint.textContent = t('authHint').replace('{host}', host);
+}
+
+function showAuthModal(base) {
+  if (!authModal) return;
+  authModalBase = normalizeAuthBase(base);
+  updateAuthHint(authModalBase || window.location.origin);
+  if (authModal.dataset.visible === 'true') return;
+  setAuthSubmitting(false);
+  setAuthErrorKey('');
+  if (authMessage) authMessage.textContent = t('authPrompt');
+  if (authPasswordInput) authPasswordInput.value = '';
+  if (authUserInput && !authUserInput.value) {
+    const storedUser = getStoredAdminUser();
+    if (storedUser) authUserInput.value = storedUser;
+  }
+  authModal.dataset.visible = 'true';
+  document.body.classList.add('modal-open');
+  setTimeout(() => {
+    authUserInput?.focus();
+    authUserInput?.select?.();
+  }, 20);
+}
+
+function hideAuthModal() {
+  if (!authModal) return;
+  authModal.dataset.visible = 'false';
+  document.body.classList.remove('modal-open');
+  setAuthSubmitting(false);
+}
+
+function cancelAuthModal() {
+  if (!authModal || authModal.dataset.visible !== 'true') return;
+  hideAuthModal();
+  if (authModalResolver) authModalResolver(false);
+}
+
+async function verifyAdminCredentials(base, header) {
+  const url = buildAdminUrl('/api/v1/admin/session', base);
+  try {
+    const response = await fetch(url, {
+      headers: { Authorization: header },
+      credentials: 'same-origin',
+    });
+    return { ok: response.ok, status: response.status };
+  } catch (error) {
+    return { ok: false, status: 0, error };
+  }
+}
+
+function setAuthHeaderForBase(base, header) {
+  adminAuthHeaders.set(getBaseKey(base), header);
+}
+
+function getAuthHeaderForBase(base) {
+  return adminAuthHeaders.get(getBaseKey(base)) || null;
+}
+
+function clearAuthHeaderForBase(base) {
+  adminAuthHeaders.delete(getBaseKey(base));
+}
+
+function requestAdminAuth(base) {
+  if (!authModal) return Promise.resolve(false);
+  if (authModalPromise) return authModalPromise;
+  showAuthModal(base);
+  authModalPromise = new Promise((resolve) => {
+    authModalResolver = (value) => {
+      resolve(Boolean(value));
+    };
+  }).finally(() => {
+    authModalPromise = null;
+    authModalResolver = null;
+  });
+  return authModalPromise;
+}
+
+function createAuthCancelledError() {
+  const error = new Error('admin-auth-cancelled');
+  error.code = AUTH_CANCELLED_CODE;
+  return error;
+}
+
+async function fetchAdmin(path, init = {}) {
+  const base = normalizeAuthBase(getCurrentBaseValue());
+  const url = /^https?:\/\//i.test(path) ? path : buildAdminUrl(path, base);
+  const attempt = async () => {
+    const headers = new Headers(init.headers || {});
+    const token = getAuthHeaderForBase(base);
+    if (token && !headers.has('Authorization')) {
+      headers.set('Authorization', token);
+    }
+    const options = { ...init, headers };
+    return fetch(url, options);
+  };
+
+  let response;
+  try {
+    response = await attempt();
+  } catch (error) {
+    throw error;
+  }
+
+  if (response.status !== 401) {
+    if (response.status === 403) {
+      clearAuthHeaderForBase(base);
+    }
+    return response;
+  }
+
+  const authenticated = await requestAdminAuth(base);
+  if (!authenticated) {
+    throw createAuthCancelledError();
+  }
+
+  response = await attempt();
+  if (response.status === 401) {
+    clearAuthHeaderForBase(base);
+  }
+  return response;
+}
+
+async function handleAuthSubmit(event) {
+  event?.preventDefault?.();
+  if (!authForm) return;
+  const username = (authUserInput?.value || '').trim();
+  const password = authPasswordInput?.value || '';
+  if (!username || !password) {
+    setAuthErrorKey('authErrorMissing');
+    if (!username) authUserInput?.focus();
+    else authPasswordInput?.focus();
+    return;
+  }
+
+  const header = `Basic ${btoa(`${username}:${password}`)}`;
+  setAuthSubmitting(true);
+  const result = await verifyAdminCredentials(authModalBase, header);
+  setAuthSubmitting(false);
+
+  if (!result.ok) {
+    if (result.status === 401) {
+      setAuthErrorKey('authErrorInvalid');
+      if (authPasswordInput) {
+        authPasswordInput.value = '';
+        authPasswordInput.focus();
+      }
+    } else {
+      setAuthErrorKey('authErrorNetwork');
+    }
+    return;
+  }
+
+  setAuthHeaderForBase(authModalBase, header);
+  setStoredAdminUser(username);
+  if (authPasswordInput) authPasswordInput.value = '';
+  hideAuthModal();
+  if (authModalResolver) authModalResolver(true);
+}
+
+if (authForm) {
+  authForm.addEventListener('submit', handleAuthSubmit);
+}
+
+if (authCancelBtn) {
+  authCancelBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    cancelAuthModal();
+  });
+}
+
+if (authModal) {
+  authModal.addEventListener('click', (event) => {
+    if (event.target === authModal || event.target.classList.contains('auth-backdrop')) {
+      event.preventDefault();
+      cancelAuthModal();
+    }
+  });
 }
 
 function populateLanguageOptions() {
@@ -1703,6 +2279,47 @@ function initVoiceOptions() {
   }
 }
 
+function initSpeechRateControl() {
+  if (!speechRateInput) return;
+  try {
+    const stored = localStorage.getItem(SPEECH_RATE_STORAGE_KEY);
+    if (stored) {
+      speechRateInput.value = stored;
+    }
+  } catch {}
+  updateSpeechRateDisplay();
+  const applyRate = () => {
+    const value = getSpeechRateValue();
+    if (speechRateInput) {
+      speechRateInput.value = value.toFixed(2);
+    }
+    updateSpeechRateDisplay();
+    try {
+      localStorage.setItem(SPEECH_RATE_STORAGE_KEY, value.toFixed(2));
+    } catch {}
+    if (currentVoicePreviewInstance?.setSpeechRate) {
+      currentVoicePreviewInstance.setSpeechRate(value);
+    }
+    refreshVoiceSnippet();
+  };
+  speechRateInput.addEventListener('input', applyRate);
+  speechRateInput.addEventListener('change', applyRate);
+  if (voiceTestBtn) {
+    voiceTestBtn.disabled = selectedVoiceMode === 'text' || !currentVoicePreviewInstance;
+    voiceTestBtn.addEventListener('click', (event) => {
+      event.preventDefault();
+      const text = (voiceTestTextarea?.value || '').trim();
+      if (!text) {
+        voiceTestTextarea?.focus();
+        return;
+      }
+      if (!currentVoicePreviewInstance?.speakTest || !currentVoicePreviewInstance.speakTest(text)) {
+        console.warn('Voice preview is unavailable for the current mode.');
+      }
+    });
+  }
+}
+
 function openFeedbackPanel() {
   if (!feedbackPanel) return;
   feedbackPanel.classList.add('show');
@@ -1790,11 +2407,26 @@ function getEmbedConfig() {
   return { baseUrl: base, project, accent, theme, reading };
 }
 
+function getSpeechRateValue() {
+  const raw = parseFloat(speechRateInput?.value || '1');
+  if (!Number.isFinite(raw)) return 1;
+  return Math.min(2, Math.max(0.5, raw));
+}
+
+function updateSpeechRateDisplay() {
+  if (!speechRateDisplay) return;
+  const rate = getSpeechRateValue();
+  speechRateDisplay.textContent = `×${rate.toFixed(2)}`;
+}
+
 function getVoiceConfig() {
   const core = getEmbedConfig();
   const lang = (avatarLangInput?.value || 'ru-RU').trim() || 'ru-RU';
   const voice = (avatarVoiceInput?.value || '').trim();
-  return { ...core, lang, voice };
+  const mode = selectedVoiceMode;
+  const avatarCharacter = mode === 'avatar' ? (selectedAvatarCharacter || 'luna') : '';
+  const speechRate = getSpeechRateValue();
+  return { ...core, lang, voice, mode, avatarCharacter, speechRate };
 }
 
 function indentAttributes(attrs) {
@@ -1848,14 +2480,18 @@ function buildVoiceSnippet(cfg) {
     `src="${cfg.baseUrl}/widget/voice-avatar.js"`,
     `data-base-url="${cfg.baseUrl}"`,
     cfg.project ? `data-project="${cfg.project}"` : '',
+    `data-mode="${cfg.mode || 'voice'}"`,
     `data-lang="${cfg.lang}"`,
     cfg.voice ? `data-voice="${cfg.voice}"` : '',
     cfg.voiceModel ? `data-voice-model="${cfg.voiceModel}"` : '',
+    Math.abs((cfg.speechRate ?? 1) - 1) > 0.001 ? `data-speech-rate="${Number(cfg.speechRate).toFixed(2)}"` : '',
     `data-label="AI"`,
     `data-headline="${t('chatTitle')}"`,
     `data-subtitle="${t('chatSubtitle')}"`,
     `data-color="${cfg.accent}"`,
-    cfg.reading ? 'data-reading-mode="1"' : ''
+    cfg.reading ? 'data-reading-mode="1"' : '',
+    cfg.mode === 'avatar' ? 'data-avatar-animated="1"' : '',
+    cfg.mode === 'avatar' && cfg.avatarCharacter ? `data-avatar-character="${cfg.avatarCharacter}"` : ''
   ];
   return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
@@ -1870,6 +2506,13 @@ function translateVoiceMessage(key, params) {
 
 function renderVoiceHint() {
   if (!voiceFeatureHint) return;
+  if (selectedVoiceMode === 'text') {
+    let message = t('avatarHintTextMode');
+    voiceFeatureHint.textContent = widgetReadingMode || pageReadingMode
+      ? `${message} ${t('avatarHintReadingMode')}`
+      : message;
+    return;
+  }
   let key = 'avatarHintSelectProject';
   let params = null;
   switch (voiceHintState.status) {
@@ -1893,7 +2536,13 @@ function renderVoiceHint() {
     default:
       key = 'avatarHintSelectProject';
   }
+  if (selectedVoiceMode === 'avatar' && key === 'avatarHintEnabled') {
+    key = 'avatarHintAvatarMode';
+  }
   let text = translateVoiceMessage(key, params);
+  if (selectedVoiceMode === 'avatar' && key !== 'avatarHintAvatarMode') {
+    text = `${text} ${t('avatarHintAvatarAppend')}`;
+  }
   if (widgetReadingMode || pageReadingMode) {
     text = `${text} ${t('avatarHintReadingMode')}`;
   }
@@ -1905,6 +2554,86 @@ function setVoiceHint(status, model) {
   voiceHintState.model = model || null;
   renderVoiceHint();
 }
+
+function applyVoiceModeUi() {
+  const mode = selectedVoiceMode;
+  avatarModeOptions.forEach((option) => {
+    const value = (option.dataset.modeOption || '').toLowerCase();
+    const isActive = value === mode;
+    option.classList.toggle('is-active', isActive);
+    const radio = option.querySelector('input[type="radio"]');
+    if (radio) {
+      radio.checked = isActive;
+    }
+  });
+  const disableVoice = mode === 'text';
+  if (avatarLangInput) {
+    avatarLangInput.disabled = disableVoice;
+  }
+  if (avatarVoiceInput) {
+    avatarVoiceInput.disabled = disableVoice;
+  }
+  if (voiceGridEl) {
+    voiceGridEl.classList.toggle('is-disabled', disableVoice);
+  }
+  if (speechRateInput) {
+    speechRateInput.disabled = disableVoice;
+  }
+  if (speechRateDisplay) {
+    speechRateDisplay.style.opacity = disableVoice ? '0.4' : '1';
+  }
+  if (voiceTestTextarea) {
+    voiceTestTextarea.disabled = disableVoice;
+  }
+  if (voiceTestBtn) {
+    voiceTestBtn.disabled = disableVoice || !currentVoicePreviewInstance;
+  }
+  updateSpeechRateDisplay();
+  const showCharacters = mode === 'avatar';
+  if (showCharacters && !selectedAvatarCharacter) {
+    selectedAvatarCharacter = 'luna';
+  }
+  if (avatarCharacterPanel) {
+    avatarCharacterPanel.hidden = !showCharacters;
+  }
+  avatarCharacterCards.forEach((card) => {
+    const value = (card.dataset.avatarOption || '').toLowerCase();
+    const isActive = showCharacters && (value === selectedAvatarCharacter || (!selectedAvatarCharacter && value === 'luna'));
+    card.classList.toggle('is-active', isActive);
+    card.disabled = !showCharacters;
+    card.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+}
+
+function setVoiceMode(mode, options = {}) {
+  const normalized = typeof mode === 'string' ? mode.trim().toLowerCase() : '';
+  const allowed = normalized === 'text' || normalized === 'avatar' ? normalized : 'voice';
+  selectedVoiceMode = allowed;
+  applyVoiceModeUi();
+  if (!options.skipHint) {
+    renderVoiceHint();
+  }
+  if (!options.skipRefresh) {
+    refreshVoiceSnippet();
+  }
+}
+
+document.addEventListener('sitellm-voice-avatar-ready', (event) => {
+  const detail = event.detail || null;
+  if (!detail) return;
+  currentVoicePreviewInstance = detail;
+  if (currentVoicePreviewInstance.setSpeechRate) {
+    currentVoicePreviewInstance.setSpeechRate(getSpeechRateValue());
+  }
+  applyVoiceModeUi();
+});
+
+document.addEventListener('sitellm-voice-avatar-destroyed', (event) => {
+  if (event.detail && event.detail === currentVoicePreviewInstance) {
+    currentVoicePreviewInstance = null;
+    applyVoiceModeUi();
+  }
+});
 
 function renderVoicePlaceholderFromState() {
   if (!voiceAvatarHost || !voicePlaceholderState.key) return;
@@ -1991,16 +2720,18 @@ async function updateVoicePreview() {
     if (token !== voicePreviewToken) return;
     remoteVoiceState = { key: stateKey, enabled: remote.enabled, model: remote.model };
     setVoiceSnippetText();
-    if (!remote.enabled) {
+    const voiceAllowed = remote.enabled || selectedVoiceMode === 'text';
+    if (!voiceAllowed) {
       showVoicePlaceholder('avatarHintDisabled');
       setVoiceHint('disabled');
       if (avatarCopyBtn) avatarCopyBtn.disabled = true;
       return;
     }
-    setVoiceHint(remote.model ? 'enabled-model' : 'enabled', remote.model);
+    const hintStatus = remote.enabled && remote.model ? 'enabled-model' : 'enabled';
+    setVoiceHint(hintStatus, remote.enabled ? remote.model : null);
     if (avatarCopyBtn) avatarCopyBtn.disabled = false;
     voicePlaceholderState = { key: null, params: null };
-    renderVoiceAvatarDemo({ ...cfg, voiceModel: remote.model });
+    renderVoiceAvatarDemo({ ...cfg, voiceModel: remote.enabled ? remote.model : null });
   } catch (error) {
     if (token !== voicePreviewToken) return;
     console.error(error);
@@ -2008,7 +2739,9 @@ async function updateVoicePreview() {
     setVoiceSnippetText();
     showVoicePlaceholder('avatarHintError');
     setVoiceHint('error');
-    if (avatarCopyBtn) avatarCopyBtn.disabled = true;
+    if (avatarCopyBtn) {
+      avatarCopyBtn.disabled = selectedVoiceMode !== 'text';
+    }
   }
 }
 
@@ -2049,13 +2782,22 @@ function renderVoiceAvatarDemo(cfgOverride) {
   voicePlaceholderState = { key: null, params: null };
   voiceAvatarHost.innerHTML = '';
   const script = document.createElement('script');
-  script.src = 'voice-avatar.js';
+  const cacheBuster = Date.now().toString(36);
+  script.src = `voice-avatar.js?v=${cacheBuster}`;
   script.dataset.baseUrl = cfg.baseUrl;
   if (cfg.project) script.dataset.project = cfg.project;
   script.dataset.lang = cfg.lang;
+  script.dataset.mode = cfg.mode || 'voice';
   if (cfg.voice) script.dataset.voice = cfg.voice;
   if (cfg.voiceModel) script.dataset.voiceModel = cfg.voiceModel;
-   if (cfg.reading) script.dataset.readingMode = '1';
+  if (cfg.speechRate) script.dataset.speechRate = String(cfg.speechRate);
+  if (cfg.reading) script.dataset.readingMode = '1';
+  if (cfg.mode === 'avatar') {
+    script.dataset.avatarAnimated = '1';
+    if (cfg.avatarCharacter) {
+      script.dataset.avatarCharacter = cfg.avatarCharacter;
+    }
+  }
   script.dataset.label = 'AI';
   script.dataset.headline = t('chatTitle');
   script.dataset.subtitle = t('chatSubtitle');
@@ -2133,6 +2875,23 @@ function initEmbedShowcase() {
   };
   avatarVoiceInput?.addEventListener('input', handleVoiceInput);
   avatarVoiceInput?.addEventListener('change', handleVoiceInput);
+  avatarModeInputs.forEach((input) => {
+    input?.addEventListener('change', () => {
+      if (input.checked) {
+        setVoiceMode(input.value);
+      }
+    });
+  });
+  avatarCharacterCards.forEach((card) => {
+    card?.addEventListener('click', () => {
+      if (card.disabled) return;
+      const value = (card.dataset.avatarOption || '').toLowerCase();
+      if (!value) return;
+      selectedAvatarCharacter = value;
+      applyVoiceModeUi();
+      refreshVoiceSnippet();
+    });
+  });
 
   if (embedCopyBtn) {
     embedCopyBtn.addEventListener('click', () => {
@@ -2145,6 +2904,9 @@ function initEmbedShowcase() {
     });
   }
 
+  applyVoiceModeUi();
+  renderVoiceHint();
+  initSpeechRateControl();
   initVoiceOptions();
   refreshEmbedSnippet();
   refreshVoiceSnippet();
@@ -2175,6 +2937,16 @@ function applyLanguage(lang) {
     const key = node.dataset.i18nAriaLabel;
     node.setAttribute('aria-label', t(key));
   });
+
+  if (authHint) {
+    const hostValue = authHint.dataset.host || computeAuthHost(getCurrentBaseValue());
+    authHint.dataset.host = hostValue;
+    authHint.textContent = t('authHint').replace('{host}', hostValue);
+  }
+
+  if (authError && authError.dataset.key) {
+    authError.textContent = t(authError.dataset.key);
+  }
 
   if (healthText) {
     const statusKey = healthText.dataset.statusKey || 'unknown';
@@ -2287,7 +3059,7 @@ let currentES = null;
 let streaming = false;
 let tokenChars = 0;
 let streamingMessageEl = null;
-let projectsCache = {};
+let projectsCache = [];
 
 if (isEmbed) {
   document.body.classList.add('embed');
@@ -2309,7 +3081,14 @@ if (widgetLauncher) widgetLauncher.addEventListener('click', openChat);
 if (chatClose) chatClose.addEventListener('click', closeChat);
 if (chatBackdrop) chatBackdrop.addEventListener('click', closeChat);
 document.addEventListener('keydown', (evt) => {
-  if (evt.key === 'Escape') closeChat();
+  if (evt.key === 'Escape') {
+    if (authModal?.dataset.visible === 'true') {
+      evt.preventDefault();
+      cancelAuthModal();
+      return;
+    }
+    closeChat();
+  }
 });
 
 // Load saved base URL
@@ -2403,7 +3182,11 @@ function appendMessage(text, role = 'assistant', meta = {}) {
   wrapper.appendChild(head);
   const body = document.createElement('div');
   body.className = 'msg-body';
-  body.textContent = text;
+  let displayText = text;
+  if ((!displayText || !String(displayText).trim()) && Array.isArray(meta.sources) && meta.sources.length) {
+    displayText = t('sourcesTitle');
+  }
+  body.textContent = displayText || '';
   wrapper.appendChild(body);
   if (meta.attachments?.length) {
     const attachmentsRoot = document.createElement('div');
@@ -2441,6 +3224,26 @@ function appendMessage(text, role = 'assistant', meta = {}) {
       attachmentsRoot.appendChild(attEl);
     });
     wrapper.appendChild(attachmentsRoot);
+  }
+  if (Array.isArray(meta.sources) && meta.sources.length) {
+    const sourcesRoot = document.createElement('div');
+    sourcesRoot.className = 'msg-sources';
+    const list = document.createElement('div');
+    list.className = 'msg-sources-list';
+    meta.sources.forEach((entry, index) => {
+      if (!entry || !entry.url) return;
+      const link = document.createElement('a');
+      link.href = entry.url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = entry.name || entry.url;
+      link.dataset.index = String(index + 1);
+      list.appendChild(link);
+    });
+    if (list.children.length) {
+      sourcesRoot.appendChild(list);
+      wrapper.appendChild(sourcesRoot);
+    }
   }
   messages.appendChild(wrapper);
   messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
@@ -2485,28 +3288,37 @@ function setStreamingState(value) {
 }
 
 async function loadProjects() {
-  const base = baseUrlInput.value.trim();
-  const url = base ? `${base.replace(/\/$/, '')}/api/v1/admin/projects/names` : '/api/v1/admin/projects/names';
   try {
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('Failed to load projects');
+    const resp = await fetchAdmin('/api/v1/admin/projects/names');
+    if (resp.status === 401) {
+      bannerError(t('errorAuthRequired'));
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
-    projectsCache = data.projects || [];
-    projectSelect.innerHTML = '';
-    projectsCache.forEach((name) => {
-      const option = document.createElement('option');
-      option.value = name;
-      option.textContent = name;
-      projectSelect.appendChild(option);
-    });
+    let items = data.projects || [];
+    if (!Array.isArray(items)) items = [];
+    projectsCache = items;
+    if (projectSelect) {
+      projectSelect.innerHTML = '';
+      projectsCache.forEach((name) => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        projectSelect.appendChild(option);
+      });
+    }
     if (currentProject && projectsCache.includes(currentProject)) {
       projectSelect.value = currentProject;
     } else if (projectsCache.length) {
       currentProject = projectsCache[0];
-      projectSelect.value = currentProject;
+      if (projectSelect) projectSelect.value = currentProject;
     }
     updateProjectInfo();
   } catch (error) {
+    if (error && error.code === AUTH_CANCELLED_CODE) {
+      return;
+    }
     console.error(error);
     bannerError(t('errorLoadProjects'));
   }
@@ -2537,23 +3349,34 @@ debugCheckbox.addEventListener('change', () => {
 });
 
 savePromptBtn.addEventListener('click', async () => {
-  const base = baseUrlInput.value.trim();
-  const url = base ? `${base.replace(/\/$/, '')}/api/v1/admin/projects/${encodeURIComponent(currentProject)}` : `/api/v1/admin/projects/${encodeURIComponent(currentProject)}`;
+  if (!currentProject) {
+    promptStatus.textContent = t('projectInfoNone');
+    return;
+  }
+  const path = `/api/v1/admin/projects/${encodeURIComponent(currentProject)}`;
   const payload = {
     name: currentProject,
     llm_prompt: startPromptInput.value,
   };
   promptStatus.textContent = t('statusSaving');
   try {
-    const resp = await fetch(url, {
+    const resp = await fetchAdmin(path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    if (!resp.ok) throw new Error('Failed');
+    if (resp.status === 401) {
+      promptStatus.textContent = t('errorAuthRequired');
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     promptStatus.textContent = t('statusSaved');
     setTimeout(() => (promptStatus.textContent = ''), 3000);
   } catch (error) {
+    if (error && error.code === AUTH_CANCELLED_CODE) {
+      promptStatus.textContent = '';
+      return;
+    }
     console.error(error);
     promptStatus.textContent = t('statusError');
   }
@@ -2643,6 +3466,18 @@ async function sendQuestion(question) {
       saveHistory();
     } catch (error) {
       console.error('debug parse error', error);
+    }
+  });
+
+  currentES.addEventListener('sources', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      const entries = Array.isArray(data?.entries) ? data.entries : [];
+      if (!entries.length) return;
+      appendMessage('', 'assistant', { sources: entries });
+      saveHistory();
+    } catch (error) {
+      console.error('sources parse error', error, event.data);
     }
   });
 

@@ -19,6 +19,8 @@ class CrawlRequest(BaseModel):
     domain: str | None = None
     project: str | None = None
     mongo_uri: str | None = None
+    collect_medex: bool | None = None
+    collect_books: bool | None = None
 
 
 class CrawlResponse(BaseModel):
@@ -36,5 +38,7 @@ def run_crawler(request: CrawlRequest) -> CrawlResponse:
         project=request.project,
         mongo_uri=request.mongo_uri or DEFAULT_MONGO_URI,
         job_id=job_id,
+        collect_medex=request.collect_medex,
+        collect_books=request.collect_books,
     )
     return CrawlResponse(job_id=job_id)

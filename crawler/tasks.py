@@ -25,6 +25,8 @@ def start_crawl(
     project: str | None = None,
     mongo_uri: str = DEFAULT_MONGO_URI,
     job_id: Optional[str] = None,
+    collect_medex: Optional[bool] = None,
+    collect_books: Optional[bool] = None,
 ) -> str:
     """Run the crawler asynchronously and report progress."""
     job_id = job_id or str(uuid4())
@@ -49,6 +51,8 @@ def start_crawl(
         project_name=project,
         mongo_uri=mongo_uri,
         progress_callback=on_progress,
+        collect_medex=collect_medex,
+        collect_books=collect_books,
     )
 
     try:

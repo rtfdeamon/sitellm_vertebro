@@ -6,7 +6,12 @@ from pathlib import Path
 import sys
 
 import pytest
-from httpx import AsyncClient
+import fastapi
+import fastapi.responses
+from httpx import ASGITransport, AsyncClient, BasicAuth
+
+sys.modules["fastapi"] = fastapi
+sys.modules["fastapi.responses"] = fastapi.responses
 
 APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
 APP_SPEC = importlib.util.spec_from_file_location("app_stats", APP_PATH)
@@ -72,14 +77,32 @@ class _FakeQdrantClient:
 
 
 @pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
 async def client(monkeypatch):
     monkeypatch.setattr(app_module, "MongoClient", _FakeMongo, raising=False)
     monkeypatch.setattr(app_module, "QdrantClient", _FakeQdrantClient, raising=False)
-    async with AsyncClient(app=app_module.app, base_url="http://test") as async_client:
+    app_module.app.state.mongo = _FakeMongo()
+    app_module.app.state.qdrant = _FakeQdrantClient()
+    app_module.StreamingResponse = fastapi.responses.StreamingResponse
+
+    async def _bypass(self, request, call_next):
+        return await call_next(request)
+
+    monkeypatch.setattr(app_module.BasicAuthMiddleware, "dispatch", _bypass, raising=False)
+    transport = ASGITransport(app=app_module.app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        auth=BasicAuth("admin", "admin"),
+    ) as async_client:
         yield async_client
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_request_stats_summary(client):
     response = await client.get("/api/v1/admin/stats/requests")
     assert response.status_code == 200
@@ -87,7 +110,7 @@ async def test_request_stats_summary(client):
     assert payload["stats"][0]["count"] == 1
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio("asyncio")
 async def test_request_stats_export(client):
     response = await client.get("/api/v1/admin/stats/requests/export")
     assert response.status_code == 200

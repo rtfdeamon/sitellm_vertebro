@@ -1,21 +1,34 @@
-"""Celery worker tasks for updating the Redis vector store."""
+"""Celery worker tasks for updating the Redis vector store and voice models."""
 
+import asyncio
+import os
 import re
 import time
 from collections.abc import Generator
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Dict
 from urllib.parse import quote_plus
 
 from bson import ObjectId
 from gridfs import GridFS
-from pymongo import MongoClient
+from pymongo import MongoClient as SyncMongoClient
 from celery import Celery
 from celery.schedules import crontab
 from celery.signals import worker_ready
 
 import structlog
 
-from models import Document
+from backup import (
+    BackupError,
+    build_mongo_uri,
+    normalize_remote_folder,
+    perform_backup,
+    perform_restore,
+    should_run_backup,
+)
+from models import BackupOperation, BackupStatus, Document, VoiceTrainingStatus
+from mongo import MongoClient as AsyncMongoClient
 from settings import Settings
 from vectors import DocumentsParser
 from yallm import YaLLMEmbeddings
@@ -30,6 +43,15 @@ settings = Settings()
 
 logger = structlog.get_logger(__name__)
 
+VOICE_MIN_SAMPLE_COUNT = int(os.getenv("VOICE_MIN_SAMPLE_COUNT", "3"))
+
+BACKUP_DUMP_BINARY = os.getenv("MONGODUMP_BIN", "mongodump")
+BACKUP_RESTORE_BINARY = os.getenv("MONGORESTORE_BIN", "mongorestore")
+try:
+    BACKUP_TIMEOUT_SECONDS = float(os.getenv("BACKUP_TIMEOUT_SECONDS", "900"))
+except (TypeError, ValueError):  # pragma: no cover - fallback to sensible default
+    BACKUP_TIMEOUT_SECONDS = 900.0
+
 celery = Celery(__name__)
 celery.conf.broker_url = settings.celery.broker
 celery.conf.result_backend = settings.celery.result
@@ -42,6 +64,10 @@ celery.conf.beat_schedule = {
     "status-report-every-30s": {
         "task": "status.report",
         "schedule": 30.0,
+    },
+    "backup-scheduler": {
+        "task": "backup.scheduler",
+        "schedule": 300.0,
     },
 }
 
@@ -130,7 +156,7 @@ def update_vector_store():
 
 
 def get_documents_sync(
-    mongo_client: MongoClient,
+    mongo_client: SyncMongoClient,
     *,
     filter_query: Dict[str, object] | None = None,
 ) -> Generator[tuple[Document, bytes], None]:
@@ -163,14 +189,14 @@ def get_documents_sync(
         yield document, file.read()
 
 
-def get_mongo_client() -> MongoClient:
+def get_mongo_client() -> SyncMongoClient:
     """Return a synchronous MongoDB client.
 
     Uses credentials from :class:`Settings` to construct the connection URL.
     """
     url = f"mongodb://{quote_plus(settings.mongo.username)}:{quote_plus(settings.mongo.password)}@{settings.mongo.host}:{settings.mongo.port}/{settings.mongo.auth}"
     logger.info("connect mongo", host=settings.mongo.host)
-    return MongoClient(url)
+    return SyncMongoClient(url)
 
 
 def get_document_parser() -> DocumentsParser:
@@ -190,6 +216,25 @@ def get_document_parser() -> DocumentsParser:
         settings.redis.password,
         settings.redis.secure,
     )
+
+
+def _create_async_mongo() -> AsyncMongoClient:
+    cfg = settings.mongo
+    return AsyncMongoClient(
+        cfg.host,
+        cfg.port,
+        cfg.username,
+        cfg.password,
+        cfg.database,
+        cfg.auth,
+    )
+
+
+def _resolve_zone(name: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo(name or "UTC")
+    except Exception:  # noqa: BLE001 - default to UTC on invalid tz specification
+        return ZoneInfo("UTC")
 
 
 BREADCRUMB_SEPARATORS = re.compile(r"\s*[>/\\»|-]+\s*")
@@ -334,3 +379,295 @@ def status_report():
         failed=s["crawler"]["failed"],
         last=s["crawler"]["last_url"],
     )
+
+
+async def _schedule_backup_if_needed() -> None:
+    client = _create_async_mongo()
+    try:
+        settings_model = await client.get_backup_settings()
+        if not should_run_backup(settings_model):
+            return
+
+        token = await client.get_backup_token()
+        if not token:
+            logger.warning("backup_schedule_token_absent")
+            return
+
+        active = await client.find_active_backup_job()
+        if active:
+            logger.debug("backup_job_already_queued", job_id=active.id)
+            return
+
+        job = await client.create_backup_job(
+            operation=BackupOperation.backup,
+            status=BackupStatus.queued,
+            triggered_by="scheduler",
+        )
+        zone = _resolve_zone(settings_model.timezone)
+        today_label = datetime.now(zone).date().isoformat()
+        await client.record_backup_runtime(last_attempt_date=today_label)
+        backup_execute.delay(job.id)
+        logger.info(
+            "backup_job_scheduled",
+            job_id=job.id,
+            folder=settings_model.ya_disk_folder,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("backup_schedule_failed", error=str(exc))
+    finally:
+        await client.close()
+
+
+async def _execute_backup_job(job_id: str) -> None:
+    client = _create_async_mongo()
+    try:
+        job = await client.get_backup_job(job_id)
+        if not job:
+            logger.warning("backup_job_missing", job_id=job_id)
+            return
+
+        settings_model = await client.get_backup_settings()
+        token = await client.get_backup_token()
+        if not token:
+            raise BackupError("ya_disk_token_missing")
+
+        mongo_cfg = settings.mongo
+        mongo_uri = build_mongo_uri(
+            mongo_cfg.host,
+            mongo_cfg.port,
+            mongo_cfg.username,
+            mongo_cfg.password,
+            mongo_cfg.auth,
+        )
+
+        now_ts = time.time()
+        await client.update_backup_job(
+            job_id,
+            {
+                "status": BackupStatus.running,
+                "started_at": now_ts,
+            },
+        )
+        zone = _resolve_zone(settings_model.timezone)
+        await client.record_backup_runtime(
+            last_run_at=now_ts,
+            last_attempt_date=datetime.now(zone).date().isoformat(),
+        )
+
+        try:
+            if job.operation is BackupOperation.backup or job.operation == BackupOperation.backup:
+                folder = normalize_remote_folder(settings_model.ya_disk_folder)
+                result = perform_backup(
+                    mongo_uri=mongo_uri,
+                    database=mongo_cfg.database,
+                    token=token,
+                    remote_folder=folder,
+                    dump_binary=BACKUP_DUMP_BINARY,
+                    timeout=BACKUP_TIMEOUT_SECONDS,
+                )
+                await client.update_backup_job(
+                    job_id,
+                    {
+                        "status": BackupStatus.completed,
+                        "finished_at": time.time(),
+                        "remote_path": result.remote_path,
+                        "size_bytes": result.size_bytes,
+                    },
+                )
+                await client.record_backup_runtime(last_success_at=time.time())
+                logger.info(
+                    "backup_job_completed",
+                    job_id=job_id,
+                    remote_path=result.remote_path,
+                    size=result.size_bytes,
+                )
+            elif job.operation is BackupOperation.restore or job.operation == BackupOperation.restore:
+                if not job.remote_path:
+                    raise BackupError("restore_remote_path_missing")
+                perform_restore(
+                    mongo_uri=mongo_uri,
+                    database=mongo_cfg.database,
+                    token=token,
+                    remote_path=job.remote_path,
+                    restore_binary=BACKUP_RESTORE_BINARY,
+                    timeout=BACKUP_TIMEOUT_SECONDS,
+                )
+                await client.update_backup_job(
+                    job_id,
+                    {
+                        "status": BackupStatus.completed,
+                        "finished_at": time.time(),
+                    },
+                )
+                logger.info(
+                    "backup_restore_completed",
+                    job_id=job_id,
+                    remote_path=job.remote_path,
+                )
+            else:  # pragma: no cover - defensive guard
+                raise BackupError(f"unsupported_operation:{job.operation}")
+        except BackupError as exc:
+            await client.update_backup_job(
+                job_id,
+                {
+                    "status": BackupStatus.failed,
+                    "finished_at": time.time(),
+                    "error": str(exc),
+                },
+            )
+            logger.error("backup_job_failed", job_id=job_id, error=str(exc))
+        except Exception as exc:  # noqa: BLE001
+            await client.update_backup_job(
+                job_id,
+                {
+                    "status": BackupStatus.failed,
+                    "finished_at": time.time(),
+                    "error": str(exc),
+                },
+            )
+            logger.exception("backup_job_exception", job_id=job_id)
+    finally:
+        await client.close()
+
+
+@celery.task(name="backup.scheduler")
+def backup_scheduler() -> None:
+    try:
+        asyncio.run(_schedule_backup_if_needed())
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("backup_scheduler_unhandled", error=str(exc))
+
+
+@celery.task(name="backup.execute")
+def backup_execute(job_id: str) -> None:
+    try:
+        asyncio.run(_execute_backup_job(job_id))
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("backup_execute_unhandled", job_id=job_id, error=str(exc))
+
+
+def _voice_job_update(collection, job_oid: ObjectId, *, status: VoiceTrainingStatus | None = None, progress: float | None = None, message: str | None = None, started: bool = False, finished: bool = False) -> None:
+    now = time.time()
+    payload: dict[str, object] = {
+        "updatedAt": now,
+        "updatedAtIso": datetime.utcfromtimestamp(now).isoformat(),
+    }
+    if status is not None:
+        payload["status"] = status.value if isinstance(status, VoiceTrainingStatus) else str(status)
+    if progress is not None:
+        payload["progress"] = float(progress)
+    if message is not None:
+        payload["message"] = message
+    if started:
+        payload["startedAt"] = now
+        payload["startedAtIso"] = datetime.utcfromtimestamp(now).isoformat()
+    if finished:
+        payload["finishedAt"] = now
+        payload["finishedAtIso"] = datetime.utcfromtimestamp(now).isoformat()
+
+    collection.update_one({"_id": job_oid}, {"$set": payload})
+
+
+@celery.task(name="voice.train_model")
+def voice_train_model(job_id: str) -> None:
+    """Simulate voice fine-tuning for the given project job."""
+
+    try:
+        job_oid = ObjectId(job_id)
+    except Exception:
+        logger.warning("voice_train_invalid_job", job_id=job_id)
+        return
+
+    client = get_mongo_client()
+    try:
+        db = client[settings.mongo.database]
+        samples_collection = db[settings.mongo.voice_samples]
+        jobs_collection = db[settings.mongo.voice_jobs]
+
+        job_doc = jobs_collection.find_one({"_id": job_oid})
+        if not job_doc:
+            logger.warning("voice_train_missing_job", job_id=job_id)
+            return
+
+        project = job_doc.get("project")
+        if not project:
+            logger.warning("voice_train_missing_project", job_id=job_id)
+            _voice_job_update(
+                jobs_collection,
+                job_oid,
+                status=VoiceTrainingStatus.failed,
+                message="Не указан проект",
+                finished=True,
+            )
+            return
+
+        sample_count = samples_collection.count_documents({"project": project})
+        if sample_count < VOICE_MIN_SAMPLE_COUNT:
+            logger.info(
+                "voice_train_insufficient_samples",
+                project=project,
+                samples=sample_count,
+                required=VOICE_MIN_SAMPLE_COUNT,
+            )
+            _voice_job_update(
+                jobs_collection,
+                job_oid,
+                status=VoiceTrainingStatus.failed,
+                progress=0.0,
+                message=f"Недостаточно дорожек ({sample_count}/{VOICE_MIN_SAMPLE_COUNT})",
+                finished=True,
+            )
+            return
+
+        logger.info("voice_train_started", project=project, job_id=job_id, samples=sample_count)
+        _voice_job_update(
+            jobs_collection,
+            job_oid,
+            status=VoiceTrainingStatus.preparing,
+            progress=0.05,
+            message="Готовим набор примеров",
+            started=True,
+        )
+        time.sleep(1.0)
+
+        _voice_job_update(
+            jobs_collection,
+            job_oid,
+            status=VoiceTrainingStatus.training,
+            progress=0.6,
+            message="Обучаем голосовую модель",
+        )
+        time.sleep(1.5)
+
+        _voice_job_update(
+            jobs_collection,
+            job_oid,
+            status=VoiceTrainingStatus.validating,
+            progress=0.85,
+            message="Проверяем результат",
+        )
+        time.sleep(1.2)
+
+        _voice_job_update(
+            jobs_collection,
+            job_oid,
+            status=VoiceTrainingStatus.completed,
+            progress=1.0,
+            message="Голосовой профиль готов",
+            finished=True,
+        )
+        logger.info("voice_train_completed", project=project, job_id=job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("voice_train_failed", job_id=job_id, error=str(exc))
+        db = client[settings.mongo.database]
+        jobs_collection = db[settings.mongo.voice_jobs]
+        _voice_job_update(
+            jobs_collection,
+            job_oid,
+            status=VoiceTrainingStatus.failed,
+            progress=0.0,
+            message="Ошибка при обучении",
+            finished=True,
+        )
+    finally:
+        client.close()

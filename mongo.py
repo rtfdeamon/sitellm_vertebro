@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
+from typing import Any
 from datetime import datetime, timezone, timedelta
 from contextlib import suppress
 from urllib.parse import quote_plus
@@ -18,7 +19,20 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pymongo.errors import ConfigurationError
 
 from backend.cache import _get_redis
-from models import ContextMessage, ContextPreset, Document, OllamaServer
+from models import (
+    BackupJob,
+    BackupOperation,
+    BackupSettings,
+    BackupStatus,
+    ContextMessage,
+    ContextPreset,
+    Document,
+    OllamaServer,
+    ReadingPage,
+    VoiceSample,
+    VoiceTrainingJob,
+    VoiceTrainingStatus,
+)
 try:
     from models import Project
 except ImportError:  # pragma: no cover - fallback for test stubs
@@ -31,6 +45,8 @@ except ImportError:  # pragma: no cover - fallback for test stubs
             return self.__dict__.copy()
 
 logger = structlog.get_logger(__name__)
+
+TOKEN_UNSET: object = object()
 
 
 class NotFound(Exception):
@@ -120,6 +136,9 @@ class MongoClient:
         self.unanswered_collection = os.getenv("MONGO_UNANSWERED", "knowledge_unanswered")
         self.feedback_collection = os.getenv("MONGO_FEEDBACK", "feedback_tasks")
         self.unanswered_collection = os.getenv("MONGO_UNANSWERED", "unanswered_questions")
+        self.voice_samples_collection = os.getenv("MONGO_VOICE_SAMPLES", "voice_samples")
+        self.voice_jobs_collection = os.getenv("MONGO_VOICE_JOBS", "voice_training_jobs")
+        self.backup_jobs_collection = os.getenv("MONGO_BACKUPS", "backup_jobs")
         self._indexes_ready = False
 
     async def is_query_empty(self, collection: str, query: dict) -> bool:
@@ -208,6 +227,221 @@ class MongoClient:
             raise
         except Exception as exc:
             logger.error("mongo_get_documents_failed", collection=collection, error=str(exc))
+            raise
+
+    async def get_reading_pages(
+        self,
+        collection: str,
+        project: str,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        url: str | None = None,
+    ) -> list[ReadingPage]:
+        """Return reading-mode pages for ``project`` sorted by ``order``."""
+
+        query: dict[str, Any] = {"project": project}
+        if url:
+            query["url"] = url
+
+        try:
+            cursor = (
+                self.db[collection]
+                .find(query, {"_id": False})
+                .sort([("order", 1), ("updatedAt", -1)])
+            )
+            if offset:
+                cursor = cursor.skip(offset)
+            if limit:
+                cursor = cursor.limit(limit)
+            return [ReadingPage(**doc) async for doc in cursor]
+        except Exception as exc:
+            logger.error(
+                "mongo_get_reading_pages_failed",
+                collection=collection,
+                project=project,
+                error=str(exc),
+            )
+            raise
+
+    async def count_reading_pages(self, collection: str, project: str) -> int:
+        """Return total number of reading-mode pages for ``project``."""
+
+        try:
+            return await self.db[collection].count_documents({"project": project})
+        except Exception as exc:
+            logger.error(
+                "mongo_count_reading_pages_failed",
+                collection=collection,
+                project=project,
+                error=str(exc),
+            )
+            raise
+
+    async def add_voice_sample(
+        self,
+        project: str,
+        filename: str,
+        payload: bytes,
+        content_type: str | None,
+        *,
+        duration: float | None = None,
+    ) -> VoiceSample:
+        now = time.time()
+        uploaded_at_iso = datetime.utcfromtimestamp(now).isoformat()
+        try:
+            file_id = await self.gridfs.upload_from_stream(  # type: ignore[attr-defined]
+                filename,
+                payload,
+                metadata={
+                    "project": project,
+                    "contentType": content_type,
+                    "uploadedAt": now,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("voice_sample_gridfs_failed", project=project, error=str(exc))
+            raise
+
+        doc = {
+            "project": project,
+            "fileId": str(file_id),
+            "filename": filename,
+            "contentType": content_type,
+            "sizeBytes": len(payload),
+            "durationSeconds": duration,
+            "uploadedAt": now,
+            "uploadedAtIso": uploaded_at_iso,
+        }
+        result = await self.db[self.voice_samples_collection].insert_one(doc)
+        doc["id"] = str(result.inserted_id)
+        return VoiceSample(**doc)
+
+    async def list_voice_samples(self, project: str) -> list[VoiceSample]:
+        try:
+            cursor = (
+                self.db[self.voice_samples_collection]
+                .find({"project": project}, {"_id": True, "project": True, "fileId": True, "filename": True, "contentType": True, "sizeBytes": True, "durationSeconds": True, "uploadedAt": True})
+                .sort("uploadedAt", -1)
+            )
+            samples: list[VoiceSample] = []
+            async for doc in cursor:
+                doc = dict(doc)
+                doc["id"] = str(doc.pop("_id"))
+                samples.append(VoiceSample(**doc))
+            return samples
+        except Exception as exc:
+            logger.error("mongo_voice_samples_list_failed", project=project, error=str(exc))
+            raise
+
+    async def delete_voice_sample(self, project: str, sample_id: str) -> bool:
+        try:
+            oid = ObjectId(sample_id)
+        except Exception:
+            return False
+        doc = await self.db[self.voice_samples_collection].find_one({"_id": oid, "project": project})
+        if not doc:
+            return False
+        file_id = doc.get("fileId")
+        try:
+            await self.db[self.voice_samples_collection].delete_one({"_id": oid})
+        except Exception as exc:
+            logger.error("mongo_voice_sample_delete_failed", sample_id=sample_id, error=str(exc))
+            raise
+        if file_id:
+            try:
+                await self.gridfs.delete(ObjectId(file_id))  # type: ignore[attr-defined]
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("voice_sample_gridfs_delete_failed", file_id=file_id, error=str(exc))
+        return True
+
+    async def create_voice_training_job(
+        self,
+        project: str,
+        *,
+        status: VoiceTrainingStatus = VoiceTrainingStatus.queued,
+        message: str | None = None,
+    ) -> VoiceTrainingJob:
+        now = time.time()
+        payload = {
+            "project": project,
+            "status": status.value,
+            "progress": 0.0,
+            "message": message,
+            "createdAt": now,
+            "createdAtIso": datetime.utcfromtimestamp(now).isoformat(),
+            "updatedAt": now,
+        }
+        result = await self.db[self.voice_jobs_collection].insert_one(payload)
+        payload["id"] = str(result.inserted_id)
+        payload["status"] = status
+        return VoiceTrainingJob(**payload)
+
+    async def update_voice_training_job(
+        self,
+        job_id: str,
+        *,
+        status: VoiceTrainingStatus | None = None,
+        progress: float | None = None,
+        message: str | None = None,
+        started_at: float | None = None,
+        finished_at: float | None = None,
+    ) -> VoiceTrainingJob | None:
+        try:
+            oid = ObjectId(job_id)
+        except Exception:
+            return None
+        updates: dict[str, object] = {"updatedAt": time.time()}
+        if status is not None:
+            updates["status"] = status.value
+        if progress is not None:
+            updates["progress"] = float(progress)
+        if message is not None:
+            updates["message"] = message
+        if started_at is not None:
+            updates["startedAt"] = started_at
+            updates["startedAtIso"] = datetime.utcfromtimestamp(started_at).isoformat()
+        if finished_at is not None:
+            updates["finishedAt"] = finished_at
+            updates["finishedAtIso"] = datetime.utcfromtimestamp(finished_at).isoformat()
+
+        result = await self.db[self.voice_jobs_collection].find_one_and_update(
+            {"_id": oid},
+            {"$set": updates},
+            return_document=True,
+        )
+        if not result:
+            return None
+        result = dict(result)
+        result["id"] = str(result.pop("_id"))
+        status_value = result.get("status", VoiceTrainingStatus.queued.value)
+        try:
+            result["status"] = VoiceTrainingStatus(status_value)
+        except Exception:
+            result["status"] = VoiceTrainingStatus.queued
+        return VoiceTrainingJob(**result)
+
+    async def list_voice_training_jobs(self, project: str, *, limit: int = 10) -> list[VoiceTrainingJob]:
+        try:
+            cursor = (
+                self.db[self.voice_jobs_collection]
+                .find({"project": project}, {"_id": True, "project": True, "status": True, "progress": True, "message": True, "createdAt": True, "startedAt": True, "finishedAt": True})
+                .sort("createdAt", -1)
+                .limit(limit)
+            )
+            jobs: list[VoiceTrainingJob] = []
+            async for doc in cursor:
+                doc = dict(doc)
+                doc["id"] = str(doc.pop("_id"))
+                doc_status = doc.get("status", VoiceTrainingStatus.queued.value)
+                try:
+                    doc["status"] = VoiceTrainingStatus(doc_status)
+                except Exception:
+                    doc["status"] = VoiceTrainingStatus.queued
+                jobs.append(VoiceTrainingJob(**doc))
+            return jobs
+        except Exception as exc:
+            logger.error("mongo_voice_jobs_list_failed", project=project, error=str(exc))
             raise
 
     async def search_documents(
@@ -955,6 +1189,19 @@ class MongoClient:
             data["llm_voice_enabled"] = True
         else:
             data["llm_voice_enabled"] = bool(voice_value)
+        sources_value = data.get("llm_sources_enabled")
+        if isinstance(sources_value, str):
+            lowered = sources_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["llm_sources_enabled"] = True
+            elif lowered in {"false", "0", "off", "no", ""}:
+                data["llm_sources_enabled"] = False
+            else:
+                data["llm_sources_enabled"] = False
+        elif sources_value is None:
+            data["llm_sources_enabled"] = False
+        else:
+            data["llm_sources_enabled"] = bool(sources_value)
         debug_value = data.get("debug_enabled")
         if isinstance(debug_value, str):
             lowered = debug_value.strip().lower()
@@ -1024,6 +1271,57 @@ class MongoClient:
 
         if isinstance(data.get("bitrix_webhook_url"), str):
             data["bitrix_webhook_url"] = data["bitrix_webhook_url"].strip() or None
+
+        mail_enabled_value = data.get("mail_enabled")
+        if isinstance(mail_enabled_value, str):
+            lowered = mail_enabled_value.strip().lower()
+            if lowered in {"true", "1", "on", "yes"}:
+                data["mail_enabled"] = True
+            elif lowered in {"false", "0", "off", "no", ""}:
+                data["mail_enabled"] = False
+            else:
+                data["mail_enabled"] = None
+        elif mail_enabled_value is None:
+            data["mail_enabled"] = False
+        else:
+            data["mail_enabled"] = bool(mail_enabled_value)
+
+        for field in ("mail_imap_ssl", "mail_smtp_tls"):
+            raw = data.get(field)
+            if isinstance(raw, str):
+                lowered = raw.strip().lower()
+                if lowered in {"true", "1", "on", "yes"}:
+                    data[field] = True
+                elif lowered in {"false", "0", "off", "no", ""}:
+                    data[field] = False
+                else:
+                    data[field] = None
+            elif raw is not None:
+                data[field] = bool(raw)
+
+        for field in ("mail_imap_port", "mail_smtp_port"):
+            raw_port = data.get(field)
+            if isinstance(raw_port, str):
+                try:
+                    data[field] = int(raw_port)
+                except ValueError:
+                    data[field] = None
+            elif isinstance(raw_port, (int, float)):
+                data[field] = int(raw_port)
+            elif raw_port is None:
+                data[field] = None
+
+        for field in (
+            "mail_imap_host",
+            "mail_smtp_host",
+            "mail_username",
+            "mail_password",
+            "mail_from",
+            "mail_signature",
+        ):
+            if isinstance(data.get(field), str):
+                data[field] = data[field].strip() or None
+
         return Project(**data)
 
     async def list_projects(self) -> list[Project]:
@@ -1054,10 +1352,33 @@ class MongoClient:
                 data[field] = bool(data[field])
         if "llm_voice_enabled" in data and data["llm_voice_enabled"] is not None:
             data["llm_voice_enabled"] = bool(data["llm_voice_enabled"])
+        if "llm_sources_enabled" in data and data["llm_sources_enabled"] is not None:
+            data["llm_sources_enabled"] = bool(data["llm_sources_enabled"])
         if data.get("llm_voice_model"):
             data["llm_voice_model"] = str(data["llm_voice_model"]).strip() or None
         if "knowledge_image_caption_enabled" in data and data["knowledge_image_caption_enabled"] is not None:
             data["knowledge_image_caption_enabled"] = bool(data["knowledge_image_caption_enabled"])
+        if "mail_enabled" in data and data["mail_enabled"] is not None:
+            data["mail_enabled"] = bool(data["mail_enabled"])
+        for field in ("mail_imap_ssl", "mail_smtp_tls"):
+            if field in data and data[field] is not None:
+                data[field] = bool(data[field])
+        for field in ("mail_imap_port", "mail_smtp_port"):
+            if data.get(field) is not None:
+                try:
+                    data[field] = int(data[field])
+                except (TypeError, ValueError):
+                    data[field] = None
+        for field in (
+            "mail_imap_host",
+            "mail_smtp_host",
+            "mail_username",
+            "mail_password",
+            "mail_from",
+            "mail_signature",
+        ):
+            if isinstance(data.get(field), str):
+                data[field] = data[field].strip() or None
         try:
             await self.db[self.projects_collection].update_one(
                 {"name": data["name"]},
@@ -1324,6 +1645,213 @@ class MongoClient:
         except Exception as exc:
             logger.error("mongo_set_setting_failed", key=key, error=str(exc))
             raise
+
+    async def get_backup_settings(self) -> BackupSettings:
+        stored = await self.get_setting("backup_settings") or {}
+        return self._serialize_backup_settings(stored)
+
+    async def get_backup_token(self) -> str | None:
+        stored = await self.get_setting("backup_settings") or {}
+        token = stored.get("ya_disk_token")
+        if isinstance(token, str):
+            cleaned = token.strip()
+            return cleaned or None
+        return None
+
+    async def update_backup_settings(
+        self,
+        updates: dict[str, Any],
+        *,
+        token: str | object = TOKEN_UNSET,
+        clear_token: bool = False,
+    ) -> BackupSettings:
+        stored = await self.get_setting("backup_settings") or {}
+
+        if "enabled" in updates:
+            stored["enabled"] = bool(updates.get("enabled"))
+
+        if "hour" in updates:
+            try:
+                stored["hour"] = max(0, min(23, int(updates["hour"])))
+            except (TypeError, ValueError):
+                stored["hour"] = stored.get("hour", 3)
+
+        if "minute" in updates:
+            try:
+                stored["minute"] = max(0, min(59, int(updates["minute"])))
+            except (TypeError, ValueError):
+                stored["minute"] = stored.get("minute", 0)
+
+        if "timezone" in updates:
+            tz_raw = updates.get("timezone")
+            if tz_raw in (None, ""):
+                stored["timezone"] = "UTC"
+            else:
+                stored["timezone"] = str(tz_raw).strip()
+
+        folder_value = updates.get("ya_disk_folder")
+        if folder_value is None and "yaDiskFolder" in updates:
+            folder_value = updates.get("yaDiskFolder")
+        if folder_value is not None:
+            folder_clean = str(folder_value).strip().strip("/")
+            stored["ya_disk_folder"] = folder_clean or "sitellm-backups"
+
+        if token is not TOKEN_UNSET:
+            if token in (None, ""):
+                stored["ya_disk_token"] = None
+            else:
+                stored["ya_disk_token"] = str(token).strip()
+        elif clear_token:
+            stored["ya_disk_token"] = None
+
+        stored["updated_at"] = time.time()
+
+        await self.set_setting("backup_settings", stored)
+        return self._serialize_backup_settings(stored)
+
+    async def record_backup_runtime(
+        self,
+        *,
+        last_run_at: float | None = None,
+        last_success_at: float | None = None,
+        last_attempt_date: str | None = None,
+    ) -> BackupSettings:
+        stored = await self.get_setting("backup_settings") or {}
+        if last_run_at is not None:
+            stored["last_run_at"] = float(last_run_at)
+        if last_success_at is not None:
+            stored["last_success_at"] = float(last_success_at)
+        if last_attempt_date is not None:
+            stored["last_attempt_date"] = str(last_attempt_date)
+        stored["updated_at"] = time.time()
+        await self.set_setting("backup_settings", stored)
+        return self._serialize_backup_settings(stored)
+
+    def _serialize_backup_settings(self, stored: dict[str, Any]) -> BackupSettings:
+        payload: dict[str, Any] = {}
+        payload["enabled"] = bool(stored.get("enabled"))
+        try:
+            payload["hour"] = max(0, min(23, int(stored.get("hour", 3))))
+        except (TypeError, ValueError):
+            payload["hour"] = 3
+        try:
+            payload["minute"] = max(0, min(59, int(stored.get("minute", 0))))
+        except (TypeError, ValueError):
+            payload["minute"] = 0
+        tz_value = stored.get("timezone") or "UTC"
+        payload["timezone"] = str(tz_value).strip() or "UTC"
+        folder = stored.get("ya_disk_folder") or "sitellm-backups"
+        payload["yaDiskFolder"] = str(folder).strip().strip("/") or "sitellm-backups"
+        payload["tokenSet"] = bool(stored.get("ya_disk_token"))
+
+        last_run = stored.get("last_run_at")
+        if isinstance(last_run, (int, float)):
+            payload["lastRunAt"] = float(last_run)
+            payload["lastRunAtIso"] = datetime.fromtimestamp(float(last_run), timezone.utc).isoformat()
+        last_success = stored.get("last_success_at")
+        if isinstance(last_success, (int, float)):
+            payload["lastSuccessAt"] = float(last_success)
+            payload["lastSuccessAtIso"] = datetime.fromtimestamp(float(last_success), timezone.utc).isoformat()
+        attempt_date = stored.get("last_attempt_date")
+        if isinstance(attempt_date, str) and attempt_date:
+            payload["lastAttemptDate"] = attempt_date
+
+        return BackupSettings.model_validate(payload, from_attributes=False)
+
+    def _serialize_backup_job(self, doc: dict[str, Any] | None) -> BackupJob | None:
+        if not doc:
+            return None
+        payload = doc.copy()
+        payload["id"] = str(payload.pop("_id"))
+        payload.setdefault("createdAt", payload.get("created_at", time.time()))
+        payload.setdefault("createdAtIso", payload.get("created_at_iso"))
+        payload.setdefault("startedAt", payload.get("started_at"))
+        payload.setdefault("startedAtIso", payload.get("started_at_iso"))
+        payload.setdefault("finishedAt", payload.get("finished_at"))
+        payload.setdefault("finishedAtIso", payload.get("finished_at_iso"))
+        payload.setdefault("remotePath", payload.get("remote_path"))
+        payload.setdefault("sizeBytes", payload.get("size_bytes"))
+        payload.setdefault("triggeredBy", payload.get("triggered_by"))
+        payload.setdefault("sourceJobId", payload.get("source_job_id"))
+        payload["operation"] = BackupOperation(payload.get("operation", "backup"))
+        payload["status"] = BackupStatus(payload.get("status", "queued"))
+        return BackupJob.model_validate(payload, from_attributes=False)
+
+    async def create_backup_job(
+        self,
+        *,
+        operation: BackupOperation,
+        status: BackupStatus,
+        triggered_by: str | None = None,
+        remote_path: str | None = None,
+        size_bytes: int | None = None,
+        source_job_id: str | None = None,
+    ) -> BackupJob:
+        now = time.time()
+        doc: dict[str, Any] = {
+            "operation": operation.value,
+            "status": status.value,
+            "remote_path": remote_path,
+            "size_bytes": size_bytes,
+            "triggered_by": triggered_by,
+            "created_at": now,
+            "created_at_iso": datetime.fromtimestamp(now, timezone.utc).isoformat(),
+            "source_job_id": source_job_id,
+        }
+        result = await self.db[self.backup_jobs_collection].insert_one(doc)
+        doc["_id"] = result.inserted_id
+        return self._serialize_backup_job(doc)
+
+    async def update_backup_job(self, job_id: str, updates: dict[str, Any]) -> BackupJob | None:
+        try:
+            obj_id = ObjectId(job_id)
+        except Exception:
+            return None
+
+        payload = updates.copy()
+        for field in ("started_at", "finished_at", "created_at"):
+            if field in payload and isinstance(payload[field], (int, float)):
+                suffix = f"{field}_iso"
+                payload[suffix] = datetime.fromtimestamp(float(payload[field]), timezone.utc).isoformat()
+        if "status" in payload and isinstance(payload["status"], BackupStatus):
+            payload["status"] = payload["status"].value
+        if "operation" in payload and isinstance(payload["operation"], BackupOperation):
+            payload["operation"] = payload["operation"].value
+
+        await self.db[self.backup_jobs_collection].update_one(
+            {"_id": obj_id},
+            {"$set": payload},
+        )
+        doc = await self.db[self.backup_jobs_collection].find_one({"_id": obj_id})
+        return self._serialize_backup_job(doc)
+
+    async def get_backup_job(self, job_id: str) -> BackupJob | None:
+        try:
+            obj_id = ObjectId(job_id)
+        except Exception:
+            return None
+        doc = await self.db[self.backup_jobs_collection].find_one({"_id": obj_id})
+        return self._serialize_backup_job(doc)
+
+    async def list_backup_jobs(self, limit: int = 20) -> list[BackupJob]:
+        cursor = (
+            self.db[self.backup_jobs_collection]
+            .find({}, sort=[("created_at", -1)])
+            .limit(max(1, min(limit, 100)))
+        )
+        jobs: list[BackupJob] = []
+        async for doc in cursor:
+            job = self._serialize_backup_job(doc)
+            if job is not None:
+                jobs.append(job)
+        return jobs
+
+    async def find_active_backup_job(self) -> BackupJob | None:
+        doc = await self.db[self.backup_jobs_collection].find_one(
+            {"status": {"$in": [BackupStatus.queued.value, BackupStatus.running.value]}},
+            sort=[("created_at", -1)],
+        )
+        return self._serialize_backup_job(doc)
 
     async def get_knowledge_priority(self) -> list[str]:
         try:
@@ -1999,6 +2527,19 @@ class MongoClient:
                 index="request_stats_project_date",
                 error=str(exc),
             )
+        try:
+            await self.db[self.stats_collection].create_index(
+                "ts",
+                name="request_stats_ts_ttl",
+                expireAfterSeconds=60 * 60 * 24 * 3,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.stats_collection,
+                index="request_stats_ts_ttl",
+                error=str(exc),
+            )
 
         try:
             await self.db[self.ollama_servers_collection].create_index(
@@ -2011,6 +2552,45 @@ class MongoClient:
                 "mongo_index_create_failed",
                 collection=self.ollama_servers_collection,
                 index="ollama_server_name_unique",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.voice_samples_collection].create_index(
+                [("project", 1), ("uploadedAt", -1)],
+                name="voice_samples_project_uploaded",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.voice_samples_collection,
+                index="voice_samples_project_uploaded",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.voice_jobs_collection].create_index(
+                [("project", 1), ("createdAt", -1)],
+                name="voice_jobs_project_created",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.voice_jobs_collection,
+                index="voice_jobs_project_created",
+                error=str(exc),
+            )
+
+        try:
+            await self.db[self.backup_jobs_collection].create_index(
+                [("created_at", -1)],
+                name="backup_jobs_created_at",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "mongo_index_create_failed",
+                collection=self.backup_jobs_collection,
+                index="backup_jobs_created_at",
                 error=str(exc),
             )
 

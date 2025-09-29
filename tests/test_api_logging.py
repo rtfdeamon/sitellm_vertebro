@@ -5,7 +5,8 @@ import sys
 import types
 import uuid
 from pathlib import Path
-import enum
+
+from fastapi import HTTPException
 
 import pytest
 
@@ -27,60 +28,7 @@ async def test_session_id_logged_on_error(monkeypatch):
     fake_structlog.get_logger = get_logger
     monkeypatch.setitem(sys.modules, "structlog", fake_structlog)
 
-    # Minimal FastAPI stubs
-    fastapi = types.ModuleType("fastapi")
-
-    class Request:
-        def __init__(self, state):
-            self.state = state
-
-    class HTTPException(Exception):
-        def __init__(self, status_code, detail):
-            self.status_code = status_code
-            self.detail = detail
-
-    class APIRouter:
-        def __init__(self, *a, **k):
-            pass
-
-        def post(self, *a, **k):
-            def decorator(func):
-                return func
-
-            return decorator
-
-        def get(self, *a, **k):
-            def decorator(func):
-                return func
-
-            return decorator
-
-    fastapi.APIRouter = APIRouter
-    fastapi.Request = Request
-    fastapi.HTTPException = HTTPException
-    class BackgroundTasks:
-        def add_task(self, *a, **k):
-            pass
-    fastapi.BackgroundTasks = BackgroundTasks
-
-    responses = types.ModuleType("fastapi.responses")
-
-    class ORJSONResponse:
-        def __init__(self, content, *a, **k):
-            self.content = content
-
-    class StreamingResponse:
-        def __init__(self, *a, **k):
-            pass
-
-    responses.ORJSONResponse = ORJSONResponse
-    responses.StreamingResponse = StreamingResponse
-    fastapi.responses = responses
-
-    modules = {
-        "fastapi": fastapi,
-        "fastapi.responses": responses,
-    }
+    modules: dict[str, types.ModuleType] = {}
 
     # mongo and models stubs
     mongo = types.ModuleType("mongo")
@@ -88,34 +36,16 @@ async def test_session_id_logged_on_error(monkeypatch):
     class NotFound(Exception):
         pass
 
+    class DummyMongoClient:  # minimal placeholder for import wiring
+        ...
+
     mongo.NotFound = NotFound
+    mongo.MongoClient = DummyMongoClient
     modules["mongo"] = mongo
 
-    models_mod = types.ModuleType("models")
+    import importlib
 
-    class RoleEnum(str, enum.Enum):
-        assistant = "assistant"
-        user = "user"
-
-    class LLMRequest:
-        def __init__(self, session_id):
-            self.session_id = session_id
-
-    class LLMResponse:
-        def __init__(self, text, attachments=None, emotions_enabled=None):
-            self.text = text
-            self.attachments = attachments or []
-            self.emotions_enabled = emotions_enabled
-
-        def model_dump(self):
-            data = {"text": self.text, "attachments": self.attachments}
-            if self.emotions_enabled is not None:
-                data["emotions_enabled"] = self.emotions_enabled
-            return data
-
-    models_mod.RoleEnum = RoleEnum
-    models_mod.LLMRequest = LLMRequest
-    models_mod.LLMResponse = LLMResponse
+    models_mod = importlib.import_module("models")
     modules["models"] = models_mod
 
     for name, mod in modules.items():
@@ -131,23 +61,25 @@ async def test_session_id_logged_on_error(monkeypatch):
     # Dummy mongo to trigger NotFound
     class DummyMongo:
         async def get_context_preset(self, collection):
-            yield types.SimpleNamespace(role=RoleEnum.user, text="preset")
+            yield types.SimpleNamespace(role=models_mod.RoleEnum.user, text="preset")
 
         async def get_sessions(self, collection, session_id):
             raise NotFound
             yield  # pragma: no cover
 
+    mongo_instance = DummyMongo()
     request = types.SimpleNamespace(
         state=types.SimpleNamespace(
-            mongo=DummyMongo(),
+            mongo=mongo_instance,
             contexts_collection="ctx",
             context_presets_collection="preset",
             llm=types.SimpleNamespace(respond=lambda *a, **k: None),
-        )
+        ),
+        app=types.SimpleNamespace(state=types.SimpleNamespace(mongo=mongo_instance)),
     )
 
     session = uuid.uuid4()
-    llm_request = LLMRequest(session)
+    llm_request = models_mod.LLMRequest(sessionId=session)
 
     with pytest.raises(HTTPException) as exc:
         await api.ask_llm(request, llm_request)

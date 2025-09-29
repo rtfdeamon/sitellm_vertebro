@@ -45,6 +45,7 @@ NEGATIVE_REPLIES = {
 
 PENDING_ATTACHMENTS: Dict[str, Dict[str, Any]] = {}
 PENDING_BITRIX: Dict[str, Dict[str, Any]] = {}
+PENDING_MAIL: Dict[str, Dict[str, Any]] = {}
 GOD_MODE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 GOD_MODE_STEPS = [
@@ -173,6 +174,33 @@ async def _confirm_bitrix_plan(plan_id: str, project: str | None, session_id: st
 async def _cancel_bitrix_plan(plan_id: str, project: str | None, session_id: str | None) -> None:
     settings = get_settings()
     url = f"{settings.api_base_url}/api/v1/llm/bitrix/cancel"
+    payload = {
+        "plan_id": plan_id,
+        "project": project,
+        "session_id": session_id,
+    }
+    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+
+
+async def _confirm_mail_plan(plan_id: str, project: str | None, session_id: str | None) -> dict[str, Any]:
+    settings = get_settings()
+    url = f"{settings.api_base_url}/api/v1/llm/mail/confirm"
+    payload = {
+        "plan_id": plan_id,
+        "project": project,
+        "session_id": session_id,
+    }
+    async with httpx.AsyncClient(timeout=settings.request_timeout) as client:
+        resp = await client.post(url, json=payload)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _cancel_mail_plan(plan_id: str, project: str | None, session_id: str | None) -> None:
+    settings = get_settings()
+    url = f"{settings.api_base_url}/api/v1/llm/mail/cancel"
     payload = {
         "plan_id": plan_id,
         "project": project,
@@ -631,6 +659,56 @@ async def text_handler(
                 pass
             PENDING_BITRIX.pop(pending_key, None)
 
+    pending_mail = PENDING_MAIL.get(pending_key)
+    if pending_mail:
+        mail_emotions = pending_mail.get("emotions", True)
+        if normalized_text in POSITIVE_REPLIES:
+            try:
+                await _confirm_mail_plan(
+                    pending_mail["plan_id"],
+                    project,
+                    session_id,
+                )
+                await message.answer(
+                    "✉️ Письмо отправлено!"
+                    if mail_emotions
+                    else "Письмо отправлено."
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("mail_confirm_failed", error=str(exc))
+                await message.answer(
+                    "⚠️ Не удалось отправить письмо. Попробуйте позже."
+                )
+            finally:
+                PENDING_MAIL.pop(pending_key, None)
+            return
+        if normalized_text in NEGATIVE_REPLIES:
+            try:
+                await _cancel_mail_plan(
+                    pending_mail["plan_id"],
+                    project,
+                    session_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("mail_cancel_failed", error=str(exc))
+            await message.answer(
+                "🛑 Письмо не будет отправлено."
+                if mail_emotions
+                else "Письмо не будет отправлено."
+            )
+            PENDING_MAIL.pop(pending_key, None)
+            return
+        if normalized_text:
+            try:
+                await _cancel_mail_plan(
+                    pending_mail["plan_id"],
+                    project,
+                    session_id,
+                )
+            except Exception:
+                pass
+            PENDING_MAIL.pop(pending_key, None)
+
     pending_pack = PENDING_ATTACHMENTS.get(pending_key)
     if pending_pack:
         attachments_to_send = pending_pack.get('attachments', [])
@@ -721,6 +799,21 @@ async def text_handler(
                 f"{preview_text}\n\nОтправить задачу в Bitrix? Ответьте «да» или «нет»."
                 if emotions_enabled
                 else f"{preview_text}\n\nОтправить задачу в Bitrix? Ответьте 'да' или 'нет'."
+            )
+            await message.answer(prompt_text)
+
+        mail_pending_meta = meta.get('mail_pending') if isinstance(meta, dict) else None
+        if isinstance(mail_pending_meta, dict) and mail_pending_meta.get('plan_id'):
+            PENDING_MAIL[pending_key] = {
+                "plan_id": mail_pending_meta.get('plan_id'),
+                "preview": mail_pending_meta.get('preview'),
+                "emotions": emotions_enabled,
+            }
+            preview_text = mail_pending_meta.get('preview') or 'Подтвердите отправку письма.'
+            prompt_text = (
+                f"{preview_text}\n\nОтправить письмо? Ответьте «да» или «нет»."
+                if emotions_enabled
+                else f"{preview_text}\n\nОтправить письмо? Ответьте 'да' или 'нет'."
             )
             await message.answer(prompt_text)
 

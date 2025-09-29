@@ -114,7 +114,7 @@ async def test_project_status_reflects_running_state() -> None:
 
     assert data["project"] == "demo"
     assert data["running"] is True
-    assert data["token_preview"] == "abc"
+    assert data["token_preview"] == "***"
 
 
 @pytest.mark.asyncio

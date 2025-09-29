@@ -1,3 +1,5 @@
+import types
+
 import pytest
 
 from textnorm import rewrite_query
@@ -18,15 +20,12 @@ class FakeRedis:
 
 @pytest.mark.asyncio
 async def test_rewrite_changes_text(monkeypatch):
-    redis = FakeRedis()
-    monkeypatch.setattr(cache_mod, "_get_redis", lambda: redis)
-
     async def fake_generate(prompt: str):
         yield "rewritten"
 
     monkeypatch.setattr(llm_client, "generate", fake_generate)
 
     original = "some query"
-    rewritten = await rewrite_query(original)
+    rewritten = await rewrite_query.__wrapped__(original)
     assert rewritten == "rewritten"
     assert rewritten != original

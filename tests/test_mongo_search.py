@@ -1,5 +1,6 @@
 """Tests for :meth:`MongoClient.search_documents` caching behaviour."""
 
+import importlib
 import importlib.util
 import sys
 from pathlib import Path
@@ -11,19 +12,34 @@ module_path = Path(__file__).resolve().parents[1] / "mongo.py"
 spec = importlib.util.spec_from_file_location("mongo", module_path)
 mongo = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = mongo
+REAL_MODELS = importlib.import_module("models")
 
 # Stub external dependencies required by ``mongo``.
 fake_bson = types.ModuleType("bson")
 fake_bson.ObjectId = type("ObjectId", (), {})
 sys.modules["bson"] = fake_bson
 
-fake_gridfs = types.ModuleType("gridfs")
-fake_gridfs.AsyncGridFS = type("AsyncGridFS", (), {})
-sys.modules["gridfs"] = fake_gridfs
+try:
+    import gridfs as real_gridfs  # type: ignore  # noqa: E402
+except Exception:
+    fake_gridfs = types.ModuleType("gridfs")
+    fake_gridfs.AsyncGridFS = type("AsyncGridFS", (), {})
+    fake_gridfs.GridFS = type("GridFS", (), {})
+    sys.modules["gridfs"] = fake_gridfs
+else:
+    sys.modules["gridfs"] = real_gridfs
 
-fake_pymongo = types.ModuleType("pymongo")
-fake_pymongo.AsyncMongoClient = type("AsyncMongoClient", (), {})
-sys.modules["pymongo"] = fake_pymongo
+try:
+    import pymongo as real_pymongo  # type: ignore  # noqa: E402
+except Exception:
+    fake_pymongo = types.ModuleType("pymongo")
+    fake_pymongo.AsyncMongoClient = type("AsyncMongoClient", (), {})
+    fake_pymongo.MongoClient = type("MongoClient", (), {})
+    fake_pymongo.errors = types.SimpleNamespace(ConfigurationError=Exception)
+    sys.modules["pymongo"] = fake_pymongo
+    sys.modules.setdefault("pymongo.errors", fake_pymongo.errors)
+else:
+    sys.modules["pymongo"] = real_pymongo
 
 # Minimal ``models`` module with ``Document`` dataclass replacement.
 fake_models = types.ModuleType("models")
@@ -34,7 +50,7 @@ class Document:
         self.description = description
         self.fileId = fileId
 
-    def model_dump(self):
+    def model_dump(self, *, by_alias: bool = False):
         return {"name": self.name, "description": self.description, "fileId": self.fileId}
 
 fake_models.ContextMessage = object
@@ -48,9 +64,27 @@ class Project:
         return self.__dict__.copy()
 
 fake_models.Project = Project
+fake_models.BackupJob = type("BackupJob", (), {})
+fake_models.BackupOperation = type("BackupOperation", (), {})
+fake_models.BackupSettings = type("BackupSettings", (), {})
+fake_models.BackupStatus = type("BackupStatus", (), {})
+fake_models.OllamaServer = type("OllamaServer", (), {})
+fake_models.ReadingPage = type("ReadingPage", (), {})
+fake_models.VoiceSample = type("VoiceSample", (), {})
+fake_models.VoiceTrainingJob = type("VoiceTrainingJob", (), {})
+
+class _VoiceTrainingStatus:
+    queued = "queued"
+    running = "running"
+    failed = "failed"
+    completed = "completed"
+
+
+fake_models.VoiceTrainingStatus = _VoiceTrainingStatus
 sys.modules["models"] = fake_models
 
 spec.loader.exec_module(mongo)
+sys.modules["models"] = REAL_MODELS
 
 
 class FakeRedis:

@@ -12,6 +12,8 @@
 
 set -euo pipefail
 
+PRESERVE_STATEFUL_SERVICES=0
+
 # Allow ports (notably the default 18000/18001 pair) a short grace period to
 # be released by Docker before we pick an alternative.
 PORT_REUSE_GRACE_SECONDS="${PORT_REUSE_GRACE_SECONDS:-6}"
@@ -105,6 +107,10 @@ port = int(sys.argv[1])
 def can_bind(sock_family, address):
     sock = socket.socket(sock_family, socket.SOCK_STREAM)
     try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "IPPROTO_IPV6") and hasattr(socket, "IPV6_V6ONLY") \
+                and sock_family == socket.AF_INET6:
+            sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
         sock.bind(address)
     except OSError:
         return False
@@ -188,17 +194,21 @@ listening_pids_for_port() {
   if command -v lsof >/dev/null 2>&1; then
     pids=$(lsof -ti TCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
     if [ -z "$pids" ] && command -v sudo >/dev/null 2>&1; then
-      pids=$(sudo lsof -ti TCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
+      pids=$(sudo -n lsof -ti TCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u || true)
     fi
   fi
   if [ -z "$pids" ] && command -v fuser >/dev/null 2>&1; then
     pids=$(fuser -n tcp "$port" 2>/dev/null | tr -s ' ' '\n' | sort -u)
     if [ -z "$pids" ] && command -v sudo >/dev/null 2>&1; then
-      pids=$(sudo fuser -n tcp "$port" 2>/dev/null | tr -s ' ' '\n' | sort -u)
+      pids=$(sudo -n fuser -n tcp "$port" 2>/dev/null | tr -s ' ' '\n' | sort -u || true)
     fi
   fi
   if [ -z "$pids" ] && command -v ss >/dev/null 2>&1; then
     pids=$(ss -lntp 2>/dev/null | awk -v p=":$port" '$4 ~ p"$" {print $NF}' | sed -n 's/.*pid=\([0-9]\+\).*/\1/p' | sort -u)
+  fi
+  if [ -n "$pids" ]; then
+    pids=$(printf '%s\n' "$pids" | tr ' ' '\n' | grep -E '^[0-9]+$' || true)
+    pids=$(printf '%s\n' "$pids" | sed '/^$/d' | sort -u)
   fi
   echo "$pids"
 }
@@ -221,7 +231,28 @@ terminate_port_processes() {
     printf '[✓] Port %s released without forcing termination.\n' "$port"
     return 0
   fi
-  printf '[✗] Port %s is still busy. Stop blocking processes manually and rerun.\n' "$port"
+  printf '[✗] Port %s is still busy. Attempting graceful termination of PID(s): %s\n' "$port" "$pids"
+  local pid
+  for pid in $pids; do
+    if kill "$pid" 2>/dev/null; then
+      printf '[i] Sent SIGTERM to %s\n' "$pid"
+    fi
+  done
+  if wait_until_port_free "$port" 6; then
+    printf '[✓] Port %s freed after terminating PID(s).\n' "$port"
+    return 0
+  fi
+  printf '[!] Forcing termination with SIGKILL\n'
+  for pid in $pids; do
+    if kill -9 "$pid" 2>/dev/null; then
+      printf '[i] Sent SIGKILL to %s\n' "$pid"
+    fi
+  done
+  if wait_until_port_free "$port" 6; then
+    printf '[✓] Port %s freed after SIGKILL.\n' "$port"
+    return 0
+  fi
+  printf '[✗] Port %s is still busy. Stop conflicting service and rerun.\n' "$port"
   return 1
 }
 
@@ -274,13 +305,17 @@ cleanup_previous_stack() {
   fi
 
   if docker compose "${compose_args[@]}" ps >/dev/null 2>&1; then
-    echo '[+] Removing previous containers (if any)...'
-    if ! docker compose "${compose_args[@]}" down --remove-orphans >/dev/null 2>&1; then
-      echo '[i] docker compose down reported an error; continuing'
+    if [ "${PRESERVE_STATEFUL_SERVICES}" = "1" ]; then
+      echo '[i] No stateful changes detected; keeping mongo/redis/qdrant running'
+    else
+      echo '[+] Removing previous containers (if any)...'
+      if ! docker compose "${compose_args[@]}" down --remove-orphans >/dev/null 2>&1; then
+        echo '[i] docker compose down reported an error; continuing'
+      fi
     fi
   fi
 
-  if docker network inspect sitellm_vertebro_default >/dev/null 2>&1; then
+  if [ "${PRESERVE_STATEFUL_SERVICES}" != "1" ] && docker network inspect sitellm_vertebro_default >/dev/null 2>&1; then
     echo '[+] Removing stale network sitellm_vertebro_default'
     if ! docker network rm sitellm_vertebro_default >/dev/null 2>&1; then
       echo '[i] Failed to remove network sitellm_vertebro_default; continuing'
@@ -328,6 +363,19 @@ if [ -z "${CRAWL_START_URL:-}" ] && [ -n "${DOMAIN}" ]; then
   CRAWL_START_URL="https://${DOMAIN}"
 fi
 export CRAWL_START_URL
+
+if [ -z "${ENABLE_INITIAL_CRAWL:-}" ]; then
+  ENABLE_INITIAL_CRAWL=$(get_env_var ENABLE_INITIAL_CRAWL)
+fi
+case "${ENABLE_INITIAL_CRAWL:-}" in
+  1|true|TRUE|yes|YES)
+    ENABLE_INITIAL_CRAWL="1"
+    ;;
+  *)
+    ENABLE_INITIAL_CRAWL="0"
+    ;;
+esac
+export ENABLE_INITIAL_CRAWL
 
 slugify_project() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g' | sed 's/-\{2,\}/-/g' | sed 's/^-//; s/-$//'
@@ -432,6 +480,7 @@ ensure_self_signed_cert() {
 
 update_env_var DOMAIN "$DOMAIN"
 update_env_var CRAWL_START_URL "$CRAWL_START_URL"
+update_env_var ENABLE_INITIAL_CRAWL "$ENABLE_INITIAL_CRAWL"
 update_env_var PROJECT_NAME "$PROJECT_NAME"
 update_env_var REDIS_PASSWORD "$REDIS_PASS"
 update_env_var REDIS_URL "$REDIS_URL"
@@ -465,11 +514,12 @@ APP_PORT_CANDIDATE=${APP_PORT_CANDIDATE:-18000}
 
 if ! is_port_free "$APP_PORT_CANDIDATE"; then
   printf '[!] Port %s is currently in use. Attempting to free it for the application...\n' "$APP_PORT_CANDIDATE"
-  if ! terminate_port_processes "$APP_PORT_CANDIDATE" 18; then
-    echo '[✗] Failed to free the main application port automatically. Stop conflicting service and rerun.'
+  printf '[i] Port %s is busy; waiting for the existing service to stop...\n' "$APP_PORT_CANDIDATE"
+  if ! wait_until_port_free "$APP_PORT_CANDIDATE" 60 2; then
+    printf '[✗] Port %s is still in use after waiting. Stop the conflicting service and rerun.\n' "$APP_PORT_CANDIDATE"
     exit 1
   fi
-  printf '[✓] Port %s successfully freed.\n' "$APP_PORT_CANDIDATE"
+  printf '[✓] Port %s became available.\n' "$APP_PORT_CANDIDATE"
 fi
 
 if ! wait_until_port_free "$APP_PORT_CANDIDATE" 5; then
@@ -571,15 +621,6 @@ fi
 # Now that .env exists, open firewall ports if applicable
 open_firewall_ports
 
-cleanup_previous_stack
-
-printf '[+] Starting containers...\n'
-echo '[+] Starting project in CPU mode'
-
-# Compose command
-COMPOSE_FILES=(-f compose.yaml)
-COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
-
 PYTHON_BIN=""
 if command -v python3 >/dev/null 2>&1; then
   PYTHON_BIN=$(command -v python3)
@@ -598,6 +639,30 @@ fi
 eval "$VERSION_OUTPUT"
 : "${BACKEND_VERSION:=1}"
 : "${TELEGRAM_VERSION:=1}"
+: "${STATEFUL_VERSION:=1}"
+
+stateful_changed=0
+for component in $CHANGED_COMPONENTS; do
+  if [ "$component" = "stateful" ]; then
+    stateful_changed=1
+    break
+  fi
+done
+
+if [ "$stateful_changed" -eq 0 ]; then
+  PRESERVE_STATEFUL_SERVICES=1
+  echo '[i] No changes detected for stateful services; Mongo/Redis/Qdrant will remain running'
+fi
+
+cleanup_previous_stack
+
+printf '[+] Starting containers...\n'
+echo '[+] Starting project in CPU mode'
+
+# Compose command
+COMPOSE_FILES=(-f compose.yaml)
+COMPOSE_CMD=(docker compose "${COMPOSE_FILES[@]}")
+
 BACKEND_IMAGE_VALUE=$(awk -F= '/^BACKEND_IMAGE=/{print $2}' .env 2>/dev/null | tail -n1 || true)
 if [ -z "$BACKEND_IMAGE_VALUE" ]; then
   BACKEND_IMAGE_VALUE="sitellm/backend"
@@ -610,7 +675,8 @@ update_env_var BACKEND_IMAGE "$BACKEND_IMAGE_VALUE"
 update_env_var TELEGRAM_IMAGE "$TELEGRAM_IMAGE_VALUE"
 update_env_var BACKEND_VERSION "$BACKEND_VERSION"
 update_env_var TELEGRAM_VERSION "$TELEGRAM_VERSION"
-printf '[i] Component versions: backend=%s telegram=%s\n' "$BACKEND_VERSION" "$TELEGRAM_VERSION"
+update_env_var STATEFUL_VERSION "$STATEFUL_VERSION"
+printf '[i] Component versions: backend=%s telegram=%s stateful=%s\n' "$BACKEND_VERSION" "$TELEGRAM_VERSION" "$STATEFUL_VERSION"
 
 printf '[+] Building images sequentially...\n'
 SERVICES=(app telegram-bot)
@@ -749,7 +815,7 @@ exit 1
 done
 [ -n "$ok" ] || { echo "[!] API health check failed"; "${COMPOSE_CMD[@]}" logs --no-color --tail=200 app || true; exit 1; }
 
-if [ -n "${CRAWL_START_URL}" ]; then
+if [ "${ENABLE_INITIAL_CRAWL}" = "1" ] && [ -n "${CRAWL_START_URL}" ]; then
   printf '[+] Initial crawl...\n'
   crawl_args=(python crawler/run_crawl.py --url "${CRAWL_START_URL}" --max-depth 2 --max-pages 500)
   if [ -n "${PROJECT_NAME}" ]; then
@@ -764,11 +830,12 @@ if [ -n "${CRAWL_START_URL}" ]; then
     app "${crawl_args[@]}" || true
   echo "[✓] Done"
 else
-  echo '[i] Skipping initial crawl; CRAWL_START_URL not set'
+  echo '[i] Initial crawl disabled; set ENABLE_INITIAL_CRAWL=1 and CRAWL_START_URL to enable'
 fi
 
-# Configure systemd timer only on Linux with systemd
-if [ -d /run/systemd/system ]; then
+if [ "${ENABLE_INITIAL_CRAWL}" = "1" ] && [ -n "${CRAWL_START_URL}" ]; then
+  # Configure systemd timer only on Linux with systemd
+  if [ -d /run/systemd/system ]; then
 SERVICE=/etc/systemd/system/crawl.service
 TIMER=/etc/systemd/system/crawl.timer
 sudo tee "$SERVICE" >/dev/null <<EOF_SERVICE
@@ -799,6 +866,9 @@ printf '[✓] Scheduled daily crawl at 02:00\n'
 
 else
   echo '[i] Non-systemd OS detected; skipping crawl.timer setup'
+fi
+else
+  echo '[i] Crawl timer not configured; ENABLE_INITIAL_CRAWL disabled or CRAWL_START_URL empty'
 fi
 
 printf '[✓] Deployment complete\n'

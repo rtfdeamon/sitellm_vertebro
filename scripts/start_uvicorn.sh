@@ -8,17 +8,22 @@ KEEP_ALIVE=${APP_TIMEOUT_KEEP_ALIVE:-30}
 CERT=${APP_SSL_CERT:-}
 KEY=${APP_SSL_KEY:-}
 ENABLE_TLS_RAW=${APP_ENABLE_TLS:-}
+EXPLICIT_TLS_FLAG=0
 
 case "${ENABLE_TLS_RAW,,}" in
   1|true|yes)
     ENABLE_TLS=1
+    EXPLICIT_TLS_FLAG=1
     ;;
   *)
     ENABLE_TLS=0
+    if [[ -n "${ENABLE_TLS_RAW}" ]]; then
+      EXPLICIT_TLS_FLAG=1
+    fi
     ;;
 esac
 
-if [[ $ENABLE_TLS -eq 0 && -n "${DOMAIN:-}" ]]; then
+if [[ $EXPLICIT_TLS_FLAG -eq 0 && $ENABLE_TLS -eq 0 && -n "${DOMAIN:-}" ]]; then
   ENABLE_TLS=1
 fi
 
