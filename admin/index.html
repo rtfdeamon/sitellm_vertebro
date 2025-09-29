@@ -9453,6 +9453,8 @@
     }
 
     async function triggerVoiceTraining(projectName) {
+      voiceJobPending = true;
+      refreshVoiceTrainingState();
       if (voiceTrainStatus) voiceTrainStatus.textContent = 'Подготовка…';
       try {
         const formData = new FormData();
@@ -9486,6 +9488,9 @@
       } catch (error) {
         console.error('voice_train_failed', error);
         if (voiceTrainStatus) voiceTrainStatus.textContent = 'Не удалось запустить обучение';
+      } finally {
+        voiceJobPending = false;
+        refreshVoiceTrainingState();
       }
     }
     function populateProjectForm(projectName){
