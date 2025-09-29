@@ -2780,6 +2780,14 @@ function renderVoiceAvatarDemo(cfgOverride) {
   if (isEmbed || !voiceAvatarHost) return;
   const cfg = cfgOverride || getVoiceConfig();
   voicePlaceholderState = { key: null, params: null };
+  if (currentVoicePreviewInstance && typeof currentVoicePreviewInstance.destroy === 'function') {
+    try {
+      currentVoicePreviewInstance.destroy();
+    } catch (err) {
+      console.warn('[SiteLLM voice-avatar] teardown failed', err);
+    }
+    currentVoicePreviewInstance = null;
+  }
   voiceAvatarHost.innerHTML = '';
   const script = document.createElement('script');
   const cacheBuster = Date.now().toString(36);

@@ -4116,6 +4116,8 @@
     let feedbackTasksCache = [];
     var feedbackTasksList = null;
 
+    let backupState = null;
+
     function t(key, params = {}) {
       const dict = LANGUAGES[currentLanguage]?.strings || LANGUAGES[FALLBACK_LANGUAGE].strings;
       const template = dict[key] ?? LANGUAGES[FALLBACK_LANGUAGE].strings[key] ?? key;
@@ -4225,7 +4227,6 @@
       'Asia/Magadan',
       'Asia/Kamchatka'
     ];
-    let backupState = null;
     let backupRefreshTimer = null;
     let projectStorageCache = {};
     const CRAWLER_LOG_REFRESH_INTERVAL = 5000;
