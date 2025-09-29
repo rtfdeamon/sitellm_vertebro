@@ -144,8 +144,9 @@ VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
     ConnectionError,
     TimeoutError,
 )
-VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "5"))
 VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "20"))
+VOICE_INLINE_FALLBACK_DELAY = float(os.getenv("VOICE_INLINE_FALLBACK_DELAY", "2.0"))
+VOICE_PENDING_STATUSES = {"", VoiceTrainingStatus.queued.value, "pending"}
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -3128,8 +3129,6 @@ def _validate_voice_project(project: str | None) -> str:
     if not project_name:
         raise HTTPException(status_code=400, detail="project_required")
     return project_name
-
-
 def _queue_voice_training_job(job_id: str) -> bool:
     try:
         voice_train_model.delay(job_id)
