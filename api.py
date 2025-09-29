@@ -138,6 +138,7 @@ VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
 )
 VOICE_INLINE_FALLBACK_DELAY = float(os.getenv("VOICE_INLINE_FALLBACK_DELAY", "2.0"))
 VOICE_PENDING_STATUSES = {"", VoiceTrainingStatus.queued.value, "pending"}
+VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "20"))
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -2731,13 +2732,54 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
         )
 
     existing_jobs = await mongo_client.list_voice_training_jobs(project_name, limit=1)
-    if existing_jobs and existing_jobs[0].status in {
-        VoiceTrainingStatus.queued,
-        VoiceTrainingStatus.preparing,
-        VoiceTrainingStatus.training,
-        VoiceTrainingStatus.validating,
-    }:
-        raise HTTPException(status_code=409, detail="job_in_progress")
+    if existing_jobs:
+        existing_job = existing_jobs[0]
+        if existing_job.status in {
+            VoiceTrainingStatus.queued,
+            VoiceTrainingStatus.preparing,
+            VoiceTrainingStatus.training,
+            VoiceTrainingStatus.validating,
+        }:
+            payload = existing_job.model_dump(by_alias=True)
+            updated_at = payload.get("updatedAt") or payload.get("updated_at")
+            if updated_at is None:
+                updated_at = existing_job.created_at or time.time()
+            try:
+                updated_at_value = float(updated_at)
+            except (TypeError, ValueError):
+                updated_at_value = time.time()
+
+            age = time.time() - updated_at_value
+            if age >= VOICE_JOB_STALE_TIMEOUT:
+                logger.warning(
+                    "voice_training_job_stale",
+                    project=project_name,
+                    job_id=existing_job.id,
+                    status=existing_job.status.value,
+                    age=age,
+                )
+                updated_job = await mongo_client.update_voice_training_job(
+                    existing_job.id,
+                    status=VoiceTrainingStatus.queued,
+                    progress=existing_job.progress or 0.0,
+                    message="Перезапускаем обучение",
+                )
+                if updated_job:
+                    payload = updated_job.model_dump(by_alias=True)
+                requeued = _queue_voice_training_job(existing_job.id)
+                if not requeued:
+                    _spawn_voice_training_thread(existing_job.id)
+                else:
+                    _schedule_voice_job_watchdog(existing_job.id)
+                return ORJSONResponse({"job": payload, "resumed": True})
+
+            logger.info(
+                "voice_training_job_active",
+                project=project_name,
+                job_id=existing_job.id,
+                status=existing_job.status.value,
+            )
+            return ORJSONResponse({"job": payload, "resumed": False})
 
     job = await mongo_client.create_voice_training_job(project_name)
     queued = _queue_voice_training_job(job.id)
