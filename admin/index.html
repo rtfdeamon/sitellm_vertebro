@@ -540,6 +540,17 @@
     }
 
     .knowledge-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .danger-btn {
+      margin-left: 8px;
+      border: 1px solid #d83a3a;
+      color: #d83a3a;
+      background: transparent;
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+    .danger-btn:hover {
+      background: #d83a3a;
+      color: #fff;
+    }
     .kb-priority-panel { margin-top: 14px; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 12px; padding: 12px; background: rgba(15, 23, 42, 0.35); display: grid; gap: 10px; }
     .kb-priority-header { display: flex; justify-content: space-between; align-items: center; }
     .kb-priority-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -2134,6 +2145,10 @@
             <input type="checkbox" id="crawlerCollectBooks">
             <span data-i18n="crawlerCollectBooks">Store full pages for book reading</span>
           </label>
+          <label class="crawler-option">
+            <input type="checkbox" id="crawlerCollectMedex">
+            <span data-i18n="crawlerCollectMedex">Collect Medesk booking links</span>
+          </label>
           <button type="submit" data-i18n="crawlerStartButton">Запустить</button>
           <button type="button" id="stopBtn" data-i18n="crawlerStopButton">Остановить</button>
           <span id="launchMsg" class="muted"></span>
@@ -2709,6 +2724,7 @@
     const crawlerDedupBtn = document.getElementById('crawlerDedupBtn');
     const crawlerActionStatus = document.getElementById('crawlerActionStatus');
     const crawlerCollectBooks = document.getElementById('crawlerCollectBooks');
+    const crawlerCollectMedex = document.getElementById('crawlerCollectMedex');
     const voiceTrainingCard = document.getElementById('voiceTrainingCard');
     const voiceSampleInput = document.getElementById('voiceSampleInput');
     const voiceSampleUploadBtn = document.getElementById('voiceSampleUpload');
@@ -3153,6 +3169,7 @@
       crawlerDepth: 'Depth',
       crawlerPages: 'Pages',
       crawlerCollectBooks: 'Store full pages for book reading',
+      crawlerCollectMedex: 'Collect Medesk booking links',
       voiceTrainingTitle: 'Voice training',
       voiceTrainingSummary: 'Upload 3+ clean voice clips to teach the assistant to speak like your project.',
       voiceUploadButton: 'Upload clips',
@@ -3320,6 +3337,7 @@
         crawlerDepth: 'Profundidad',
         crawlerPages: 'Páginas',
         crawlerCollectBooks: 'Guardar páginas completas para modo lectura',
+        crawlerCollectMedex: 'Capturar enlaces de reserva Medesk',
         voiceTrainingTitle: 'Entrenamiento de voz',
         voiceTrainingSummary: 'Sube 3 o más clips limpios para que el asistente hable con la voz de tu proyecto.',
         voiceUploadButton: 'Subir clips',
@@ -3328,6 +3346,7 @@
         voiceSamplesEmpty: 'Aún no hay audios cargados.',
         voiceTrainButton: 'Entrenar voz personalizada',
         crawlerCollectBooks: 'Guardar páginas completas para modo lectura',
+        crawlerCollectMedex: 'Capturar enlaces de reserva Medesk',
         promptAiStart: 'Generando…',
         promptAiReady: 'Prompt listo',
         promptAiStopped: 'Detenido',
@@ -3414,6 +3433,7 @@
         crawlerDepth: 'Tiefe',
         crawlerPages: 'Seiten',
         crawlerCollectBooks: 'Komplette Seiten für Lesemodus speichern',
+        crawlerCollectMedex: 'Medesk-Buchungslinks sammeln',
         voiceTrainingTitle: 'Stimmtraining',
         voiceTrainingSummary: 'Laden Sie mindestens 3 saubere Sprachaufnahmen hoch, damit der Assistent mit Ihrer Stimme spricht.',
         voiceUploadButton: 'Clips hochladen',
@@ -3508,6 +3528,7 @@
         crawlerDepth: 'Profondeur',
         crawlerPages: 'Pages',
         crawlerCollectBooks: 'Conserver les pages complètes pour la lecture',
+        crawlerCollectMedex: 'Collecter les liens de réservation Medesk',
         voiceTrainingTitle: 'Entraînement vocal',
         voiceTrainingSummary: 'Importez au moins 3 extraits audio propres pour que l’assistant parle avec la voix de votre projet.',
         voiceUploadButton: 'Téléverser des extraits',
@@ -3602,6 +3623,7 @@
         crawlerDepth: 'Profondità',
         crawlerPages: 'Pagine',
         crawlerCollectBooks: 'Salva le pagine complete per la lettura',
+        crawlerCollectMedex: 'Raccogli link di prenotazione Medesk',
         voiceTrainingTitle: 'Addestramento voce',
         voiceTrainingSummary: 'Carica almeno 3 clip pulite per far parlare l’assistente con la voce del progetto.',
         voiceUploadButton: 'Carica clip',
@@ -3696,6 +3718,7 @@
         crawlerDepth: 'Profundidade',
         crawlerPages: 'Páginas',
         crawlerCollectBooks: 'Guardar páginas completas para modo leitura',
+        crawlerCollectMedex: 'Coletar links de agendamento Medesk',
         voiceTrainingTitle: 'Treinamento de voz',
         voiceTrainingSummary: 'Envie 3+ clipes limpos para que o assistente fale com a voz do projeto.',
         voiceUploadButton: 'Enviar clipes',
@@ -3790,6 +3813,7 @@
         crawlerDepth: 'Глубина',
         crawlerPages: 'Страницы',
         crawlerCollectBooks: 'Сохранять страницы целиком для режима чтения',
+        crawlerCollectMedex: 'Собирать ссылки записи Medesk',
         voiceTrainingTitle: 'Обучение голоса',
         voiceTrainingSummary: 'Загрузите 3+ аудиодорожки с чистой речью, чтобы ассистент говорил голосом проекта.',
         voiceUploadButton: 'Загрузить дорожки',
@@ -3941,6 +3965,7 @@
         crawlerDepth: '深度',
         crawlerPages: '页面',
         crawlerCollectBooks: '为阅读模式保存完整页面',
+        crawlerCollectMedex: '收集 Medesk 预约链接',
         voiceTrainingTitle: '语音训练',
         voiceTrainingSummary: '上传至少 3 段干净语音，帮助助手学会项目专属的声音。',
         voiceUploadButton: '上传音频',
@@ -4034,6 +4059,7 @@
         crawlerDepth: '深さ',
         crawlerPages: 'ページ',
         crawlerCollectBooks: '読書モード用にページ全体を保存',
+        crawlerCollectMedex: 'Medesk の予約リンクを収集',
         voiceTrainingTitle: '音声トレーニング',
         voiceTrainingSummary: 'クリアな音声クリップを3つ以上アップロードして、アシスタントにプロジェクトの声を学習させましょう。',
         voiceUploadButton: 'クリップをアップロード',
@@ -4127,6 +4153,7 @@
         crawlerDepth: 'العمق',
         crawlerPages: 'الصفحات',
         crawlerCollectBooks: 'حفظ الصفحات كاملة لوضع القراءة',
+        crawlerCollectMedex: 'جمع روابط حجز Medesk',
         voiceTrainingTitle: 'تدريب الصوت',
         voiceTrainingSummary: 'حمّل 3 مقاطع صوتية نظيفة على الأقل ليكتسب المساعد صوت مشروعك.',
         voiceUploadButton: 'رفع المقاطع',
@@ -4296,6 +4323,9 @@
       };
       if (crawlerCollectBooks) {
         payload.collect_books = crawlerCollectBooks.checked;
+      }
+      if (crawlerCollectMedex) {
+        payload.collect_medex = crawlerCollectMedex.checked;
       }
       if (!currentProject) {
         launchMsg.textContent = 'Выберите проект';
@@ -4987,6 +5017,16 @@
       }
       editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
       actionsTd.appendChild(editBtn);
+
+      if (doc.fileId) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Удалить';
+        deleteBtn.className = 'danger-btn';
+        const docProject = (doc.project || doc.domain || currentProject || '').trim().toLowerCase();
+        deleteBtn.addEventListener('click', () => deleteKnowledgeDocument(doc.fileId, docProject));
+        actionsTd.appendChild(deleteBtn);
+      }
 
       tr.append(nameTd, descTd, projectTd, linkTd, actionsTd);
       return tr;
@@ -8458,8 +8498,12 @@
         const kept = result.kept ?? 0;
         kbDedupStatus.textContent = `Удалено ${removed}, осталось ${kept}`;
         await loadKnowledge();
-        await fetchProjectStorage();
-        populateProjectForm(currentProject);
+        if (typeof fetchProjectStorage === 'function') {
+          await fetchProjectStorage();
+        }
+        if (typeof populateProjectForm === 'function') {
+          populateProjectForm(currentProject);
+        }
         setTimeout(() => { kbDedupStatus.textContent = ''; }, 3000);
       } catch (error) {
         console.error(error);
@@ -8467,26 +8511,38 @@
         setTimeout(() => { kbDedupStatus.textContent = ''; }, 4000);
       }
     }
-    async function clearKnowledge(){
+    function setKnowledgeActionStatus(message, duration = 3000) {
       if (!kbClearStatus) return;
-      const confirmed = confirm(currentProject ? `Очистить базу для проекта ${currentProject}?` : 'Очистить всю базу знаний?');
-      if (!confirmed) return;
-      kbClearStatus.textContent = 'Удаляем…';
+      kbClearStatus.textContent = message || '';
+      if (duration > 0 && message) {
+        setTimeout(() => {
+          if (kbClearStatus && kbClearStatus.textContent === message) {
+            kbClearStatus.textContent = '';
+          }
+        }, duration);
+      }
+    }
+
+    async function deleteKnowledgeDocument(fileId, projectSlug){
+      if (!fileId) return;
+      if (!confirm('Удалить документ из базы знаний?')) return;
+      setKnowledgeActionStatus('Удаляем документ…', 0);
       try {
         const params = new URLSearchParams();
-        if (currentProject) params.set('project', currentProject);
-        const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`, { method: 'DELETE' });
+        if (projectSlug) params.set('project', projectSlug);
+        const query = params.toString();
+        const url = query
+          ? `/api/v1/admin/knowledge/${encodeURIComponent(fileId)}?${query}`
+          : `/api/v1/admin/knowledge/${encodeURIComponent(fileId)}`;
+        const resp = await fetch(url, { method: 'DELETE' });
         if (!resp.ok) throw new Error(await resp.text());
-        const data = await resp.json();
-        kbClearStatus.textContent = `Удалено документов: ${data.documents_removed || 0}`;
-        await fetchKnowledge();
+        setKnowledgeActionStatus('Документ удалён');
+        await loadKnowledge();
         await fetchProjectStorage();
         populateProjectForm(currentProject);
-        setTimeout(() => { kbClearStatus.textContent = ''; }, 3000);
       } catch (error) {
-        console.error('knowledge_clear_failed', error);
-        kbClearStatus.textContent = 'Ошибка очистки';
-        setTimeout(() => { kbClearStatus.textContent = ''; }, 4000);
+        console.error('knowledge_document_delete_failed', error);
+        setKnowledgeActionStatus('Ошибка удаления', 4000);
       }
     }
 
@@ -9755,14 +9811,18 @@
           method: 'POST',
           body: formData,
         });
-        if (!res.ok) {
-          const raw = await res.text();
-          let detail = '';
+        const raw = await res.text();
+        let data = {};
+        if (raw) {
           try {
-            detail = JSON.parse(raw).detail || '';
+            data = JSON.parse(raw);
           } catch (error) {
-            detail = raw;
+            console.warn('voice_train_parse_failed', error);
+            data = {};
           }
+        }
+        if (!res.ok) {
+          const detail = (data && typeof data === 'object' && data.detail) ? data.detail : raw;
           if (res.status === 409) {
             if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение уже выполняется';
             await refreshVoiceTraining(projectName);
@@ -9775,7 +9835,14 @@
           }
           throw new Error(detail || `HTTP ${res.status}`);
         }
-        if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение запущено';
+        const detail = (data && typeof data === 'object' && data.detail) ? data.detail : '';
+        if (detail === 'job_in_progress') {
+          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение уже выполняется';
+        } else if (detail === 'job_resumed') {
+          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Перезапускаем обучение';
+        } else {
+          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение запущено';
+        }
         await refreshVoiceTraining(projectName);
       } catch (error) {
         console.error('voice_train_failed', error);
