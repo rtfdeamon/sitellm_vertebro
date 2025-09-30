@@ -197,7 +197,10 @@ def _resolve_session_identifiers(
 
 
 _KNOWLEDGE_SNIPPET_CHARS = 640
-_MAX_DIALOG_TURNS = 5
+_MAX_DIALOG_TURNS = int(os.getenv("MAX_DIALOG_TURNS", "5"))
+_MAX_DIALOG_CHARS = int(os.getenv("MAX_DIALOG_CHARS", "8000"))
+_HISTORY_SUMMARY_MAX_CHARS = int(os.getenv("HISTORY_SUMMARY_MAX_CHARS", "900"))
+_HISTORY_SUMMARY_PREFIX = "Earlier conversation summary:"  # keep neutral for multilingual chats
 _VOICE_MAX_TURNS = 3
 _VOICE_KNOWLEDGE_LIMIT = 2
 _VOICE_KNOWLEDGE_CHARS = 800
@@ -1497,24 +1500,126 @@ def _trim_voice_snippets(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]
     return trimmed
 
 
-def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_DIALOG_TURNS) -> list[dict[str, Any]]:
-    """Return ``messages`` trimmed to the last ``max_turns`` user requests."""
+def _summarize_messages(messages: list[dict[str, Any]], *, max_len: int = _HISTORY_SUMMARY_MAX_CHARS) -> str | None:
+    """Build a compact textual summary of older dialog turns."""
 
-    if max_turns <= 0 or len(messages) <= 2 * max_turns:
-        return messages
+    if not messages or max_len <= 0:
+        return None
 
-    kept: list[dict[str, Any]] = []
-    user_seen = 0
-
-    for msg in reversed(messages):
+    summary_parts: list[str] = []
+    remaining = max_len
+    for msg in messages:
+        content = str(msg.get("content", "")).strip()
+        if not content:
+            continue
         role = str(msg.get("role", "")).lower()
-        if role == RoleEnum.user.value:
-            user_seen += 1
-        kept.append(msg)
-        if user_seen >= max_turns:
+        speaker = "User" if role == RoleEnum.user.value else "Assistant"
+        normalized = " ".join(content.split())
+        if len(normalized) > min(240, remaining):
+            clipped = normalized[: min(240, remaining)].rsplit(" ", 1)[0]
+            normalized = (clipped or normalized[: min(240, remaining)]).rstrip(".,;") + "…"
+        fragment = f"{speaker}: {normalized}"
+        fragment_len = len(fragment)
+        if fragment_len >= remaining and summary_parts:
+            break
+        if fragment_len > remaining:
+            fragment = fragment[:remaining]
+        summary_parts.append(fragment)
+        remaining -= len(fragment) + 2  # include separator allowance
+        if remaining <= 0:
             break
 
-    return list(reversed(kept))
+    if not summary_parts:
+        return None
+
+    summary = f"{_HISTORY_SUMMARY_PREFIX} {'; '.join(summary_parts)}"
+    if len(summary) > max_len:
+        summary = summary[:max_len].rsplit(" ", 1)[0].rstrip(".,;") + "…"
+    return summary
+
+
+def _limit_dialog_history(
+    messages: list[dict[str, Any]],
+    max_turns: int = _MAX_DIALOG_TURNS,
+    *,
+    max_chars: int = _MAX_DIALOG_CHARS,
+) -> list[dict[str, Any]]:
+    """Return dialog history limited by ``max_turns`` and ``max_chars`` with optional summary."""
+
+    if not messages:
+        return []
+
+    trimmed: list[dict[str, Any]]
+    if max_turns <= 0:
+        trimmed = list(messages)
+    else:
+        kept: list[dict[str, Any]] = []
+        user_seen = 0
+        for msg in reversed(messages):
+            role = str(msg.get("role", "")).lower()
+            if role == RoleEnum.user.value:
+                user_seen += 1
+            kept.append(msg)
+            if user_seen >= max_turns:
+                break
+        trimmed = list(reversed(kept))
+
+    removed_count = max(0, len(messages) - len(trimmed))
+    summary_inserted = False
+
+    if removed_count > 0:
+        older = messages[: removed_count]
+        summary_text = _summarize_messages(older)
+        if summary_text:
+            trimmed = [{"role": "system", "content": summary_text}, *trimmed]
+            summary_inserted = True
+
+    char_pruned: list[dict[str, Any]] = []
+
+    if max_chars > 0:
+        def _msg_len(item: dict[str, Any]) -> int:
+            return len(str(item.get("content", "")))
+
+        total_chars = sum(_msg_len(item) for item in trimmed)
+        removal_index = 1 if summary_inserted else 0
+        # ensure we keep at least the last two actual messages
+        while total_chars > max_chars and len(trimmed) - removal_index > 1:
+            removed = trimmed.pop(removal_index)
+            total_chars -= _msg_len(removed)
+            char_pruned.append(removed)
+
+    if char_pruned and not summary_inserted:
+        summary_text = _summarize_messages(char_pruned)
+        if summary_text:
+            trimmed = [{"role": "system", "content": summary_text}, *trimmed]
+            summary_inserted = True
+            if max_chars > 0:
+                total_chars = sum(len(str(item.get("content", ""))) for item in trimmed)
+                removal_index = 1 if summary_inserted else 0
+                while total_chars > max_chars and len(trimmed) - removal_index > 1:
+                    removed = trimmed.pop(removal_index)
+                    total_chars -= len(str(removed.get("content", "")))
+
+    if summary_inserted and max_chars > 0 and trimmed:
+        other_chars = sum(len(str(item.get("content", ""))) for item in trimmed[1:])
+        if other_chars >= max_chars:
+            # No room for the summary at all.
+            trimmed.pop(0)
+        else:
+            allowance = max_chars - other_chars
+            summary_content = str(trimmed[0].get("content", ""))
+            if len(summary_content) > allowance:
+                snippet = summary_content[:allowance]
+                snippet = snippet.rsplit(" ", 1)[0].strip() or snippet.strip()
+                snippet = snippet.rstrip(".,; ")
+                if snippet and not snippet.endswith("…"):
+                    snippet = f"{snippet}…"
+                if snippet:
+                    trimmed[0]["content"] = snippet
+                else:
+                    trimmed.pop(0)
+
+    return trimmed
 
 
 @llm_router.post("/ask", response_class=ORJSONResponse, response_model=LLMResponse)
@@ -1915,6 +2020,73 @@ async def chat(
     model_override = selected_model_override
     effective_model = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
 
+    mongo_client = request.state.mongo
+    contexts_collection = getattr(request.state, "contexts_collection", MongoSettings().contexts)
+    normalized_question = question.strip()
+    dialog_history: list[dict[str, str]] = []
+    if session_key:
+        try:
+            async for record in mongo_client.get_sessions(contexts_collection, session_key):
+                dialog_history.append({
+                    "role": str(record.role),
+                    "content": record.text,
+                })
+        except NotFound:
+            dialog_history = []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "session_history_load_failed",
+                session=session_key,
+                project=project_name,
+                error=str(exc),
+            )
+            dialog_history = []
+
+    keep_messages = max(_MAX_DIALOG_TURNS * 2, 10)
+    if session_key and normalized_question:
+        last_entry = dialog_history[-1] if dialog_history else None
+        if not last_entry or not (
+            last_entry.get("role") == RoleEnum.user.value
+            and last_entry.get("content") == normalized_question
+        ):
+            try:
+                await mongo_client.append_session_message(
+                    contexts_collection,
+                    session_key,
+                    RoleEnum.user.value,
+                    normalized_question,
+                    project=project_name,
+                    keep=keep_messages,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "session_history_append_failed",
+                    role="user",
+                    session=session_key,
+                    project=project_name,
+                    error=str(exc),
+                )
+            else:
+                dialog_history.append({
+                    "role": RoleEnum.user.value,
+                    "content": normalized_question,
+                })
+
+    limited_history = _limit_dialog_history(dialog_history, max_turns=_MAX_DIALOG_TURNS, max_chars=_MAX_DIALOG_CHARS)
+    history_system_prompts: list[str] = []
+    conversation_lines: list[str] = []
+    for entry in limited_history:
+        role = str(entry.get("role", ""))
+        text = str(entry.get("content", ""))
+        if not text:
+            continue
+        if role == "system":
+            history_system_prompts.append(text)
+        elif role == RoleEnum.user.value:
+            conversation_lines.append(f"Пользователь: {text}")
+        else:
+            conversation_lines.append(f"Ассистент: {text}")
+
     if app_settings.debug:
         logger.info(
             "chat",
@@ -2090,13 +2262,27 @@ async def chat(
         )
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
-    prompt_segments = [emotion_instruction]
+    system_prompts: list[str] = []
     if reading_mode:
-        prompt_segments.insert(0, READING_MODE_PROMPT)
+        system_prompts.append(READING_MODE_PROMPT)
+    system_prompts.append(emotion_instruction)
     if knowledge_message:
-        prompt_segments.append(knowledge_message)
-    prompt_segments.append(f"Вопрос: {prompt_base}")
-    prompt_segments.append("Ответ:")
+        system_prompts.append(knowledge_message)
+    if history_system_prompts:
+        system_prompts.extend(history_system_prompts)
+
+    conversation_block = "\n".join(conversation_lines)
+    if not conversation_block:
+        fallback_question = normalized_question or question
+        if fallback_question:
+            conversation_block = f"Пользователь: {fallback_question}"
+
+    prompt_segments = []
+    if system_prompts:
+        prompt_segments.append("\n\n".join(system_prompts))
+    if conversation_block:
+        prompt_segments.append(conversation_block)
+    prompt_segments.append("Ассистент:")
     prompt_base = "\n\n".join(segment for segment in prompt_segments if segment)
 
     knowledge_log_stream = [
@@ -2141,6 +2327,8 @@ async def chat(
     error_message: str | None = None
     source_entries = _collect_source_entries(knowledge_snippets)
     should_emit_sources = bool(source_entries) and (project_sources_enabled or sources_requested)
+
+    response_chunks: list[str] = []
 
     async def event_stream():
         nonlocal stream_chars, error_message
@@ -2219,6 +2407,7 @@ async def chat(
                     yield f"data: {json.dumps(att, ensure_ascii=False)}\n\n"
             async for token in llm_client.generate(prompt_base, model=model_override):
                 stream_chars += len(token)
+                response_chunks.append(token)
                 payload = {
                     "text": token,
                     "role": "assistant",
@@ -2273,6 +2462,32 @@ async def chat(
                 user_id=None,
                 error=error_message,
             )
+            final_text = "".join(response_chunks).strip()
+            if session_key and final_text:
+                last_entry = dialog_history[-1] if dialog_history else None
+                if not last_entry or last_entry.get("role") != RoleEnum.assistant.value or last_entry.get("content") != final_text:
+                    try:
+                        await mongo_client.append_session_message(
+                            contexts_collection,
+                            session_key,
+                            RoleEnum.assistant.value,
+                            final_text,
+                            project=project_name,
+                            keep=keep_messages,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning(
+                            "session_history_append_failed",
+                            role="assistant",
+                            session=session_key,
+                            project=project_name,
+                            error=str(exc),
+                        )
+                    else:
+                        dialog_history.append({
+                            "role": RoleEnum.assistant.value,
+                            "content": final_text,
+                        })
 
     model_header = effective_model
     headers = {"X-Model-Name": model_header}
@@ -2360,6 +2575,8 @@ class CrawlRequest(BaseModel):
     max_depth: int = 3
     project: str | None = None
     domain: str | None = None
+    collect_medex: bool | None = None
+    collect_books: bool | None = None
 
 
 def _spawn_crawler(
@@ -2370,6 +2587,8 @@ def _spawn_crawler(
     project: str | None,
     domain: str | None,
     mongo_uri: str | None,
+    collect_medex: bool | None,
+    collect_books: bool | None,
 ) -> None:
     base_dir = Path(__file__).resolve().parent
     script = base_dir / "crawler" / "run_crawl.py"
@@ -2389,6 +2608,14 @@ def _spawn_crawler(
         cmd.extend(["--domain", domain])
     if mongo_uri:
         cmd.extend(["--mongo-uri", mongo_uri])
+    if collect_medex is True:
+        cmd.append("--collect-medex")
+    elif collect_medex is False:
+        cmd.append("--no-collect-medex")
+    if collect_books is True:
+        cmd.append("--collect-books")
+    elif collect_books is False:
+        cmd.append("--no-collect-books")
     env = os.environ.copy()
     python_paths = [str(base_dir)]
     existing_py_path = env.get("PYTHONPATH")
@@ -2428,6 +2655,8 @@ async def run_crawler(
         project=project_name,
         domain=allowed_domain or None,
         mongo_uri=backend_settings.mongo_uri,
+        collect_medex=req.collect_medex,
+        collect_books=req.collect_books,
     )
     return {
         "status": "started",
@@ -2776,7 +3005,13 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
                     asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
                 else:
                     asyncio.create_task(_run_voice_job_inline(existing_job.id, mongo_client))
-                return ORJSONResponse({"job": payload, "resumed": True})
+                return ORJSONResponse(
+                    {"job": payload, "resumed": True, "detail": "job_resumed"},
+                    status_code=202,
+                )
+
+            if existing_job.status == VoiceTrainingStatus.queued:
+                asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
 
             logger.info(
                 "voice_training_job_active",
@@ -2784,7 +3019,10 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
                 job_id=existing_job.id,
                 status=existing_job.status.value,
             )
-            return ORJSONResponse({"job": payload, "resumed": False})
+            return ORJSONResponse(
+                {"job": payload, "resumed": False, "detail": "job_in_progress"},
+                status_code=202,
+            )
 
     job = await mongo_client.create_voice_training_job(project_name)
     queued = False
@@ -2800,7 +3038,7 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
         job_id=job.id,
         transport="celery" if queued else "inline",
     )
-    return ORJSONResponse({"job": job.model_dump(by_alias=True)})
+    return ORJSONResponse({"job": job.model_dump(by_alias=True), "detail": "job_queued"}, status_code=202)
 
 
 @llm_router.get("/info")
