@@ -14,6 +14,12 @@ from core.status import status_dict
 from mongo import MongoClient
 from settings import Settings
 from worker import update_vector_store
+from .configuration import (
+    DEFAULT_MODE,
+    ALLOWED_MODES,
+    DEFAULT_PROCESSING_PROMPT,
+    MANUAL_MODE_MESSAGE,
+)
 
 
 logger = structlog.get_logger(__name__)
@@ -33,6 +39,8 @@ class ServiceConfig:
     idle_threshold_seconds: int
     poll_interval_seconds: int
     cooldown_seconds: int
+    mode: str
+    processing_prompt: str
     metadata: Dict[str, Any]
 
 
@@ -71,6 +79,7 @@ class KnowledgeProcessingService:
                         {
                             "running": True,
                             "enabled": False,
+                            "mode": config.mode,
                             "last_seen_ts": now,
                             "message": "Сервис выключен",
                         }
@@ -87,11 +96,21 @@ class KnowledgeProcessingService:
                     "last_queue": queued,
                     "idle_seconds": idle_duration,
                     "last_seen_ts": now,
+                    "mode": config.mode,
                 }
+
+                if queued > 0:
+                    self._last_activity = now
+
+                if config.mode != "auto":
+                    if config.metadata.get("last_reason") != "manual":
+                        status_update["message"] = MANUAL_MODE_MESSAGE
+                    await self._merge_setting(status_update)
+                    await self._wait(config.poll_interval_seconds)
+                    continue
 
                 should_trigger = False
                 if queued > 0:
-                    self._last_activity = now
                     status_update["message"] = f"Очередь активна ({queued}) — ждём простоя"
                 else:
                     threshold = config.idle_threshold_seconds
@@ -115,6 +134,7 @@ class KnowledgeProcessingService:
                             **status_update,
                             "last_reason": "queue_idle",
                             "message": "Интеллектуальная обработка: запускаем обновление",
+                            "manual_reason": None,
                         }
                     )
                     error_text = await self._run_processing()
@@ -132,6 +152,7 @@ class KnowledgeProcessingService:
                             "idle_seconds": 0.0,
                             "last_error": error_text,
                             "message": completion_msg,
+                            "manual_reason": None,
                         }
                     )
 
@@ -165,11 +186,21 @@ class KnowledgeProcessingService:
         idle_threshold = int(doc.get("idle_threshold_seconds") or DEFAULT_IDLE_THRESHOLD_SECONDS)
         poll_interval = int(doc.get("poll_interval_seconds") or DEFAULT_POLL_INTERVAL_SECONDS)
         cooldown = int(doc.get("cooldown_seconds") or DEFAULT_COOLDOWN_SECONDS)
+        raw_mode = str(doc.get("mode") or "").strip().lower()
+        if raw_mode not in ALLOWED_MODES:
+            raw_mode = "auto" if enabled else DEFAULT_MODE
+        prompt_value = doc.get("processing_prompt")
+        if not isinstance(prompt_value, str) or not prompt_value.strip():
+            prompt_value = DEFAULT_PROCESSING_PROMPT
+        else:
+            prompt_value = prompt_value.strip()
         return ServiceConfig(
             enabled=enabled,
             idle_threshold_seconds=max(60, idle_threshold),
             poll_interval_seconds=max(15, poll_interval),
             cooldown_seconds=max(60, cooldown),
+            mode=raw_mode,
+            processing_prompt=prompt_value,
             metadata=doc,
         )
 

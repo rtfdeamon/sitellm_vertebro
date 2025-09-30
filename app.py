@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 import random
 from datetime import datetime, timezone, timedelta
 import csv
@@ -67,6 +67,12 @@ from retrieval import search as retrieval_search
 from knowledge.summary import generate_document_summary
 from knowledge.tasks import queue_auto_description
 from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from knowledge_service.configuration import (
+    ALLOWED_MODES as KNOWLEDGE_SERVICE_ALLOWED_MODES,
+    DEFAULT_MODE as KNOWLEDGE_SERVICE_DEFAULT_MODE,
+    DEFAULT_PROCESSING_PROMPT as KNOWLEDGE_SERVICE_DEFAULT_PROMPT,
+    MANUAL_MODE_MESSAGE as KNOWLEDGE_SERVICE_MANUAL_MESSAGE,
+)
 from max_bot.config import get_settings as get_max_settings
 from vk_bot.config import get_settings as get_vk_settings
 import redis
@@ -2605,9 +2611,15 @@ class KnowledgeServiceConfig(BaseModel):
     idle_threshold_seconds: int | None = None
     poll_interval_seconds: int | None = None
     cooldown_seconds: int | None = None
+    mode: Literal["auto", "manual"] | None = None
+    processing_prompt: str | None = None
 
 
 KNOWLEDGE_SERVICE_KEY = "knowledge_service"
+
+
+class KnowledgeServiceRunRequest(BaseModel):
+    reason: str | None = None
 
 
 class PromptGenerationRequest(BaseModel):
@@ -2650,6 +2662,24 @@ async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
     idle = int(doc.get("idle_threshold_seconds") or 300)
     poll = int(doc.get("poll_interval_seconds") or 60)
     cooldown = int(doc.get("cooldown_seconds") or 900)
+    raw_mode = str(doc.get("mode") or "").strip().lower()
+    if raw_mode not in KNOWLEDGE_SERVICE_ALLOWED_MODES:
+        raw_mode = "auto" if enabled else KNOWLEDGE_SERVICE_DEFAULT_MODE
+    prompt_value = doc.get("processing_prompt")
+    if not isinstance(prompt_value, str) or not prompt_value.strip():
+        prompt_value = KNOWLEDGE_SERVICE_DEFAULT_PROMPT
+    else:
+        prompt_value = prompt_value.strip()
+    manual_reason = doc.get("manual_reason")
+    if isinstance(manual_reason, str):
+        manual_reason = manual_reason.strip() or None
+        if manual_reason and len(manual_reason) > 120:
+            manual_reason = manual_reason[:120]
+    else:
+        manual_reason = None
+    message_value = doc.get("message")
+    if not message_value and raw_mode == "manual":
+        message_value = KNOWLEDGE_SERVICE_MANUAL_MESSAGE
     payload = {
         "enabled": enabled,
         "running": bool(doc.get("running", False)),
@@ -2663,7 +2693,10 @@ async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
         "last_seen_ts": doc.get("last_seen_ts"),
         "updated_at": doc.get("updated_at"),
         "last_error": doc.get("last_error"),
-        "message": doc.get("message"),
+        "message": message_value,
+        "mode": raw_mode,
+        "processing_prompt": prompt_value,
+        "manual_reason": manual_reason,
     }
     return ORJSONResponse(payload)
 
@@ -2678,9 +2711,86 @@ async def _knowledge_service_update_impl(request: Request, payload: "KnowledgeSe
         updated["poll_interval_seconds"] = max(15, int(payload.poll_interval_seconds))
     if payload.cooldown_seconds is not None:
         updated["cooldown_seconds"] = max(60, int(payload.cooldown_seconds))
+    if payload.mode is not None:
+        mode_value = str(payload.mode).strip().lower()
+        if mode_value in KNOWLEDGE_SERVICE_ALLOWED_MODES:
+            updated["mode"] = mode_value
+    if payload.processing_prompt is not None:
+        prompt_value = payload.processing_prompt.strip()
+        updated["processing_prompt"] = prompt_value or KNOWLEDGE_SERVICE_DEFAULT_PROMPT
     updated["updated_at"] = time.time()
     await request.state.mongo.set_setting(KNOWLEDGE_SERVICE_KEY, updated)
-    return ORJSONResponse({"status": "ok", "enabled": updated["enabled"]})
+    return ORJSONResponse(
+        {
+            "status": "ok",
+            "enabled": updated["enabled"],
+            "mode": updated.get("mode", KNOWLEDGE_SERVICE_DEFAULT_MODE),
+        }
+    )
+
+
+async def _knowledge_service_run_impl(
+    request: Request,
+    payload: "KnowledgeServiceRunRequest" | None,
+) -> ORJSONResponse:
+    current = await request.state.mongo.get_setting(KNOWLEDGE_SERVICE_KEY) or {}
+    reason_raw = (payload.reason if payload else None) or "manual"
+    manual_reason = str(reason_raw).strip() or "manual"
+    if len(manual_reason) > 120:
+        manual_reason = manual_reason[:120]
+    normalized_reason = "manual"
+    started_at = time.time()
+
+    state = current.copy()
+    state.update(
+        {
+            "last_reason": normalized_reason,
+            "manual_reason": manual_reason,
+            "message": (
+                "Интеллектуальная обработка: выполняем ручной запуск"
+                if manual_reason == "manual"
+                else f"Интеллектуальная обработка: выполняем ручной запуск (причина: {manual_reason})"
+            ),
+            "last_seen_ts": started_at,
+            "idle_seconds": 0.0,
+            "updated_at": started_at,
+        }
+    )
+    await request.state.mongo.set_setting(KNOWLEDGE_SERVICE_KEY, state)
+
+    def _run_update() -> str | None:
+        try:
+            from worker import update_vector_store
+
+            update_vector_store()
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("knowledge_service_manual_run_failed", error=str(exc))
+            return str(exc)
+
+    loop = asyncio.get_running_loop()
+    error_text = await loop.run_in_executor(None, _run_update)
+
+    finished_at = time.time()
+    completion_message = (
+        "Интеллектуальная обработка завершена успешно"
+        if not error_text
+        else f"Интеллектуальная обработка завершена с ошибкой: {error_text}"
+    )
+    if manual_reason != "manual":
+        completion_message = f"{completion_message} (причина: {manual_reason})"
+    state.update(
+        {
+            "last_run_ts": finished_at,
+            "last_error": error_text,
+            "message": completion_message,
+            "updated_at": finished_at,
+            "last_seen_ts": finished_at,
+            "idle_seconds": 0.0,
+        }
+    )
+    await request.state.mongo.set_setting(KNOWLEDGE_SERVICE_KEY, state)
+    return ORJSONResponse({"status": "ok", "error": error_text})
 
 
 @app.get("/api/v1/backup/status", response_class=ORJSONResponse)
@@ -3850,6 +3960,25 @@ async def knowledge_service_update_alias(
     return await _knowledge_service_update_impl(request, payload)
 
 
+@app.post("/api/v1/admin/knowledge/service/run", response_class=ORJSONResponse)
+async def admin_knowledge_service_run(
+    request: Request,
+    payload: KnowledgeServiceRunRequest | None = None,
+) -> ORJSONResponse:
+    _require_super_admin(request)
+    return await _knowledge_service_run_impl(request, payload)
+
+
+@app.post("/api/v1/knowledge/service/run", response_class=ORJSONResponse)
+async def knowledge_service_run_alias(
+    request: Request,
+    payload: KnowledgeServiceRunRequest | None = None,
+) -> ORJSONResponse:
+    """Backward-compatible alias for manual knowledge service runs."""
+
+    return await _knowledge_service_run_impl(request, payload)
+
+
 @llm_router.get("/admin/knowledge/service", response_class=ORJSONResponse)
 async def llm_knowledge_service_status(request: Request) -> ORJSONResponse:
     return await _knowledge_service_status_impl(request)
@@ -3860,6 +3989,14 @@ async def llm_knowledge_service_update(
     request: Request, payload: KnowledgeServiceConfig
 ) -> ORJSONResponse:
     return await _knowledge_service_update_impl(request, payload)
+
+
+@llm_router.post("/admin/knowledge/service/run", response_class=ORJSONResponse)
+async def llm_knowledge_service_run(
+    request: Request,
+    payload: KnowledgeServiceRunRequest | None = None,
+) -> ORJSONResponse:
+    return await _knowledge_service_run_impl(request, payload)
 
 @app.get("/api/v1/admin/projects/names", response_class=ORJSONResponse)
 async def admin_project_names(request: Request, limit: int = 100) -> ORJSONResponse:

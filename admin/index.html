@@ -2583,13 +2583,25 @@
     <section id="block-knowledge-tools" class="dashboard-stack span-12" data-block-id="knowledge-tools" data-block-group="knowledge">
       <div class="card knowledge-service-card">
         <b>Интеллектуальная обработка</b>
-        <div class="muted">Автоматически обновляет векторное представление базы знаний, когда очередь простаивает больше 5 минут.</div>
+        <div class="muted">Настройте промт и режим обновления векторной базы знаний.</div>
         <label style="display:flex; align-items:center; gap:8px; margin:10px 0;">
           <input type="checkbox" id="knowledgeServiceToggle">
-          Включить автообработку при простое очереди
+          Сервис включён
+        </label>
+        <label style="display:flex; flex-direction:column; gap:6px;">
+          <span>Режим запуска</span>
+          <select id="knowledgeServiceMode" style="max-width:260px;">
+            <option value="manual">Ручной (по команде)</option>
+            <option value="auto">Автоматический (при простое очереди)</option>
+          </select>
+        </label>
+        <label style="display:flex; flex-direction:column; gap:6px;">
+          <span>Промт обработки</span>
+          <textarea id="knowledgeServicePrompt" rows="5" placeholder="Опишите, как обрабатывать документы по частям" style="min-height:120px;"></textarea>
         </label>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <button type="button" id="knowledgeServiceApply">Сохранить</button>
+          <button type="button" id="knowledgeServiceRun">Запустить обработку</button>
           <button type="button" id="knowledgeServiceRefresh">Обновить</button>
           <span class="muted" id="knowledgeServiceStatus">—</span>
         </div>
@@ -4458,6 +4470,9 @@
     const knowledgeServiceRefresh = document.getElementById('knowledgeServiceRefresh');
     const knowledgeServiceStatus = document.getElementById('knowledgeServiceStatus');
     const knowledgeServiceCard = document.querySelector('.knowledge-service-card');
+    const knowledgeServiceMode = document.getElementById('knowledgeServiceMode');
+    const knowledgeServicePrompt = document.getElementById('knowledgeServicePrompt');
+    const knowledgeServiceRun = document.getElementById('knowledgeServiceRun');
     const knowledgeServiceEndpoints = [
       '/api/v1/knowledge/service',
       '/api/v1/admin/knowledge/service',
@@ -4485,6 +4500,9 @@
       if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
       if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
       if (knowledgeServiceRefresh) knowledgeServiceRefresh.disabled = disabled;
+      if (knowledgeServiceMode) knowledgeServiceMode.disabled = disabled;
+      if (knowledgeServicePrompt) knowledgeServicePrompt.disabled = disabled;
+      if (knowledgeServiceRun) knowledgeServiceRun.disabled = disabled;
     };
 
     const ensurePromptRoleOptions = (select) => {
@@ -5820,12 +5838,16 @@
       if (!knowledgeServiceStatus) return;
       const bits = [];
       const message = data?.message || (data?.enabled ? 'Сервис включён' : 'Сервис выключен');
-      bits.push(message);
+      if (message) bits.push(message);
+      if (typeof data?.enabled === 'boolean') {
+        bits.push(data.enabled ? 'Сервис: включён' : 'Сервис: выключен');
+      }
+      if (typeof data?.mode === 'string') {
+        const normalized = data.mode === 'auto' ? 'автоматический' : data.mode === 'manual' ? 'ручной' : data.mode;
+        bits.push(`Режим: ${normalized}`);
+      }
       if (typeof data?.running === 'boolean') {
         bits.push(data.running ? 'Статус: активен' : 'Статус: остановлен');
-      }
-      if (typeof data?.enabled === 'boolean') {
-        bits.push(data.enabled ? 'Режим: включён' : 'Режим: выключен');
       }
       if (typeof data?.last_queue === 'number') {
         bits.push(`Очередь: ${data.last_queue}`);
@@ -5839,13 +5861,16 @@
       if (data?.last_error) {
         bits.push(`Ошибка: ${data.last_error}`);
       }
+      if (data?.manual_reason && data.manual_reason !== 'manual') {
+        bits.push(`Причина: ${data.manual_reason}`);
+      }
       if (data?.updated_at) {
         bits.push(`Обновлено: ${formatTimestamp(data.updated_at)}`);
       }
       knowledgeServiceStatus.textContent = bits.join(' • ') || '—';
     }
 
-    async function callKnowledgeService(method = 'GET', payload = null) {
+    async function callKnowledgeService(method = 'GET', payload = null, pathSuffix = '') {
       if (!knowledgeServiceToggle && method === 'GET') {
         return null;
       }
@@ -5872,8 +5897,9 @@
 
       let lastError = null;
       for (const endpoint of order) {
+        const target = `${endpoint}${pathSuffix}`;
         try {
-          const resp = await fetch(endpoint, {
+          const resp = await fetch(target, {
             method,
             headers,
             body,
@@ -5918,6 +5944,13 @@
         const data = await callKnowledgeService('GET');
         if (data) {
           knowledgeServiceToggle.checked = !!data.enabled;
+          if (knowledgeServiceMode) {
+            const modeValue = data.mode === 'auto' || data.mode === 'manual' ? data.mode : 'manual';
+            knowledgeServiceMode.value = modeValue;
+          }
+          if (knowledgeServicePrompt) {
+            knowledgeServicePrompt.value = typeof data.processing_prompt === 'string' ? data.processing_prompt : '';
+          }
           renderKnowledgeServiceStatus(data);
           if (triggerPulse && knowledgeServiceCard) {
             pulseCard(knowledgeServiceCard);
@@ -5946,6 +5979,12 @@
         const payload = {
           enabled: knowledgeServiceToggle.checked,
         };
+        if (knowledgeServiceMode) {
+          payload.mode = knowledgeServiceMode.value;
+        }
+        if (knowledgeServicePrompt) {
+          payload.processing_prompt = knowledgeServicePrompt.value;
+        }
         await callKnowledgeService('POST', payload);
         knowledgeServiceStatus.textContent = t('knowledgeServiceSaved');
         await fetchKnowledgeServiceStatus(true);
@@ -5955,6 +5994,32 @@
           knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
         } else {
           knowledgeServiceStatus.textContent = t('knowledgeServiceSaveError');
+        }
+      } finally {
+        setKnowledgeServiceControlsDisabled(false);
+      }
+    }
+
+    async function runKnowledgeService() {
+      if (!knowledgeServiceRun) return;
+      if (!adminSession.is_super) return;
+      knowledgeServiceStatus.textContent = 'Запускаем обработку…';
+      setKnowledgeServiceControlsDisabled(true);
+      try {
+        const payload = { reason: 'manual_button' };
+        const result = await callKnowledgeService('POST', payload, '/run');
+        if (result?.error) {
+          knowledgeServiceStatus.textContent = 'Обработка завершена с ошибкой';
+        } else {
+          knowledgeServiceStatus.textContent = 'Обработка завершена';
+        }
+        await fetchKnowledgeServiceStatus(true);
+      } catch (error) {
+        console.error('knowledge_service_run_failed', error);
+        if (error?.message === 'not_found') {
+          knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
+        } else {
+          knowledgeServiceStatus.textContent = 'Ошибка запуска обработки';
         }
       } finally {
         setKnowledgeServiceControlsDisabled(false);
@@ -10462,6 +10527,9 @@
 
     if (knowledgeServiceApply) {
       knowledgeServiceApply.addEventListener('click', saveKnowledgeServiceState);
+    }
+    if (knowledgeServiceRun) {
+      knowledgeServiceRun.addEventListener('click', runKnowledgeService);
     }
     if (knowledgeServiceRefresh) {
       knowledgeServiceRefresh.addEventListener('click', () => fetchKnowledgeServiceStatus(true));
