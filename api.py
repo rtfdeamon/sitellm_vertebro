@@ -1869,7 +1869,6 @@ def _limit_dialog_history(
                     trimmed.pop(0)
 
     return trimmed
-
 @llm_router.post("/bitrix/confirm", response_class=ORJSONResponse)
 async def confirm_bitrix_plan(request: Request, payload: BitrixPlanAction) -> ORJSONResponse:
     try:
