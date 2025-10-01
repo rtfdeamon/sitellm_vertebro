@@ -3135,7 +3135,7 @@ async def admin_session(request: Request) -> ORJSONResponse:
 
 @app.post("/api/v1/desktop/build")
 async def desktop_build(request: Request, payload: DesktopBuildRequest) -> FileResponse:
-    _require_admin(request)
+    identity = _get_admin_identity(request)
     meta = DESKTOP_BUILD_ARTIFACTS.get(payload.platform)
     if meta is None:
         raise HTTPException(status_code=400, detail="Unsupported platform")
@@ -3168,6 +3168,7 @@ async def desktop_build(request: Request, payload: DesktopBuildRequest) -> FileR
         platform=payload.platform,
         artifact=str(artifact_path),
         size=stat_result.st_size,
+        requested_by=getattr(identity, "username", None),
     )
 
     return FileResponse(
