@@ -160,6 +160,73 @@
     textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
     .btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+    .download-section {
+      padding: 48px 36px;
+      background: var(--panel);
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      margin: 48px 0;
+      box-shadow: 0 32px 70px rgba(8, 13, 26, 0.45);
+    }
+    .download-section h2 {
+      font-size: 28px;
+      margin-bottom: 12px;
+      letter-spacing: -0.01em;
+    }
+    .download-section p {
+      margin: 0 0 24px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 18px;
+    }
+    .download-card {
+      padding: 18px;
+      border-radius: 18px;
+      border: 1px solid rgba(79, 124, 255, 0.25);
+      background: rgba(79, 124, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .download-card h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .download-card p {
+      margin: 0;
+      color: rgba(226, 232, 240, 0.8);
+    }
+    .download-card .btn.secondary {
+      margin-left: 0;
+    }
+    .download-links {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .download-note {
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px dashed rgba(148, 163, 184, 0.35);
+      font-size: 13px;
+      color: rgba(226, 232, 240, 0.75);
+    }
+    .download-status {
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .download-status[data-state="success"] {
+      color: var(--ok);
+    }
+    .download-status[data-state="error"] {
+      color: var(--error);
+    }
     body.modal-open { overflow: hidden; }
     .auth-modal {
       position: fixed;
@@ -578,6 +645,10 @@
     body:not(.embed) .chat-window { width: 100%; max-height: none; background: none; border: none; box-shadow: none; border-radius: 0; }
     body:not(.embed) .chat-header { display: none; }
     body:not(.embed) .chat-body { flex: none; }
+    @media (max-width: 720px) {
+      .download-section { padding: 32px 20px; }
+      .download-grid { grid-template-columns: 1fr; }
+    }
     @media (max-width: 480px) {
       .widget-launcher { right: 16px; bottom: 16px; padding: 9px 14px; }
       .chat-modal { padding: 12px; }
@@ -755,6 +826,42 @@
         </div>
       </div>
     </section>
+
+    <section class="download-section" id="desktopDownloads">
+      <h2>Desktop assistant for Windows &amp; Linux</h2>
+      <p>
+        Launch the voice avatar as a standalone program that stays on top of other windows, supports the same animated
+        characters, and listens for a wake word. Build installers from <code>widget/desktop</code> or place your signed
+        binaries in the paths below and the links will serve them directly.
+      </p>
+      <div class="download-grid">
+        <article class="download-card">
+          <h3>Windows (x64)</h3>
+          <p>Includes hotword activation, animated avatar, and auto-start options.</p>
+          <button type="button" class="btn" data-build-platform="windows">
+            Build &amp; download .exe
+          </button>
+        </article>
+        <article class="download-card">
+          <h3>Linux (AppImage / deb)</h3>
+          <p>Runs on any modern distribution, stays always-on-top, supports microphone wake word.</p>
+          <div class="download-links">
+            <button type="button" class="btn" data-build-platform="linux-appimage">
+              Build AppImage
+            </button>
+            <button type="button" class="btn secondary" data-build-platform="linux-deb">
+              Build deb package
+            </button>
+          </div>
+        </article>
+      </div>
+      <div class="download-note">
+        Builds run on demand when you click a button. Ensure <code>npm</code> and <code>electron-builder</code> are available on the server.
+        <div class="download-status" id="desktopBuildStatus" role="status" aria-live="polite">
+          Click a button to build the latest installer for your platform.
+        </div>
+      </div>
+    </section>
   </div>
   <div class="widget-launcher" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria">
     <div class="launcher-avatar">AI</div>
@@ -883,6 +990,18 @@ const refreshProjectsBtn = document.getElementById('refreshProjects');
 const projectInfo = document.getElementById('projectInfo');
 const startPromptInput = document.getElementById('startPrompt');
 const savePromptBtn = document.getElementById('savePrompt');
+const desktopBuildButtons = document.querySelectorAll('[data-build-platform]');
+const desktopBuildStatus = document.getElementById('desktopBuildStatus');
+const DESKTOP_FILENAME_FALLBACKS = {
+  windows: 'SiteLLMAssistant-Setup.exe',
+  'linux-appimage': 'SiteLLMAssistant.AppImage',
+  'linux-deb': 'sitellm-assistant.deb',
+};
+const DESKTOP_PLATFORM_LABELS = {
+  windows: 'Windows installer',
+  'linux-appimage': 'Linux AppImage',
+  'linux-deb': 'Linux deb package',
+};
 const promptStatus = document.getElementById('promptStatus');
 const debugCheckbox = document.getElementById('projectDebug');
 const debugHint = document.getElementById('projectDebugHint');
@@ -928,6 +1047,13 @@ const feedbackNameInput = document.getElementById('feedbackName');
 const feedbackContactInput = document.getElementById('feedbackContact');
 const feedbackMessageInput = document.getElementById('feedbackMessage');
 const feedbackSubmitBtn = document.getElementById('feedbackSubmit');
+
+desktopBuildButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const platformKey = button.dataset.buildPlatform;
+    handleDesktopBuild(button, platformKey);
+  });
+});
 
 const urlParams = new URLSearchParams(window.location.search);
 const urlProject = (urlParams.get('project') || '').trim().toLowerCase();
@@ -2124,6 +2250,103 @@ async function fetchAdmin(path, init = {}) {
     clearAuthHeaderForBase(base);
   }
   return response;
+}
+
+function setDesktopStatus(message, state) {
+  if (!desktopBuildStatus) return;
+  desktopBuildStatus.textContent = message || '';
+  if (state) {
+    desktopBuildStatus.dataset.state = state;
+  } else {
+    delete desktopBuildStatus.dataset.state;
+  }
+}
+
+function extractDownloadFilename(contentDisposition, platformKey) {
+  if (typeof contentDisposition === 'string' && contentDisposition) {
+    const utfMatch = /filename\*=UTF-8''([^;]+)/i.exec(contentDisposition);
+    if (utfMatch && utfMatch[1]) {
+      try {
+        return decodeURIComponent(utfMatch[1]);
+      } catch {
+        return utfMatch[1];
+      }
+    }
+    const simpleMatch = /filename="?([^";]+)"?/i.exec(contentDisposition);
+    if (simpleMatch && simpleMatch[1]) {
+      return simpleMatch[1];
+    }
+  }
+  return DESKTOP_FILENAME_FALLBACKS[platformKey] || 'desktop-installer.bin';
+}
+
+async function handleDesktopBuild(button, platformKey) {
+  if (!platformKey) return;
+  const label = (DESKTOP_PLATFORM_LABELS[platformKey] || platformKey).trim();
+  const originalText = button.dataset.originalLabel || button.textContent.trim();
+  button.dataset.originalLabel = originalText;
+
+  setDesktopStatus(`Building ${label}…`, 'pending');
+  button.disabled = true;
+  button.textContent = 'Building…';
+
+  try {
+    const response = await fetchAdmin('/api/v1/desktop/build', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ platform: platformKey }),
+    });
+
+    if (response.status === 401) {
+      setDesktopStatus('Admin authentication required to build installers.', 'error');
+      return;
+    }
+    if (response.status === 403) {
+      setDesktopStatus('Current account has no permission to build installers.', 'error');
+      return;
+    }
+    if (!response.ok) {
+      let detail = '';
+      try {
+        const data = await response.clone().json();
+        detail = data?.detail || '';
+      } catch {
+        try {
+          detail = await response.text();
+        } catch {
+          detail = '';
+        }
+      }
+      setDesktopStatus(detail || `Desktop build failed (HTTP ${response.status}).`, 'error');
+      return;
+    }
+
+    const blob = await response.blob();
+    const filename = extractDownloadFilename(
+      response.headers.get('content-disposition'),
+      platformKey,
+    );
+    const url = URL.createObjectURL(blob);
+    const tempLink = document.createElement('a');
+    tempLink.href = url;
+    tempLink.download = filename;
+    document.body.appendChild(tempLink);
+    tempLink.click();
+    tempLink.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+
+    setDesktopStatus(`${label} ready — download should start automatically.`, 'success');
+  } catch (error) {
+    if (error && error.code === AUTH_CANCELLED_CODE) {
+      setDesktopStatus('Build cancelled — admin login required.', 'error');
+      return;
+    }
+    console.error('desktop build failed', error);
+    setDesktopStatus('Desktop build failed — check server logs for details.', 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText || 'Download';
+  }
 }
 
 async function handleAuthSubmit(event) {

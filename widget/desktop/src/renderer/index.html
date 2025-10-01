@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <title>SiteLLM Assistant</title>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; img-src 'self' data: file:; media-src *; connect-src *;" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="desktop-toolbar">
+      <div class="toolbar-title">SiteLLM Assistant</div>
+      <div class="toolbar-actions">
+        <button id="pin-toggle" type="button" title="Закрепить поверх других окон">📌</button>
+        <button id="devtools-btn" type="button" title="Открыть инструменты разработчика">🛠️</button>
+      </div>
+    </header>
+    <main id="widget-root" class="widget-root" aria-live="polite">
+      <div class="widget-placeholder">Загрузка ассистента…</div>
+    </main>
+    <footer class="desktop-footer">
+      <div>
+        Горячее слово: <span id="hotword-label"></span>
+      </div>
+      <button id="toggle-hotword" type="button">Отключить прослушивание</button>
+    </footer>
+    <script src="renderer.js" type="module"></script>
+  </body>
+</html>

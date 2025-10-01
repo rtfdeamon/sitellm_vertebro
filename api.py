@@ -12,7 +12,7 @@ import signal
 import time
 import re
 import urllib.parse as urlparse
-from typing import Any
+from typing import Any, Sequence
 from uuid import uuid4
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
@@ -100,6 +100,13 @@ READING_MODE_PROMPT = (
 
 READING_COLLECTION_NAME = os.getenv("MONGO_READING_COLLECTION", "reading_pages")
 READING_PAGE_MAX_LIMIT = 20
+READING_PREVIEW_LIMIT = min(5, READING_PAGE_MAX_LIMIT)
+READING_PREVIEW_MAX_SEGMENTS_PER_PAGE = 12
+READING_PREVIEW_MAX_IMAGES_PER_PAGE = 6
+READING_PREVIEW_SEGMENT_CHAR_LIMIT = 1800
+READING_PREVIEW_TEXT_CHAR_LIMIT = 3500
+READING_PREVIEW_TOTAL_CHAR_LIMIT = 20000
+READING_PREVIEW_HTML_CHAR_LIMIT = 5000
 
 try:  # pragma: no cover - optional when Celery/kombu unavailable in tests
     from celery.exceptions import CeleryError
@@ -540,6 +547,129 @@ def _build_download_url(request: Request, file_id: str) -> str:
         return f"{base}/api/v1/admin/knowledge/documents/{file_id}"
 
 
+def _truncate_text(value: Any, limit: int) -> str | None:
+    if limit <= 0:
+        return None
+    if not isinstance(value, str):
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) <= limit:
+        return cleaned
+    slice_limit = max(1, limit - 3)
+    truncated = cleaned[:slice_limit].rstrip()
+    if not truncated:
+        truncated = cleaned[:slice_limit]
+    return f"{truncated}..."
+
+
+def _serialize_reading_pages(
+    request: Request,
+    pages: Sequence[ReadingPage],
+) -> list[dict[str, Any]]:
+    serialized: list[dict[str, Any]] = []
+    remaining_chars = READING_PREVIEW_TOTAL_CHAR_LIMIT
+    for page in pages:
+        if remaining_chars <= 0:
+            break
+
+        payload = page.model_dump(by_alias=True)
+
+        raw_segments = payload.get("segments") if isinstance(payload.get("segments"), list) else []
+        segments_payload: list[dict[str, Any]] = []
+        if raw_segments:
+            for raw_segment in raw_segments:
+                if remaining_chars <= 0:
+                    break
+                if len(segments_payload) >= READING_PREVIEW_MAX_SEGMENTS_PER_PAGE:
+                    break
+                if not isinstance(raw_segment, dict):
+                    continue
+                text_value = raw_segment.get("text")
+                max_chars = min(READING_PREVIEW_SEGMENT_CHAR_LIMIT, remaining_chars)
+                truncated_text = _truncate_text(text_value, max_chars)
+                if not truncated_text:
+                    continue
+                segment_entry = dict(raw_segment)
+                segment_entry["text"] = truncated_text
+                segment_entry["chars"] = len(truncated_text)
+                segments_payload.append(segment_entry)
+                remaining_chars = max(0, remaining_chars - len(truncated_text))
+            payload["segments"] = segments_payload
+        else:
+            payload["segments"] = []
+
+        if segments_payload:
+            payload.pop("text", None)
+        else:
+            max_chars = min(READING_PREVIEW_TEXT_CHAR_LIMIT, remaining_chars)
+            truncated_page_text = _truncate_text(payload.get("text"), max_chars)
+            if truncated_page_text:
+                payload["text"] = truncated_page_text
+                remaining_chars = max(0, remaining_chars - len(truncated_page_text))
+            else:
+                payload.pop("text", None)
+
+        html_value = payload.get("html")
+        if html_value:
+            truncated_html = _truncate_text(html_value, READING_PREVIEW_HTML_CHAR_LIMIT)
+            if truncated_html:
+                payload["html"] = truncated_html
+                remaining_chars = max(0, remaining_chars - len(truncated_html))
+            else:
+                payload.pop("html", None)
+
+        images_payload: list[dict[str, Any]] = []
+        for image in page.images:
+            if len(images_payload) >= READING_PREVIEW_MAX_IMAGES_PER_PAGE:
+                break
+            source_url = getattr(image, "url", None)
+            file_id = getattr(image, "file_id", None)
+            image_entry: dict[str, Any] = {}
+            if file_id:
+                image_entry["url"] = _build_download_url(request, file_id)
+                if source_url:
+                    image_entry["source"] = source_url
+            elif source_url:
+                image_entry["url"] = source_url
+                image_entry["source"] = source_url
+            else:
+                continue
+            caption = getattr(image, "caption", None)
+            if caption:
+                truncated_caption = _truncate_text(caption, 240)
+                if truncated_caption:
+                    image_entry["caption"] = truncated_caption
+            images_payload.append(image_entry)
+        payload["images"] = images_payload
+        payload["segmentCount"] = len(segments_payload)
+        payload["imageCount"] = len(images_payload)
+
+        serialized.append(payload)
+    return serialized
+
+
+def _collect_reading_items(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for snippet in snippets:
+        reading = snippet.get("reading")
+        if not isinstance(reading, dict):
+            continue
+        pages = reading.get("pages")
+        if not pages:
+            continue
+        entry = {
+            "id": snippet.get("id"),
+            "name": snippet.get("name"),
+            "source": snippet.get("source"),
+            **{k: v for k, v in reading.items() if k != "pages"},
+            "pages": pages,
+        }
+        items.append(entry)
+    return items[:3]
+
+
 def _question_requests_sources(question: str) -> bool:
     normalized = (question or "").strip().lower()
     if not normalized:
@@ -641,6 +771,96 @@ def _collect_attachments(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]
         seen.add(key)
         attachments.append(att)
     return attachments
+
+
+async def _build_reading_preview(
+    request: Request,
+    mongo_client: MongoClient,
+    project: str | None,
+    doc: Document,
+    *,
+    limit: int = READING_PREVIEW_LIMIT,
+) -> dict[str, Any] | None:
+    project_name = (doc.project or project or "").strip()
+    if not project_name:
+        return None
+
+    reading_collection = getattr(request.state, "reading_collection", READING_COLLECTION_NAME)
+
+    doc_order = None
+    if doc.url:
+        try:
+            page_matches = await mongo_client.get_reading_pages(
+                reading_collection,
+                project_name,
+                limit=1,
+                offset=0,
+                url=doc.url,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "knowledge_reading_page_lookup_failed",
+                project=project_name,
+                url=doc.url,
+                error=str(exc),
+            )
+            page_matches = []
+        if page_matches:
+            doc_order = page_matches[0].order
+
+    try:
+        total_pages = await mongo_client.count_reading_pages(reading_collection, project_name)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "knowledge_reading_total_failed",
+            project=project_name,
+            error=str(exc),
+        )
+        total_pages = 0
+
+    if total_pages <= 0 and doc_order is None:
+        return None
+
+    offset = 0
+    if isinstance(doc_order, int) and doc_order > 0:
+        offset = max(0, doc_order - 1)
+        if total_pages:
+            offset = min(offset, max(0, total_pages - limit))
+    try:
+        pages = await mongo_client.get_reading_pages(
+            reading_collection,
+            project_name,
+            limit=limit,
+            offset=offset,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug(
+            "knowledge_reading_preview_failed",
+            project=project_name,
+            offset=offset,
+            error=str(exc),
+        )
+        pages = []
+
+    if not pages:
+        return None
+
+    serialized_pages = _serialize_reading_pages(request, pages)
+    has_more = total_pages > offset + len(serialized_pages)
+    initial_index = 0
+    if isinstance(doc_order, int) and doc_order > 0:
+        initial_index = max(0, min(len(serialized_pages) - 1, doc_order - 1 - offset))
+
+    preview = {
+        "pages": serialized_pages,
+        "project": project_name,
+        "total": total_pages,
+        "has_more": has_more,
+        "startOffset": offset,
+        "initialIndex": initial_index,
+        "initialUrl": doc.url,
+    }
+    return preview
 
 
 async def _collect_knowledge_snippets(
@@ -806,6 +1026,19 @@ async def _collect_knowledge_snippets(
             }
             if attachment_meta:
                 item["attachment"] = attachment_meta
+            if getattr(doc, "reading_mode", False) and mongo_client and hasattr(mongo_client, "get_reading_pages"):
+                try:
+                    reading_preview = await _build_reading_preview(request, mongo_client, project, doc)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "knowledge_reading_preview_error",
+                        project=project,
+                        url=doc.url,
+                        error=str(exc),
+                    )
+                    reading_preview = None
+                if reading_preview:
+                    item["reading"] = reading_preview
             buckets["mongo"].append(item)
             if file_id:
                 mongo_seen.add(file_id)
@@ -1886,6 +2119,8 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         attachments=[Attachment(**att) for att in attachments_payload],
         emotions_enabled=emotions_enabled,
     )
+    reading_items = _collect_reading_items(knowledge_snippets)
+
     meta_payload: dict[str, Any] = {
         "emotions_enabled": emotions_enabled,
     }
@@ -1899,6 +2134,11 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         meta_payload["mail_pending"] = mail_pending
     if attachments_payload:
         meta_payload["attachments"] = len(attachments_payload)
+    if reading_items:
+        meta_payload["reading_available"] = True
+        meta_payload["reading"] = reading_items
+    else:
+        meta_payload["reading_available"] = False
     await request.state.mongo.log_request_stat(
         project=project_name,
         question=context[-1].get("content", "") if context else None,
@@ -2313,6 +2553,7 @@ async def chat(
         }
         for entry in knowledge_snippets[:3]
     ]
+    reading_items_stream = _collect_reading_items(knowledge_snippets)
     _log_debug_event(
         "llm_prompt_compiled_stream",
         project=project_name,
@@ -2363,8 +2604,15 @@ async def chat(
                 meta_payload["mail_debug"] = mail_debug
             if build_payload:
                 meta_payload["build"] = build_payload
+            if reading_items_stream:
+                meta_payload["reading_available"] = True
+            else:
+                meta_payload["reading_available"] = False
             yield "event: meta\n"
             yield f"data: {json.dumps(meta_payload, ensure_ascii=False)}\n\n"
+            if reading_items_stream:
+                yield "event: reading\n"
+                yield f"data: {json.dumps({'items': reading_items_stream}, ensure_ascii=False)}\n\n"
             if should_emit_sources:
                 yield "event: sources\n"
                 yield f"data: {json.dumps({'entries': source_entries}, ensure_ascii=False)}\n\n"
@@ -2384,6 +2632,7 @@ async def chat(
                     "emotions_enabled": emotions_enabled,
                     "model": effective_model,
                     "reading_mode": reading_mode,
+                    "reading_available": bool(reading_items_stream),
                     "debug_origin": debug_origin,
                     "total_knowledge_chars": total_knowledge_chars,
                     "ts": time.time(),

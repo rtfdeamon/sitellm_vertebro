@@ -13,7 +13,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 from models import Document
-from knowledge.text import extract_doc_text
+from knowledge.text import extract_doc_text, extract_xls_text, extract_xlsx_text
 
 
 class DocumentsParser:
@@ -150,6 +150,22 @@ class DocumentsParser:
                 return TextLoader(tmp_txt_path), tmp_txt_path
             case ".pdf":
                 return PyPDFLoader(file_path=str(path), mode="single"), None
+            case ".xlsx" | ".xlsm" | ".xltx" | ".xltm" | ".xlsb":
+                text = extract_xlsx_text(path.read_bytes())
+                if not text.strip():
+                    raise ValueError("Unsupported XLSX document")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                    tmp_txt.write(text.encode("utf-8"))
+                    tmp_txt_path = Path(tmp_txt.name)
+                return TextLoader(tmp_txt_path), tmp_txt_path
+            case ".xls" | ".xlt" | ".xlm" | ".xla" | ".xlw":
+                text = extract_xls_text(path.read_bytes())
+                if not text.strip():
+                    raise ValueError("Unsupported XLS document")
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                    tmp_txt.write(text.encode("utf-8"))
+                    tmp_txt_path = Path(tmp_txt.name)
+                return TextLoader(tmp_txt_path), tmp_txt_path
             case _:
                 return None, None
 

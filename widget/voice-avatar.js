@@ -7,6 +7,33 @@
   const instanceRegistry = globalRoot.instances || [];
   let bookOverlaySequence = 0;
 
+  const ORIENTATION_DEFAULT = 'bottom-right';
+  const ORIENTATION_ALIAS_MAP = new Map([
+    ['bottom-right', 'bottom-right'],
+    ['bottomright', 'bottom-right'],
+    ['right-bottom', 'bottom-right'],
+    ['br', 'bottom-right'],
+    ['bottom-left', 'bottom-left'],
+    ['bottomleft', 'bottom-left'],
+    ['left-bottom', 'bottom-left'],
+    ['bl', 'bottom-left'],
+    ['top-right', 'top-right'],
+    ['topright', 'top-right'],
+    ['right-top', 'top-right'],
+    ['tr', 'top-right'],
+    ['top-left', 'top-left'],
+    ['topleft', 'top-left'],
+    ['left-top', 'top-left'],
+    ['tl', 'top-left'],
+  ]);
+  const ORIENTATION_CLASS_MAP = {
+    'bottom-right': 'sitellm-anchor-bottom-right',
+    'bottom-left': 'sitellm-anchor-bottom-left',
+    'top-right': 'sitellm-anchor-top-right',
+    'top-left': 'sitellm-anchor-top-left',
+  };
+  const ORIENTATION_CLASSES = Object.values(ORIENTATION_CLASS_MAP);
+
   function registerInstance(instance) {
     instanceRegistry.push(instance);
     try {
@@ -29,6 +56,25 @@
       }));
     } catch (_) {
       // ignore subscriber errors
+    }
+  }
+
+  function normalizeOrientation(value) {
+    if (!value || typeof value !== 'string') {
+      return ORIENTATION_DEFAULT;
+    }
+    const normalized = value.trim().toLowerCase().replace(/_/g, '-').replace(/\s+/g, '-');
+    return ORIENTATION_ALIAS_MAP.get(normalized) || ORIENTATION_DEFAULT;
+  }
+
+  function applyOrientationClass(wrapper, orientation) {
+    if (!wrapper) return;
+    for (const className of ORIENTATION_CLASSES) {
+      wrapper.classList.remove(className);
+    }
+    const resolved = ORIENTATION_CLASS_MAP[orientation] || ORIENTATION_CLASS_MAP[ORIENTATION_DEFAULT];
+    if (resolved) {
+      wrapper.classList.add(resolved);
     }
   }
 
@@ -380,6 +426,43 @@
     @keyframes sitellmBlink {
       0%, 88%, 100% { transform: scaleY(1); }
       90%, 92% { transform: scaleY(0.1); }
+    }
+    .sitellm-voice-wrapper {
+      position: fixed;
+      z-index: 2147483601;
+      max-width: min(420px, calc(100vw - 32px));
+      width: min(360px, calc(100vw - 32px));
+      box-sizing: border-box;
+    }
+    .sitellm-voice-wrapper .sitellm-voice-widget {
+      margin: 0;
+      width: 100%;
+    }
+    .sitellm-voice-wrapper.sitellm-anchor-bottom-right { right: 24px; bottom: 24px; }
+    .sitellm-voice-wrapper.sitellm-anchor-bottom-left { left: 24px; bottom: 24px; }
+    .sitellm-voice-wrapper.sitellm-anchor-top-right { right: 24px; top: 24px; }
+    .sitellm-voice-wrapper.sitellm-anchor-top-left { left: 24px; top: 24px; }
+    @media (max-width: 640px) {
+      .sitellm-voice-wrapper {
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
+      }
+      .sitellm-voice-wrapper.sitellm-anchor-bottom-right,
+      .sitellm-voice-wrapper.sitellm-anchor-top-right {
+        right: 12px;
+      }
+      .sitellm-voice-wrapper.sitellm-anchor-bottom-left,
+      .sitellm-voice-wrapper.sitellm-anchor-top-left {
+        left: 12px;
+      }
+      .sitellm-voice-wrapper.sitellm-anchor-bottom-right,
+      .sitellm-voice-wrapper.sitellm-anchor-bottom-left {
+        bottom: 12px;
+      }
+      .sitellm-voice-wrapper.sitellm-anchor-top-right,
+      .sitellm-voice-wrapper.sitellm-anchor-top-left {
+        top: 12px;
+      }
     }
     .sitellm-voice-widget {
       position: relative;
@@ -1417,7 +1500,7 @@
     const datasetVoiceHint = (script.dataset.voice || '').trim();
     const voiceHint = datasetVoiceHint || DEFAULT_VOICE_HINT;
     const datasetVoiceModel = script.dataset.voiceModel || '';
-    const readingMode = script.dataset.readingMode === '1';
+    let readingMode = script.dataset.readingMode === '1';
     const datasetSpeechRateRaw = parseFloat(script.dataset.speechRate || '');
     const initialSpeechRate = Number.isFinite(datasetSpeechRateRaw)
       ? clampSpeechRate(datasetSpeechRateRaw)
@@ -1451,6 +1534,15 @@
     const subheadline = script.dataset.subtitle || 'Talk to me using your voice';
 
     ensureStyles(accentRgb);
+
+    const orientationRaw = (script.dataset.orientation || script.dataset.anchor || script.dataset.position || '').trim();
+    let orientation = normalizeOrientation(orientationRaw);
+    script.dataset.orientation = orientation;
+
+    const widgetWrapper = document.createElement('div');
+    widgetWrapper.className = 'sitellm-voice-wrapper';
+    widgetWrapper.dataset.orientation = orientation;
+    applyOrientationClass(widgetWrapper, orientation);
 
     const container = document.createElement('section');
     container.className = 'sitellm-voice-widget';
@@ -1530,9 +1622,39 @@
 
     const instanceApi = {
       element: container,
+      wrapper: widgetWrapper,
       getMode: () => interactionMode,
       getCharacter: () => characterKey,
       getSpeechRate: () => speechRate,
+      getOrientation: () => orientation,
+      setOrientation: (value) => {
+        const next = normalizeOrientation(value);
+        orientation = next;
+        script.dataset.orientation = next;
+        widgetWrapper.dataset.orientation = next;
+        applyOrientationClass(widgetWrapper, next);
+        return orientation;
+      },
+      startVoiceCapture: () => {
+        if (!modeSupportsVoice) {
+          return false;
+        }
+        voiceSettings.enabled = true;
+        voiceArmed = true;
+        updateMicButton();
+        beginListening();
+        return true;
+      },
+      stopVoiceCapture: () => {
+        if (!modeSupportsVoice) {
+          return false;
+        }
+        deactivateVoice();
+        return true;
+      },
+      enableReadingMode: () => {
+        enableReadingMode();
+      },
       setSpeechRate: (value) => {
         const next = clampSpeechRate(Number(value));
         speechRate = next;
@@ -1565,7 +1687,9 @@
         }
         bookFocusRestore = null;
         unlockPageScroll();
-        if (container.parentElement) {
+        if (widgetWrapper.parentElement) {
+          widgetWrapper.parentElement.removeChild(widgetWrapper);
+        } else if (container.parentElement) {
           container.parentElement.removeChild(container);
         }
         destructionObserver.disconnect();
@@ -1574,7 +1698,8 @@
     };
 
     const destructionObserver = new MutationObserver(() => {
-      if (!document.body.contains(container)) {
+      const wrapperInDom = !widgetWrapper || document.body.contains(widgetWrapper);
+      if (!document.body.contains(container) || !wrapperInDom) {
         instanceApi.destroy();
         destructionObserver.disconnect();
       }
@@ -1694,7 +1819,8 @@
     container.appendChild(header);
     container.appendChild(content);
 
-    script.insertAdjacentElement('beforebegin', container);
+    widgetWrapper.appendChild(container);
+    script.insertAdjacentElement('beforebegin', widgetWrapper);
 
     const manualTextarea = manualInput.querySelector('textarea');
     const manualButton = manualInput.querySelector('button');
@@ -1718,7 +1844,100 @@
       hasMore: true,
       loading: false,
       currentIndex: 0,
+      project: project,
+      sourceProject: project || null,
+      referenceUrl: null,
+      crossProject: null,
+      notice: null,
+      startOffset: 0,
+      total: 0,
     };
+
+    updateReadingUiState();
+
+    function updateReadingUiState() {
+      if (!readingPanel) return;
+      if (readingMode) {
+        readingPanel.classList.remove('hidden');
+        if (readingExpandBtn) {
+          readingExpandBtn.style.display = '';
+          readingExpandBtn.disabled = false;
+        }
+        if (readingMoreBtn) {
+          readingMoreBtn.style.display = readingState.hasMore ? 'inline-flex' : 'none';
+          readingMoreBtn.disabled = !readingState.hasMore || readingState.loading;
+        }
+      } else {
+        readingPanel.classList.add('hidden');
+        if (readingExpandBtn) {
+          readingExpandBtn.disabled = true;
+          readingExpandBtn.style.display = 'none';
+        }
+        if (readingMoreBtn) {
+          readingMoreBtn.style.display = 'none';
+          readingMoreBtn.disabled = true;
+        }
+      }
+    }
+
+    function enableReadingMode() {
+      if (readingMode) return;
+      readingMode = true;
+      voiceSettings.reading = true;
+      updateReadingUiState();
+    }
+
+    function applyReadingData(entry) {
+      if (!entry || typeof entry !== 'object') return;
+      const pages = Array.isArray(entry.pages) ? entry.pages : [];
+      if (!pages.length) return;
+      readingState.loading = false;
+      readingState.notice = null;
+      readingState.crossProject = null;
+
+      const projectCandidate = typeof entry.project === 'string' ? entry.project.trim() : '';
+      let resolvedProject = projectCandidate;
+      if (!resolvedProject) {
+        const projectFromPages = pages.find((page) => page && typeof page.project === 'string' && page.project.trim());
+        if (projectFromPages) {
+          resolvedProject = projectFromPages.project.trim();
+        }
+      }
+      if (resolvedProject) {
+        readingState.project = resolvedProject;
+        readingState.sourceProject = resolvedProject;
+        if (project && resolvedProject !== project) {
+          readingState.crossProject = resolvedProject;
+        }
+      } else if (!readingState.project) {
+        readingState.notice = 'missing_project';
+      }
+
+      readingState.referenceUrl = null;
+      const initialUrl = typeof entry.initialUrl === 'string' ? entry.initialUrl.trim() : '';
+      if (initialUrl) {
+        readingState.referenceUrl = initialUrl;
+      } else {
+        const pageWithUrl = pages.find((page) => page && typeof page.url === 'string' && page.url.trim());
+        if (pageWithUrl) {
+          readingState.referenceUrl = pageWithUrl.url.trim();
+        }
+      }
+      if (!readingState.referenceUrl) {
+        readingState.notice = readingState.notice || 'missing_url';
+      }
+
+      readingState.pages = pages;
+      readingState.startOffset = Number.isFinite(entry.startOffset) ? Number(entry.startOffset) : 0;
+      readingState.offset = readingState.startOffset + pages.length;
+      readingState.total = Number.isFinite(entry.total) ? Number(entry.total) : pages.length;
+      const hasMoreRaw = typeof entry.has_more !== 'undefined' ? entry.has_more : entry.hasMore;
+      readingState.hasMore = Boolean(hasMoreRaw) && !readingState.notice;
+      const desiredIndex = Number.isFinite(entry.initialIndex) ? Number(entry.initialIndex) : 0;
+      readingState.currentIndex = Math.min(Math.max(desiredIndex, 0), Math.max(pages.length - 1, 0));
+      enableReadingMode();
+      renderReadingPages();
+    }
 
     function clearSourcesPanel() {
       if (sourcesPanel) {
@@ -1900,7 +2119,13 @@
 
     function updateBookProgressLabel() {
       if (!bookProgressNode) return;
-      const totalLabel = readingState.pages.length ? `${readingState.pages.length}${readingState.hasMore ? '+' : ''}` : '0';
+      const totalCount = readingState.total && readingState.total >= readingState.pages.length
+        ? readingState.total
+        : readingState.pages.length;
+      const labelValue = totalCount || readingState.pages.length;
+      const totalLabel = labelValue
+        ? `${labelValue}${readingState.hasMore ? '+' : ''}`
+        : '0';
       const current = readingState.pages.length ? readingState.currentIndex + 1 : 0;
       bookProgressNode.textContent = `Страница ${current} из ${totalLabel}`;
     }
@@ -1949,6 +2174,27 @@
       const titleText = page?.title || `Страница ${page?.order ?? readingState.currentIndex + 1}`;
       bookTitleLabel.textContent = titleText;
       updateBookSource(page);
+
+      if (readingState.crossProject && readingState.crossProject !== project) {
+        const projectNotice = document.createElement('p');
+        projectNotice.className = 'sitellm-book-notice';
+        projectNotice.textContent = `Материалы относятся к проекту "${readingState.crossProject}".`;
+        bookBody.appendChild(projectNotice);
+      }
+
+      if (readingState.notice === 'missing_project') {
+        const projectWarning = document.createElement('p');
+        projectWarning.className = 'sitellm-book-notice';
+        projectWarning.textContent = 'Не удалось определить проект для загрузки дополнительных страниц.';
+        bookBody.appendChild(projectWarning);
+      }
+
+      if (readingState.notice === 'missing_url') {
+        const limitNotice = document.createElement('p');
+        limitNotice.className = 'sitellm-book-notice';
+        limitNotice.textContent = 'Дополнительные страницы недоступны для этого источника.';
+        bookBody.appendChild(limitNotice);
+      }
 
       if (page?.segments?.length) {
         page.segments.forEach((segment) => {
@@ -2244,22 +2490,25 @@
         readingPlaceholder.style.display = 'none';
       } else {
         readingPlaceholder.style.display = 'block';
-        readingPlaceholder.textContent = readingState.loading
-          ? 'Загружаем страницы…'
-          : (readingMode
-            ? 'Материалы для чтения появятся после краулинга.'
-            : 'Режим чтения не активирован.');
+        let placeholderMessage;
+        if (readingState.notice === 'missing_project') {
+          placeholderMessage = 'Не удалось определить проект для режима чтения.';
+        } else if (readingState.notice === 'missing_url') {
+          placeholderMessage = 'Источник не содержит ссылки для дополнительных страниц.';
+        } else if (readingState.loading) {
+          placeholderMessage = 'Загружаем страницы…';
+        } else if (readingMode) {
+          placeholderMessage = 'Материалы для чтения появятся после краулинга.';
+        } else {
+          placeholderMessage = 'Режим чтения не активирован.';
+        }
+        if (readingState.crossProject && readingState.crossProject !== project) {
+          placeholderMessage = `${placeholderMessage} Материалы относятся к проекту "${readingState.crossProject}".`;
+        }
+        readingPlaceholder.textContent = placeholderMessage;
       }
 
-      if (!readingMode) {
-        readingMoreBtn.style.display = 'none';
-        readingExpandBtn.style.display = 'none';
-      } else {
-        readingMoreBtn.style.display = readingState.hasMore ? 'inline-flex' : 'none';
-        readingExpandBtn.style.display = '';
-        readingExpandBtn.disabled = false;
-      }
-      readingMoreBtn.disabled = !readingState.hasMore || readingState.loading;
+      updateReadingUiState();
       renderBookView();
     }
 
@@ -2267,54 +2516,79 @@
       if (!readingMode) {
         return;
       }
-      if (!project) {
+
+      if (!readingState.project) {
+        readingState.project = project;
+      }
+
+      if (!readingState.project) {
         readingPlaceholder.style.display = 'block';
         readingPlaceholder.textContent = 'Укажите проект, чтобы получить материалы для чтения.';
-        readingMoreBtn.style.display = 'none';
-        if (readingExpandBtn) {
-          readingExpandBtn.disabled = true;
-        }
+        readingState.hasMore = false;
+        updateReadingUiState();
         return;
       }
+
+      if (readingState.notice === 'missing_project' || readingState.notice === 'missing_url') {
+        readingPlaceholder.style.display = 'block';
+        readingPlaceholder.textContent = readingState.notice === 'missing_project'
+          ? 'Не удалось определить проект для режима чтения.'
+          : 'Источник не содержит ссылки для дополнительных страниц.';
+        readingState.hasMore = false;
+        updateReadingUiState();
+        return;
+      }
+
       if (readingState.loading) return;
       if (!readingState.hasMore && !reset && readingState.pages.length) {
         return;
       }
+
       if (reset) {
         readingState.offset = 0;
         readingState.pages = [];
         readingState.hasMore = true;
         readingState.currentIndex = 0;
+        readingState.startOffset = 0;
+        readingState.total = 0;
+        readingState.notice = null;
+        readingState.crossProject = null;
+        readingState.referenceUrl = null;
+        readingState.sourceProject = readingState.project || project || null;
       }
+
       readingState.loading = true;
       readingPlaceholder.style.display = 'block';
       readingPlaceholder.textContent = readingState.pages.length ? 'Обновляем…' : 'Загружаем страницы…';
-      readingMoreBtn.disabled = true;
+      updateReadingUiState();
+
       try {
-        const data = await fetchReadingPages(baseUrl, project, {
-          limit: 4,
+        const data = await fetchReadingPages(baseUrl, readingState.project, {
+          limit: 5,
           offset: readingState.offset,
         });
         const newPages = Array.isArray(data?.pages) ? data.pages : [];
-        if (readingState.offset === 0) {
+        if (readingState.offset === 0 || reset) {
           readingState.pages = newPages;
           readingState.currentIndex = 0;
-        } else {
+        } else if (newPages.length) {
           readingState.pages = readingState.pages.concat(newPages);
         }
         readingState.offset = readingState.pages.length;
         readingState.hasMore = Boolean(data?.has_more);
+        if (typeof data?.total === 'number' && data.total >= 0) {
+          readingState.total = data.total;
+        }
         renderReadingPages();
       } catch (error) {
         console.error(error);
         readingPlaceholder.style.display = 'block';
         readingPlaceholder.textContent = 'Не удалось загрузить страницы для чтения.';
-        readingMoreBtn.style.display = 'none';
+        readingState.hasMore = false;
         renderBookView();
       } finally {
         readingState.loading = false;
-        readingMoreBtn.disabled = !readingState.hasMore || readingState.loading;
-        renderBookView();
+        updateReadingUiState();
       }
     }
 
@@ -2918,6 +3192,18 @@
 
       currentSource.addEventListener('meta', () => {
         // optional meta
+      });
+      currentSource.addEventListener('reading', (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const items = Array.isArray(data?.items) ? data.items : [];
+          const target = items.find((item) => Array.isArray(item?.pages) && item.pages.length) || items[0];
+          if (target) {
+            applyReadingData(target);
+          }
+        } catch (err) {
+          console.warn('[SiteLLM voice-avatar] reading payload parse error', err);
+        }
       });
       currentSource.addEventListener('sources', (event) => {
         try {

@@ -1,0 +1,16 @@
+{
+  "baseUrl": "http://localhost:8000",
+  "project": "",
+  "voiceHint": "",
+  "orientation": "bottom-right",
+  "mode": "avatar",
+  "readingMode": true,
+  "color": "#4f7cff",
+  "hotword": "Ситель, слушай",
+  "hotwordLocale": "ru-RU",
+  "character": "luna",
+  "alwaysOnTop": true,
+  "width": 420,
+  "height": 640,
+  "theme": "system"
+}
