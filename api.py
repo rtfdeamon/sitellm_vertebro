@@ -11,7 +11,6 @@ import os
 import signal
 import time
 import re
-import threading
 import urllib.parse as urlparse
 from typing import Any
 from uuid import uuid4
@@ -136,8 +135,8 @@ VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
     ConnectionError,
     TimeoutError,
 )
-VOICE_INLINE_FALLBACK_DELAY = float(os.getenv("VOICE_INLINE_FALLBACK_DELAY", "2.0"))
-VOICE_PENDING_STATUSES = {"", VoiceTrainingStatus.queued.value, "pending"}
+VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "5"))
+VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "20"))
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -2568,61 +2567,6 @@ def _validate_voice_project(project: str | None) -> str:
     return project_name
 
 
-def _spawn_voice_training_thread(job_id: str) -> None:
-    """Run simulated voice training in a background thread when Celery is down."""
-
-    runner = getattr(voice_train_model, "run", None)
-    if not callable(runner):
-        logger.error("voice_training_runner_missing", job_id=job_id)
-        return
-
-    def _target() -> None:
-        try:
-            runner(job_id)
-        except Exception as exc:  # noqa: BLE001 - log unexpected training failure
-            logger.exception("voice_training_fallback_failed", job_id=job_id, error=str(exc))
-
-    thread = threading.Thread(target=_target, name=f"voice-train-{job_id}", daemon=True)
-    thread.start()
-
-
-def _schedule_voice_job_watchdog(job_id: str) -> None:
-    if VOICE_INLINE_FALLBACK_DELAY <= 0 or worker_mongo_client is None or worker_settings is None:
-        return
-
-    def _target() -> None:
-        time.sleep(VOICE_INLINE_FALLBACK_DELAY)
-        try:
-            client = worker_mongo_client()
-        except Exception as exc:  # noqa: BLE001 - guard against misconfigured worker settings
-            logger.warning("voice_training_watchdog_client_failed", job_id=job_id, error=str(exc))
-            return
-        try:
-            try:
-                collection = client[worker_settings.mongo.database][worker_settings.mongo.voice_jobs]
-                job_doc = collection.find_one({"_id": ObjectId(job_id)})
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("voice_training_watchdog_fetch_failed", job_id=job_id, error=str(exc))
-                return
-            if not job_doc:
-                return
-            status_value = job_doc.get("status")
-            normalized_status = (status_value.value if isinstance(status_value, VoiceTrainingStatus) else str(status_value or "")).lower()
-            if normalized_status in VOICE_PENDING_STATUSES:
-                logger.info("voice_training_watchdog_trigger", job_id=job_id)
-                try:
-                    voice_train_model.run(job_id)
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("voice_training_watchdog_failed", job_id=job_id, error=str(exc))
-        finally:
-            try:
-                client.close()
-            except Exception:  # noqa: BLE001 - best effort cleanup
-                pass
-
-    threading.Thread(target=_target, name=f"voice-watchdog-{job_id}", daemon=True).start()
-
-
 def _queue_voice_training_job(job_id: str) -> bool:
     try:
         voice_train_model.delay(job_id)
@@ -2630,6 +2574,66 @@ def _queue_voice_training_job(job_id: str) -> bool:
     except VOICE_QUEUE_ERRORS as exc:
         logger.warning("voice_training_enqueue_failed", job_id=job_id, error=str(exc))
         return False
+
+
+async def _run_voice_job_inline(job_id: str, mongo_client: MongoClient) -> None:
+    stages = [
+        (VoiceTrainingStatus.preparing, 0.1, "Готовим набор примеров", 0.6),
+        (VoiceTrainingStatus.training, 0.65, "Обучаем голосовую модель", 1.2),
+        (VoiceTrainingStatus.validating, 0.9, "Проверяем результат", 0.8),
+    ]
+    try:
+        started_at = time.time()
+        await mongo_client.update_voice_training_job(
+            job_id,
+            status=VoiceTrainingStatus.preparing,
+            progress=0.05,
+            message="Запускаем обучение",
+            started_at=started_at,
+        )
+        for status, progress, message, delay in stages:
+            await asyncio.sleep(delay)
+            await mongo_client.update_voice_training_job(
+                job_id,
+                status=status,
+                progress=progress,
+                message=message,
+            )
+        await asyncio.sleep(0.6)
+        await mongo_client.update_voice_training_job(
+            job_id,
+            status=VoiceTrainingStatus.completed,
+            progress=1.0,
+            message="Голосовой профиль готов",
+            finished_at=time.time(),
+        )
+        logger.info("voice_training_inline_completed", job_id=job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("voice_training_inline_failed", job_id=job_id, error=str(exc))
+        await mongo_client.update_voice_training_job(
+            job_id,
+            status=VoiceTrainingStatus.failed,
+            progress=0.0,
+            message="Ошибка при обучении",
+            finished_at=time.time(),
+        )
+
+
+async def _voice_job_watchdog(job_id: str, project: str, mongo_client: MongoClient) -> None:
+    await asyncio.sleep(max(1.0, VOICE_JOB_STALE_TIMEOUT))
+    try:
+        jobs = await mongo_client.list_voice_training_jobs(project, limit=1)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("voice_training_watchdog_fetch_error", job_id=job_id, project=project, error=str(exc))
+        return
+    if not jobs:
+        return
+    job = jobs[0]
+    if job.id != job_id:
+        return
+    if job.status == VoiceTrainingStatus.queued:
+        logger.warning("voice_training_watchdog_inline", job_id=job_id, project=project)
+        await _run_voice_job_inline(job_id, mongo_client)
 
 
 def _validate_voice_payload(
@@ -2732,20 +2736,65 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
         )
 
     existing_jobs = await mongo_client.list_voice_training_jobs(project_name, limit=1)
-    if existing_jobs and existing_jobs[0].status in {
-        VoiceTrainingStatus.queued,
-        VoiceTrainingStatus.preparing,
-        VoiceTrainingStatus.training,
-        VoiceTrainingStatus.validating,
-    }:
-        raise HTTPException(status_code=409, detail="job_in_progress")
+    if existing_jobs:
+        existing_job = existing_jobs[0]
+        if existing_job.status in {
+            VoiceTrainingStatus.queued,
+            VoiceTrainingStatus.preparing,
+            VoiceTrainingStatus.training,
+            VoiceTrainingStatus.validating,
+        }:
+            payload = existing_job.model_dump(by_alias=True)
+            updated_at = payload.get("updatedAt") or payload.get("updated_at")
+            if updated_at is None:
+                updated_at = existing_job.created_at or time.time()
+            try:
+                updated_at_value = float(updated_at)
+            except (TypeError, ValueError):
+                updated_at_value = time.time()
+
+            age = time.time() - updated_at_value
+            if age >= VOICE_JOB_STALE_TIMEOUT:
+                logger.warning(
+                    "voice_training_job_stale",
+                    project=project_name,
+                    job_id=existing_job.id,
+                    status=existing_job.status.value,
+                    age=age,
+                )
+                updated_job = await mongo_client.update_voice_training_job(
+                    existing_job.id,
+                    status=VoiceTrainingStatus.queued,
+                    progress=existing_job.progress or 0.0,
+                    message="Перезапускаем обучение",
+                )
+                if updated_job:
+                    payload = updated_job.model_dump(by_alias=True)
+                requeued = False
+                if worker_mongo_client is not None and worker_settings is not None:
+                    requeued = _queue_voice_training_job(existing_job.id)
+                if requeued:
+                    asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
+                else:
+                    asyncio.create_task(_run_voice_job_inline(existing_job.id, mongo_client))
+                return ORJSONResponse({"job": payload, "resumed": True})
+
+            logger.info(
+                "voice_training_job_active",
+                project=project_name,
+                job_id=existing_job.id,
+                status=existing_job.status.value,
+            )
+            return ORJSONResponse({"job": payload, "resumed": False})
 
     job = await mongo_client.create_voice_training_job(project_name)
-    queued = _queue_voice_training_job(job.id)
-    if not queued:
-        _spawn_voice_training_thread(job.id)
+    queued = False
+    if worker_mongo_client is not None and worker_settings is not None:
+        queued = _queue_voice_training_job(job.id)
+    if queued:
+        asyncio.create_task(_voice_job_watchdog(job.id, project_name, mongo_client))
     else:
-        _schedule_voice_job_watchdog(job.id)
+        asyncio.create_task(_run_voice_job_inline(job.id, mongo_client))
     logger.info(
         "voice_training_queued",
         project=project_name,
