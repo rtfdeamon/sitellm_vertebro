@@ -19,8 +19,6 @@
     }
     .sitellm-widget-launcher {
       position: fixed;
-      right: 24px;
-      bottom: 24px;
       z-index: 2147483646;
       display: flex;
       align-items: center;
@@ -35,6 +33,22 @@
       box-shadow: 0 18px 40px rgba(15, 23, 42, 0.35);
       animation: sitellm-pulse 3s ease-in-out infinite;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .sitellm-widget-launcher.sitellm-pos-bottom-right {
+      right: 24px;
+      bottom: 24px;
+    }
+    .sitellm-widget-launcher.sitellm-pos-bottom-left {
+      left: 24px;
+      bottom: 24px;
+    }
+    .sitellm-widget-launcher.sitellm-pos-top-right {
+      right: 24px;
+      top: 24px;
+    }
+    .sitellm-widget-launcher.sitellm-pos-top-left {
+      left: 24px;
+      top: 24px;
     }
     .sitellm-widget-launcher:hover {
       transform: translateY(-2px);
@@ -67,8 +81,6 @@
     }
     .sitellm-widget-frame {
       position: fixed;
-      right: 24px;
-      bottom: 96px;
       width: min(420px, calc(100vw - 32px));
       max-height: min(680px, calc(100vh - 120px));
       background: #0f1117;
@@ -79,6 +91,22 @@
       display: none;
       animation: sitellm-slide-up 0.24s ease forwards;
       z-index: 2147483647;
+    }
+    .sitellm-widget-frame.sitellm-pos-bottom-right {
+      right: 24px;
+      bottom: 96px;
+    }
+    .sitellm-widget-frame.sitellm-pos-bottom-left {
+      left: 24px;
+      bottom: 96px;
+    }
+    .sitellm-widget-frame.sitellm-pos-top-right {
+      right: 24px;
+      top: 96px;
+    }
+    .sitellm-widget-frame.sitellm-pos-top-left {
+      left: 24px;
+      top: 96px;
     }
     .sitellm-widget-frame.is-open { display: block; }
     .sitellm-widget-frame iframe {
@@ -204,7 +232,7 @@
   }
 
   function createFloatingEmbed(script, options) {
-    const { frameSrc, accentRgb, launcherTitle, launcherSubtitle, launcherIcon } = options;
+    const { frameSrc, accentRgb, launcherTitle, launcherSubtitle, launcherIcon, positionClass } = options;
     ensureStyles(accentRgb);
 
     const overlay = document.createElement('div');
@@ -214,6 +242,9 @@
     frame.className = 'sitellm-widget-frame';
     frame.style.width = options.width;
     frame.style.height = options.height;
+    if (positionClass) {
+      frame.classList.add(positionClass);
+    }
 
     const iframe = document.createElement('iframe');
     iframe.src = frameSrc;
@@ -225,6 +256,9 @@
     const launcher = document.createElement('button');
     launcher.type = 'button';
     launcher.className = 'sitellm-widget-launcher';
+    if (positionClass) {
+      launcher.classList.add(positionClass);
+    }
     launcher.innerHTML = `
       <span class="sitellm-avatar">${launcherIcon}</span>
       <span class="sitellm-copy">
@@ -287,6 +321,10 @@
     const theme = script.dataset.theme || '';
     const debug = script.dataset.debug || '';
     const reading = script.dataset.readingMode === '1';
+    const positionRaw = (script.dataset.position || '').toLowerCase();
+    const allowedPositions = new Set(['bottom-right', 'bottom-left', 'top-right', 'top-left']);
+    const normalizedPosition = allowedPositions.has(positionRaw) ? positionRaw : 'bottom-right';
+    const positionClass = `sitellm-pos-${normalizedPosition}`;
 
     const session = sessionKey(project);
     const frameSrc = buildFrameSrc(base, project, session, { theme, debug, reading });
@@ -299,6 +337,7 @@
       launcherTitle,
       launcherSubtitle,
       launcherIcon,
+      positionClass,
     };
 
     if (variant === 'inline') {
