@@ -2349,7 +2349,7 @@ async def _fetch_qa_document(mongo_client: MongoClient, pair_id: str) -> dict | 
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
-    _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin")
+    _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin", "/api/v1/backup")
 
     async def _authenticate(self, request: Request, username: str, password: str) -> AdminIdentity | None:
         normalized_username = username.strip().lower()
@@ -3282,7 +3282,7 @@ async def admin_knowledge(
     """Return knowledge base documents for the admin UI."""
 
     try:
-        limit = max(1, min(int(limit), 200))
+        limit = max(1, min(int(limit), 1000))
     except Exception:  # noqa: BLE001
         limit = 50
 
@@ -3558,192 +3558,6 @@ async def admin_upload_knowledge(
     )
 
 
-@app.get("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
-async def admin_get_document(request: Request, file_id: str) -> ORJSONResponse:
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    try:
-        doc, payload = await request.state.mongo.get_document_with_content(collection, file_id)
-    except NotFound:
-        raise HTTPException(status_code=404, detail="Document not found")
-    content_type = str(doc.get("content_type") or "").lower()
-    if content_type and not content_type.startswith("text/"):
-        doc["content"] = ""
-    else:
-        doc["content"] = payload.decode("utf-8", errors="replace")
-    return ORJSONResponse(doc)
-
-
-@app.put("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
-async def admin_update_document(request: Request, file_id: str, payload: KnowledgeUpdate) -> ORJSONResponse:
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    try:
-        existing_doc, raw_content = await request.state.mongo.get_document_with_content(collection, file_id)
-    except NotFound:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    current_name = existing_doc.get("name") or "document"
-    current_project = existing_doc.get("project") or existing_doc.get("domain")
-    current_domain = existing_doc.get("domain")
-    current_description = existing_doc.get("description")
-    current_url = existing_doc.get("url")
-    current_content = raw_content.decode("utf-8", errors="replace")
-    current_content_type = str(existing_doc.get("content_type") or "").lower()
-
-    new_name = (payload.name.strip() if isinstance(payload.name, str) else current_name).strip()
-    lower_name = new_name.lower()
-    if not new_name:
-        raise HTTPException(status_code=400, detail="Document name cannot be empty")
-
-    domain_value = (payload.domain.strip() if isinstance(payload.domain, str) else current_domain) or None
-    project_value = _normalize_project(payload.project or current_project)
-    description_input_provided = isinstance(payload.description, str)
-    description_input = payload.description.strip() if description_input_provided else None
-    url_value = (payload.url.strip() if isinstance(payload.url, str) else current_url) or None
-    project_model = await request.state.mongo.get_project(project_value) if project_value else None
-    is_binary = bool(current_content_type and not current_content_type.startswith("text/"))
-    auto_description = False
-
-    if is_binary:
-        description_value = description_input if description_input_provided else current_description
-        if not description_value:
-            extracted_text = ""
-            binary_payload = raw_content or b""
-            if current_content_type in PDF_MIME_TYPES or lower_name.endswith(".pdf"):
-                extracted_text = extract_pdf_text(binary_payload)
-            elif current_content_type in DOCX_MIME_TYPES or lower_name.endswith(".docx"):
-                extracted_text = extract_docx_text(binary_payload)
-            elif current_content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
-                extracted_text = extract_doc_text(binary_payload)
-            elif current_content_type in XLSX_MIME_TYPES or lower_name.endswith((".xlsx", ".xlsm", ".xltx", ".xltm", ".xlsb")):
-                extracted_text = extract_xlsx_text(binary_payload)
-            elif current_content_type in XLS_MIME_TYPES or lower_name.endswith((".xls", ".xlt", ".xlm", ".xla", ".xlw")):
-                extracted_text = extract_xls_text(binary_payload)
-            description_value = await generate_document_summary(new_name, extracted_text, project_model)
-            auto_description = True
-        update_doc: dict[str, Any] = {
-            "name": new_name,
-            "description": description_value,
-            "url": url_value,
-            "project": project_value,
-            "domain": domain_value,
-            "autoDescriptionPending": False,
-        }
-        await request.state.mongo.db[collection].update_one(
-            {"fileId": file_id},
-            {"$set": update_doc},
-            upsert=False,
-        )
-        status_note = "Автоописание обновлено" if auto_description else "Описание обновлено"
-        await request.state.mongo.update_document_status(
-            collection,
-            file_id,
-            "ready",
-            status_note,
-        )
-        return ORJSONResponse(
-            {
-                "file_id": file_id,
-                "name": new_name,
-                "project": project_value,
-                "domain": domain_value,
-                "description": description_value,
-                "auto_description_pending": False,
-                "status": "ready",
-                "status_message": status_note,
-            }
-        )
-
-    content_value = payload.content if payload.content is not None else current_content
-    if not content_value or not content_value.strip():
-        raise HTTPException(status_code=400, detail="Content is empty")
-
-    description_value = description_input if description_input_provided else current_description
-    if not description_value:
-        description_value = await generate_document_summary(new_name, content_value, project_model)
-        auto_description = True
-
-    name_changed = new_name.lower() != (current_name or "").lower()
-    project_changed = project_value != _normalize_project(current_project)
-
-    if name_changed or project_changed:
-        await request.state.mongo.delete_document(collection, file_id)
-        new_file_id = await request.state.mongo.upsert_text_document(
-            name=new_name,
-            content=content_value,
-            documents_collection=collection,
-            description=description_value,
-            project=project_value,
-            domain=domain_value,
-            url=url_value,
-        )
-    else:
-        new_file_id = await request.state.mongo.upsert_text_document(
-            name=new_name,
-            content=content_value,
-            documents_collection=collection,
-            description=description_value,
-            project=project_value,
-            domain=domain_value,
-            url=url_value,
-        )
-
-    await request.state.mongo.db[collection].update_one(
-        {"fileId": new_file_id},
-        {"$set": {"autoDescriptionPending": False}},
-        upsert=False,
-    )
-    status_note = "Автоописание обновлено" if auto_description else "Описание обновлено"
-    await request.state.mongo.update_document_status(
-        collection,
-        new_file_id,
-        "ready",
-        status_note,
-    )
-
-    if project_value:
-        existing = await request.state.mongo.get_project(project_value)
-        project_payload = Project(
-            name=project_value,
-            title=existing.title if existing else None,
-            domain=domain_value or (existing.domain if existing else None),
-            admin_username=existing.admin_username if existing else None,
-            admin_password_hash=existing.admin_password_hash if existing else None,
-            llm_model=existing.llm_model if existing else None,
-            llm_prompt=existing.llm_prompt if existing else None,
-            llm_emotions_enabled=existing.llm_emotions_enabled if existing and existing.llm_emotions_enabled is not None else True,
-            telegram_token=existing.telegram_token if existing else None,
-            telegram_auto_start=existing.telegram_auto_start if existing else None,
-            max_token=existing.max_token if existing else None,
-            max_auto_start=existing.max_auto_start if existing else None,
-            vk_token=existing.vk_token if existing else None,
-            vk_auto_start=existing.vk_auto_start if existing else None,
-            widget_url=existing.widget_url if existing else None,
-        )
-        saved_project = await request.state.mongo.upsert_project(project_payload)
-        hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-        if isinstance(hub, TelegramHub):
-            await hub.ensure_runner(saved_project)
-        max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-        if isinstance(max_hub, MaxHub):
-            await max_hub.ensure_runner(saved_project)
-        vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-        if isinstance(vk_hub, VkHub):
-            await vk_hub.ensure_runner(saved_project)
-
-    return ORJSONResponse(
-        {
-            "file_id": new_file_id,
-            "name": new_name,
-            "project": project_value,
-            "domain": domain_value,
-            "description": description_value,
-            "auto_description_pending": False,
-            "status": "ready",
-            "status_message": status_note,
-        }
-    )
 
 
 @app.post("/api/v1/admin/knowledge/deduplicate", response_class=ORJSONResponse)
@@ -4090,6 +3904,194 @@ async def admin_clear_unanswered(
         raise HTTPException(status_code=500, detail="Failed to clear unanswered questions") from exc
 
     return ORJSONResponse({"removed": removed, "project": project_name})
+
+
+@app.get("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
+async def admin_get_document(request: Request, file_id: str) -> ORJSONResponse:
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    try:
+        doc, payload = await request.state.mongo.get_document_with_content(collection, file_id)
+    except NotFound:
+        raise HTTPException(status_code=404, detail="Document not found")
+    content_type = str(doc.get("content_type") or "").lower()
+    if content_type and not content_type.startswith("text/"):
+        doc["content"] = ""
+    else:
+        doc["content"] = payload.decode("utf-8", errors="replace")
+    return ORJSONResponse(doc)
+
+
+@app.put("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
+async def admin_update_document(request: Request, file_id: str, payload: KnowledgeUpdate) -> ORJSONResponse:
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+    try:
+        existing_doc, raw_content = await request.state.mongo.get_document_with_content(collection, file_id)
+    except NotFound:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    current_name = existing_doc.get("name") or "document"
+    current_project = existing_doc.get("project") or existing_doc.get("domain")
+    current_domain = existing_doc.get("domain")
+    current_description = existing_doc.get("description")
+    current_url = existing_doc.get("url")
+    current_content = raw_content.decode("utf-8", errors="replace")
+    current_content_type = str(existing_doc.get("content_type") or "").lower()
+
+    new_name = (payload.name.strip() if isinstance(payload.name, str) else current_name).strip()
+    lower_name = new_name.lower()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Document name cannot be empty")
+
+    domain_value = (payload.domain.strip() if isinstance(payload.domain, str) else current_domain) or None
+    project_value = _normalize_project(payload.project or current_project)
+    description_input_provided = isinstance(payload.description, str)
+    description_input = payload.description.strip() if description_input_provided else None
+    url_value = (payload.url.strip() if isinstance(payload.url, str) else current_url) or None
+    project_model = await request.state.mongo.get_project(project_value) if project_value else None
+    is_binary = bool(current_content_type and not current_content_type.startswith("text/"))
+    auto_description = False
+
+    if is_binary:
+        description_value = description_input if description_input_provided else current_description
+        if not description_value:
+            extracted_text = ""
+            binary_payload = raw_content or b""
+            if current_content_type in PDF_MIME_TYPES or lower_name.endswith(".pdf"):
+                extracted_text = extract_pdf_text(binary_payload)
+            elif current_content_type in DOCX_MIME_TYPES or lower_name.endswith(".docx"):
+                extracted_text = extract_docx_text(binary_payload)
+            elif current_content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
+                extracted_text = extract_doc_text(binary_payload)
+            elif current_content_type in XLSX_MIME_TYPES or lower_name.endswith((".xlsx", ".xlsm", ".xltx", ".xltm", ".xlsb")):
+                extracted_text = extract_xlsx_text(binary_payload)
+            elif current_content_type in XLS_MIME_TYPES or lower_name.endswith((".xls", ".xlt", ".xlm", ".xla", ".xlw")):
+                extracted_text = extract_xls_text(binary_payload)
+            description_value = await generate_document_summary(new_name, extracted_text, project_model)
+            auto_description = True
+        update_doc: dict[str, Any] = {
+            "name": new_name,
+            "description": description_value,
+            "url": url_value,
+            "project": project_value,
+            "domain": domain_value,
+            "autoDescriptionPending": False,
+        }
+        await request.state.mongo.db[collection].update_one(
+            {"fileId": file_id},
+            {"$set": update_doc},
+            upsert=False,
+        )
+        status_note = "Автоописание обновлено" if auto_description else "Описание обновлено"
+        await request.state.mongo.update_document_status(
+            collection,
+            file_id,
+            "ready",
+            status_note,
+        )
+        return ORJSONResponse(
+            {
+                "file_id": file_id,
+                "name": new_name,
+                "project": project_value,
+                "domain": domain_value,
+                "description": description_value,
+                "auto_description_pending": False,
+                "status": "ready",
+                "status_message": status_note,
+            }
+        )
+
+    content_value = payload.content if payload.content is not None else current_content
+    if not content_value or not content_value.strip():
+        raise HTTPException(status_code=400, detail="Content is empty")
+
+    description_value = description_input if description_input_provided else current_description
+    if not description_value:
+        description_value = await generate_document_summary(new_name, content_value, project_model)
+        auto_description = True
+
+    name_changed = new_name.lower() != (current_name or "").lower()
+    project_changed = project_value != _normalize_project(current_project)
+
+    if name_changed or project_changed:
+        await request.state.mongo.delete_document(collection, file_id)
+        new_file_id = await request.state.mongo.upsert_text_document(
+            name=new_name,
+            content=content_value,
+            documents_collection=collection,
+            description=description_value,
+            project=project_value,
+            domain=domain_value,
+            url=url_value,
+        )
+    else:
+        new_file_id = await request.state.mongo.upsert_text_document(
+            name=new_name,
+            content=content_value,
+            documents_collection=collection,
+            description=description_value,
+            project=project_value,
+            domain=domain_value,
+            url=url_value,
+        )
+
+    await request.state.mongo.db[collection].update_one(
+        {"fileId": new_file_id},
+        {"$set": {"autoDescriptionPending": False}},
+        upsert=False,
+    )
+    status_note = "Автоописание обновлено" if auto_description else "Описание обновлено"
+    await request.state.mongo.update_document_status(
+        collection,
+        new_file_id,
+        "ready",
+        status_note,
+    )
+
+    if project_value:
+        existing = await request.state.mongo.get_project(project_value)
+        project_payload = Project(
+            name=project_value,
+            title=existing.title if existing else None,
+            domain=domain_value or (existing.domain if existing else None),
+            admin_username=existing.admin_username if existing else None,
+            admin_password_hash=existing.admin_password_hash if existing else None,
+            llm_model=existing.llm_model if existing else None,
+            llm_prompt=existing.llm_prompt if existing else None,
+            llm_emotions_enabled=existing.llm_emotions_enabled if existing and existing.llm_emotions_enabled is not None else True,
+            telegram_token=existing.telegram_token if existing else None,
+            telegram_auto_start=existing.telegram_auto_start if existing else None,
+            max_token=existing.max_token if existing else None,
+            max_auto_start=existing.max_auto_start if existing else None,
+            vk_token=existing.vk_token if existing else None,
+            vk_auto_start=existing.vk_auto_start if existing else None,
+            widget_url=existing.widget_url if existing else None,
+        )
+        saved_project = await request.state.mongo.upsert_project(project_payload)
+        hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
+        if isinstance(hub, TelegramHub):
+            await hub.ensure_runner(saved_project)
+        max_hub: MaxHub | None = getattr(request.app.state, "max", None)
+        if isinstance(max_hub, MaxHub):
+            await max_hub.ensure_runner(saved_project)
+        vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+        if isinstance(vk_hub, VkHub):
+            await vk_hub.ensure_runner(saved_project)
+
+    return ORJSONResponse(
+        {
+            "file_id": new_file_id,
+            "name": new_name,
+            "project": project_value,
+            "domain": domain_value,
+            "description": description_value,
+            "auto_description_pending": False,
+            "status": "ready",
+            "status_message": status_note,
+        }
+    )
 
 
 @app.get("/api/v1/admin/knowledge/unanswered/export")
