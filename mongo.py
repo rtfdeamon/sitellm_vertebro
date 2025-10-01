@@ -1853,27 +1853,6 @@ class MongoClient:
         )
         return self._serialize_backup_job(doc)
 
-    async def get_knowledge_priority(self) -> list[str]:
-        try:
-            doc = await self.get_setting("knowledge_priority") or {}
-        except Exception:
-            doc = {}
-        order = doc.get("order") if isinstance(doc, dict) else None
-        if isinstance(order, list) and order:
-            return [str(item).strip().lower() for item in order if str(item).strip()]
-        # default priority order
-        return ["qa", "text", "docs", "images", "vector"]
-
-    async def set_knowledge_priority(self, order: list[str]) -> None:
-        normalized = []
-        for item in order:
-            cleaned = str(item or "").strip().lower()
-            if cleaned and cleaned not in normalized:
-                normalized.append(cleaned)
-        if not normalized:
-            normalized = ["qa", "text", "docs", "images", "vector"]
-        await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
-
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
             return None
@@ -2190,51 +2169,6 @@ class MongoClient:
             await self.db[self.unanswered_collection].delete_many({"updated_at": {"$lt": cutoff}})
         except Exception:  # noqa: BLE001
             pass
-
-    async def list_unanswered_questions(self, *, project: str | None = None, limit: int = 200) -> list[dict]:
-        filter_query: dict[str, object] = {}
-        if project:
-            filter_query["project"] = project.strip().lower()
-        try:
-            cursor = (
-                self.db[self.unanswered_collection]
-                .find(filter_query)
-                .sort("updated_at", -1)
-                .limit(max(10, min(int(limit), 500)))
-            )
-            results = []
-            async for doc in cursor:
-                results.append(
-                    {
-                        "id": str(doc.get("_id")),
-                        "question": doc.get("question"),
-                        "project": doc.get("project"),
-                        "channel": doc.get("channel"),
-                        "session_id": doc.get("session_id"),
-                        "count": doc.get("count", 1),
-                        "created_at": doc.get("created_at"),
-                        "updated_at": doc.get("updated_at"),
-                        "created_at_iso": doc.get("created_at_iso"),
-                        "updated_at_iso": doc.get("updated_at_iso"),
-                    }
-                )
-            return results
-        except Exception as exc:
-            logger.error("mongo_unanswered_list_failed", error=str(exc))
-            raise
-
-    async def clear_unanswered_questions(self, *, project: str | None = None, older_than: float | None = None) -> int:
-        filter_query: dict[str, object] = {}
-        if project:
-            filter_query["project"] = project.strip().lower()
-        if older_than is not None:
-            filter_query["updated_at"] = {"$lte": older_than}
-        try:
-            result = await self.db[self.unanswered_collection].delete_many(filter_query)
-            return int(result.deleted_count or 0)
-        except Exception as exc:
-            logger.error("mongo_unanswered_clear_failed", error=str(exc))
-            raise
 
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
