@@ -37,6 +37,8 @@
     body.embed { background: transparent; }
     .widget-launcher {
       position: fixed;
+      right: 24px;
+      bottom: 24px;
       display: none;
       align-items: center;
       gap: 12px;
@@ -49,26 +51,6 @@
       cursor: pointer;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
       z-index: 9999;
-    }
-    .widget-launcher[data-position="bottom-right"],
-    .widget-launcher.pos-bottom-right {
-      right: 24px;
-      bottom: 24px;
-    }
-    .widget-launcher[data-position="bottom-left"],
-    .widget-launcher.pos-bottom-left {
-      left: 24px;
-      bottom: 24px;
-    }
-    .widget-launcher[data-position="top-right"],
-    .widget-launcher.pos-top-right {
-      right: 24px;
-      top: 24px;
-    }
-    .widget-launcher[data-position="top-left"],
-    .widget-launcher.pos-top-left {
-      left: 24px;
-      top: 24px;
     }
     body.embed .widget-launcher { display: inline-flex; }
     .widget-launcher:hover { transform: translateY(-2px); box-shadow: 0 22px 50px rgba(0,0,0,0.45); }
@@ -237,84 +219,6 @@
       border: 1px dashed rgba(148, 163, 184, 0.35);
       font-size: 13px;
       color: rgba(226, 232, 240, 0.75);
-    }
-    .embed-position-picker {
-      display: grid;
-      gap: 10px;
-      align-content: start;
-    }
-    .embed-position-label {
-      font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-    .embed-position-preview {
-      position: relative;
-      width: 160px;
-      height: 120px;
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      background: linear-gradient(160deg, rgba(79, 124, 255, 0.06), rgba(15, 17, 23, 0.2));
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-      overflow: hidden;
-    }
-    .embed-position-preview::after {
-      content: '';
-      position: absolute;
-      inset: 12px;
-      border-radius: 10px;
-      border: 1px dashed rgba(148, 163, 184, 0.35);
-      pointer-events: none;
-    }
-    .embed-position-preview button.embed-position-zone {
-      position: absolute;
-      width: 50%;
-      height: 50%;
-      border: none;
-      background: transparent;
-      cursor: pointer;
-      outline: none;
-    }
-    .embed-position-preview button.embed-position-zone[data-position-option="top-left"] { top: 0; left: 0; }
-    .embed-position-preview button.embed-position-zone[data-position-option="top-right"] { top: 0; right: 0; }
-    .embed-position-preview button.embed-position-zone[data-position-option="bottom-left"] { bottom: 0; left: 0; }
-    .embed-position-preview button.embed-position-zone[data-position-option="bottom-right"] { bottom: 0; right: 0; }
-    .embed-position-preview button.embed-position-zone:focus-visible {
-      box-shadow: inset 0 0 0 2px rgba(79, 124, 255, 0.6);
-    }
-    .embed-position-preview button.embed-position-zone[data-active="true"]::after {
-      content: '';
-      position: absolute;
-      inset: 6px;
-      border-radius: 10px;
-      border: 1px solid rgba(79, 124, 255, 0.45);
-      background: rgba(79, 124, 255, 0.08);
-      pointer-events: none;
-    }
-    .embed-position-marker {
-      position: absolute;
-      width: 42px;
-      height: 42px;
-      border-radius: 999px;
-      background: var(--accent);
-      color: #fff;
-      display: grid;
-      place-items: center;
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 0.05em;
-      box-shadow: 0 14px 24px rgba(79, 124, 255, 0.35);
-      transition: all 0.2s ease;
-    }
-    .embed-position-preview[data-position="top-left"] .embed-position-marker { top: 18px; left: 18px; }
-    .embed-position-preview[data-position="top-right"] .embed-position-marker { top: 18px; right: 18px; }
-    .embed-position-preview[data-position="bottom-left"] .embed-position-marker { bottom: 18px; left: 18px; }
-    .embed-position-preview[data-position="bottom-right"] .embed-position-marker { bottom: 18px; right: 18px; }
-    .embed-position-helper {
-      font-size: 11px;
-      color: var(--muted);
-      letter-spacing: 0.04em;
     }
     .download-status {
       margin-top: 8px;
@@ -777,15 +681,7 @@
       .download-grid { grid-template-columns: 1fr; }
     }
     @media (max-width: 480px) {
-      .widget-launcher { padding: 9px 14px; }
-      .widget-launcher[data-position="bottom-right"],
-      .widget-launcher.pos-bottom-right { right: 16px; bottom: 16px; }
-      .widget-launcher[data-position="bottom-left"],
-      .widget-launcher.pos-bottom-left { left: 16px; bottom: 16px; }
-      .widget-launcher[data-position="top-right"],
-      .widget-launcher.pos-top-right { right: 16px; top: 16px; }
-      .widget-launcher[data-position="top-left"],
-      .widget-launcher.pos-top-left { left: 16px; top: 16px; }
+      .widget-launcher { right: 16px; bottom: 16px; padding: 9px 14px; }
       .chat-modal { padding: 12px; }
       .chat-window { width: 100%; max-height: calc(100vh - 24px); }
     }
@@ -868,18 +764,6 @@
             <option value="light" data-i18n="embedThemeLight">Light</option>
           </select>
         </label>
-        <div class="embed-position-picker">
-          <span class="embed-position-label" data-i18n="embedPositionLabel">Launcher position</span>
-          <div class="embed-position-preview" id="embedPositionPreview" data-position="bottom-right">
-            <button type="button" class="embed-position-zone" data-position-option="top-left" aria-label="Top left"></button>
-            <button type="button" class="embed-position-zone" data-position-option="top-right" aria-label="Top right"></button>
-            <button type="button" class="embed-position-zone" data-position-option="bottom-left" aria-label="Bottom left"></button>
-            <button type="button" class="embed-position-zone" data-position-option="bottom-right" aria-label="Bottom right"></button>
-            <div class="embed-position-marker" id="embedPositionMarker">AI</div>
-          </div>
-          <span class="embed-position-helper" data-i18n="embedPositionHint">Preview only — the floating mode applies on your site.</span>
-          <input type="hidden" id="embedPosition" value="bottom-right" />
-        </div>
       </div>
       <div class="code-card">
         <button type="button" class="copy-btn" id="embedCopy" data-i18n="embedCopy">Copy snippet</button>
@@ -1046,7 +930,7 @@
       </div>
     </section>
   </div>
-  <div class="widget-launcher pos-bottom-right" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria" data-position="bottom-right">
+  <div class="widget-launcher" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria">
     <div class="launcher-avatar">AI</div>
     <div class="launcher-text">
       <strong data-i18n="launcherTitle">AI Assistant</strong>
@@ -1205,10 +1089,6 @@ const embedProjectInput = document.getElementById('embedProject');
 const embedAccentInput = document.getElementById('embedAccent');
 const embedThemeSelect = document.getElementById('embedTheme');
 const embedReadingInput = document.getElementById('embedReadingMode');
-const embedPositionInput = document.getElementById('embedPosition');
-const embedPositionButtons = Array.from(document.querySelectorAll('[data-position-option]'));
-const embedPositionPreview = document.getElementById('embedPositionPreview');
-const embedPositionMarker = document.getElementById('embedPositionMarker');
 const voiceAvatarHost = document.getElementById('voiceAvatarHost');
 const avatarLangInput = document.getElementById('avatarLang');
 const avatarVoiceInput = document.getElementById('avatarVoice');
@@ -1265,7 +1145,6 @@ const FALLBACK_LANGUAGE = 'en';
 const pageReadingMode = urlParams.get('reading') === '1';
 let widgetReadingMode = pageReadingMode;
 let currentVoicePreviewInstance = null;
-const FLOATING_POSITIONS = ['bottom-right', 'bottom-left', 'top-right', 'top-left'];
 
 if (isEmbed) {
   document.querySelectorAll('.feedback-trigger, .feedback-panel, .developer-credit').forEach((node) => {
@@ -1290,12 +1169,6 @@ const LANGUAGES = {
       embedConfigProject: 'Project slug',
       embedConfigAccent: 'Accent colour',
       embedConfigTheme: 'Theme',
-      embedPositionLabel: 'Launcher position',
-      embedPositionBottomRight: 'Bottom right',
-      embedPositionBottomLeft: 'Bottom left',
-      embedPositionTopRight: 'Top right',
-      embedPositionTopLeft: 'Top left',
-      embedPositionHint: 'Preview only — the widget floats on your site.',
       embedReadingLabel: 'Enable book reading mode',
       embedThemeAuto: 'Auto',
       embedThemeDark: 'Dark',
@@ -1843,12 +1716,6 @@ const LANGUAGES = {
       embedConfigProject: 'Слаг проекта',
       embedConfigAccent: 'Акцентный цвет',
       embedConfigTheme: 'Тема',
-      embedPositionLabel: 'Положение кнопки',
-      embedPositionBottomRight: 'Снизу справа',
-      embedPositionBottomLeft: 'Снизу слева',
-      embedPositionTopRight: 'Сверху справа',
-      embedPositionTopLeft: 'Сверху слева',
-      embedPositionHint: 'Здесь только предпросмотр — на сайте виджет закрепится в углу.',
       embedThemeAuto: 'Авто',
       embedThemeDark: 'Тёмная',
       embedThemeLight: 'Светлая',
@@ -2821,49 +2688,13 @@ function initFeedbackWidget() {
   });
 }
 
-function normalizePosition(value) {
-  const normalized = (value || '').toLowerCase();
-  return FLOATING_POSITIONS.includes(normalized) ? normalized : 'bottom-right';
-}
-
-function applyDemoLauncherPosition(position) {
-  const normalized = normalizePosition(position);
-  if (widgetLauncher) {
-    widgetLauncher.dataset.position = normalized;
-    widgetLauncher.classList.remove('pos-bottom-right', 'pos-bottom-left', 'pos-top-right', 'pos-top-left');
-    widgetLauncher.classList.add(`pos-${normalized}`);
-  }
-  if (embedPositionPreview) {
-    embedPositionPreview.dataset.position = normalized;
-  }
-  if (embedPositionMarker) {
-    embedPositionMarker.dataset.position = normalized;
-  }
-  embedPositionButtons.forEach((button) => {
-    button.dataset.active = button.dataset.positionOption === normalized ? 'true' : 'false';
-  });
-}
-
-function setEmbedPosition(position, options = {}) {
-  const normalized = normalizePosition(position);
-  if (embedPositionInput) {
-    embedPositionInput.value = normalized;
-  }
-  applyDemoLauncherPosition(normalized);
-  if (!options.silent) {
-    refreshEmbedSnippet();
-    refreshVoiceSnippet();
-  }
-}
-
 function getEmbedConfig() {
   const base = normalizeBaseUrl(embedBaseInput?.value || baseUrlInput?.value || window.location.origin);
   const project = (embedProjectInput?.value || currentProject || '').trim();
   const accent = (embedAccentInput?.value || '#4f7cff').trim() || '#4f7cff';
   const theme = (embedThemeSelect?.value || '').trim();
   const reading = !!embedReadingInput?.checked;
-  const position = normalizePosition(embedPositionInput?.value || 'bottom-right');
-  return { baseUrl: base, project, accent, theme, reading, position };
+  return { baseUrl: base, project, accent, theme, reading };
 }
 
 function getSpeechRateValue() {
@@ -2903,8 +2734,7 @@ function buildFloatingSnippet(cfg) {
     `data-icon="AI"`,
     `data-color="${cfg.accent}"`,
     cfg.theme ? `data-theme="${cfg.theme}"` : '',
-    cfg.reading ? 'data-reading-mode="1"' : '',
-    cfg.position ? `data-position="${cfg.position}"` : ''
+    cfg.reading ? 'data-reading-mode="1"' : ''
   ];
   return `<script\n${indentAttributes(attrs)}\n><\/script>`;
 }
@@ -3223,7 +3053,6 @@ function refreshEmbedSnippet() {
   if (!embedCodeEl) return;
   const cfg = getEmbedConfig();
   widgetReadingMode = !!cfg.reading;
-  applyDemoLauncherPosition(cfg.position);
   let snippet = '';
   if (activeEmbedVariant === 'inline') snippet = buildInlineSnippet(cfg);
   else if (activeEmbedVariant === 'iframe') snippet = buildIframeSnippet(cfg);
@@ -3311,7 +3140,6 @@ function initEmbedShowcase() {
   if (embedProjectInput && currentProject) embedProjectInput.value = currentProject;
   if (embedAccentInput && !embedAccentInput.value) embedAccentInput.value = '#4f7cff';
   if (embedReadingInput) embedReadingInput.checked = pageReadingMode;
-  if (embedPositionInput && !embedPositionInput.value) embedPositionInput.value = 'bottom-right';
 
   setEmbedActiveTab(activeEmbedVariant);
 
@@ -3332,14 +3160,6 @@ function initEmbedShowcase() {
     input?.addEventListener('input', handleEmbedChange);
   });
   embedThemeSelect?.addEventListener('change', handleEmbedChange);
-  embedPositionButtons.forEach((button) => {
-    button.addEventListener('click', () => {
-      const targetPosition = button.dataset.positionOption;
-      setEmbedPosition(targetPosition);
-    });
-  });
-
-  setEmbedPosition(embedPositionInput?.value || 'bottom-right', { silent: true });
   avatarLangInput?.addEventListener('input', () => refreshVoiceSnippet());
   const handleVoiceInput = () => {
     const value = (avatarVoiceInput?.value || '').trim();
