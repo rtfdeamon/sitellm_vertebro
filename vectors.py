@@ -11,7 +11,7 @@ from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, Te
 
 from redis import Redis
 
-from knowledge.text import extract_doc_text
+from knowledge.text import extract_doc_text, extract_xls_text, extract_xlsx_text
 
 
 class DocumentsParser:
@@ -99,6 +99,34 @@ class DocumentsParser:
                     return
                 case ".pdf":
                     parser = PyPDFLoader(file_path=str(saved_file), mode="single")
+                case ".xlsx" | ".xlsm" | ".xltx" | ".xltm" | ".xlsb":
+                    text = extract_xlsx_text(saved_file.read_bytes())
+                    if not text.strip():
+                        raise ValueError("Unsupported XLSX document")
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                        tmp_txt.write(text.encode("utf-8"))
+                        tmp_txt_path = Path(tmp_txt.name)
+                    try:
+                        parser = TextLoader(tmp_txt_path)
+                        document = parser.load()
+                        self.redis_store.add_documents(document, ids=[document_id])
+                    finally:
+                        tmp_txt_path.unlink(missing_ok=True)
+                    return
+                case ".xls" | ".xlt" | ".xlm" | ".xla" | ".xlw":
+                    text = extract_xls_text(saved_file.read_bytes())
+                    if not text.strip():
+                        raise ValueError("Unsupported XLS document")
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_txt:
+                        tmp_txt.write(text.encode("utf-8"))
+                        tmp_txt_path = Path(tmp_txt.name)
+                    try:
+                        parser = TextLoader(tmp_txt_path)
+                        document = parser.load()
+                        self.redis_store.add_documents(document, ids=[document_id])
+                    finally:
+                        tmp_txt_path.unlink(missing_ok=True)
+                    return
                 case _:
                     raise ValueError("Unsupported file extension")
 

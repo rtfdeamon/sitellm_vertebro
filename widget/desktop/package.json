@@ -1,0 +1,42 @@
+{
+  "name": "sitellm-desktop-widget",
+  "version": "0.1.0",
+  "description": "Standalone desktop launcher for the SiteLLM voice avatar widget.",
+  "main": "main.js",
+  "author": "SiteLLM",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electronmon .",
+    "build:linux": "electron-builder --linux AppImage deb",
+    "build:windows": "electron-builder --win nsis",
+    "build": "electron-builder -mwl"
+  },
+  "dependencies": {
+    "electron-store": "^9.0.0"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^25.1.0",
+    "electronmon": "^2.0.1"
+  },
+  "build": {
+    "appId": "ai.sitellm.desktop",
+    "productName": "SiteLLM Assistant",
+    "files": [
+      "!dist",
+      "!node_modules/.cache"
+    ],
+    "directories": {
+      "buildResources": "build"
+    },
+    "linux": {
+      "target": ["AppImage", "deb"],
+      "category": "Utility"
+    },
+    "win": {
+      "target": ["nsis"],
+      "artifactName": "SiteLLMAssistant-${version}-setup.${ext}"
+    }
+  }
+}

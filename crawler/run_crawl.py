@@ -140,6 +140,10 @@ BINARY_EXTENSIONS = {
     ".pptx",
     ".xls",
     ".xlsx",
+    ".xlsm",
+    ".xltx",
+    ".xltm",
+    ".xlsb",
 }
 DOCX_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -150,6 +154,18 @@ DOC_MIME_TYPES = {
     "application/ms-word",
     "application/vnd.ms-word",
     "application/vnd.ms-word.document.macroenabled.12",
+}
+XLSX_MIME_TYPES = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+    "application/vnd.ms-excel.sheet.binary.macroenabled.12",
+}
+XLS_MIME_TYPES = {
+    "application/vnd.ms-excel",
+    "application/ms-excel",
+    "application/xls",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
 }
 MAX_IMAGE_DIMENSION = int(os.getenv("CRAWL_IMAGE_MAX_DIM", "1280"))
 IMAGE_JPEG_QUALITY = int(os.getenv("CRAWL_IMAGE_JPEG_QUALITY", "85"))
@@ -1077,6 +1093,10 @@ def normalize_url(
             canon = canon[4:]
         if host == f"www.{canon}":
             host = canon
+    try:
+        host = host.encode("idna").decode("ascii")
+    except Exception:
+        pass
     if port:
         if (scheme == "https" and port == "443") or (scheme == "http" and port == "80"):
             netloc = host
@@ -1092,6 +1112,13 @@ def normalize_url(
         path = path.rstrip("/")
     if path == "/":
         path = ""
+    if path:
+        try:
+            decoded_path = urlparse.unquote(path)
+        except Exception:
+            decoded_path = path
+        safe_chars = "/:@&$+-_=~.,;()!*'"  # RFC3986 unreserved + common reserved parts
+        path = urlparse.quote(decoded_path, safe=safe_chars)
 
     drop_params = set(DROP_QUERY_PARAMS)
     if clean_params:
@@ -2010,6 +2037,12 @@ def run(
                         elif main_type in DOC_MIME_TYPES or lower_url.endswith(".doc"):
                             suffix = ".doc"
                             storage_type = main_type or "application/msword"
+                        elif main_type in XLSX_MIME_TYPES or lower_url.endswith((".xlsx", ".xlsm", ".xltx", ".xltm", ".xlsb")):
+                            suffix = ".xlsx"
+                            storage_type = main_type or "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        elif main_type in XLS_MIME_TYPES or lower_url.endswith((".xls", ".xlt", ".xlm", ".xla", ".xlw")):
+                            suffix = ".xls"
+                            storage_type = main_type or "application/vnd.ms-excel"
                         elif main_type == "application/pdf" or lower_url.endswith(".pdf"):
                             suffix = ".pdf"
                             storage_type = main_type or "application/pdf"
@@ -2037,7 +2070,28 @@ def run(
                                 seen_binary_hashes.add(content_hash)
                         extracted_binary_text = extract_best_effort_text(filename, storage_type, payload_bytes)
                         summary_source = extracted_binary_text or text
-                        description = await generate_document_summary(filename, summary_source, project_model)
+                        try:
+                            description = await generate_document_summary(
+                                filename,
+                                summary_source,
+                                project_model,
+                            )
+                        except ModelNotFoundError as exc:  # noqa: PERF203 - surface missing model once
+                            logger.warning(
+                                "document_summary_model_missing",
+                                project=document_project,
+                                url=page_url,
+                                error=str(exc),
+                            )
+                            description = ""
+                        except Exception as exc:  # noqa: BLE001
+                            logger.warning(
+                                "document_summary_failed",
+                                project=document_project,
+                                url=page_url,
+                                error=str(exc),
+                            )
+                            description = ""
                         if not description.strip() and summary_source:
                             description = summary_source.replace("\n", " ").strip()[:200]
                         if not description.strip():
@@ -2133,7 +2187,7 @@ def run(
                                     "text": reading_payload.get("text"),
                                     "html": reading_payload.get("html"),
                                     "blocks": reading_payload.get("blocks") or [],
-                                    "image_urls": [item.get("url") for item in reading_payload.get("images", []) if item.get("url")],
+                                    "images": reading_payload.get("images") or [],
                                 }
                             )
                     else:
@@ -2260,12 +2314,30 @@ def run(
                     )
 
                 page_images: list[dict[str, str]] = []
-                for url in record.get("image_urls") or []:
-                    entry: dict[str, str] = {"url": url}
-                    file_id = image_file_map.get(url)
-                    if file_id:
-                        entry["fileId"] = file_id
-                    page_images.append(entry)
+                raw_images = record.get("images") or []
+                if raw_images:
+                    for image in raw_images:
+                        if isinstance(image, dict):
+                            image_url = image.get("url")
+                            if not image_url:
+                                continue
+                            entry: dict[str, str] = {"url": image_url}
+                            caption = image.get("alt") or image.get("caption")
+                            if caption:
+                                entry["caption"] = caption.strip()
+                            file_id = image_file_map.get(image_url)
+                            if file_id:
+                                entry["fileId"] = file_id
+                            page_images.append(entry)
+                elif record.get("image_urls"):
+                    for image_url in record.get("image_urls") or []:
+                        if not image_url:
+                            continue
+                        entry = {"url": image_url}
+                        file_id = image_file_map.get(image_url)
+                        if file_id:
+                            entry["fileId"] = file_id
+                        page_images.append(entry)
 
                 payload = {
                     "project": document_project,

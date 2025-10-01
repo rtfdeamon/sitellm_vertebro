@@ -159,6 +159,7 @@ class ReadingImage(BaseModel):
 
     url: str
     file_id: str | None = Field(default=None, alias="fileId")
+    caption: str | None = None
 
 
 class ReadingSegment(BaseModel):

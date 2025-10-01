@@ -21,6 +21,9 @@ import urllib.parse as urlparse
 import re
 import httpx
 import structlog
+import subprocess
+import shutil
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
@@ -31,7 +34,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse, PlainTextResponse
 from starlette.routing import NoMatchFound
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import ORJSONResponse, FileResponse
 from bs4 import BeautifulSoup
 
 from observability.logging import configure_logging, get_recent_logs
@@ -66,7 +69,13 @@ from bson import ObjectId
 from retrieval import search as retrieval_search
 from knowledge.summary import generate_document_summary
 from knowledge.tasks import queue_auto_description
-from knowledge.text import extract_doc_text, extract_docx_text, extract_pdf_text
+from knowledge.text import (
+    extract_doc_text,
+    extract_docx_text,
+    extract_pdf_text,
+    extract_xls_text,
+    extract_xlsx_text,
+)
 from knowledge_service.configuration import (
     ALLOWED_MODES as KNOWLEDGE_SERVICE_ALLOWED_MODES,
     DEFAULT_MODE as KNOWLEDGE_SERVICE_DEFAULT_MODE,
@@ -111,6 +120,33 @@ _ATTACH_NEGATIVE_REPLIES = {
     "no",
     "not now",
 }
+
+DESKTOP_BUILD_ROOT = (Path(__file__).resolve().parent / "widget" / "desktop").resolve()
+DESKTOP_BUILD_COMMANDS: dict[str, list[str]] = {
+    "windows": ["npm", "run", "build:windows"],
+    "linux": ["npm", "run", "build:linux"],
+}
+DESKTOP_BUILD_ARTIFACTS: dict[str, dict[str, Any]] = {
+    "windows": {
+        "command_key": "windows",
+        "patterns": ["dist/*.exe"],
+        "content_type": "application/octet-stream",
+        "download_name": "SiteLLMAssistant-Setup.exe",
+    },
+    "linux-appimage": {
+        "command_key": "linux",
+        "patterns": ["dist/*.AppImage"],
+        "content_type": "application/octet-stream",
+        "download_name": "SiteLLMAssistant.AppImage",
+    },
+    "linux-deb": {
+        "command_key": "linux",
+        "patterns": ["dist/*.deb"],
+        "content_type": "application/x-debian-package",
+        "download_name": "sitellm-assistant.deb",
+    },
+}
+DESKTOP_BUILD_LOCKS = {key: asyncio.Lock() for key in DESKTOP_BUILD_COMMANDS}
 
 
 def _format_attachment_preview_lines(attachments: list[dict[str, Any]]) -> list[str]:
@@ -224,6 +260,18 @@ DOC_MIME_TYPES: set[str] = {
     "application/vnd.ms-word",
     "application/vnd.ms-word.document.macroenabled.12",
 }
+XLSX_MIME_TYPES: set[str] = {
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+    "application/vnd.ms-excel.sheet.binary.macroenabled.12",
+}
+XLS_MIME_TYPES: set[str] = {
+    "application/vnd.ms-excel",
+    "application/ms-excel",
+    "application/xls",
+    "application/vnd.ms-excel.sheet.macroenabled.12",
+}
 
 
 @dataclass(frozen=True)
@@ -261,6 +309,106 @@ def _append_limited(buffer: list[str], line: str, *, limit: int = 40) -> None:
     buffer.append(line)
     if len(buffer) > limit:
         del buffer[:-limit]
+
+
+def _desktop_latest_source_mtime() -> float:
+    if not DESKTOP_BUILD_ROOT.exists():
+        return 0.0
+    tracked_files = [
+        DESKTOP_BUILD_ROOT / "package.json",
+        DESKTOP_BUILD_ROOT / "package-lock.json",
+        DESKTOP_BUILD_ROOT / "main.js",
+        DESKTOP_BUILD_ROOT / "preload.js",
+        DESKTOP_BUILD_ROOT / "config.json",
+    ]
+    mtimes: list[float] = []
+    for path in tracked_files:
+        if path.exists():
+            try:
+                mtimes.append(path.stat().st_mtime)
+            except FileNotFoundError:
+                continue
+    src_dir = DESKTOP_BUILD_ROOT / "src"
+    if src_dir.exists():
+        for dirpath, _, filenames in os.walk(src_dir):
+            base = Path(dirpath)
+            for name in filenames:
+                file_path = base / name
+                try:
+                    mtimes.append(file_path.stat().st_mtime)
+                except FileNotFoundError:
+                    continue
+    return max(mtimes) if mtimes else 0.0
+
+
+def _desktop_find_latest_artifact(patterns: list[str]) -> Path | None:
+    if not DESKTOP_BUILD_ROOT.exists():
+        return None
+    candidates: list[Path] = []
+    for pattern in patterns:
+        candidates.extend(
+            path for path in DESKTOP_BUILD_ROOT.glob(pattern) if path.is_file()
+        )
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
+    return candidates[0]
+
+
+def _resolve_command(command: list[str]) -> list[str]:
+    if not command:
+        raise RuntimeError("Desktop build command is empty")
+    binary = shutil.which(command[0])
+    if binary is None:
+        raise RuntimeError(f"Не найден исполняемый файл '{command[0]}' (npm). Установите его на сервере.")
+    return [binary, *command[1:]]
+
+
+def _run_desktop_command(command: list[str]) -> None:
+    resolved = _resolve_command(command)
+    env = os.environ.copy()
+    env.setdefault("NODE_ENV", "production")
+    try:
+        subprocess.run(
+            resolved,
+            cwd=DESKTOP_BUILD_ROOT,
+            check=True,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as exc:  # noqa: PERF203 - surface build errors
+        stderr = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else str(exc)
+        raise RuntimeError(stderr.strip() or str(exc)) from exc
+
+
+def _ensure_desktop_dependencies() -> None:
+    if not DESKTOP_BUILD_ROOT.exists():
+        raise RuntimeError("Каталог widget/desktop не найден в проекте")
+    node_modules = DESKTOP_BUILD_ROOT / "node_modules"
+    if node_modules.exists():
+        return
+    _run_desktop_command(["npm", "install"])
+
+
+def _prepare_desktop_artifact_blocking(platform_key: str) -> Path:
+    if platform_key not in DESKTOP_BUILD_ARTIFACTS:
+        raise RuntimeError("Unsupported platform")
+    meta = DESKTOP_BUILD_ARTIFACTS[platform_key]
+    artifact = _desktop_find_latest_artifact(meta["patterns"])
+    latest_source = _desktop_latest_source_mtime()
+    if artifact and artifact.stat().st_mtime >= latest_source:
+        return artifact
+    _ensure_desktop_dependencies()
+    command_key = meta["command_key"]
+    command = DESKTOP_BUILD_COMMANDS.get(command_key)
+    if not command:
+        raise RuntimeError("Build command is not configured")
+    _run_desktop_command(command)
+    artifact = _desktop_find_latest_artifact(meta["patterns"])
+    if not artifact:
+        raise RuntimeError("Сборка завершилась без артефактов — проверьте журнал electron-builder")
+    return artifact
 
 
 def _extract_progress(line: str) -> float | None:
@@ -2955,6 +3103,10 @@ class OllamaServerPayload(BaseModel):
     enabled: bool = True
 
 
+class DesktopBuildRequest(BaseModel):
+    platform: Literal["windows", "linux-appimage", "linux-deb"]
+
+
 async def _ensure_ollama_reachable(base_url: str, timeout: float = 2.5) -> None:
     url = f"{base_url.rstrip('/')}/api/tags"
     try:
@@ -2979,6 +3131,51 @@ async def admin_session(request: Request) -> ORJSONResponse:
         "can_manage_projects": identity.is_super,
     }
     return ORJSONResponse(payload)
+
+
+@app.post("/api/v1/desktop/build")
+async def desktop_build(request: Request, payload: DesktopBuildRequest) -> FileResponse:
+    _require_admin(request)
+    meta = DESKTOP_BUILD_ARTIFACTS.get(payload.platform)
+    if meta is None:
+        raise HTTPException(status_code=400, detail="Unsupported platform")
+
+    lock_key = meta.get("command_key")
+    lock = DESKTOP_BUILD_LOCKS.get(lock_key)
+    if lock is None:
+        raise HTTPException(status_code=500, detail="Desktop build lock unavailable")
+
+    try:
+        async with lock:
+            artifact_path = await asyncio.to_thread(
+                _prepare_desktop_artifact_blocking,
+                payload.platform,
+            )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("desktop build failed", platform=payload.platform)
+        raise HTTPException(status_code=500, detail="Desktop build failed") from exc
+
+    filename = meta.get("download_name") or artifact_path.name
+    try:
+        stat_result = artifact_path.stat()
+    except FileNotFoundError as exc:  # pragma: no cover - race after build
+        raise HTTPException(status_code=404, detail="Artifact was removed") from exc
+
+    logger.info(
+        "desktop build ready",
+        platform=payload.platform,
+        artifact=str(artifact_path),
+        size=stat_result.st_size,
+    )
+
+    return FileResponse(
+        artifact_path,
+        media_type=meta.get("content_type") or "application/octet-stream",
+        filename=filename,
+        stat_result=stat_result,
+    )
 
 
 class ProjectCreate(BaseModel):
@@ -3345,6 +3542,10 @@ async def admin_update_document(request: Request, file_id: str, payload: Knowled
                 extracted_text = extract_docx_text(binary_payload)
             elif current_content_type in DOC_MIME_TYPES or lower_name.endswith(".doc"):
                 extracted_text = extract_doc_text(binary_payload)
+            elif current_content_type in XLSX_MIME_TYPES or lower_name.endswith((".xlsx", ".xlsm", ".xltx", ".xltm", ".xlsb")):
+                extracted_text = extract_xlsx_text(binary_payload)
+            elif current_content_type in XLS_MIME_TYPES or lower_name.endswith((".xls", ".xlt", ".xlm", ".xla", ".xlw")):
+                extracted_text = extract_xls_text(binary_payload)
             description_value = await generate_document_summary(new_name, extracted_text, project_model)
             auto_description = True
         update_doc: dict[str, Any] = {

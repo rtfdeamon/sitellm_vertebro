@@ -1,0 +1,114 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f3f5fa;
+  --fg: #0f172a;
+  --toolbar-bg: rgba(15, 23, 42, 0.08);
+  --toolbar-fg: #0f172a;
+  --accent: #4f7cff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10131a;
+    --fg: #f8fafc;
+    --toolbar-bg: rgba(148, 163, 184, 0.16);
+    --toolbar-fg: #e2e8f0;
+  }
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.desktop-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--toolbar-bg);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  user-select: none;
+}
+
+.toolbar-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.toolbar-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.toolbar-actions button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--toolbar-fg);
+}
+
+.toolbar-actions button:hover {
+  border-color: rgba(79, 124, 255, 0.45);
+  background: rgba(79, 124, 255, 0.12);
+}
+
+.widget-root {
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 8px 12px 0 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.widget-root .sitellm-voice-widget {
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.25);
+}
+
+.widget-placeholder {
+  margin: auto;
+  font-size: 15px;
+  opacity: 0.6;
+  text-align: center;
+}
+
+.desktop-footer {
+  padding: 8px 12px 10px 12px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.24);
+}
+
+.desktop-footer button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.desktop-footer button[aria-pressed='true'] {
+  background: rgba(239, 68, 68, 0.9);
+}
+
+.desktop-footer button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
