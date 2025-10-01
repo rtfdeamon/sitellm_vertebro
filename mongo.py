@@ -1853,26 +1853,6 @@ class MongoClient:
         )
         return self._serialize_backup_job(doc)
 
-    async def get_knowledge_priority(self) -> list[str]:
-        try:
-            doc = await self.get_setting("knowledge_priority") or {}
-        except Exception:
-            doc = {}
-        order = doc.get("order") if isinstance(doc, dict) else None
-        if isinstance(order, list) and order:
-            return [str(item).strip().lower() for item in order if str(item).strip()]
-        # default priority order
-        return ["qa", "text", "docs", "images", "vector"]
-
-    async def set_knowledge_priority(self, order: list[str]) -> None:
-        normalized = []
-        for item in order:
-            cleaned = str(item or "").strip().lower()
-            if cleaned and cleaned not in normalized:
-                normalized.append(cleaned)
-        if not normalized:
-            normalized = ["qa", "text", "docs", "images", "vector"]
-        await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
             return None
