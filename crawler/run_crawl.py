@@ -2351,6 +2351,33 @@ def main() -> None:  # pragma: no cover - convenience CLI
     parser.add_argument("--domain", help="Domain label to store documents under", default=None)
     parser.add_argument("--project", help="Project identifier (lowercase, ASCII)", default=None)
     parser.add_argument("--mongo-uri", default=DEFAULT_MONGO_URI, help="MongoDB connection URI")
+    parser.set_defaults(collect_medex=None, collect_books=None)
+    medex_group = parser.add_mutually_exclusive_group()
+    medex_group.add_argument(
+        "--collect-medex",
+        dest="collect_medex",
+        action="store_true",
+        help="Enable discovery of Medesk booking embeds",
+    )
+    medex_group.add_argument(
+        "--no-collect-medex",
+        dest="collect_medex",
+        action="store_false",
+        help="Disable Medesk booking discovery",
+    )
+    books_group = parser.add_mutually_exclusive_group()
+    books_group.add_argument(
+        "--collect-books",
+        dest="collect_books",
+        action="store_true",
+        help="Store full HTML pages for reading mode",
+    )
+    books_group.add_argument(
+        "--no-collect-books",
+        dest="collect_books",
+        action="store_false",
+        help="Skip storing full pages for reading mode",
+    )
     args = parser.parse_args()
 
     if not args.url:
@@ -2363,6 +2390,8 @@ def main() -> None:  # pragma: no cover - convenience CLI
         domain=args.domain or urlparse.urlsplit(args.url).netloc,
         mongo_uri=args.mongo_uri,
         project_name=args.project,
+        collect_medex=args.collect_medex,
+        collect_books=args.collect_books,
     )
 
 
