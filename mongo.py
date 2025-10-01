@@ -1681,7 +1681,6 @@ class MongoClient:
             logger.error("mongo_set_setting_failed", key=key, error=str(exc))
             raise
 
-=======
     async def get_backup_settings(self) -> BackupSettings:
         stored = await self.get_setting("backup_settings") or {}
         return self._serialize_backup_settings(stored)
