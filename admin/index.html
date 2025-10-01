@@ -540,17 +540,6 @@
     }
 
     .knowledge-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
-    .danger-btn {
-      margin-left: 8px;
-      border: 1px solid #d83a3a;
-      color: #d83a3a;
-      background: transparent;
-      transition: background-color 0.2s ease, color 0.2s ease;
-    }
-    .danger-btn:hover {
-      background: #d83a3a;
-      color: #fff;
-    }
     .kb-priority-panel { margin-top: 14px; border: 1px solid rgba(148, 163, 184, 0.3); border-radius: 12px; padding: 12px; background: rgba(15, 23, 42, 0.35); display: grid; gap: 10px; }
     .kb-priority-header { display: flex; justify-content: space-between; align-items: center; }
     .kb-priority-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -821,13 +810,6 @@
 
     .voice-upload {
       display: flex;
-      flex-direction: column;
-      gap: 8px;
-      align-items: stretch;
-    }
-
-    .voice-upload-row {
-      display: flex;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
@@ -835,28 +817,6 @@
 
     .voice-upload input[type="file"] {
       flex: 1 1 240px;
-    }
-
-    .voice-upload-actions {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .voice-upload-actions button {
-      border-radius: 999px;
-      padding: 8px 16px;
-      border: 1px solid rgba(96, 165, 250, 0.35);
-      background: rgba(96, 165, 250, 0.12);
-      color: rgba(15, 23, 42, 0.85);
-      font-size: 13px;
-      cursor: pointer;
-    }
-
-    .voice-upload-actions button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
     }
 
     .voice-samples-list {
@@ -2129,25 +2089,18 @@
           <div class="crawler-progress-note" id="crawlerProgressNote"></div>
         </div>
         <form id="crawler-form" style="margin-top:4px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-end;">
-          <label style="flex:1 1 200px;">
-            <span data-i18n="crawlerStartUrl">Start URL</span>
+          <label style="flex:1 1 200px;" data-i18n="crawlerStartUrl">Start URL
             <input type="url" id="url" placeholder="https://example.com" required style="width:100%;">
           </label>
-          <label>
-            <span data-i18n="crawlerDepth">Depth</span>
+          <label data-i18n="crawlerDepth">Depth
             <input type="number" id="depth" min="1" value="2" style="width:80px;">
           </label>
-          <label>
-            <span data-i18n="crawlerPages">Pages</span>
+          <label data-i18n="crawlerPages">Pages
             <input type="number" id="pages" min="1" value="100" style="width:80px;">
           </label>
           <label class="crawler-option">
             <input type="checkbox" id="crawlerCollectBooks">
             <span data-i18n="crawlerCollectBooks">Store full pages for book reading</span>
-          </label>
-          <label class="crawler-option">
-            <input type="checkbox" id="crawlerCollectMedex">
-            <span data-i18n="crawlerCollectMedex">Collect Medesk booking links</span>
           </label>
           <button type="submit" data-i18n="crawlerStartButton">Запустить</button>
           <button type="button" id="stopBtn" data-i18n="crawlerStopButton">Остановить</button>
@@ -2272,14 +2225,8 @@
           <div class="muted" id="voiceTrainingSummary" data-i18n="voiceTrainingSummary">Загрузите 3+ аудиодорожки с чистой речью, чтобы обучить ассистента говорить голосом проекта.</div>
         </div>
         <div class="voice-upload">
-          <div class="voice-upload-row">
-            <input type="file" id="voiceSampleInput" accept="audio/*" capture="microphone" multiple>
-            <button type="button" id="voiceSampleUpload" data-i18n="voiceUploadButton">Загрузить дорожки</button>
-          </div>
-          <div class="voice-upload-actions">
-            <button type="button" id="voiceRecordBtn" data-i18n="voiceRecordButton">Записать дорожку</button>
-            <span class="muted" id="voiceRecordStatus">—</span>
-          </div>
+          <input type="file" id="voiceSampleInput" accept="audio/*" multiple>
+          <button type="button" id="voiceSampleUpload" data-i18n="voiceUploadButton">Загрузить дорожки</button>
           <span class="muted" id="voiceUploadStatus">—</span>
         </div>
         <div class="voice-samples" id="voiceSamplesContainer">
@@ -2724,7 +2671,6 @@
     const crawlerDedupBtn = document.getElementById('crawlerDedupBtn');
     const crawlerActionStatus = document.getElementById('crawlerActionStatus');
     const crawlerCollectBooks = document.getElementById('crawlerCollectBooks');
-    const crawlerCollectMedex = document.getElementById('crawlerCollectMedex');
     const voiceTrainingCard = document.getElementById('voiceTrainingCard');
     const voiceSampleInput = document.getElementById('voiceSampleInput');
     const voiceSampleUploadBtn = document.getElementById('voiceSampleUpload');
@@ -2734,10 +2680,7 @@
     const voiceSamplesEmpty = document.getElementById('voiceSamplesEmpty');
     const voiceTrainButton = document.getElementById('voiceTrainButton');
     const voiceTrainStatus = document.getElementById('voiceTrainStatus');
-    const voiceRecordBtn = document.getElementById('voiceRecordBtn');
-    const voiceRecordStatus = document.getElementById('voiceRecordStatus');
     const voiceJobsContainer = document.getElementById('voiceJobsContainer');
-    const feedbackTasksList = document.getElementById('feedbackTasksList');
     const kbModalBackdrop = document.getElementById('kbModal');
     const kbModalClose = document.getElementById('kbModalClose');
     const kbModalCancel = document.getElementById('kbModalCancel');
@@ -3170,12 +3113,9 @@
       crawlerDepth: 'Depth',
       crawlerPages: 'Pages',
       crawlerCollectBooks: 'Store full pages for book reading',
-      crawlerCollectMedex: 'Collect Medesk booking links',
       voiceTrainingTitle: 'Voice training',
       voiceTrainingSummary: 'Upload 3+ clean voice clips to teach the assistant to speak like your project.',
       voiceUploadButton: 'Upload clips',
-      voiceRecordButton: 'Record clip',
-      voiceRecordStopButton: 'Stop recording',
       voiceSamplesEmpty: 'No audio clips uploaded yet.',
       voiceTrainButton: 'Train custom voice',
       promptAiStart: 'Generating…',
@@ -3338,16 +3278,12 @@
         crawlerDepth: 'Profundidad',
         crawlerPages: 'Páginas',
         crawlerCollectBooks: 'Guardar páginas completas para modo lectura',
-        crawlerCollectMedex: 'Capturar enlaces de reserva Medesk',
         voiceTrainingTitle: 'Entrenamiento de voz',
         voiceTrainingSummary: 'Sube 3 o más clips limpios para que el asistente hable con la voz de tu proyecto.',
         voiceUploadButton: 'Subir clips',
-        voiceRecordButton: 'Grabar clip',
-        voiceRecordStopButton: 'Detener grabación',
         voiceSamplesEmpty: 'Aún no hay audios cargados.',
         voiceTrainButton: 'Entrenar voz personalizada',
         crawlerCollectBooks: 'Guardar páginas completas para modo lectura',
-        crawlerCollectMedex: 'Capturar enlaces de reserva Medesk',
         promptAiStart: 'Generando…',
         promptAiReady: 'Prompt listo',
         promptAiStopped: 'Detenido',
@@ -3434,12 +3370,9 @@
         crawlerDepth: 'Tiefe',
         crawlerPages: 'Seiten',
         crawlerCollectBooks: 'Komplette Seiten für Lesemodus speichern',
-        crawlerCollectMedex: 'Medesk-Buchungslinks sammeln',
         voiceTrainingTitle: 'Stimmtraining',
         voiceTrainingSummary: 'Laden Sie mindestens 3 saubere Sprachaufnahmen hoch, damit der Assistent mit Ihrer Stimme spricht.',
         voiceUploadButton: 'Clips hochladen',
-        voiceRecordButton: 'Clip aufnehmen',
-        voiceRecordStopButton: 'Aufnahme stoppen',
         voiceSamplesEmpty: 'Noch keine Audiodateien hochgeladen.',
         voiceTrainButton: 'Eigene Stimme trainieren',
         crawlerCollectBooks: 'Komplette Seiten für Lesemodus speichern',
@@ -3529,12 +3462,9 @@
         crawlerDepth: 'Profondeur',
         crawlerPages: 'Pages',
         crawlerCollectBooks: 'Conserver les pages complètes pour la lecture',
-        crawlerCollectMedex: 'Collecter les liens de réservation Medesk',
         voiceTrainingTitle: 'Entraînement vocal',
         voiceTrainingSummary: 'Importez au moins 3 extraits audio propres pour que l’assistant parle avec la voix de votre projet.',
         voiceUploadButton: 'Téléverser des extraits',
-        voiceRecordButton: 'Enregistrer un extrait',
-        voiceRecordStopButton: 'Arrêter l\'enregistrement',
         voiceSamplesEmpty: 'Aucun extrait audio téléversé pour le moment.',
         voiceTrainButton: 'Entraîner la voix personnalisée',
         crawlerCollectBooks: 'Conserver les pages complètes pour la lecture',
@@ -3624,12 +3554,9 @@
         crawlerDepth: 'Profondità',
         crawlerPages: 'Pagine',
         crawlerCollectBooks: 'Salva le pagine complete per la lettura',
-        crawlerCollectMedex: 'Raccogli link di prenotazione Medesk',
         voiceTrainingTitle: 'Addestramento voce',
         voiceTrainingSummary: 'Carica almeno 3 clip pulite per far parlare l’assistente con la voce del progetto.',
         voiceUploadButton: 'Carica clip',
-        voiceRecordButton: 'Registra clip',
-        voiceRecordStopButton: 'Ferma registrazione',
         voiceSamplesEmpty: 'Nessuna traccia caricata.',
         voiceTrainButton: 'Addestra voce personalizzata',
         crawlerCollectBooks: 'Salva le pagine complete per la lettura',
@@ -3719,12 +3646,9 @@
         crawlerDepth: 'Profundidade',
         crawlerPages: 'Páginas',
         crawlerCollectBooks: 'Guardar páginas completas para modo leitura',
-        crawlerCollectMedex: 'Coletar links de agendamento Medesk',
         voiceTrainingTitle: 'Treinamento de voz',
         voiceTrainingSummary: 'Envie 3+ clipes limpos para que o assistente fale com a voz do projeto.',
         voiceUploadButton: 'Enviar clipes',
-        voiceRecordButton: 'Gravar clipe',
-        voiceRecordStopButton: 'Parar gravação',
         voiceSamplesEmpty: 'Nenhum áudio enviado ainda.',
         voiceTrainButton: 'Treinar voz personalizada',
         crawlerCollectBooks: 'Guardar páginas completas para modo leitura',
@@ -3814,12 +3738,9 @@
         crawlerDepth: 'Глубина',
         crawlerPages: 'Страницы',
         crawlerCollectBooks: 'Сохранять страницы целиком для режима чтения',
-        crawlerCollectMedex: 'Собирать ссылки записи Medesk',
         voiceTrainingTitle: 'Обучение голоса',
         voiceTrainingSummary: 'Загрузите 3+ аудиодорожки с чистой речью, чтобы ассистент говорил голосом проекта.',
         voiceUploadButton: 'Загрузить дорожки',
-        voiceRecordButton: 'Записать дорожку',
-        voiceRecordStopButton: 'Остановить запись',
         voiceSamplesEmpty: 'Дорожки не загружены.',
         voiceTrainButton: 'Обучить голос',
         promptAiStart: 'Генерируем…',
@@ -3966,12 +3887,9 @@
         crawlerDepth: '深度',
         crawlerPages: '页面',
         crawlerCollectBooks: '为阅读模式保存完整页面',
-        crawlerCollectMedex: '收集 Medesk 预约链接',
         voiceTrainingTitle: '语音训练',
         voiceTrainingSummary: '上传至少 3 段干净语音，帮助助手学会项目专属的声音。',
         voiceUploadButton: '上传音频',
-        voiceRecordButton: '录制音频',
-        voiceRecordStopButton: '停止录音',
         voiceSamplesEmpty: '尚未上传音频片段。',
         voiceTrainButton: '训练自定义语音',
         promptAiStart: '正在生成…',
@@ -4060,12 +3978,9 @@
         crawlerDepth: '深さ',
         crawlerPages: 'ページ',
         crawlerCollectBooks: '読書モード用にページ全体を保存',
-        crawlerCollectMedex: 'Medesk の予約リンクを収集',
         voiceTrainingTitle: '音声トレーニング',
         voiceTrainingSummary: 'クリアな音声クリップを3つ以上アップロードして、アシスタントにプロジェクトの声を学習させましょう。',
         voiceUploadButton: 'クリップをアップロード',
-        voiceRecordButton: '音声を録音',
-        voiceRecordStopButton: '録音を停止',
         voiceSamplesEmpty: '音声クリップがまだありません。',
         voiceTrainButton: 'カスタム音声を学習',
         promptAiStart: '生成中…',
@@ -4154,12 +4069,9 @@
         crawlerDepth: 'العمق',
         crawlerPages: 'الصفحات',
         crawlerCollectBooks: 'حفظ الصفحات كاملة لوضع القراءة',
-        crawlerCollectMedex: 'جمع روابط حجز Medesk',
         voiceTrainingTitle: 'تدريب الصوت',
         voiceTrainingSummary: 'حمّل 3 مقاطع صوتية نظيفة على الأقل ليكتسب المساعد صوت مشروعك.',
         voiceUploadButton: 'رفع المقاطع',
-        voiceRecordButton: 'تسجيل مقطع',
-        voiceRecordStopButton: 'إيقاف التسجيل',
         voiceSamplesEmpty: 'لا توجد مقاطع صوتية بعد.',
         voiceTrainButton: 'تدريب الصوت المخصص',
         promptAiStart: 'جاري التوليد…',
@@ -4327,9 +4239,6 @@
       if (crawlerCollectBooks) {
         payload.collect_books = crawlerCollectBooks.checked;
       }
-      if (crawlerCollectMedex) {
-        payload.collect_medex = crawlerCollectMedex.checked;
-      }
       if (!currentProject) {
         launchMsg.textContent = 'Выберите проект';
         return;
@@ -4454,6 +4363,7 @@
     const projectStorageContexts = document.getElementById('projectStorageContexts');
     const projectStorageRedis = document.getElementById('projectStorageRedis');
     const feedbackSection = document.getElementById('block-feedback');
+    feedbackTasksList = document.getElementById('feedbackTasksList');
     const feedbackRefreshBtn = document.getElementById('feedbackRefresh');
     const knowledgeServiceToggle = document.getElementById('knowledgeServiceToggle');
     const knowledgeServiceApply = document.getElementById('knowledgeServiceApply');
@@ -4792,26 +4702,7 @@
     let voiceSamplesCache = [];
     let voiceJobsCache = [];
     let voiceJobsPollTimer = null;
-    const VOICE_ACTIVE_STATUSES = new Set(['queued', 'preparing', 'training', 'validating']);
-    let backupUnavailable = false;
-    let feedbackUnavailable = false;
-    let knowledgePriorityUnavailable = false;
-    let knowledgeQaUnavailable = false;
-    let knowledgeUnansweredUnavailable = false;
     const VOICE_MIN_SAMPLE_COUNT = 3;
-    const MEDIA_RECORDER_SUPPORTED = !!(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
-    const voiceRecorder = {
-      stream: null,
-      recorder: null,
-      chunks: [],
-      timer: null,
-      startedAt: 0,
-      active: false,
-      uploading: false,
-      skipUpload: false,
-    };
-    const MAX_RECORDING_MS = 60_000;
-    let voiceJobPending = false;
     let projectStatusTimer = null;
     let projectStatusLocked = false;
     let lastProjectCount = 0;
@@ -5020,16 +4911,6 @@
       editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
       actionsTd.appendChild(editBtn);
 
-      if (doc.fileId) {
-        const deleteBtn = document.createElement('button');
-        deleteBtn.type = 'button';
-        deleteBtn.textContent = 'Удалить';
-        deleteBtn.className = 'danger-btn';
-        const docProject = (doc.project || doc.domain || currentProject || '').trim().toLowerCase();
-        deleteBtn.addEventListener('click', () => deleteKnowledgeDocument(doc.fileId, docProject));
-        actionsTd.appendChild(deleteBtn);
-      }
-
       tr.append(nameTd, descTd, projectTd, linkTd, actionsTd);
       return tr;
     };
@@ -5118,7 +4999,7 @@
     };
 
     async function loadKnowledgePriority(projectName) {
-      if (!kbPriorityList || knowledgePriorityUnavailable) return;
+      if (!kbPriorityList) return;
       try {
         const params = new URLSearchParams();
         if (projectName) params.set('project', projectName);
@@ -5126,7 +5007,7 @@
         const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
         const resp = await fetch(url);
         if (resp.status === 404) {
-          knowledgePriorityUnavailable = true;
+          console.info('knowledge_priority_unavailable');
           renderKnowledgePriority(knowledgePriorityOrder);
           if (kbPriorityStatus) {
             kbPriorityStatus.textContent = 'Приоритеты недоступны';
@@ -5147,7 +5028,7 @@
     }
 
     async function saveKnowledgePriority() {
-      if (!kbPriorityList || !kbPrioritySave || knowledgePriorityUnavailable) return;
+      if (!kbPriorityList || !kbPrioritySave) return;
       const order = getKnowledgePriorityOrder();
       if (kbPriorityStatus) {
         kbPriorityStatus.textContent = 'Сохраняем...';
@@ -5165,7 +5046,7 @@
           body: JSON.stringify(payload),
         });
         if (resp.status === 404) {
-          knowledgePriorityUnavailable = true;
+          console.info('knowledge_priority_save_unavailable');
           if (kbPriorityStatus) {
             kbPriorityStatus.textContent = 'Сохранение недоступно';
             setTimeout(() => { kbPriorityStatus.textContent = ''; }, 4000);
@@ -5639,7 +5520,7 @@
     };
 
     const refreshBackupStatus = async (clearMessage = false) => {
-      if (backupUnavailable || !adminSession.is_super) {
+      if (!adminSession.is_super) {
         scheduleBackupRefresh(false);
         return;
       }
@@ -5650,13 +5531,6 @@
       }
       try {
         const resp = await fetch('/api/v1/backup/status?limit=6');
-        if (resp.status === 401 || resp.status === 404) {
-          backupUnavailable = true;
-          setBackupControlsDisabled(true);
-          if (backupCard) backupCard.style.display = 'none';
-          scheduleBackupRefresh(false);
-          return;
-        }
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
@@ -5664,13 +5538,6 @@
         renderBackupState(data);
         if (clearMessage) pushBackupMessage('', 'info');
       } catch (error) {
-        if (error && error.code === AUTH_CANCELLED_CODE) {
-          backupUnavailable = true;
-          setBackupControlsDisabled(true);
-          if (backupCard) backupCard.style.display = 'none';
-          scheduleBackupRefresh(false);
-          return;
-        }
         console.error('backup_status_failed', error);
         pushBackupMessage('backupJobsFetchError', 'error');
       }
@@ -7152,7 +7019,7 @@
     }
 
     async function fetchFeedbackTasks() {
-      if (feedbackUnavailable || !adminSession.is_super) {
+      if (!adminSession.is_super) {
         if (feedbackSection) feedbackSection.style.display = 'none';
         return;
       }
@@ -7160,7 +7027,7 @@
       try {
         const resp = await fetch('/api/v1/admin/feedback', { cache: 'no-store' });
         if (resp.status === 404) {
-          feedbackUnavailable = true;
+          console.info('feedback_tasks_unavailable');
           if (feedbackSection) feedbackSection.style.display = 'none';
           return;
         }
@@ -7180,7 +7047,6 @@
     }
 
     async function updateFeedbackTask(id, status) {
-      if (feedbackUnavailable) return;
       try {
         const resp = await fetch(`/api/v1/admin/feedback/${id}`, {
           method: 'PATCH',
@@ -7188,7 +7054,7 @@
           body: JSON.stringify({ status }),
         });
         if (resp.status === 404) {
-          feedbackUnavailable = true;
+          console.info('feedback_update_unavailable');
           if (feedbackSection) feedbackSection.style.display = 'none';
           return;
         }
@@ -7949,7 +7815,7 @@
     }
 
     async function loadKnowledgeQa() {
-      if (!kbTableQa || knowledgeQaUnavailable) return;
+      if (!kbTableQa) return;
       if (!currentProject) {
         renderQaEmpty('Выберите проект');
         if (kbCountQa) kbCountQa.textContent = '—';
@@ -7962,7 +7828,7 @@
         params.set('limit', '500');
         const resp = await fetch(`/api/v1/admin/knowledge/qa?${params.toString()}`);
         if (resp.status === 404) {
-          knowledgeQaUnavailable = true;
+          console.info('knowledge_qa_unavailable');
           renderQaEmpty('Модуль Q&A недоступен');
           qaPairsCache = [];
           if (kbCountQa) kbCountQa.textContent = '0';
@@ -8002,7 +7868,6 @@
       const payload = { question, answer, priority };
       if (kbQaStatus) kbQaStatus.textContent = 'Сохраняем...';
       try {
-        if (knowledgeQaUnavailable) return;
         if (isNew) {
           const params = new URLSearchParams();
           if (currentProject) params.set('project', currentProject);
@@ -8014,7 +7879,7 @@
             body: JSON.stringify(payload),
           });
           if (resp.status === 404) {
-            knowledgeQaUnavailable = true;
+            console.info('knowledge_qa_create_unavailable');
             if (kbQaStatus) kbQaStatus.textContent = 'Добавление недоступно';
             return;
           }
@@ -8027,7 +7892,7 @@
             body: JSON.stringify(payload),
           });
           if (resp.status === 404) {
-            knowledgeQaUnavailable = true;
+            console.info('knowledge_qa_update_unavailable');
             if (kbQaStatus) kbQaStatus.textContent = 'Изменение недоступно';
             return;
           }
@@ -8055,11 +7920,10 @@
       }
       if (!confirm('Удалить эту пару вопрос-ответ?')) return;
       if (kbQaStatus) kbQaStatus.textContent = 'Удаляем...';
-      if (knowledgeQaUnavailable) return;
       try {
         const resp = await fetch(`/api/v1/admin/knowledge/qa/${encodeURIComponent(id)}`, { method: 'DELETE' });
         if (resp.status === 404) {
-          knowledgeQaUnavailable = true;
+          console.info('knowledge_qa_delete_unavailable');
           return;
         }
         if (!resp.ok) throw new Error(await resp.text());
@@ -8074,7 +7938,7 @@
     }
 
     async function reorderQaPair(id, direction) {
-      if (!id || knowledgeQaUnavailable) return;
+      if (!id) return;
       const index = qaPairsCache.findIndex((item) => item.id === id);
       if (index === -1) return;
       const targetIndex = index + direction;
@@ -8085,23 +7949,23 @@
       if (!order.length) return;
       if (kbQaStatus) kbQaStatus.textContent = 'Сохраняем порядок...';
       try {
-        const params = new URLSearchParams();
-        if (currentProject) params.set('project', currentProject);
-        const query = params.toString();
-        const url = query ? `/api/v1/admin/knowledge/qa/reorder?${query}` : '/api/v1/admin/knowledge/qa/reorder';
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order }),
-        });
-        if (resp.status === 404) {
-          knowledgeQaUnavailable = true;
-          if (kbQaStatus) kbQaStatus.textContent = 'Изменение порядка недоступно';
-          return;
-        }
-        if (!resp.ok) throw new Error(await resp.text());
-        await loadKnowledgeQa();
-        if (kbQaStatus) kbQaStatus.textContent = 'Порядок обновлён';
+      const params = new URLSearchParams();
+      if (currentProject) params.set('project', currentProject);
+      const query = params.toString();
+      const url = query ? `/api/v1/admin/knowledge/qa/reorder?${query}` : '/api/v1/admin/knowledge/qa/reorder';
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      });
+      if (resp.status === 404) {
+        console.info('knowledge_qa_reorder_unavailable');
+        if (kbQaStatus) kbQaStatus.textContent = 'Изменение порядка недоступно';
+        return;
+      }
+      if (!resp.ok) throw new Error(await resp.text());
+      await loadKnowledgeQa();
+      if (kbQaStatus) kbQaStatus.textContent = 'Порядок обновлён';
       } catch (error) {
         console.error('knowledge_qa_reorder_failed', error);
         if (kbQaStatus) kbQaStatus.textContent = 'Не удалось изменить порядок';
@@ -8139,7 +8003,7 @@
     }
 
     async function loadUnansweredQuestions() {
-      if (!kbTableUnanswered || knowledgeUnansweredUnavailable) return;
+      if (!kbTableUnanswered) return;
       if (!currentProject) {
         renderUnansweredTable([]);
         return;
@@ -8149,7 +8013,7 @@
         params.set('project', currentProject);
         const resp = await fetch(`/api/v1/admin/knowledge/unanswered?${params.toString()}`);
         if (resp.status === 404) {
-          knowledgeUnansweredUnavailable = true;
+          console.info('knowledge_unanswered_unavailable');
           renderUnansweredTable([]);
           if (kbUnansweredStatus) {
             kbUnansweredStatus.textContent = 'Раздел недоступен';
@@ -8500,12 +8364,8 @@
         const kept = result.kept ?? 0;
         kbDedupStatus.textContent = `Удалено ${removed}, осталось ${kept}`;
         await loadKnowledge();
-        if (typeof fetchProjectStorage === 'function') {
-          await fetchProjectStorage();
-        }
-        if (typeof populateProjectForm === 'function') {
-          populateProjectForm(currentProject);
-        }
+        await fetchProjectStorage();
+        populateProjectForm(currentProject);
         setTimeout(() => { kbDedupStatus.textContent = ''; }, 3000);
       } catch (error) {
         console.error(error);
@@ -8513,38 +8373,26 @@
         setTimeout(() => { kbDedupStatus.textContent = ''; }, 4000);
       }
     }
-    function setKnowledgeActionStatus(message, duration = 3000) {
+    async function clearKnowledge(){
       if (!kbClearStatus) return;
-      kbClearStatus.textContent = message || '';
-      if (duration > 0 && message) {
-        setTimeout(() => {
-          if (kbClearStatus && kbClearStatus.textContent === message) {
-            kbClearStatus.textContent = '';
-          }
-        }, duration);
-      }
-    }
-
-    async function deleteKnowledgeDocument(fileId, projectSlug){
-      if (!fileId) return;
-      if (!confirm('Удалить документ из базы знаний?')) return;
-      setKnowledgeActionStatus('Удаляем документ…', 0);
+      const confirmed = confirm(currentProject ? `Очистить базу для проекта ${currentProject}?` : 'Очистить всю базу знаний?');
+      if (!confirmed) return;
+      kbClearStatus.textContent = 'Удаляем…';
       try {
         const params = new URLSearchParams();
-        if (projectSlug) params.set('project', projectSlug);
-        const query = params.toString();
-        const url = query
-          ? `/api/v1/admin/knowledge/${encodeURIComponent(fileId)}?${query}`
-          : `/api/v1/admin/knowledge/${encodeURIComponent(fileId)}`;
-        const resp = await fetch(url, { method: 'DELETE' });
+        if (currentProject) params.set('project', currentProject);
+        const resp = await fetch(`/api/v1/admin/knowledge?${params.toString()}`, { method: 'DELETE' });
         if (!resp.ok) throw new Error(await resp.text());
-        setKnowledgeActionStatus('Документ удалён');
-        await loadKnowledge();
+        const data = await resp.json();
+        kbClearStatus.textContent = `Удалено документов: ${data.documents_removed || 0}`;
+        await fetchKnowledge();
         await fetchProjectStorage();
         populateProjectForm(currentProject);
+        setTimeout(() => { kbClearStatus.textContent = ''; }, 3000);
       } catch (error) {
-        console.error('knowledge_document_delete_failed', error);
-        setKnowledgeActionStatus('Ошибка удаления', 4000);
+        console.error('knowledge_clear_failed', error);
+        kbClearStatus.textContent = 'Ошибка очистки';
+        setTimeout(() => { kbClearStatus.textContent = ''; }, 4000);
       }
     }
 
@@ -8734,17 +8582,16 @@
         if (!confirm('Очистить список вопросов без ответа?')) return;
         if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Очищаем...';
         try {
-        if (knowledgeUnansweredUnavailable) return;
-        const resp = await fetch('/api/v1/admin/knowledge/unanswered/clear', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: currentProject || null }),
-        });
-        if (resp.status === 404) {
-          knowledgeUnansweredUnavailable = true;
-          if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Очистка недоступна';
-          return;
-        }
+          const resp = await fetch('/api/v1/admin/knowledge/unanswered/clear', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project: currentProject || null }),
+          });
+          if (resp.status === 404) {
+            console.info('knowledge_unanswered_clear_unavailable');
+            if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Очистка недоступна';
+            return;
+          }
           if (!resp.ok) throw new Error(await resp.text());
           await loadUnansweredQuestions();
           if (kbUnansweredStatus) kbUnansweredStatus.textContent = 'Список очищен';
@@ -9391,9 +9238,6 @@
       if (voiceTrainingSummary) {
         voiceTrainingSummary.textContent = message || 'Выберите проект, чтобы загрузить дорожки.';
       }
-      stopVoiceRecording(true);
-      voiceRecorder.uploading = false;
-      if (voiceRecordStatus) voiceRecordStatus.textContent = '—';
       voiceSamplesCache = [];
       voiceJobsCache = [];
       if (voiceSamplesContainer) {
@@ -9407,244 +9251,6 @@
       if (voiceSampleUploadBtn) voiceSampleUploadBtn.disabled = true;
       if (voiceSampleInput) voiceSampleInput.disabled = true;
       if (voiceJobsContainer) voiceJobsContainer.innerHTML = '';
-      refreshVoiceTrainingState();
-    }
-
-    function setVoiceRecordStatus(message) {
-      if (voiceRecordStatus) voiceRecordStatus.textContent = message;
-    }
-
-    function cleanupVoiceRecorderStream() {
-      if (voiceRecorder.stream) {
-        try {
-          voiceRecorder.stream.getTracks().forEach((track) => track.stop());
-        } catch (error) {
-          console.warn('voice_record_stream_cleanup_failed', error);
-        }
-        voiceRecorder.stream = null;
-      }
-    }
-
-    function stopVoiceRecording(skipUpload = false) {
-      if (!MEDIA_RECORDER_SUPPORTED) return;
-      if (voiceRecorder.timer) {
-        clearInterval(voiceRecorder.timer);
-        voiceRecorder.timer = null;
-      }
-      voiceRecorder.skipUpload = skipUpload;
-      if (voiceRecorder.recorder && voiceRecorder.recorder.state !== 'inactive') {
-        try {
-          voiceRecorder.recorder.stop();
-        } catch (error) {
-          console.warn('voice_record_stop_failed', error);
-        }
-      } else {
-        voiceRecorder.active = false;
-        cleanupVoiceRecorderStream();
-        voiceRecorder.chunks = [];
-        if (voiceRecordBtn) voiceRecordBtn.textContent = t('voiceRecordButton');
-        refreshVoiceTrainingState();
-      }
-    }
-
-    async function uploadRecordedBlob(blob, filename) {
-      if (!currentProject) {
-        setVoiceRecordStatus('Выберите проект, чтобы добавить запись.');
-        return;
-      }
-      voiceRecorder.uploading = true;
-      refreshVoiceTrainingState();
-      setVoiceRecordStatus('Загрузка записи…');
-      try {
-        const formData = new FormData();
-        formData.append('project', currentProject);
-        const file = new File([blob], filename, { type: blob.type || 'audio/webm' });
-        formData.append('files', file);
-        const resp = await fetch('/api/v1/voice/samples', {
-          method: 'POST',
-          body: formData,
-        });
-        if (!resp.ok) throw new Error(await resp.text());
-        const data = await resp.json();
-        renderVoiceSamples(data.samples || []);
-        setVoiceRecordStatus('Запись загружена');
-        setTimeout(() => {
-          if (!voiceRecorder.active) setVoiceRecordStatus('—');
-        }, 4000);
-      } catch (error) {
-        console.error('voice_record_upload_failed', error);
-        setVoiceRecordStatus('Не удалось загрузить запись');
-      } finally {
-        voiceRecorder.uploading = false;
-        refreshVoiceTrainingState();
-      }
-    }
-
-    function handleRecorderStop() {
-      voiceRecorder.active = false;
-      if (voiceRecordBtn) voiceRecordBtn.textContent = t('voiceRecordButton');
-      if (voiceRecorder.timer) {
-        clearInterval(voiceRecorder.timer);
-        voiceRecorder.timer = null;
-      }
-      cleanupVoiceRecorderStream();
-      const recorderInstance = voiceRecorder.recorder;
-      voiceRecorder.recorder = null;
-      const chunks = voiceRecorder.chunks.splice(0, voiceRecorder.chunks.length);
-      if (voiceRecorder.skipUpload || !chunks.length) {
-        setVoiceRecordStatus('—');
-        voiceRecorder.skipUpload = false;
-        refreshVoiceTrainingState();
-        return;
-      }
-      const mime = recorderInstance?.mimeType || 'audio/webm';
-      voiceRecorder.recorder = null;
-      const blob = new Blob(chunks, { type: mime });
-      const ext = mime.includes('mp4') ? 'm4a' : mime.includes('mpeg') ? 'mp3' : 'webm';
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `recording-${timestamp}.${ext}`;
-      uploadRecordedBlob(blob, filename);
-      refreshVoiceTrainingState();
-    }
-
-    async function startVoiceRecording() {
-      if (!MEDIA_RECORDER_SUPPORTED) return;
-      if (!currentProject) {
-        setVoiceRecordStatus('Выберите проект для записи.');
-        return;
-      }
-      if (voiceRecorder.uploading) {
-        setVoiceRecordStatus('Подождите окончания загрузки.');
-        return;
-      }
-      setVoiceRecordStatus('Подготовка микрофона…');
-      try {
-        if (!voiceRecorder.stream) {
-          voiceRecorder.stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              echoCancellation: { ideal: true },
-              noiseSuppression: { ideal: true },
-              channelCount: { ideal: 1 },
-              sampleRate: { ideal: 44100 },
-            },
-          });
-        }
-      } catch (error) {
-        console.error('voice_record_permission_failed', error);
-        setVoiceRecordStatus('Доступ к микрофону запрещён.');
-        cleanupVoiceRecorderStream();
-        return;
-      }
-
-      const mimeCandidates = [
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/mp4',
-        'audio/mpeg',
-      ];
-      let options = {};
-      const supported = mimeCandidates.find((type) => {
-        try {
-          return window.MediaRecorder.isTypeSupported(type);
-        } catch (error) {
-          return false;
-        }
-      });
-      if (supported) options = { mimeType: supported };
-
-      try {
-        voiceRecorder.recorder = new MediaRecorder(voiceRecorder.stream, options);
-      } catch (error) {
-        console.error('voice_record_init_failed', error);
-        setVoiceRecordStatus('Не удалось начать запись.');
-        cleanupVoiceRecorderStream();
-        return;
-      }
-
-      voiceRecorder.chunks = [];
-      voiceRecorder.skipUpload = false;
-      voiceRecorder.recorder.addEventListener('dataavailable', (event) => {
-        if (event.data && event.data.size > 0) {
-          voiceRecorder.chunks.push(event.data);
-        }
-      });
-      voiceRecorder.recorder.addEventListener('stop', handleRecorderStop);
-      voiceRecorder.recorder.addEventListener('error', (event) => {
-        console.error('voice_record_recorder_error', event);
-        setVoiceRecordStatus('Ошибка при записи.');
-      });
-
-      voiceRecorder.startedAt = Date.now();
-      voiceRecorder.active = true;
-      if (voiceRecordBtn) voiceRecordBtn.textContent = t('voiceRecordStopButton');
-      try {
-        voiceRecorder.recorder.start();
-      } catch (error) {
-        console.error('voice_record_start_failed', error);
-        setVoiceRecordStatus('Не удалось начать запись.');
-        voiceRecorder.active = false;
-        voiceRecorder.recorder = null;
-        cleanupVoiceRecorderStream();
-        refreshVoiceTrainingState();
-        return;
-      }
-      voiceRecorder.timer = setInterval(() => {
-        const elapsed = Date.now() - voiceRecorder.startedAt;
-        const seconds = Math.floor(elapsed / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const label = `${minutes.toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`;
-        setVoiceRecordStatus(`Запись ${label}`);
-        if (elapsed >= MAX_RECORDING_MS) {
-          stopVoiceRecording();
-        }
-      }, 250);
-      refreshVoiceTrainingState();
-    }
-
-
-    function isVoiceTrainingActive(jobs = voiceJobsCache) {
-      return jobs.some((job) => VOICE_ACTIVE_STATUSES.has(String(job.status || '').toLowerCase()));
-    }
-
-    function refreshVoiceTrainingState() {
-      const enoughSamples = voiceSamplesCache.length >= VOICE_MIN_SAMPLE_COUNT;
-      const activeJob = isVoiceTrainingActive();
-      if (voiceTrainButton) {
-        voiceTrainButton.disabled = !enoughSamples || activeJob;
-      }
-      const blockedForJob = activeJob || voiceJobPending;
-      if (voiceSampleUploadBtn) {
-        voiceSampleUploadBtn.disabled = !currentProject || blockedForJob || voiceRecorder.active || voiceRecorder.uploading;
-      }
-      if (voiceSampleInput) {
-        voiceSampleInput.disabled = !currentProject || voiceRecorder.active;
-      }
-      if (voiceRecordBtn) {
-        if (!MEDIA_RECORDER_SUPPORTED) {
-          voiceRecordBtn.disabled = true;
-          if (voiceRecordStatus) voiceRecordStatus.textContent = 'Запись не поддерживается в этом браузере.';
-        } else if (voiceRecorder.active) {
-          voiceRecordBtn.disabled = false;
-        voiceRecordBtn.textContent = t('voiceRecordStopButton');
-        } else {
-          voiceRecordBtn.textContent = t('voiceRecordButton');
-          voiceRecordBtn.disabled = !currentProject || blockedForJob || voiceRecorder.uploading;
-          if (!currentProject && !voiceRecorder.uploading) {
-            setVoiceRecordStatus('Выберите проект для записи.');
-          } else if (!voiceRecorder.uploading && voiceRecordStatus && ['Выберите проект для записи.', '—', 'Запись не поддерживается в этом браузере.', 'Подготовка микрофона…'].includes(voiceRecordStatus.textContent) && currentProject) {
-            setVoiceRecordStatus('—');
-          }
-        }
-      }
-      if (voiceTrainStatus) {
-        if (activeJob) {
-          voiceTrainStatus.textContent = 'Обучение уже выполняется';
-        } else if (!enoughSamples && voiceSamplesCache.length > 0) {
-          voiceTrainStatus.textContent = 'Добавьте ещё дорожки';
-        } else if (['Обучение уже выполняется', 'Добавьте ещё дорожки'].includes(voiceTrainStatus.textContent)) {
-          voiceTrainStatus.textContent = '—';
-        }
-      }
     }
 
     function renderVoiceSamples(samples) {
@@ -9663,7 +9269,7 @@
           voiceSamplesEmpty.textContent = 'Дорожки не загружены.';
           voiceSamplesContainer.appendChild(voiceSamplesEmpty);
         }
-        refreshVoiceTrainingState();
+        if (voiceTrainButton) voiceTrainButton.disabled = true;
         return;
       }
       const list = document.createElement('div');
@@ -9685,7 +9291,7 @@
         list.appendChild(row);
       });
       voiceSamplesContainer.appendChild(list);
-      refreshVoiceTrainingState();
+      if (voiceTrainButton) voiceTrainButton.disabled = samples.length < VOICE_MIN_SAMPLE_COUNT;
     }
 
     function renderVoiceJobs(jobs) {
@@ -9697,7 +9303,6 @@
         placeholder.className = 'muted';
         placeholder.textContent = 'История запусков появится после обучения.';
         voiceJobsContainer.appendChild(placeholder);
-        refreshVoiceTrainingState();
         return;
       }
       jobs.forEach((job) => {
@@ -9723,7 +9328,6 @@
         row.appendChild(progressContainer);
         voiceJobsContainer.appendChild(row);
       });
-      refreshVoiceTrainingState();
     }
 
     function clearVoiceJobsPoll() {
@@ -9803,8 +9407,6 @@
     }
 
     async function triggerVoiceTraining(projectName) {
-      voiceJobPending = true;
-      refreshVoiceTrainingState();
       if (voiceTrainStatus) voiceTrainStatus.textContent = 'Подготовка…';
       try {
         const formData = new FormData();
@@ -9813,45 +9415,15 @@
           method: 'POST',
           body: formData,
         });
-        const raw = await res.text();
-        let data = {};
-        if (raw) {
-          try {
-            data = JSON.parse(raw);
-          } catch (error) {
-            console.warn('voice_train_parse_failed', error);
-            data = {};
-          }
-        }
         if (!res.ok) {
-          const detail = (data && typeof data === 'object' && data.detail) ? data.detail : raw;
-          if (res.status === 409) {
-            if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение уже выполняется';
-            await refreshVoiceTraining(projectName);
-            return;
-          }
-          if (res.status === 400 && (detail || '').startsWith('not_enough_samples')) {
-            if (voiceTrainStatus) voiceTrainStatus.textContent = 'Добавьте ещё дорожки';
-            await refreshVoiceTraining(projectName);
-            return;
-          }
-          throw new Error(detail || `HTTP ${res.status}`);
+          const detail = await res.text();
+          throw new Error(detail || 'train_failed');
         }
-        const detail = (data && typeof data === 'object' && data.detail) ? data.detail : '';
-        if (detail === 'job_in_progress') {
-          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение уже выполняется';
-        } else if (detail === 'job_resumed') {
-          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Перезапускаем обучение';
-        } else {
-          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение запущено';
-        }
+        if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение запущено';
         await refreshVoiceTraining(projectName);
       } catch (error) {
         console.error('voice_train_failed', error);
         if (voiceTrainStatus) voiceTrainStatus.textContent = 'Не удалось запустить обучение';
-      } finally {
-        voiceJobPending = false;
-        refreshVoiceTrainingState();
       }
     }
     function populateProjectForm(projectName){
@@ -10251,38 +9823,10 @@
       });
     }
 
-    if (voiceRecordBtn) {
-      if (!MEDIA_RECORDER_SUPPORTED) {
-        voiceRecordBtn.disabled = true;
-        setVoiceRecordStatus('Запись не поддерживается в этом браузере.');
-      } else {
-        voiceRecordBtn.addEventListener('click', () => {
-          if (!currentProject && !voiceRecorder.active) {
-            setVoiceRecordStatus('Выберите проект для записи.');
-            refreshVoiceTrainingState();
-            return;
-          }
-          if (voiceRecorder.active) {
-            stopVoiceRecording();
-          } else {
-            startVoiceRecording();
-          }
-        });
-      }
-    }
-
     if (voiceTrainButton) {
       voiceTrainButton.addEventListener('click', () => {
         if (!currentProject) {
           if (voiceTrainStatus) voiceTrainStatus.textContent = 'Выберите проект для обучения.';
-          return;
-        }
-        if (isVoiceTrainingActive()) {
-          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Обучение уже выполняется';
-          return;
-        }
-        if (voiceSamplesCache.length < VOICE_MIN_SAMPLE_COUNT) {
-          if (voiceTrainStatus) voiceTrainStatus.textContent = 'Добавьте ещё дорожки';
           return;
         }
         triggerVoiceTraining(currentProject);
@@ -10290,7 +9834,6 @@
     }
 
     refreshMailIntegrationHint();
-    refreshVoiceTrainingState();
 
     projectForm.addEventListener('submit', async (e) => {
       e.preventDefault();

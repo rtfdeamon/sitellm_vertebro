@@ -11,11 +11,10 @@ import os
 import signal
 import time
 import re
+import threading
 import urllib.parse as urlparse
-from typing import Any, Sequence
+from typing import Any
 from uuid import uuid4
-from datetime import datetime, date
-import base64
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 try:
@@ -102,13 +101,6 @@ READING_MODE_PROMPT = (
 
 READING_COLLECTION_NAME = os.getenv("MONGO_READING_COLLECTION", "reading_pages")
 READING_PAGE_MAX_LIMIT = 20
-READING_PREVIEW_LIMIT = min(5, READING_PAGE_MAX_LIMIT)
-READING_PREVIEW_MAX_SEGMENTS_PER_PAGE = 12
-READING_PREVIEW_MAX_IMAGES_PER_PAGE = 6
-READING_PREVIEW_SEGMENT_CHAR_LIMIT = 1800
-READING_PREVIEW_TEXT_CHAR_LIMIT = 3500
-READING_PREVIEW_TOTAL_CHAR_LIMIT = 20000
-READING_PREVIEW_HTML_CHAR_LIMIT = 5000
 
 try:  # pragma: no cover - optional when Celery/kombu unavailable in tests
     from celery.exceptions import CeleryError
@@ -144,8 +136,8 @@ VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
     ConnectionError,
     TimeoutError,
 )
-VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "5"))
-VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "20"))
+VOICE_INLINE_FALLBACK_DELAY = float(os.getenv("VOICE_INLINE_FALLBACK_DELAY", "2.0"))
+VOICE_PENDING_STATUSES = {"", VoiceTrainingStatus.queued.value, "pending"}
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -206,10 +198,7 @@ def _resolve_session_identifiers(
 
 
 _KNOWLEDGE_SNIPPET_CHARS = 640
-_MAX_DIALOG_TURNS = int(os.getenv("MAX_DIALOG_TURNS", "5"))
-_MAX_DIALOG_CHARS = int(os.getenv("MAX_DIALOG_CHARS", "8000"))
-_HISTORY_SUMMARY_MAX_CHARS = int(os.getenv("HISTORY_SUMMARY_MAX_CHARS", "900"))
-_HISTORY_SUMMARY_PREFIX = "Earlier conversation summary:"  # keep neutral for multilingual chats
+_MAX_DIALOG_TURNS = 5
 _VOICE_MAX_TURNS = 3
 _VOICE_KNOWLEDGE_LIMIT = 2
 _VOICE_KNOWLEDGE_CHARS = 800
@@ -404,13 +393,21 @@ class VoiceSamplesResponse(BaseModel):
 
 class VoiceJobsResponse(BaseModel):
     jobs: list[VoiceTrainingJob]
-
-
 def _log_debug_event(message: str, **kwargs) -> None:
     if app_settings.debug:
         logger.info(message, **kwargs)
     else:
         logger.debug(message, **kwargs)
+
+
+def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    truncated = cleaned[:limit].rsplit(" ", 1)[0].strip()
+    if not truncated:
+        truncated = cleaned[:limit]
+    return truncated.rstrip(". ") + "…"
 
 
 def _extract_payload_text(payload: Any) -> str:
@@ -541,143 +538,6 @@ def _build_download_url(request: Request, file_id: str) -> str:
         return f"{base}/api/v1/admin/knowledge/documents/{file_id}"
 
 
-def _truncate_text(value: Any, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str | None:
-    if limit <= 0:
-        return None
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip()
-    if not cleaned:
-        return None
-    if len(cleaned) <= limit:
-        return cleaned
-    slice_limit = max(1, limit - 3)
-    truncated = cleaned[:slice_limit].rstrip()
-    if not truncated:
-        truncated = cleaned[:slice_limit]
-    return f"{truncated}..."
-
-
-def _json_safe(value: Any) -> Any:
-    """Recursively convert data into JSON-serialisable primitives."""
-
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, (bytes, bytearray)):
-        return base64.b64encode(value).decode("ascii")
-    if isinstance(value, dict):
-        return {k: _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [_json_safe(item) for item in value]
-    return value
-
-
-def _serialize_reading_pages(
-    request: Request,
-    pages: Sequence[ReadingPage],
-) -> list[dict[str, Any]]:
-    serialized: list[dict[str, Any]] = []
-    remaining_chars = READING_PREVIEW_TOTAL_CHAR_LIMIT
-    for page in pages:
-        if remaining_chars <= 0:
-            break
-
-        payload = page.model_dump(by_alias=True)
-
-        raw_segments = payload.get("segments") if isinstance(payload.get("segments"), list) else []
-        segments_payload: list[dict[str, Any]] = []
-        if raw_segments:
-            for raw_segment in raw_segments:
-                if remaining_chars <= 0:
-                    break
-                if len(segments_payload) >= READING_PREVIEW_MAX_SEGMENTS_PER_PAGE:
-                    break
-                if not isinstance(raw_segment, dict):
-                    continue
-                text_value = raw_segment.get("text")
-                max_chars = min(READING_PREVIEW_SEGMENT_CHAR_LIMIT, remaining_chars)
-                truncated_text = _truncate_text(text_value, max_chars)
-                if not truncated_text:
-                    continue
-                segment_entry = dict(raw_segment)
-                segment_entry["text"] = truncated_text
-                segment_entry["chars"] = len(truncated_text)
-                segments_payload.append(segment_entry)
-                remaining_chars = max(0, remaining_chars - len(truncated_text))
-            payload["segments"] = segments_payload
-        else:
-            payload["segments"] = []
-
-        if segments_payload:
-            payload.pop("text", None)
-        else:
-            max_chars = min(READING_PREVIEW_TEXT_CHAR_LIMIT, remaining_chars)
-            truncated_page_text = _truncate_text(payload.get("text"), max_chars)
-            if truncated_page_text:
-                payload["text"] = truncated_page_text
-                remaining_chars = max(0, remaining_chars - len(truncated_page_text))
-            else:
-                payload.pop("text", None)
-
-        html_value = payload.get("html")
-        if html_value:
-            truncated_html = _truncate_text(html_value, READING_PREVIEW_HTML_CHAR_LIMIT)
-            if truncated_html:
-                payload["html"] = truncated_html
-                remaining_chars = max(0, remaining_chars - len(truncated_html))
-            else:
-                payload.pop("html", None)
-
-        images_payload: list[dict[str, Any]] = []
-        for image in page.images:
-            if len(images_payload) >= READING_PREVIEW_MAX_IMAGES_PER_PAGE:
-                break
-            source_url = getattr(image, "url", None)
-            file_id = getattr(image, "file_id", None)
-            image_entry: dict[str, Any] = {}
-            if file_id:
-                image_entry["url"] = _build_download_url(request, file_id)
-                if source_url:
-                    image_entry["source"] = source_url
-            elif source_url:
-                image_entry["url"] = source_url
-                image_entry["source"] = source_url
-            else:
-                continue
-            caption = getattr(image, "caption", None)
-            if caption:
-                truncated_caption = _truncate_text(caption, 240)
-                if truncated_caption:
-                    image_entry["caption"] = truncated_caption
-            images_payload.append(image_entry)
-        payload["images"] = images_payload
-        payload["segmentCount"] = len(segments_payload)
-        payload["imageCount"] = len(images_payload)
-
-        serialized.append(_json_safe(payload))
-    return serialized
-
-
-def _collect_reading_items(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for snippet in snippets:
-        reading = snippet.get("reading")
-        if not isinstance(reading, dict):
-            continue
-        pages = reading.get("pages")
-        if not pages:
-            continue
-        entry = {
-            "id": snippet.get("id"),
-            "name": snippet.get("name"),
-            "source": snippet.get("source"),
-            **{k: v for k, v in reading.items() if k != "pages"},
-            "pages": pages,
-        }
-        items.append(_json_safe(entry))
-    return items[:3]
-
-
 def _question_requests_sources(question: str) -> bool:
     normalized = (question or "").strip().lower()
     if not normalized:
@@ -779,96 +639,6 @@ def _collect_attachments(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]
         seen.add(key)
         attachments.append(att)
     return attachments
-
-
-async def _build_reading_preview(
-    request: Request,
-    mongo_client: MongoClient,
-    project: str | None,
-    doc: Document,
-    *,
-    limit: int = READING_PREVIEW_LIMIT,
-) -> dict[str, Any] | None:
-    project_name = (doc.project or project or "").strip()
-    if not project_name:
-        return None
-
-    reading_collection = getattr(request.state, "reading_collection", READING_COLLECTION_NAME)
-
-    doc_order = None
-    if doc.url:
-        try:
-            page_matches = await mongo_client.get_reading_pages(
-                reading_collection,
-                project_name,
-                limit=1,
-                offset=0,
-                url=doc.url,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "knowledge_reading_page_lookup_failed",
-                project=project_name,
-                url=doc.url,
-                error=str(exc),
-            )
-            page_matches = []
-        if page_matches:
-            doc_order = page_matches[0].order
-
-    try:
-        total_pages = await mongo_client.count_reading_pages(reading_collection, project_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "knowledge_reading_total_failed",
-            project=project_name,
-            error=str(exc),
-        )
-        total_pages = 0
-
-    if total_pages <= 0 and doc_order is None:
-        return None
-
-    offset = 0
-    if isinstance(doc_order, int) and doc_order > 0:
-        offset = max(0, doc_order - 1)
-        if total_pages:
-            offset = min(offset, max(0, total_pages - limit))
-    try:
-        pages = await mongo_client.get_reading_pages(
-            reading_collection,
-            project_name,
-            limit=limit,
-            offset=offset,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "knowledge_reading_preview_failed",
-            project=project_name,
-            offset=offset,
-            error=str(exc),
-        )
-        pages = []
-
-    if not pages:
-        return None
-
-    serialized_pages = _serialize_reading_pages(request, pages)
-    has_more = total_pages > offset + len(serialized_pages)
-    initial_index = 0
-    if isinstance(doc_order, int) and doc_order > 0:
-        initial_index = max(0, min(len(serialized_pages) - 1, doc_order - 1 - offset))
-
-    preview = {
-        "pages": serialized_pages,
-        "project": project_name,
-        "total": total_pages,
-        "has_more": has_more,
-        "startOffset": offset,
-        "initialIndex": initial_index,
-        "initialUrl": doc.url,
-    }
-    return _json_safe(preview)
 
 
 async def _collect_knowledge_snippets(
@@ -1034,19 +804,6 @@ async def _collect_knowledge_snippets(
             }
             if attachment_meta:
                 item["attachment"] = attachment_meta
-            if getattr(doc, "reading_mode", False) and mongo_client and hasattr(mongo_client, "get_reading_pages"):
-                try:
-                    reading_preview = await _build_reading_preview(request, mongo_client, project, doc)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug(
-                        "knowledge_reading_preview_error",
-                        project=project,
-                        url=doc.url,
-                        error=str(exc),
-                    )
-                    reading_preview = None
-                if reading_preview:
-                    item["reading"] = reading_preview
             buckets["mongo"].append(item)
             if file_id:
                 mongo_seen.add(file_id)
@@ -1309,6 +1066,8 @@ async def _collect_bitrix_snippet(
         logger.warning("bitrix_call_unexpected_failure", error=str(exc))
         debug_info["error"] = "unexpected_failure"
         return None, debug_info, None
+
+
 async def _plan_mail_action(
     question: str,
     project: Project | None,
@@ -1379,7 +1138,8 @@ async def _plan_mail_action(
         return {
             "action": "list_inbox",
             "limit": limit_value,
-            "unread_only": unread_only,
+        "unread_only": unread_only,
+    }
     return None
 
 
@@ -1683,6 +1443,7 @@ async def cancel_mail_plan(payload: MailPlanAction) -> ORJSONResponse:
     return ORJSONResponse({"status": "cancelled", "removed": True})
 
 
+>>>>>>> main
 def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     if not snippets:
         return ""
@@ -1690,7 +1451,7 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     has_attachments = any(bool(item.get("attachment")) for item in snippets)
     for idx, item in enumerate(snippets, 1):
         name = item.get("name") or f"Источник {idx}"
-        snippet_text = _truncate_text(item.get("text", ""), _KNOWLEDGE_SNIPPET_CHARS) or ""
+        snippet_text = _truncate_text(item.get("text", ""))
         attachment = item.get("attachment")
         url = item.get("url")
         if attachment:
@@ -1738,193 +1499,24 @@ def _trim_voice_snippets(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]
     return trimmed
 
 
-def _summarize_messages(messages: list[dict[str, Any]], *, max_len: int = _HISTORY_SUMMARY_MAX_CHARS) -> str | None:
-    """Build a compact textual summary of older dialog turns."""
+def _limit_dialog_history(messages: list[dict[str, Any]], max_turns: int = _MAX_DIALOG_TURNS) -> list[dict[str, Any]]:
+    """Return ``messages`` trimmed to the last ``max_turns`` user requests."""
 
-    if not messages or max_len <= 0:
-        return None
+    if max_turns <= 0 or len(messages) <= 2 * max_turns:
+        return messages
 
-    summary_parts: list[str] = []
-    remaining = max_len
-    for msg in messages:
-        content = str(msg.get("content", "")).strip()
-        if not content:
-            continue
+    kept: list[dict[str, Any]] = []
+    user_seen = 0
+
+    for msg in reversed(messages):
         role = str(msg.get("role", "")).lower()
-        speaker = "User" if role == RoleEnum.user.value else "Assistant"
-        normalized = " ".join(content.split())
-        if len(normalized) > min(240, remaining):
-            clipped = normalized[: min(240, remaining)].rsplit(" ", 1)[0]
-            normalized = (clipped or normalized[: min(240, remaining)]).rstrip(".,;") + "…"
-        fragment = f"{speaker}: {normalized}"
-        fragment_len = len(fragment)
-        if fragment_len >= remaining and summary_parts:
-            break
-        if fragment_len > remaining:
-            fragment = fragment[:remaining]
-        summary_parts.append(fragment)
-        remaining -= len(fragment) + 2  # include separator allowance
-        if remaining <= 0:
+        if role == RoleEnum.user.value:
+            user_seen += 1
+        kept.append(msg)
+        if user_seen >= max_turns:
             break
 
-    if not summary_parts:
-        return None
-
-    summary = f"{_HISTORY_SUMMARY_PREFIX} {'; '.join(summary_parts)}"
-    if len(summary) > max_len:
-        summary = summary[:max_len].rsplit(" ", 1)[0].rstrip(".,;") + "…"
-    return summary
-
-
-def _limit_dialog_history(
-    messages: list[dict[str, Any]],
-    max_turns: int = _MAX_DIALOG_TURNS,
-    *,
-    max_chars: int = _MAX_DIALOG_CHARS,
-) -> list[dict[str, Any]]:
-    """Return dialog history limited by ``max_turns`` and ``max_chars`` with optional summary."""
-
-    if not messages:
-        return []
-
-    trimmed: list[dict[str, Any]]
-    if max_turns <= 0:
-        trimmed = list(messages)
-    else:
-        kept: list[dict[str, Any]] = []
-        user_seen = 0
-        for msg in reversed(messages):
-            role = str(msg.get("role", "")).lower()
-            if role == RoleEnum.user.value:
-                user_seen += 1
-            kept.append(msg)
-            if user_seen >= max_turns:
-                break
-        trimmed = list(reversed(kept))
-
-    removed_count = max(0, len(messages) - len(trimmed))
-    summary_inserted = False
-
-    if removed_count > 0:
-        older = messages[: removed_count]
-        summary_text = _summarize_messages(older)
-        if summary_text:
-            trimmed = [{"role": "system", "content": summary_text}, *trimmed]
-            summary_inserted = True
-
-    char_pruned: list[dict[str, Any]] = []
-
-    if max_chars > 0:
-        def _msg_len(item: dict[str, Any]) -> int:
-            return len(str(item.get("content", "")))
-
-        total_chars = sum(_msg_len(item) for item in trimmed)
-        removal_index = 1 if summary_inserted else 0
-        # ensure we keep at least the last two actual messages
-        while total_chars > max_chars and len(trimmed) - removal_index > 1:
-            removed = trimmed.pop(removal_index)
-            total_chars -= _msg_len(removed)
-            char_pruned.append(removed)
-
-    if char_pruned and not summary_inserted:
-        summary_text = _summarize_messages(char_pruned)
-        if summary_text:
-            trimmed = [{"role": "system", "content": summary_text}, *trimmed]
-            summary_inserted = True
-            if max_chars > 0:
-                total_chars = sum(len(str(item.get("content", ""))) for item in trimmed)
-                removal_index = 1 if summary_inserted else 0
-                while total_chars > max_chars and len(trimmed) - removal_index > 1:
-                    removed = trimmed.pop(removal_index)
-                    total_chars -= len(str(removed.get("content", "")))
-
-    if summary_inserted and max_chars > 0 and trimmed:
-        other_chars = sum(len(str(item.get("content", ""))) for item in trimmed[1:])
-        if other_chars >= max_chars:
-            # No room for the summary at all.
-            trimmed.pop(0)
-        else:
-            allowance = max_chars - other_chars
-            summary_content = str(trimmed[0].get("content", ""))
-            if len(summary_content) > allowance:
-                snippet = summary_content[:allowance]
-                snippet = snippet.rsplit(" ", 1)[0].strip() or snippet.strip()
-                snippet = snippet.rstrip(".,; ")
-                if snippet and not snippet.endswith("…"):
-                    snippet = f"{snippet}…"
-                if snippet:
-                    trimmed[0]["content"] = snippet
-                else:
-                    trimmed.pop(0)
-
-    return trimmed
-
-@llm_router.post("/bitrix/confirm", response_class=ORJSONResponse)
-async def confirm_bitrix_plan(request: Request, payload: BitrixPlanAction) -> ORJSONResponse:
-    try:
-        redis_client = _get_redis()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail="redis_unavailable") from exc
-    key = f"bitrix:plan:{payload.plan_id}"
-    raw = await redis_client.get(key)
-    if raw is None:
-        raise HTTPException(status_code=404, detail="bitrix_plan_not_found")
-    try:
-        stored = json.loads(raw)
-    except Exception as exc:  # noqa: BLE001
-        await redis_client.delete(key)
-        raise HTTPException(status_code=410, detail="bitrix_plan_corrupted") from exc
-
-    expected_session = stored.get("session")
-    if expected_session and payload.session_id and expected_session != payload.session_id:
-        raise HTTPException(status_code=403, detail="session_mismatch")
-
-    project_name = _normalize_project(payload.project or stored.get("project"))
-    project_obj: Project | None = None
-    if project_name:
-        mongo_client = _get_mongo_client(request)
-        project_obj = await mongo_client.get_project(project_name)
-    if not project_obj or not getattr(project_obj, "bitrix_enabled", False):
-        raise HTTPException(status_code=400, detail="bitrix_not_configured")
-    webhook_url = getattr(project_obj, "bitrix_webhook_url", None)
-    if not isinstance(webhook_url, str) or not webhook_url.strip():
-        raise HTTPException(status_code=400, detail="bitrix_webhook_missing")
-
-    method = stored.get("method")
-    params = stored.get("params")
-    if not isinstance(method, str) or not method.strip():
-        await redis_client.delete(key)
-        raise HTTPException(status_code=410, detail="bitrix_plan_invalid")
-
-    try:
-        response = await call_bitrix_webhook(webhook_url, method, params if isinstance(params, dict) else {})
-    except BitrixError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    finally:
-        await redis_client.delete(key)
-
-    return ORJSONResponse({"status": "sent", "result": response})
-
-
-@llm_router.post("/bitrix/cancel", response_class=ORJSONResponse)
-async def cancel_bitrix_plan(payload: BitrixPlanAction) -> ORJSONResponse:
-    try:
-        redis_client = _get_redis()
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail="redis_unavailable") from exc
-    key = f"bitrix:plan:{payload.plan_id}"
-    raw = await redis_client.get(key)
-    if raw is None:
-        return ORJSONResponse({"status": "cancelled", "removed": False})
-    try:
-        stored = json.loads(raw)
-    except Exception:
-        stored = {}
-    expected_session = stored.get("session")
-    if expected_session and payload.session_id and expected_session != payload.session_id:
-        raise HTTPException(status_code=403, detail="session_mismatch")
-    await redis_client.delete(key)
-    return ORJSONResponse({"status": "cancelled", "removed": True})
+    return list(reversed(kept))
 
 
 @llm_router.post("/ask", response_class=ORJSONResponse, response_model=LLMResponse)
@@ -2136,8 +1728,6 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     system_messages.append({"role": "system", "content": emotion_instruction})
 
     reading_mode = request.query_params.get("reading") == "1"
-    if not reading_mode:
-        reading_mode = bool(_collect_reading_items(knowledge_snippets))
     if reading_mode:
         system_messages.append({"role": "system", "content": READING_MODE_PROMPT})
 
@@ -2192,8 +1782,6 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         attachments=[Attachment(**att) for att in attachments_payload],
         emotions_enabled=emotions_enabled,
     )
-    reading_items = _collect_reading_items(knowledge_snippets)
-
     meta_payload: dict[str, Any] = {
         "emotions_enabled": emotions_enabled,
     }
@@ -2207,11 +1795,6 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         meta_payload["mail_pending"] = mail_pending
     if attachments_payload:
         meta_payload["attachments"] = len(attachments_payload)
-    if reading_items:
-        meta_payload["reading_available"] = True
-        meta_payload["reading"] = reading_items
-    else:
-        meta_payload["reading_available"] = False
     await request.state.mongo.log_request_stat(
         project=project_name,
         question=context[-1].get("content", "") if context else None,
@@ -2333,73 +1916,6 @@ async def chat(
 
     model_override = selected_model_override
     effective_model = model_override or getattr(llm_client, "MODEL_NAME", "unknown")
-
-    mongo_client = request.state.mongo
-    contexts_collection = getattr(request.state, "contexts_collection", MongoSettings().contexts)
-    normalized_question = question.strip()
-    dialog_history: list[dict[str, str]] = []
-    if session_key:
-        try:
-            async for record in mongo_client.get_sessions(contexts_collection, session_key):
-                dialog_history.append({
-                    "role": str(record.role),
-                    "content": record.text,
-                })
-        except NotFound:
-            dialog_history = []
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "session_history_load_failed",
-                session=session_key,
-                project=project_name,
-                error=str(exc),
-            )
-            dialog_history = []
-
-    keep_messages = max(_MAX_DIALOG_TURNS * 2, 10)
-    if session_key and normalized_question:
-        last_entry = dialog_history[-1] if dialog_history else None
-        if not last_entry or not (
-            last_entry.get("role") == RoleEnum.user.value
-            and last_entry.get("content") == normalized_question
-        ):
-            try:
-                await mongo_client.append_session_message(
-                    contexts_collection,
-                    session_key,
-                    RoleEnum.user.value,
-                    normalized_question,
-                    project=project_name,
-                    keep=keep_messages,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "session_history_append_failed",
-                    role="user",
-                    session=session_key,
-                    project=project_name,
-                    error=str(exc),
-                )
-            else:
-                dialog_history.append({
-                    "role": RoleEnum.user.value,
-                    "content": normalized_question,
-                })
-
-    limited_history = _limit_dialog_history(dialog_history, max_turns=_MAX_DIALOG_TURNS, max_chars=_MAX_DIALOG_CHARS)
-    history_system_prompts: list[str] = []
-    conversation_lines: list[str] = []
-    for entry in limited_history:
-        role = str(entry.get("role", ""))
-        text = str(entry.get("content", ""))
-        if not text:
-            continue
-        if role == "system":
-            history_system_prompts.append(text)
-        elif role == RoleEnum.user.value:
-            conversation_lines.append(f"Пользователь: {text}")
-        else:
-            conversation_lines.append(f"Ассистент: {text}")
 
     if app_settings.debug:
         logger.info(
@@ -2576,29 +2092,13 @@ async def chat(
         )
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
-    if not reading_mode and _collect_reading_items(knowledge_snippets):
-        reading_mode = True
-    system_prompts: list[str] = []
+    prompt_segments = [emotion_instruction]
     if reading_mode:
-        system_prompts.append(READING_MODE_PROMPT)
-    system_prompts.append(emotion_instruction)
+        prompt_segments.insert(0, READING_MODE_PROMPT)
     if knowledge_message:
-        system_prompts.append(knowledge_message)
-    if history_system_prompts:
-        system_prompts.extend(history_system_prompts)
-
-    conversation_block = "\n".join(conversation_lines)
-    if not conversation_block:
-        fallback_question = normalized_question or question
-        if fallback_question:
-            conversation_block = f"Пользователь: {fallback_question}"
-
-    prompt_segments = []
-    if system_prompts:
-        prompt_segments.append("\n\n".join(system_prompts))
-    if conversation_block:
-        prompt_segments.append(conversation_block)
-    prompt_segments.append("Ассистент:")
+        prompt_segments.append(knowledge_message)
+    prompt_segments.append(f"Вопрос: {prompt_base}")
+    prompt_segments.append("Ответ:")
     prompt_base = "\n\n".join(segment for segment in prompt_segments if segment)
 
     knowledge_log_stream = [
@@ -2628,7 +2128,6 @@ async def chat(
         }
         for entry in knowledge_snippets[:3]
     ]
-    reading_items_stream = _collect_reading_items(knowledge_snippets)
     _log_debug_event(
         "llm_prompt_compiled_stream",
         project=project_name,
@@ -2644,8 +2143,6 @@ async def chat(
     error_message: str | None = None
     source_entries = _collect_source_entries(knowledge_snippets)
     should_emit_sources = bool(source_entries) and (project_sources_enabled or sources_requested)
-
-    response_chunks: list[str] = []
 
     async def event_stream():
         nonlocal stream_chars, error_message
@@ -2679,15 +2176,8 @@ async def chat(
                 meta_payload["mail_debug"] = mail_debug
             if build_payload:
                 meta_payload["build"] = build_payload
-            if reading_items_stream:
-                meta_payload["reading_available"] = True
-            else:
-                meta_payload["reading_available"] = False
             yield "event: meta\n"
             yield f"data: {json.dumps(meta_payload, ensure_ascii=False)}\n\n"
-            if reading_items_stream:
-                yield "event: reading\n"
-                yield f"data: {json.dumps({'items': reading_items_stream}, ensure_ascii=False)}\n\n"
             if should_emit_sources:
                 yield "event: sources\n"
                 yield f"data: {json.dumps({'entries': source_entries}, ensure_ascii=False)}\n\n"
@@ -2707,7 +2197,6 @@ async def chat(
                     "emotions_enabled": emotions_enabled,
                     "model": effective_model,
                     "reading_mode": reading_mode,
-                    "reading_available": bool(reading_items_stream),
                     "debug_origin": debug_origin,
                     "total_knowledge_chars": total_knowledge_chars,
                     "ts": time.time(),
@@ -2732,7 +2221,6 @@ async def chat(
                     yield f"data: {json.dumps(att, ensure_ascii=False)}\n\n"
             async for token in llm_client.generate(prompt_base, model=model_override):
                 stream_chars += len(token)
-                response_chunks.append(token)
                 payload = {
                     "text": token,
                     "role": "assistant",
@@ -2787,32 +2275,6 @@ async def chat(
                 user_id=None,
                 error=error_message,
             )
-            final_text = "".join(response_chunks).strip()
-            if session_key and final_text:
-                last_entry = dialog_history[-1] if dialog_history else None
-                if not last_entry or last_entry.get("role") != RoleEnum.assistant.value or last_entry.get("content") != final_text:
-                    try:
-                        await mongo_client.append_session_message(
-                            contexts_collection,
-                            session_key,
-                            RoleEnum.assistant.value,
-                            final_text,
-                            project=project_name,
-                            keep=keep_messages,
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning(
-                            "session_history_append_failed",
-                            role="assistant",
-                            session=session_key,
-                            project=project_name,
-                            error=str(exc),
-                        )
-                    else:
-                        dialog_history.append({
-                            "role": RoleEnum.assistant.value,
-                            "content": final_text,
-                        })
 
     model_header = effective_model
     headers = {"X-Model-Name": model_header}
@@ -2900,8 +2362,6 @@ class CrawlRequest(BaseModel):
     max_depth: int = 3
     project: str | None = None
     domain: str | None = None
-    collect_medex: bool | None = None
-    collect_books: bool | None = None
 
 
 def _spawn_crawler(
@@ -2912,8 +2372,6 @@ def _spawn_crawler(
     project: str | None,
     domain: str | None,
     mongo_uri: str | None,
-    collect_medex: bool | None,
-    collect_books: bool | None,
 ) -> None:
     base_dir = Path(__file__).resolve().parent
     script = base_dir / "crawler" / "run_crawl.py"
@@ -2933,14 +2391,6 @@ def _spawn_crawler(
         cmd.extend(["--domain", domain])
     if mongo_uri:
         cmd.extend(["--mongo-uri", mongo_uri])
-    if collect_medex is True:
-        cmd.append("--collect-medex")
-    elif collect_medex is False:
-        cmd.append("--no-collect-medex")
-    if collect_books is True:
-        cmd.append("--collect-books")
-    elif collect_books is False:
-        cmd.append("--no-collect-books")
     env = os.environ.copy()
     python_paths = [str(base_dir)]
     existing_py_path = env.get("PYTHONPATH")
@@ -2980,8 +2430,6 @@ async def run_crawler(
         project=project_name,
         domain=allowed_domain or None,
         mongo_uri=backend_settings.mongo_uri,
-        collect_medex=req.collect_medex,
-        collect_books=req.collect_books,
     )
     return {
         "status": "started",
@@ -3120,6 +2568,61 @@ def _validate_voice_project(project: str | None) -> str:
     return project_name
 
 
+def _spawn_voice_training_thread(job_id: str) -> None:
+    """Run simulated voice training in a background thread when Celery is down."""
+
+    runner = getattr(voice_train_model, "run", None)
+    if not callable(runner):
+        logger.error("voice_training_runner_missing", job_id=job_id)
+        return
+
+    def _target() -> None:
+        try:
+            runner(job_id)
+        except Exception as exc:  # noqa: BLE001 - log unexpected training failure
+            logger.exception("voice_training_fallback_failed", job_id=job_id, error=str(exc))
+
+    thread = threading.Thread(target=_target, name=f"voice-train-{job_id}", daemon=True)
+    thread.start()
+
+
+def _schedule_voice_job_watchdog(job_id: str) -> None:
+    if VOICE_INLINE_FALLBACK_DELAY <= 0 or worker_mongo_client is None or worker_settings is None:
+        return
+
+    def _target() -> None:
+        time.sleep(VOICE_INLINE_FALLBACK_DELAY)
+        try:
+            client = worker_mongo_client()
+        except Exception as exc:  # noqa: BLE001 - guard against misconfigured worker settings
+            logger.warning("voice_training_watchdog_client_failed", job_id=job_id, error=str(exc))
+            return
+        try:
+            try:
+                collection = client[worker_settings.mongo.database][worker_settings.mongo.voice_jobs]
+                job_doc = collection.find_one({"_id": ObjectId(job_id)})
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("voice_training_watchdog_fetch_failed", job_id=job_id, error=str(exc))
+                return
+            if not job_doc:
+                return
+            status_value = job_doc.get("status")
+            normalized_status = (status_value.value if isinstance(status_value, VoiceTrainingStatus) else str(status_value or "")).lower()
+            if normalized_status in VOICE_PENDING_STATUSES:
+                logger.info("voice_training_watchdog_trigger", job_id=job_id)
+                try:
+                    voice_train_model.run(job_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("voice_training_watchdog_failed", job_id=job_id, error=str(exc))
+        finally:
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001 - best effort cleanup
+                pass
+
+    threading.Thread(target=_target, name=f"voice-watchdog-{job_id}", daemon=True).start()
+
+
 def _queue_voice_training_job(job_id: str) -> bool:
     try:
         voice_train_model.delay(job_id)
@@ -3127,66 +2630,6 @@ def _queue_voice_training_job(job_id: str) -> bool:
     except VOICE_QUEUE_ERRORS as exc:
         logger.warning("voice_training_enqueue_failed", job_id=job_id, error=str(exc))
         return False
-
-
-async def _run_voice_job_inline(job_id: str, mongo_client: MongoClient) -> None:
-    stages = [
-        (VoiceTrainingStatus.preparing, 0.1, "Готовим набор примеров", 0.6),
-        (VoiceTrainingStatus.training, 0.65, "Обучаем голосовую модель", 1.2),
-        (VoiceTrainingStatus.validating, 0.9, "Проверяем результат", 0.8),
-    ]
-    try:
-        started_at = time.time()
-        await mongo_client.update_voice_training_job(
-            job_id,
-            status=VoiceTrainingStatus.preparing,
-            progress=0.05,
-            message="Запускаем обучение",
-            started_at=started_at,
-        )
-        for status, progress, message, delay in stages:
-            await asyncio.sleep(delay)
-            await mongo_client.update_voice_training_job(
-                job_id,
-                status=status,
-                progress=progress,
-                message=message,
-            )
-        await asyncio.sleep(0.6)
-        await mongo_client.update_voice_training_job(
-            job_id,
-            status=VoiceTrainingStatus.completed,
-            progress=1.0,
-            message="Голосовой профиль готов",
-            finished_at=time.time(),
-        )
-        logger.info("voice_training_inline_completed", job_id=job_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("voice_training_inline_failed", job_id=job_id, error=str(exc))
-        await mongo_client.update_voice_training_job(
-            job_id,
-            status=VoiceTrainingStatus.failed,
-            progress=0.0,
-            message="Ошибка при обучении",
-            finished_at=time.time(),
-        )
-
-
-async def _voice_job_watchdog(job_id: str, project: str, mongo_client: MongoClient) -> None:
-    await asyncio.sleep(max(1.0, VOICE_JOB_STALE_TIMEOUT))
-    try:
-        jobs = await mongo_client.list_voice_training_jobs(project, limit=1)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("voice_training_watchdog_fetch_error", job_id=job_id, project=project, error=str(exc))
-        return
-    if not jobs:
-        return
-    job = jobs[0]
-    if job.id != job_id:
-        return
-    if job.status == VoiceTrainingStatus.queued:
-        logger.warning("voice_training_watchdog_inline", job_id=job_id, project=project)
-        await _run_voice_job_inline(job_id, mongo_client)
 
 
 def _validate_voice_payload(
@@ -3289,81 +2732,27 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
         )
 
     existing_jobs = await mongo_client.list_voice_training_jobs(project_name, limit=1)
-    if existing_jobs:
-        existing_job = existing_jobs[0]
-        if existing_job.status in {
-            VoiceTrainingStatus.queued,
-            VoiceTrainingStatus.preparing,
-            VoiceTrainingStatus.training,
-            VoiceTrainingStatus.validating,
-        }:
-            payload = existing_job.model_dump(by_alias=True)
-            updated_at = payload.get("updatedAt") or payload.get("updated_at")
-            if updated_at is None:
-                updated_at = existing_job.created_at or time.time()
-            try:
-                updated_at_value = float(updated_at)
-            except (TypeError, ValueError):
-                updated_at_value = time.time()
-
-            age = time.time() - updated_at_value
-            if age >= VOICE_JOB_STALE_TIMEOUT:
-                logger.warning(
-                    "voice_training_job_stale",
-                    project=project_name,
-                    job_id=existing_job.id,
-                    status=existing_job.status.value,
-                    age=age,
-                )
-                updated_job = await mongo_client.update_voice_training_job(
-                    existing_job.id,
-                    status=VoiceTrainingStatus.queued,
-                    progress=existing_job.progress or 0.0,
-                    message="Перезапускаем обучение",
-                )
-                if updated_job:
-                    payload = updated_job.model_dump(by_alias=True)
-                requeued = False
-                if worker_mongo_client is not None and worker_settings is not None:
-                    requeued = _queue_voice_training_job(existing_job.id)
-                if requeued:
-                    asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
-                else:
-                    asyncio.create_task(_run_voice_job_inline(existing_job.id, mongo_client))
-                return ORJSONResponse(
-                    {"job": payload, "resumed": True, "detail": "job_resumed"},
-                    status_code=202,
-                )
-
-            if existing_job.status == VoiceTrainingStatus.queued:
-                asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
-
-            logger.info(
-                "voice_training_job_active",
-                project=project_name,
-                job_id=existing_job.id,
-                status=existing_job.status.value,
-            )
-            return ORJSONResponse(
-                {"job": payload, "resumed": False, "detail": "job_in_progress"},
-                status_code=202,
-            )
+    if existing_jobs and existing_jobs[0].status in {
+        VoiceTrainingStatus.queued,
+        VoiceTrainingStatus.preparing,
+        VoiceTrainingStatus.training,
+        VoiceTrainingStatus.validating,
+    }:
+        raise HTTPException(status_code=409, detail="job_in_progress")
 
     job = await mongo_client.create_voice_training_job(project_name)
-    queued = False
-    if worker_mongo_client is not None and worker_settings is not None:
-        queued = _queue_voice_training_job(job.id)
-    if queued:
-        asyncio.create_task(_voice_job_watchdog(job.id, project_name, mongo_client))
+    queued = _queue_voice_training_job(job.id)
+    if not queued:
+        _spawn_voice_training_thread(job.id)
     else:
-        asyncio.create_task(_run_voice_job_inline(job.id, mongo_client))
+        _schedule_voice_job_watchdog(job.id)
     logger.info(
         "voice_training_queued",
         project=project_name,
         job_id=job.id,
         transport="celery" if queued else "inline",
     )
-    return ORJSONResponse({"job": job.model_dump(by_alias=True), "detail": "job_queued"}, status_code=202)
+    return ORJSONResponse({"job": job.model_dump(by_alias=True)})
 
 
 @llm_router.get("/info")
