@@ -404,21 +404,13 @@ class VoiceSamplesResponse(BaseModel):
 
 class VoiceJobsResponse(BaseModel):
     jobs: list[VoiceTrainingJob]
+
+
 def _log_debug_event(message: str, **kwargs) -> None:
     if app_settings.debug:
         logger.info(message, **kwargs)
     else:
         logger.debug(message, **kwargs)
-
-
-def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
-    cleaned = (text or "").strip()
-    if len(cleaned) <= limit:
-        return cleaned
-    truncated = cleaned[:limit].rsplit(" ", 1)[0].strip()
-    if not truncated:
-        truncated = cleaned[:limit]
-    return truncated.rstrip(". ") + "…"
 
 
 def _extract_payload_text(payload: Any) -> str:
@@ -549,7 +541,7 @@ def _build_download_url(request: Request, file_id: str) -> str:
         return f"{base}/api/v1/admin/knowledge/documents/{file_id}"
 
 
-def _truncate_text(value: Any, limit: int) -> str | None:
+def _truncate_text(value: Any, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str | None:
     if limit <= 0:
         return None
     if not isinstance(value, str):
@@ -1701,7 +1693,7 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     has_attachments = any(bool(item.get("attachment")) for item in snippets)
     for idx, item in enumerate(snippets, 1):
         name = item.get("name") or f"Источник {idx}"
-        snippet_text = _truncate_text(item.get("text", ""))
+        snippet_text = _truncate_text(item.get("text", ""), _KNOWLEDGE_SNIPPET_CHARS) or ""
         attachment = item.get("attachment")
         url = item.get("url")
         if attachment:
