@@ -14,6 +14,8 @@ import re
 import urllib.parse as urlparse
 from typing import Any, Sequence
 from uuid import uuid4
+from datetime import datetime, date
+import base64
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 try:
@@ -564,6 +566,20 @@ def _truncate_text(value: Any, limit: int) -> str | None:
     return f"{truncated}..."
 
 
+def _json_safe(value: Any) -> Any:
+    """Recursively convert data into JSON-serialisable primitives."""
+
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, (bytes, bytearray)):
+        return base64.b64encode(value).decode("ascii")
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _serialize_reading_pages(
     request: Request,
     pages: Sequence[ReadingPage],
@@ -646,7 +662,7 @@ def _serialize_reading_pages(
         payload["segmentCount"] = len(segments_payload)
         payload["imageCount"] = len(images_payload)
 
-        serialized.append(payload)
+        serialized.append(_json_safe(payload))
     return serialized
 
 
@@ -666,7 +682,7 @@ def _collect_reading_items(snippets: list[dict[str, Any]]) -> list[dict[str, Any
             **{k: v for k, v in reading.items() if k != "pages"},
             "pages": pages,
         }
-        items.append(entry)
+        items.append(_json_safe(entry))
     return items[:3]
 
 
@@ -860,7 +876,7 @@ async def _build_reading_preview(
         "initialIndex": initial_index,
         "initialUrl": doc.url,
     }
-    return preview
+    return _json_safe(preview)
 
 
 async def _collect_knowledge_snippets(
@@ -2065,6 +2081,8 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
     system_messages.append({"role": "system", "content": emotion_instruction})
 
     reading_mode = request.query_params.get("reading") == "1"
+    if not reading_mode:
+        reading_mode = bool(_collect_reading_items(knowledge_snippets))
     if reading_mode:
         system_messages.append({"role": "system", "content": READING_MODE_PROMPT})
 
@@ -2503,6 +2521,8 @@ async def chat(
         )
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
+    if not reading_mode and _collect_reading_items(knowledge_snippets):
+        reading_mode = True
     system_prompts: list[str] = []
     if reading_mode:
         system_prompts.append(READING_MODE_PROMPT)
