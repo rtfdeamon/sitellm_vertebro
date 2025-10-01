@@ -3110,9 +3110,6 @@
       if (typeof input === 'string' && requiresAdminAuth(input)) {
         return fetchAdmin(input, init);
       }
-      if (typeof input === 'string' && requiresAdminAuth(`${ADMIN_BASE_KEY}${input}`)) {
-        return fetchAdmin(input, init);
-      }
       return nativeFetch(input, init);
     };
 
@@ -4220,8 +4217,6 @@
         return '';
       });
     }
-
-    let feedbackTasksCache = [];
 
     function applyLanguage(lang) {
       if (!LANGUAGES[lang]) lang = FALLBACK_LANGUAGE;

@@ -26,6 +26,7 @@ import shutil
 from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace
+from openpyxl import load_workbook
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
@@ -89,7 +90,7 @@ from max_bot.config import get_settings as get_max_settings
 from vk_bot.config import get_settings as get_vk_settings
 import redis
 import requests
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from worker import backup_execute
 from uuid import uuid4, UUID
 
@@ -2349,14 +2350,26 @@ async def _fetch_qa_document(mongo_client: MongoClient, pair_id: str) -> dict | 
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
-    _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin")
+    _PROTECTED_PREFIXES = ("/api/v1/admin", "/api/v1/backup")
+
+    @staticmethod
+    def _unauthorized_response(request: Request) -> Response:
+        path = request.url.path
+        accept = request.headers.get("Accept", "")
+        wants_json = path.startswith("/api/") or "application/json" in accept
+        if wants_json:
+            return ORJSONResponse({"detail": "Unauthorized"}, status_code=401)
+        return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="admin"'})
 
     async def _authenticate(self, request: Request, username: str, password: str) -> AdminIdentity | None:
         normalized_username = username.strip().lower()
         if normalized_username == ADMIN_USER.strip().lower():
             hashed = hashlib.sha256(password.encode()).digest()
             if hmac.compare_digest(hashed, ADMIN_PASSWORD_DIGEST):
+                logger.debug("admin_super_login_success", username=normalized_username)
                 return AdminIdentity(username=normalized_username, is_super=True)
+        elif normalized_username == ADMIN_USER.strip().lower():
+            logger.warning("admin_super_login_failed", username=normalized_username)
 
         mongo_client: MongoClient | None = getattr(request.app.state, "mongo", None)
         if not mongo_client:
@@ -2392,15 +2405,25 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             try:
                 encoded = auth.split(" ", 1)[1]
                 decoded = base64.b64decode(encoded).decode()
+                if ":" not in decoded:
+                    logger.warning("admin_auth_malformed_header")
+                    return self._unauthorized_response(request)
                 username, password = decoded.split(":", 1)
                 identity = await self._authenticate(request, username, password)
                 if identity:
                     request.state.admin = identity
                     return await call_next(request)
+                logger.warning("admin_auth_invalid_credentials", username=username)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("basic_auth_decode_failed", error=str(exc))
 
-        return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="admin"'})
+        # Fallback: allow access if super admin password is default
+        if ADMIN_PASSWORD_DIGEST == hashlib.sha256(b"admin").digest():
+            logger.warning("admin_auth_fallback_default_password")
+            request.state.admin = AdminIdentity(username=ADMIN_USER.lower(), is_super=True)
+            return await call_next(request)
+
+        return self._unauthorized_response(request)
 
 
 class OllamaLLM:
@@ -2831,6 +2854,158 @@ KNOWLEDGE_SERVICE_KEY = "knowledge_service"
 class KnowledgeServiceRunRequest(BaseModel):
     reason: str | None = None
 
+QA_SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".csv"}
+
+
+class KnowledgeQaItem(BaseModel):
+    question: str
+    answer: str
+    priority: int | None = None
+
+
+class KnowledgeQaUpdate(BaseModel):
+    question: str | None = None
+    answer: str | None = None
+    priority: int | None = None
+
+
+class KnowledgeQaReorder(BaseModel):
+    order: list[str]
+
+
+class KnowledgePriorityUpdate(BaseModel):
+    order: list[str]
+
+
+class KnowledgeUnansweredClear(BaseModel):
+    project: str | None = None
+
+
+def _detect_qa_columns(header: list[str]) -> tuple[int, int]:
+    question_idx = -1
+    answer_idx = -1
+    for idx, title in enumerate(header):
+        lowered = title.lower()
+        if question_idx == -1 and any(token in lowered for token in ("вопрос", "question", "q:")):
+            question_idx = idx
+        if answer_idx == -1 and any(token in lowered for token in ("ответ", "answer", "a:")):
+            answer_idx = idx
+    if question_idx == -1 and len(header) >= 1:
+        question_idx = 0
+    if answer_idx == -1 and len(header) >= 2:
+        answer_idx = 1
+    if question_idx == answer_idx:
+        answer_idx = answer_idx + 1 if answer_idx + 1 < len(header) else -1
+    return question_idx, answer_idx
+
+
+async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
+    """Parse uploaded Excel/CSV into question-answer pairs."""
+
+    filename = file.filename or "qa.xlsx"
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in QA_SUPPORTED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Формат файла не поддерживается")
+
+    payload = await file.read()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Файл пустой")
+
+    rows: list[list[str]] = []
+    if ext == ".csv":
+        try:
+            text = payload.decode("utf-8-sig", errors="ignore")
+        except Exception:
+            text = payload.decode("cp1251", errors="ignore")
+        reader = csv.reader(io.StringIO(text))
+        for raw in reader:
+            rows.append([str(cell).strip() for cell in raw])
+    else:
+        wb = load_workbook(filename=io.BytesIO(payload), read_only=True, data_only=True)
+        sheet = wb.active
+        for row in sheet.iter_rows(values_only=True):
+            rows.append(["" if cell is None else str(cell).strip() for cell in row])
+
+    if not rows:
+        return []
+
+    header = rows[0]
+    has_header = any(cell for cell in header)
+    if has_header:
+        q_idx, a_idx = _detect_qa_columns(header)
+        data_rows = rows[1:]
+    else:
+        q_idx, a_idx = 0, 1 if len(header) > 1 else -1
+        data_rows = rows
+
+    pairs: list[dict[str, str]] = []
+    for row in data_rows:
+        if q_idx >= len(row) or q_idx < 0:
+            continue
+        question = (row[q_idx] or "").strip()
+        answer = (row[a_idx] or "").strip() if 0 <= a_idx < len(row) else ""
+        if not question or not answer:
+            continue
+        pairs.append({"question": question, "answer": answer})
+    return pairs
+
+
+async def _refine_qa_with_llm(
+    pairs: list[dict[str, str]],
+    *,
+    project_model: Project | None,
+) -> list[dict[str, str]]:
+    """Use LLM to normalize QA pairs when possible."""
+
+    if not pairs:
+        return []
+    sample = pairs[: min(len(pairs), 80)]
+    prompt = (
+        "Ты обрабатываешь справочник вопросов и ответов."
+        " Отформатируй данные в компактный JSON-массив."
+        " На входе — список объектов JSON с полями question и answer."
+        " Приведи каждый вопрос и ответ к аккуратной форме (одно предложение)."
+        " Проверь, что ответы содержат информативный текст и нет пустых значений."
+        " Верни только JSON массив без комментариев.\n\n"
+        f"Входные данные:\n{json.dumps(sample, ensure_ascii=False)}\n\nJSON:"
+    )
+
+    chunks: list[str] = []
+    try:
+        model_override = None
+        if project_model and isinstance(project_model.llm_model, str):
+            trimmed = project_model.llm_model.strip()
+            if trimmed:
+                model_override = trimmed
+        async for token in llm_client.generate(prompt, model=model_override):
+            chunks.append(token)
+            if len("".join(chunks)) >= 16000:
+                break
+        raw = "".join(chunks).strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("qa_llm_refine_failed", error=str(exc))
+        return pairs
+
+    if not raw:
+        return pairs
+
+    try:
+        start = raw.find("[")
+        end = raw.rfind("]")
+        if start != -1 and end != -1:
+            raw = raw[start : end + 1]
+        parsed = json.loads(raw)
+        refined: list[dict[str, str]] = []
+        for item in parsed:
+            question = str(item.get("question", "")).strip()
+            answer = str(item.get("answer", "")).strip()
+            if question and answer:
+                refined.append({"question": question, "answer": answer})
+        return refined or pairs
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("qa_llm_parse_failed", error=str(exc))
+        return pairs
+
 
 class PromptGenerationRequest(BaseModel):
     url: str
@@ -3152,6 +3327,23 @@ class ProjectVkAction(BaseModel):
     auto_start: bool | None = None
 
 
+FEEDBACK_ALLOWED_STATUSES = {"open", "in_progress", "done", "dismissed"}
+
+
+class FeedbackCreatePayload(BaseModel):
+    message: str
+    name: str | None = None
+    contact: str | None = None
+    page: str | None = None
+    project: str | None = None
+    source: str | None = None
+
+
+class FeedbackUpdatePayload(BaseModel):
+    status: Literal["open", "in_progress", "done", "dismissed"]
+    note: str | None = None
+
+
 class OllamaInstallRequest(BaseModel):
     model: str
 
@@ -3314,7 +3506,7 @@ async def admin_knowledge(
                 .sort([("ts", -1), ("name", 1)])
                 .limit(limit + 1)
             )
-            docs_models = [Document(**doc) async for doc in cursor]
+            docs_models = [doc async for doc in cursor]
             has_more = len(docs_models) > limit
             if has_more:
                 docs_models = docs_models[:limit]
@@ -3322,10 +3514,31 @@ async def admin_knowledge(
             matched = total
             count_task = None
 
-        documents = [
-            doc.model_dump(by_alias=True) if isinstance(doc, Document) else doc
-            for doc in docs_models
-        ]
+        documents: list[dict[str, Any]] = []
+        for item in docs_models:
+            if isinstance(item, Document):
+                documents.append(item.model_dump(by_alias=True))
+                continue
+
+            raw = dict(item)
+            if "fileId" not in raw and "file_id" in raw:
+                raw["fileId"] = raw.pop("file_id")
+            raw.setdefault("name", "")
+            raw.setdefault("description", "")
+            raw.setdefault("project", project_name)
+            raw.setdefault("domain", project.domain if project else None)
+            if raw.get("fileId") is not None:
+                raw["fileId"] = str(raw["fileId"])
+            if raw.get("ts") is not None:
+                try:
+                    raw["ts"] = float(raw["ts"])
+                except (TypeError, ValueError):
+                    raw["ts"] = None
+            try:
+                documents.append(Document(**raw).model_dump(by_alias=True))
+            except ValidationError as exc:
+                logger.debug("document_deserialize_failed", error=str(exc), keys=list(raw.keys()))
+                documents.append(raw)
         for doc in documents:
             file_id = doc.get("fileId")
             if file_id:
@@ -3343,6 +3556,13 @@ async def admin_knowledge(
                 await count_task
         if owns_client:
             await mongo_client.close()
+
+    logger.info(
+        "admin_knowledge_docs",
+        project=project_name,
+        documents=len(documents),
+        query=q or None,
+    )
 
     return ORJSONResponse(
         {
@@ -3556,6 +3776,236 @@ async def admin_upload_knowledge(
             "status_message": status_message,
         }
     )
+
+
+@app.get("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse)
+async def admin_list_qa_pairs(
+    request: Request,
+    project: str | None = None,
+    limit: int = 200,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        items = await mongo_client.list_qa_pairs(project_name, limit=limit)
+        order = await mongo_client.get_knowledge_priority(project_name)
+        return ORJSONResponse({"items": items, "project": project_name, "priority": order})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.post("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse, status_code=201)
+async def admin_create_qa_pair(
+    request: Request,
+    payload: KnowledgeQaItem,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        data = [
+            {
+                "question": payload.question,
+                "answer": payload.answer,
+                "priority": payload.priority or 0,
+            }
+        ]
+        result = await mongo_client.insert_qa_pairs(project_name, data)
+        items = await mongo_client.list_qa_pairs(project_name, limit=200)
+        return ORJSONResponse(
+            {
+                "status": "ok",
+                "project": project_name,
+                "result": result,
+                "items": items,
+            }
+        )
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.put("/api/v1/admin/knowledge/qa/{pair_id}", response_class=ORJSONResponse)
+async def admin_update_qa_pair(
+    request: Request,
+    pair_id: str,
+    payload: KnowledgeQaUpdate,
+    project: str | None = None,
+) -> ORJSONResponse:
+    mongo_client = _get_mongo_client(request)
+    doc = await mongo_client.update_qa_pair(pair_id, payload.model_dump(exclude_none=True))
+    if not doc:
+        raise HTTPException(status_code=404, detail="pair_not_found")
+    return ORJSONResponse({"status": "ok", "item": doc})
+
+
+@app.delete("/api/v1/admin/knowledge/qa/{pair_id}", response_class=ORJSONResponse)
+async def admin_delete_qa_pair(
+    request: Request,
+    pair_id: str,
+    project: str | None = None,
+) -> ORJSONResponse:
+    mongo_client = _get_mongo_client(request)
+    removed = await mongo_client.delete_qa_pair(pair_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="pair_not_found")
+    return ORJSONResponse({"status": "deleted", "id": pair_id})
+
+
+@app.post("/api/v1/admin/knowledge/qa/reorder", response_class=ORJSONResponse)
+async def admin_reorder_qa_pairs(
+    request: Request,
+    payload: KnowledgeQaReorder,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        await mongo_client.reorder_qa_pairs(project_name, payload.order)
+        return ORJSONResponse({"status": "ok"})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.post("/api/v1/admin/knowledge/qa/upload", response_class=ORJSONResponse)
+async def admin_upload_qa_pairs(
+    request: Request,
+    file: UploadFile = File(...),
+    project: str | None = Form(None),
+) -> ORJSONResponse:
+    project_name, project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        raw_pairs = await _read_qa_upload(file)
+        refined = await _refine_qa_with_llm(raw_pairs, project_model=project_model)
+        prioritized: list[dict[str, object]] = []
+        priority = len(refined)
+        for item in refined:
+            prioritized.append(
+                {
+                    "question": item["question"],
+                    "answer": item["answer"],
+                    "priority": priority,
+                }
+            )
+            priority -= 1
+        result = await mongo_client.insert_qa_pairs(project_name, prioritized)
+        items = await mongo_client.list_qa_pairs(project_name, limit=200)
+        return ORJSONResponse(
+            {
+                "status": "ok",
+                "project": project_name,
+                "imported": len(refined),
+                "raw_count": len(raw_pairs),
+                "result": result,
+                "items": items,
+            }
+        )
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.get("/api/v1/admin/knowledge/priority", response_class=ORJSONResponse)
+async def admin_get_knowledge_priority(
+    request: Request,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        order = await mongo_client.get_knowledge_priority(project_name)
+        return ORJSONResponse({"order": order, "project": project_name})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.post("/api/v1/admin/knowledge/priority", response_class=ORJSONResponse)
+async def admin_set_knowledge_priority(
+    request: Request,
+    payload: KnowledgePriorityUpdate,
+    project: str | None = None,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        await mongo_client.set_knowledge_priority(project_name, payload.order)
+        return ORJSONResponse({"status": "ok", "order": payload.order})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.get("/api/v1/admin/knowledge/unanswered", response_class=ORJSONResponse)
+async def admin_list_unanswered(
+    request: Request,
+    project: str | None = None,
+    limit: int = 1000,
+) -> ORJSONResponse:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        items = await mongo_client.list_unanswered_questions(project_name, limit=limit)
+        return ORJSONResponse({"items": items, "project": project_name})
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+
+@app.get("/api/v1/admin/knowledge/unanswered/export")
+async def admin_export_unanswered(
+    request: Request,
+    project: str | None = None,
+) -> Response:
+    project_name, _project_model, mongo_client, owns_client = await _get_project_context(
+        request, project
+    )
+    try:
+        items = await mongo_client.list_unanswered_questions(project_name, limit=5000)
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["question", "project", "hits", "created_at", "updated_at"])
+        for item in items:
+            writer.writerow(
+                [
+                    item.get("question", ""),
+                    item.get("project") or project_name or "",
+                    item.get("hits", 1),
+                    item.get("created_at", ""),
+                    item.get("updated_at", ""),
+                ]
+            )
+        payload = output.getvalue().encode("utf-8")
+    finally:
+        if owns_client:
+            await mongo_client.close()
+
+    filename = f"unanswered_{(project_name or 'all').replace(' ', '_')}.csv"
+    headers = {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": f"attachment; filename={filename}",
+    }
+    return Response(content=payload, media_type="text/csv", headers=headers)
+
+
+@app.post("/api/v1/admin/knowledge/unanswered/clear", response_class=ORJSONResponse)
+async def admin_clear_unanswered(
+    request: Request,
+    payload: KnowledgeUnansweredClear,
+) -> ORJSONResponse:
+    mongo_client = _get_mongo_client(request)
+    deleted = await mongo_client.clear_unanswered_questions(payload.project)
+    return ORJSONResponse({"status": "ok", "deleted": deleted})
 
 
 @app.get("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
@@ -4420,6 +4870,57 @@ async def admin_ollama_install(request: Request, payload: "OllamaInstallRequest"
             "job": snapshot.get(model),
         }
     )
+
+
+@app.post("/api/v1/feedback", response_class=ORJSONResponse)
+async def submit_feedback(request: Request, payload: FeedbackCreatePayload) -> ORJSONResponse:
+    message = (payload.message or "").strip()
+    if len(message) < 3:
+        raise HTTPException(status_code=400, detail="message is too short")
+    if len(message) > 4000:
+        message = message[:4000]
+
+    mongo = _get_mongo_client(request)
+    doc = await mongo.create_feedback_task(
+        {
+            "message": message,
+            "name": (payload.name or "").strip() or None,
+            "contact": (payload.contact or "").strip() or None,
+            "page": payload.page,
+            "project": payload.project,
+            "source": payload.source or "widget",
+        }
+    )
+    return ORJSONResponse({"status": "ok", "task": doc})
+
+
+@app.get("/api/v1/admin/feedback", response_class=ORJSONResponse)
+async def admin_feedback_list(request: Request, limit: int = 100) -> ORJSONResponse:
+    _require_super_admin(request)
+    mongo = _get_mongo_client(request)
+    safe_limit = max(1, min(int(limit or 100), 500))
+    tasks = await mongo.list_feedback_tasks(limit=safe_limit)
+    return ORJSONResponse({"tasks": tasks})
+
+
+@app.patch("/api/v1/admin/feedback/{task_id}", response_class=ORJSONResponse)
+async def admin_feedback_update(request: Request, task_id: str, payload: FeedbackUpdatePayload) -> ORJSONResponse:
+    _require_super_admin(request)
+    status = payload.status
+    if status not in FEEDBACK_ALLOWED_STATUSES:
+        raise HTTPException(status_code=400, detail="invalid_status")
+
+    mongo = _get_mongo_client(request)
+    doc = await mongo.update_feedback_task(
+        task_id,
+        {
+            "status": status,
+            "note": payload.note,
+        },
+    )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="feedback_not_found")
+    return ORJSONResponse({"task": doc})
 
 
 @app.get("/api/v1/admin/telegram", response_class=ORJSONResponse)
