@@ -38,6 +38,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      ALLOW_EMPTY_PASSWORD: "no"
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     ports:
       - "${HOST_REDIS_PORT:-16379}:6379"

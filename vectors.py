@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import io
 import os
 import tempfile
 from pathlib import Path
 from typing import Iterable
 
+from uuid import UUID, uuid4
+
 from langchain_core.embeddings import Embeddings
 from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, TextLoader
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
+
+from PIL import Image
 
 from models import Document
 from knowledge.text import extract_doc_text, extract_xls_text, extract_xlsx_text
@@ -88,14 +93,50 @@ class DocumentsParser:
             "content_type": document.content_type,
         }
 
+        if document.project:
+            payload.setdefault("project", str(document.project).strip())
+
+        if document.content_type:
+            content_type = document.content_type.lower()
+        else:
+            content_type = ""
+
+        if content_type.startswith("image/"):
+            img = Image.open(io.BytesIO(data))
+            width, height = img.size
+            payload["image_width"] = width
+            payload["image_height"] = height
+
         # Remove None values from payload to keep Qdrant schema tidy
         payload_clean = {key: value for key, value in payload.items() if value not in (None, "")}
+
+        point_id = document.fileId
+        if point_id is None:
+            raise ValueError("Document missing fileId for vector upsert")
+
+        qdrant_id: UUID
+        raw_id = str(point_id).strip()
+        try:
+            qdrant_id = UUID(raw_id)
+        except Exception:
+            hex_id = ''.join(ch for ch in raw_id if ch.isalnum()).lower()
+            if not hex_id:
+                qdrant_id = uuid4()
+            else:
+                if len(hex_id) < 32:
+                    hex_id = (hex_id + "0" * 32)[:32]
+                else:
+                    hex_id = hex_id[:32]
+                try:
+                    qdrant_id = UUID(hex=hex_id)
+                except Exception:
+                    qdrant_id = uuid4()
 
         self._client.upsert(
             collection_name=self.collection,
             points=[
                 qmodels.PointStruct(
-                    id=document.fileId,
+                    id=str(qdrant_id),  # Qdrant expects string or integer identifiers
                     vector=list(vector),
                     payload=payload_clean,
                 )

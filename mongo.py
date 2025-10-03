@@ -799,6 +799,7 @@ class MongoClient:
         if not items:
             return {"inserted": 0, "updated": 0}
 
+        normalized_project = (project or "").strip().lower() or None
         now = time.time()
         inserted = 0
         updated = 0
@@ -816,13 +817,12 @@ class MongoClient:
                 "question": question,
                 "answer": answer,
                 "priority": priority_value,
-                "project": project,
+                "project": normalized_project,
                 "updated_at": now,
             }
-            payload.setdefault("created_at", now)
             try:
                 result = await self.db[self.qa_collection].update_one(
-                    {"project": project, "question": question},
+                    {"project": normalized_project, "question": question},
                     {"$set": payload, "$setOnInsert": {"created_at": now}},
                     upsert=True,
                 )
@@ -1097,7 +1097,11 @@ class MongoClient:
                 continue
             order = doc.get("order") if isinstance(doc, dict) else None
             if isinstance(order, list) and order:
-                cleaned = [str(item).strip() for item in order if str(item).strip()]
+                cleaned = []
+                for item in order:
+                    token = str(item or "").strip().lower()
+                    if token:
+                        cleaned.append(token)
                 if cleaned:
                     return cleaned
 
@@ -1108,7 +1112,7 @@ class MongoClient:
 
         normalized_order: list[str] = []
         for item in order:
-            cleaned = str(item or "").strip()
+            cleaned = str(item or "").strip().lower()
             if cleaned and cleaned not in normalized_order:
                 normalized_order.append(cleaned)
 
@@ -1680,8 +1684,6 @@ class MongoClient:
         except Exception as exc:
             logger.error("mongo_set_setting_failed", key=key, error=str(exc))
             raise
-
-=======
     async def get_backup_settings(self) -> BackupSettings:
         stored = await self.get_setting("backup_settings") or {}
         return self._serialize_backup_settings(stored)
@@ -1889,26 +1891,6 @@ class MongoClient:
         )
         return self._serialize_backup_job(doc)
 
-    async def get_knowledge_priority(self) -> list[str]:
-        try:
-            doc = await self.get_setting("knowledge_priority") or {}
-        except Exception:
-            doc = {}
-        order = doc.get("order") if isinstance(doc, dict) else None
-        if isinstance(order, list) and order:
-            return [str(item).strip().lower() for item in order if str(item).strip()]
-        # default priority order
-        return ["qa", "text", "docs", "images", "vector"]
-
-    async def set_knowledge_priority(self, order: list[str]) -> None:
-        normalized = []
-        for item in order:
-            cleaned = str(item or "").strip().lower()
-            if cleaned and cleaned not in normalized:
-                normalized.append(cleaned)
-        if not normalized:
-            normalized = ["qa", "text", "docs", "images", "vector"]
-        await self.set_setting("knowledge_priority", {"order": normalized, "updated_at": time.time()})
     def _serialize_feedback_task(self, doc: dict | None) -> dict | None:
         if not doc:
             return None
