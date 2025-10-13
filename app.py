@@ -5700,15 +5700,90 @@ def _extract_page_text(html: str) -> str:
     return combined
 
 
+def _describe_prompt_fetch_error(status_code: int) -> str:
+    if status_code == 401:
+        return "URL требует авторизацию"
+    if status_code == 403:
+        return "Доступ к URL запрещён"
+    if status_code == 404:
+        return "Страница не найдена по указанному URL"
+    if status_code == 405:
+        return "Сайт запретил загрузку страницы (method not allowed)"
+    if status_code >= 500:
+        return "Сайт вернул внутреннюю ошибку"
+    return "Не удалось загрузить страницу"
+
+
 async def _download_page_text(url: str) -> str:
-    try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=PROMPT_FETCH_HEADERS) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=exc.response.status_code, detail="Не удалось загрузить страницу") from exc
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail="Не удалось подключиться к сайту") from exc
+    parsed = urlparse.urlsplit(url)
+    path = parsed.path or "/"
+    normalized = urlparse.urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, ""))
+
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add_candidate(candidate: str) -> None:
+        if candidate and candidate not in seen:
+            candidates.append(candidate)
+            seen.add(candidate)
+
+    add_candidate(normalized)
+
+    base_candidate = urlparse.urlunsplit((parsed.scheme, parsed.netloc, "/", "", ""))
+    if normalized != base_candidate:
+        add_candidate(base_candidate)
+
+    if parsed.scheme.lower() == "https":
+        http_path_candidate = urlparse.urlunsplit(("http", parsed.netloc, path, parsed.query, ""))
+        add_candidate(http_path_candidate)
+        http_base_candidate = urlparse.urlunsplit(("http", parsed.netloc, "/", "", ""))
+        add_candidate(http_base_candidate)
+
+    response: httpx.Response | None = None
+    last_status_error: httpx.HTTPStatusError | None = None
+    last_request_error: httpx.RequestError | None = None
+
+    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=PROMPT_FETCH_HEADERS) as client:
+        for candidate in candidates:
+            try:
+                fetched = await client.get(candidate)
+                fetched.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                last_status_error = exc
+                logger.warning(
+                    "prompt_page_fetch_http_error",
+                    original_url=normalized,
+                    attempted_url=candidate,
+                    status=exc.response.status_code,
+                )
+                continue
+            except httpx.RequestError as exc:
+                last_request_error = exc
+                logger.warning(
+                    "prompt_page_fetch_request_error",
+                    original_url=normalized,
+                    attempted_url=candidate,
+                    error=str(exc),
+                )
+                continue
+            else:
+                if candidate != normalized:
+                    logger.info(
+                        "prompt_page_fetch_fallback_used",
+                        original_url=normalized,
+                        resolved_url=candidate,
+                    )
+                response = fetched
+                break
+
+    if response is None:
+        if last_status_error is not None:
+            status_code = last_status_error.response.status_code
+            detail = _describe_prompt_fetch_error(status_code)
+            raise HTTPException(status_code=status_code, detail=detail) from last_status_error
+        if last_request_error is not None:
+            raise HTTPException(status_code=502, detail="Не удалось подключиться к сайту") from last_request_error
+        raise HTTPException(status_code=400, detail="Не удалось загрузить страницу")
 
     content_type = (response.headers.get("content-type") or "").lower()
     if "text/html" not in content_type:
