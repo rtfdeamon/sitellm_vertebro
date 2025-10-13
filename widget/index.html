@@ -646,8 +646,8 @@
       transform: none;
       box-shadow: none;
     }
-    .voice-layout { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
-    .voice-preview { display: flex; align-items: center; justify-content: center; }
+    .voice-layout { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
+    .voice-preview { min-height: 260px; display: flex; align-items: center; justify-content: center; }
     .voice-controls { display: grid; gap: 16px; }
     .voice-mode-select { display: grid; gap: 8px; }
     .voice-mode-label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
