@@ -444,7 +444,6 @@
     .sitellm-voice-wrapper.sitellm-anchor-top-left { left: 24px; top: 24px; }
     @media (max-width: 640px) {
       .sitellm-voice-wrapper {
-        width: calc(100vw - 24px);
         max-width: calc(100vw - 24px);
       }
       .sitellm-voice-wrapper.sitellm-anchor-bottom-right,
