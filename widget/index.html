@@ -6,6 +6,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="version" content="2025-01-13-v3" />
   <title>LLM Chat Widget</title>
   <style>
     :root {
@@ -646,9 +650,36 @@
       transform: none;
       box-shadow: none;
     }
-    .voice-layout { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; align-items: start; }
-    .voice-preview { display: flex; align-items: center; justify-content: center; }
-    .voice-controls { display: grid; gap: 16px; }
+    .voice-layout {
+      display: flex;
+      flex-direction: row;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 968px) {
+      .voice-layout {
+        flex-direction: column;
+      }
+      .voice-controls,
+      .voice-preview {
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: 100%;
+      }
+    }
+    .voice-preview {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 1;
+      min-width: 0;
+    }
+    .voice-controls {
+      display: grid;
+      gap: 16px;
+      flex: 1;
+      min-width: 0;
+    }
     .voice-mode-select { display: grid; gap: 8px; }
     .voice-mode-label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
     .voice-mode-options { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -862,9 +893,6 @@
         <p class="section-lead" data-i18n="avatarSectionSubtitle">Let visitors speak with an animated assistant that streams and reads answers aloud.</p>
       </div>
       <div class="voice-layout">
-        <div class="voice-preview" id="voiceAvatarHost">
-          <div class="voice-preview-placeholder" data-i18n="avatarPreviewSelect">Select a project to preview the voice assistant.</div>
-        </div>
         <div class="voice-controls">
           <div class="voice-mode-select">
             <span class="voice-mode-label" id="voiceModeLabel" data-i18n="avatarModeLabel">Interaction mode</span>
@@ -934,11 +962,14 @@
               <button type="button" id="voiceTestBtn" data-i18n="avatarTestButton">Play sample</button>
             </div>
           </div>
-          <div class="code-card">
+          <div class="code-card" id="avatarCodeCard">
             <button type="button" class="copy-btn" id="avatarCopy" data-i18n="avatarCopy">Copy widget snippet</button>
             <pre><code id="avatarCode"></code></pre>
           </div>
           <p class="muted" id="voiceFeatureHint" data-i18n="avatarHintSelectProject">Select a project to preview the voice assistant.</p>
+        </div>
+        <div class="voice-preview" id="voiceAvatarHost">
+          <div class="voice-preview-placeholder" data-i18n="avatarPreviewSelect">Select a project to preview the voice assistant.</div>
         </div>
       </div>
     </section>
@@ -3204,6 +3235,7 @@ function renderVoiceAvatarDemo(cfgOverride) {
   script.dataset.headline = t('chatTitle');
   script.dataset.subtitle = t('chatSubtitle');
   script.dataset.color = cfg.accent;
+  // Always append to voiceAvatarHost which is now outside voice-layout
   voiceAvatarHost.appendChild(script);
 }
 

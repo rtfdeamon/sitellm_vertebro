@@ -434,6 +434,18 @@
       width: min(360px, calc(100vw - 32px));
       box-sizing: border-box;
     }
+    /* Preview mode: override fixed positioning when inside voiceAvatarHost */
+    #voiceAvatarHost .sitellm-voice-wrapper {
+      position: relative !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      left: auto !important;
+      right: auto !important;
+      top: auto !important;
+      bottom: auto !important;
+      margin: 0 auto;
+      z-index: 1;
+    }
     .sitellm-voice-wrapper .sitellm-voice-widget {
       margin: 0;
       width: 100%;
@@ -493,6 +505,11 @@
       letter-spacing: 0.08em;
       text-transform: uppercase;
       color: rgba(${accent}, 1);
+    }
+    .sitellm-voice-header div div {
+      font-size: 13px;
+      color: rgba(${accent}, 0.7);
+      margin-top: 4px;
     }
     .sitellm-voice-avatar {
       position: relative;
