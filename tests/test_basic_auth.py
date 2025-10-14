@@ -102,6 +102,10 @@ def _build_client(monkeypatch, *, admin_password: str):
             password = ""
             secure = False
 
+        class celery:
+            broker = "redis://"
+            result = "redis://"
+
     class DummyMongoSettings:
         host = ""
         port = 0
@@ -159,8 +163,6 @@ def _build_client(monkeypatch, *, admin_password: str):
             shutdown_cluster=lambda *a, **k: None,
         ),
     )
-    monkeypatch.setitem(sys.modules, "pymongo", types.SimpleNamespace(MongoClient=object))
-
     class DummyQdrantClient:
         def __init__(self, *a, **k):
             pass
@@ -168,9 +170,15 @@ def _build_client(monkeypatch, *, admin_password: str):
         def close(self):
             pass
 
-    monkeypatch.setitem(
-        sys.modules, "qdrant_client", types.SimpleNamespace(QdrantClient=DummyQdrantClient)
-    )
+    qdrant_pkg = types.ModuleType("qdrant_client")
+    qdrant_pkg.QdrantClient = DummyQdrantClient
+    qdrant_pkg.__spec__ = importlib.util.spec_from_loader("qdrant_client", loader=None)
+    monkeypatch.setitem(sys.modules, "qdrant_client", qdrant_pkg)
+
+    qdrant_http_pkg = types.ModuleType("qdrant_client.http")
+    qdrant_http_pkg.models = types.SimpleNamespace()
+    qdrant_http_pkg.__spec__ = importlib.util.spec_from_loader("qdrant_client.http", loader=None)
+    monkeypatch.setitem(sys.modules, "qdrant_client.http", qdrant_http_pkg)
     monkeypatch.setitem(
         sys.modules,
         "redis",
