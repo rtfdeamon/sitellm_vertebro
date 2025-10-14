@@ -717,7 +717,7 @@
             <input type="text" id="ollamaModel" placeholder="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest" style="width:100%">
           </label>
           <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-            <button type="button" id="saveLLM" data-i18n="llmSaveButton">Save</button>
+            <button type="button" id="saveLLM" data-i18n="buttonSave">Save</button>
             <button type="button" id="pingLLM" data-i18n="llmPingButton">Ping</button>
             <span id="pingRes" class="muted"></span>
           </div>
@@ -833,7 +833,7 @@
         <b data-i18n="logsCardTitle">Logs (last 200)</b>
         <div style="margin:6px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <label data-i18n-text="logLinesLabel">Lines: <input type="number" id="logLimit" min="50" max="1000" value="200" style="width:80px;"></label>
-          <button id="copyLogs" type="button" data-i18n="logCopyButton">Copy</button>
+          <button id="copyLogs" type="button" data-i18n="logsCopyTitle">Copy</button>
           <span class="muted" id="logInfo"></span>
         </div>
         <pre id="logs" style="white-space:pre-wrap; background:#0b1021; color:#b8c1ec; padding:10px; border-radius:8px; max-height:320px; overflow:auto;"></pre>
