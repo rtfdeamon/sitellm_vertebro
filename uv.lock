@@ -857,18 +857,6 @@ wheels = [
 ]
 
 [[package]]
-name = "jsonpath-ng"
-version = "1.7.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "ply" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6d/86/08646239a313f895186ff0a4573452038eed8c86f54380b3ebac34d32fb2/jsonpath-ng-1.7.0.tar.gz", hash = "sha256:f6f5f7fd4e5ff79c785f1573b394043b39849fb2bb47bcead935d12b00beab3c", size = 37838, upload-time = "2024-10-11T15:41:42.404Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/35/5a/73ecb3d82f8615f32ccdadeb9356726d6cae3a4bbc840b437ceb95708063/jsonpath_ng-1.7.0-py3-none-any.whl", hash = "sha256:f3d7f9e848cba1b6da28c55b1c26ff915dc9e0b1ba7e752a53d6da8d5cbd00b6", size = 30105, upload-time = "2024-11-20T17:58:30.418Z" },
-]
-
-[[package]]
 name = "jsonpointer"
 version = "3.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -953,6 +941,20 @@ wheels = [
 ]
 
 [[package]]
+name = "langchain-huggingface"
+version = "0.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "huggingface-hub" },
+    { name = "langchain-core" },
+    { name = "tokenizers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3d/72/5f32c8e6db4d94c00252318aa7910102134b4bd6b2af1b13f2042f7f95f6/langchain_huggingface-0.3.0.tar.gz", hash = "sha256:d1cf93fb4d4eafc8b44edcd5fba904b27cbd3fda6cdef0e2321fbcf4efcda822", size = 24823, upload-time = "2025-06-10T20:50:44.739Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/da/7446c2eeacd420cb975ceb49c6feca7be40cf8ed3686a128ca78410c148f/langchain_huggingface-0.3.0-py3-none-any.whl", hash = "sha256:aab85d57e649c805d2f2a9f8d72d87b5d12c45dd4831309ac9c37753ddb237ed", size = 27359, upload-time = "2025-06-10T20:50:43.506Z" },
+]
+
+[[package]]
 name = "langchain-ollama"
 version = "0.3.8"
 source = { registry = "https://pypi.org/simple" }
@@ -963,26 +965,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/8a/97/1494509e6bdeafca19dc862b0b9551127681c3df4838b986c97b16aacc3f/langchain_ollama-0.3.8.tar.gz", hash = "sha256:ba22537bd4dac4424cb8063bb2930fc31c6704db94728b30b75b4db71ccb214e", size = 32379, upload-time = "2025-09-11T20:03:23.514Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/bc/6b/486bea63bc6a9774780c72fc4a25508197584ef5cb9f983ebc12a24fa827/langchain_ollama-0.3.8-py3-none-any.whl", hash = "sha256:79898316d5663c6b08bc758c82b4e136f826cad2be84b4a26be11f1b0ebf686a", size = 25518, upload-time = "2025-09-11T20:03:22.412Z" },
-]
-
-[[package]]
-name = "langchain-redis"
-version = "0.2.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "certifi" },
-    { name = "httpcore" },
-    { name = "jinja2" },
-    { name = "langchain-core" },
-    { name = "python-ulid" },
-    { name = "redisvl" },
-    { name = "typing-extensions" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/6a/f8/5448b8db4cb62473b74f7d11630856cb9668766f364dfd39b885091b379f/langchain_redis-0.2.3.tar.gz", hash = "sha256:6f2f6adb1790934b6fd28e3acc5d3ea0c53d1b1c76dda9187203548746ef05bb", size = 31357, upload-time = "2025-06-25T15:21:06.079Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/d4/48/9c147dfb23425f20ccd80894ab693cbfb9c6d993804d17ac7dc02c9bfdab/langchain_redis-0.2.3-py3-none-any.whl", hash = "sha256:c47a4e2f40f415fe626c2c1953b9199f527c83b16a4622f6a4db9acac7be9f0c", size = 32416, upload-time = "2025-06-25T15:21:04.813Z" },
 ]
 
 [[package]]
@@ -1151,29 +1133,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d6/54/cfe61301667036ec958cb99bd3efefba235e65cdeb9c84d24a8293ba1d90/mdurl-0.1.2.tar.gz", hash = "sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba", size = 8729, upload-time = "2022-08-14T12:40:10.846Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", hash = "sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8", size = 9979, upload-time = "2022-08-14T12:40:09.779Z" },
-]
-
-[[package]]
-name = "ml-dtypes"
-version = "0.5.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/32/49/6e67c334872d2c114df3020e579f3718c333198f8312290e09ec0216703a/ml_dtypes-0.5.1.tar.gz", hash = "sha256:ac5b58559bb84a95848ed6984eb8013249f90b6bab62aa5acbad876e256002c9", size = 698772, upload-time = "2025-01-07T03:34:55.613Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/88/11ebdbc75445eeb5b6869b708a0d787d1ed812ff86c2170bbfb95febdce1/ml_dtypes-0.5.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:bd73f51957949069573ff783563486339a9285d72e2f36c18e0c1aa9ca7eb190", size = 671450, upload-time = "2025-01-07T03:33:52.724Z" },
-    { url = "https://files.pythonhosted.org/packages/a4/a4/9321cae435d6140f9b0e7af8334456a854b60e3a9c6101280a16e3594965/ml_dtypes-0.5.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:810512e2eccdfc3b41eefa3a27402371a3411453a1efc7e9c000318196140fed", size = 4621075, upload-time = "2025-01-07T03:33:54.878Z" },
-    { url = "https://files.pythonhosted.org/packages/16/d8/4502e12c6a10d42e13a552e8d97f20198e3cf82a0d1411ad50be56a5077c/ml_dtypes-0.5.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:141b2ea2f20bb10802ddca55d91fe21231ef49715cfc971998e8f2a9838f3dbe", size = 4738414, upload-time = "2025-01-07T03:33:57.709Z" },
-    { url = "https://files.pythonhosted.org/packages/6b/7e/bc54ae885e4d702e60a4bf50aa9066ff35e9c66b5213d11091f6bffb3036/ml_dtypes-0.5.1-cp310-cp310-win_amd64.whl", hash = "sha256:26ebcc69d7b779c8f129393e99732961b5cc33fcff84090451f448c89b0e01b4", size = 209718, upload-time = "2025-01-07T03:34:00.585Z" },
-    { url = "https://files.pythonhosted.org/packages/c9/fd/691335926126bb9beeb030b61a28f462773dcf16b8e8a2253b599013a303/ml_dtypes-0.5.1-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:023ce2f502efd4d6c1e0472cc58ce3640d051d40e71e27386bed33901e201327", size = 671448, upload-time = "2025-01-07T03:34:03.153Z" },
-    { url = "https://files.pythonhosted.org/packages/ff/a6/63832d91f2feb250d865d069ba1a5d0c686b1f308d1c74ce9764472c5e22/ml_dtypes-0.5.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:7000b6e4d8ef07542c05044ec5d8bbae1df083b3f56822c3da63993a113e716f", size = 4625792, upload-time = "2025-01-07T03:34:04.981Z" },
-    { url = "https://files.pythonhosted.org/packages/cc/2a/5421fd3dbe6eef9b844cc9d05f568b9fb568503a2e51cb1eb4443d9fc56b/ml_dtypes-0.5.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c09526488c3a9e8b7a23a388d4974b670a9a3dd40c5c8a61db5593ce9b725bab", size = 4743893, upload-time = "2025-01-07T03:34:08.333Z" },
-    { url = "https://files.pythonhosted.org/packages/60/30/d3f0fc9499a22801219679a7f3f8d59f1429943c6261f445fb4bfce20718/ml_dtypes-0.5.1-cp311-cp311-win_amd64.whl", hash = "sha256:15ad0f3b0323ce96c24637a88a6f44f6713c64032f27277b069f285c3cf66478", size = 209712, upload-time = "2025-01-07T03:34:12.182Z" },
-    { url = "https://files.pythonhosted.org/packages/47/56/1bb21218e1e692506c220ffabd456af9733fba7aa1b14f73899979f4cc20/ml_dtypes-0.5.1-cp312-cp312-macosx_10_9_universal2.whl", hash = "sha256:6f462f5eca22fb66d7ff9c4744a3db4463af06c49816c4b6ac89b16bfcdc592e", size = 670372, upload-time = "2025-01-07T03:34:15.258Z" },
-    { url = "https://files.pythonhosted.org/packages/20/95/d8bd96a3b60e00bf31bd78ca4bdd2d6bbaf5acb09b42844432d719d34061/ml_dtypes-0.5.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:6f76232163b5b9c34291b54621ee60417601e2e4802a188a0ea7157cd9b323f4", size = 4635946, upload-time = "2025-01-07T03:34:20.412Z" },
-    { url = "https://files.pythonhosted.org/packages/08/57/5d58fad4124192b1be42f68bd0c0ddaa26e44a730ff8c9337adade2f5632/ml_dtypes-0.5.1-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ad4953c5eb9c25a56d11a913c2011d7e580a435ef5145f804d98efa14477d390", size = 4694804, upload-time = "2025-01-07T03:34:23.608Z" },
-    { url = "https://files.pythonhosted.org/packages/38/bc/c4260e4a6c6bf684d0313308de1c860467275221d5e7daf69b3fcddfdd0b/ml_dtypes-0.5.1-cp312-cp312-win_amd64.whl", hash = "sha256:9626d0bca1fb387d5791ca36bacbba298c5ef554747b7ebeafefb4564fc83566", size = 210853, upload-time = "2025-01-07T03:34:26.027Z" },
 ]
 
 [[package]]
@@ -1497,15 +1456,6 @@ wheels = [
 ]
 
 [[package]]
-name = "ply"
-version = "3.11"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e5/69/882ee5c9d017149285cab114ebeab373308ef0f874fcdac9beb90e0ac4da/ply-3.11.tar.gz", hash = "sha256:00c7c1aaa88358b9c765b6d3000c6eec0ba42abca5351b095321aef446081da3", size = 159130, upload-time = "2018-02-15T19:01:31.097Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/58/35da89ee790598a0700ea49b2a66594140f44dec458c07e8e3d4979137fc/ply-3.11-py2.py3-none-any.whl", hash = "sha256:096f9b8350b65ebd2fd1346b12452efe5b9607f7482813ffca50c22722a807ce", size = 49567, upload-time = "2018-02-15T19:01:27.172Z" },
-]
-
-[[package]]
 name = "portalocker"
 version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1825,15 +1775,6 @@ wheels = [
 ]
 
 [[package]]
-name = "python-ulid"
-version = "3.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/9a/db/e5e67aeca9c2420cb91f94007f30693cc3628ae9783a565fd33ffb3fbfdd/python_ulid-3.0.0.tar.gz", hash = "sha256:e50296a47dc8209d28629a22fc81ca26c00982c78934bd7766377ba37ea49a9f", size = 28822, upload-time = "2024-10-11T15:31:55.475Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/4e/cc2ba2c0df2589f35a4db8473b8c2ba9bbfc4acdec4a94f1c78934d2350f/python_ulid-3.0.0-py3-none-any.whl", hash = "sha256:e4c4942ff50dbd79167ad01ac725ec58f924b4018025ce22c858bfcff99a5e31", size = 11194, upload-time = "2024-10-11T15:31:54.368Z" },
-]
-
-[[package]]
 name = "pywin32"
 version = "311"
 source = { registry = "https://pypi.org/simple" }
@@ -1912,25 +1853,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ea/9a/0551e01ba52b944f97480721656578c8a7c46b51b99d66814f85fe3a4f3e/redis-6.2.0.tar.gz", hash = "sha256:e821f129b75dde6cb99dd35e5c76e8c49512a5a0d8dfdc560b2fbd44b85ca977", size = 4639129, upload-time = "2025-05-28T05:01:18.91Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/13/67/e60968d3b0e077495a8fee89cf3f2373db98e528288a48f1ee44967f6e8c/redis-6.2.0-py3-none-any.whl", hash = "sha256:c8ddf316ee0aab65f04a11229e94a64b2618451dab7a67cb2f77eb799d872d5e", size = 278659, upload-time = "2025-05-28T05:01:16.955Z" },
-]
-
-[[package]]
-name = "redisvl"
-version = "0.8.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "jsonpath-ng" },
-    { name = "ml-dtypes" },
-    { name = "numpy" },
-    { name = "pydantic" },
-    { name = "python-ulid" },
-    { name = "pyyaml" },
-    { name = "redis" },
-    { name = "tenacity" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/88/be/22d3f21d5cf1caa96527cb9c61950c172b23342d8e6acae570882da05c75/redisvl-0.8.0.tar.gz", hash = "sha256:00645cf126039ee4d734a1ff273cc4e8fea59118f7790625eeff510fce08b0d4", size = 551876, upload-time = "2025-06-24T13:30:38.207Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/74/484d1adefe84ab4eb3cd77bb6aa5dc7a1d3920bb0d5ca281bcceedf89ad4/redisvl-0.8.0-py3-none-any.whl", hash = "sha256:365c31819224b3e4e9acca1ed2ac9eed347d4ee4ca8d822010dbd51a8b725705", size = 152348, upload-time = "2025-06-24T13:30:36.548Z" },
 ]
 
 [[package]]
@@ -2426,9 +2348,9 @@ dependencies = [
     { name = "typing-extensions", marker = "sys_platform == 'darwin'" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0-cp310-none-macosx_11_0_arm64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0-cp311-none-macosx_11_0_arm64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0-cp312-none-macosx_11_0_arm64.whl" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0-cp310-none-macosx_11_0_arm64.whl", hash = "sha256:a467b49fe893a6a6cce89e3aee556edfdc64a722d7195fdfdd75cec9dea13779" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0-cp311-none-macosx_11_0_arm64.whl", hash = "sha256:3d05017d19bc99741288e458888283a44b0ee881d53f05f72f8b1cfea8998122" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0-cp312-none-macosx_11_0_arm64.whl", hash = "sha256:a47b7986bee3f61ad217d8a8ce24605809ab425baf349f97de758815edd2ef54" },
 ]
 
 [[package]]
@@ -2451,20 +2373,20 @@ dependencies = [
     { name = "typing-extensions", marker = "sys_platform != 'darwin'" },
 ]
 wheels = [
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-linux_s390x.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-linux_s390x.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-win_arm64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-linux_s390x.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-win_amd64.whl" },
-    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-win_arm64.whl" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-linux_s390x.whl", hash = "sha256:5d255d259fbc65439b671580e40fdb8faea4644761b64fed90d6904ffe71bbc1" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:b2149858b8340aeeb1f3056e0bff5b82b96e43b596fe49a9dba3184522261213" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:16d75fa4e96ea28a785dfd66083ca55eb1058b6d6c5413f01656ca965ee2077e" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp310-cp310-win_amd64.whl", hash = "sha256:7cc4af6ba954f36c2163eab98cf113c137fc25aa8bbf1b06ef155968627beed2" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-linux_s390x.whl", hash = "sha256:2bfc013dd6efdc8f8223a0241d3529af9f315dffefb53ffa3bf14d3f10127da6" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:680129efdeeec3db5da3f88ee5d28c1b1e103b774aef40f9d638e2cce8f8d8d8" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:cb06175284673a581dd91fb1965662ae4ecaba6e5c357aa0ea7bb8b84b6b7eeb" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-win_amd64.whl", hash = "sha256:7631ef49fbd38d382909525b83696dc12a55d68492ade4ace3883c62b9fc140f" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-win_arm64.whl", hash = "sha256:41e6fc5ec0914fcdce44ccf338b1d19a441b55cafdd741fd0bf1af3f9e4cfd14" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-linux_s390x.whl", hash = "sha256:0e34e276722ab7dd0dffa9e12fe2135a9b34a0e300c456ed7ad6430229404eb5" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:610f600c102386e581327d5efc18c0d6edecb9820b4140d26163354a99cd800d" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:cb9a8ba8137ab24e36bf1742cb79a1294bd374db570f09fc15a5e1318160db4e" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-win_amd64.whl", hash = "sha256:2be20b2c05a0cce10430cc25f32b689259640d273232b2de357c35729132256d" },
+    { url = "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-win_arm64.whl", hash = "sha256:99fc421a5d234580e45957a7b02effbf3e1c884a5dd077afc85352c77bf41434" },
 ]
 
 [[package]]
@@ -2757,7 +2679,7 @@ wheels = [
 [[package]]
 name = "yallm"
 version = "0.1.1"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aiogram" },
     { name = "aiohttp" },
@@ -2771,8 +2693,8 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "langchain" },
     { name = "langchain-community" },
+    { name = "langchain-huggingface" },
     { name = "langchain-ollama" },
-    { name = "langchain-redis" },
     { name = "lxml" },
     { name = "motor" },
     { name = "nltk" },
@@ -2797,6 +2719,14 @@ dependencies = [
     { name = "uvloop" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "celery-types" },
+    { name = "httpx" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "celery-types" },
@@ -2813,14 +2743,16 @@ requires-dist = [
     { name = "asyncify", specifier = ">=0.11.0" },
     { name = "beautifulsoup4", specifier = ">=4.12,<5" },
     { name = "celery", specifier = ">=5.5.3" },
+    { name = "celery-types", marker = "extra == 'dev'", specifier = ">=0.23.0" },
     { name = "docx2txt", specifier = ">=0.9" },
     { name = "fastapi", specifier = ">=0.115.14" },
     { name = "fastapi-cli", specifier = ">=0.0.7" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.1" },
     { name = "huggingface-hub", specifier = ">=0.33.1" },
     { name = "langchain", specifier = ">=0.3.26" },
     { name = "langchain-community", specifier = ">=0.3.27" },
+    { name = "langchain-huggingface", specifier = ">=0.1.1" },
     { name = "langchain-ollama", specifier = ">=0.1.2" },
-    { name = "langchain-redis", specifier = ">=0.2.3" },
     { name = "lxml", specifier = ">=5.2.0" },
     { name = "motor", specifier = ">=3.7.1" },
     { name = "nltk", specifier = ">=3.8.1" },
@@ -2831,18 +2763,21 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.2.1" },
     { name = "pymongo", specifier = ">=4.13.2" },
     { name = "pypdf", specifier = ">=5.7.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4.1" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "python-multipart", specifier = ">=0.0.9" },
     { name = "qdrant-client", specifier = ">=1.9.0" },
     { name = "redis", specifier = ">=5.0.4" },
     { name = "requests", specifier = ">=2.32,<3" },
     { name = "rich", specifier = ">=13.7" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.1" },
     { name = "sentence-transformers", specifier = ">=5.1.1" },
     { name = "structlog", specifier = ">=24.1.0" },
     { name = "torch", specifier = ">=2.8.0", index = "https://download.pytorch.org/whl/cpu" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.35.0" },
     { name = "uvloop", specifier = ">=0.17.0" },
 ]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [
