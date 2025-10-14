@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-"""Celery worker tasks for updating the Redis vector store and voice models."""
-=======
 """Celery worker tasks for updating the Qdrant vector store, backups, and voice models."""
->>>>>>> 724ba43 (WIP. Fix broken worker)
 
 import asyncio
 import os
