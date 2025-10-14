@@ -52,16 +52,12 @@ class Redis(BaseSettings):
 
 
 class CelerySettings(BaseSettings):
-    """Celery broker and result backend configuration.
+    """Celery broker and result backend configuration."""
 
-    The fields read ``CELERY_BROKER`` and ``CELERY_RESULT`` environment
-    variables which are Redis URLs used by the worker and beat services.
-    """
+    broker: str = Field(default="redis://localhost:6379", alias="CELERY_BROKER")
+    result: str = Field(default="redis://localhost:6379", alias="CELERY_RESULT")
 
-    broker: str = "redis://localhost:6379"
-    result: str = "redis://localhost:6379"
-
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
 
 class Settings(BaseSettings):
@@ -75,9 +71,11 @@ class Settings(BaseSettings):
     debug: bool = False
     project_name: str | None = Field(default=None, alias="PROJECT_NAME")
     llm_url: str = "http://localhost:8000"
-    emb_model_name: str = "sentence-transformers/sbert_large_nlu_ru"
+    emb_model_name: str = "ai-forever/sbert_large_nlu_ru"
     rerank_model_name: str = "sbert_cross_ru"
     redis_url: AnyUrl | str = "redis://localhost:6379/0"
+    qdrant_url: AnyUrl | str = Field(default="http://qdrant:6333", alias="QDRANT_URL")
+    qdrant_collection: str = Field(default="documents", alias="QDRANT_COLLECTION")
     use_gpu: bool = False
     llm_model: str = "Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it"
     telegram_api_base: AnyUrl | str = "http://app:8000"
@@ -100,7 +98,6 @@ class Settings(BaseSettings):
     # Ensure nested settings only read their own prefixes
     MongoSettings.model_config = ConfigDict(extra="ignore", env_prefix="MONGO_")
     Redis.model_config = ConfigDict(extra="ignore", env_prefix="REDIS_")
-    CelerySettings.model_config = ConfigDict(extra="ignore", env_prefix="CELERY_")
 
 
 @lru_cache(maxsize=1)

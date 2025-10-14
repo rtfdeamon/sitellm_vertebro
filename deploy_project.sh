@@ -430,8 +430,18 @@ USE_GPU=false
 
 # (Firewall ports will be opened later, after .env is created)
 
-REDIS_PASS=$(openssl rand -hex 8)
-GRAFANA_PASS=$(openssl rand -hex 8)
+if [ -z "${REDIS_PASS:-}" ]; then
+  REDIS_PASS=$(get_env_var REDIS_PASSWORD)
+fi
+if [ -z "${REDIS_PASS:-}" ]; then
+  REDIS_PASS=$(openssl rand -hex 8)
+fi
+if [ -z "${GRAFANA_PASS:-}" ]; then
+  GRAFANA_PASS=$(get_env_var GRAFANA_PASSWORD)
+fi
+if [ -z "${GRAFANA_PASS:-}" ]; then
+  GRAFANA_PASS=$(openssl rand -hex 8)
+fi
 
 REDIS_URL="redis://:${REDIS_PASS}@redis:6379/0"
 QDRANT_URL="http://qdrant:6333"
@@ -452,10 +462,20 @@ case "$(detect_arch)" in
     ;;
 esac
 
-touch .env
+ENV_FILE_EXISTS=0
+if [ -f .env ]; then
+  ENV_FILE_EXISTS=1
+  printf '[i] Existing .env detected — leaving configuration untouched.\n'
+else
+  touch .env
+fi
 update_env_var() {
   local key="$1" val="$2"
   local esc_val
+  export "$key=$val"
+  if [ "$ENV_FILE_EXISTS" -eq 1 ]; then
+    return 0
+  fi
   esc_val=$(printf '%s' "$val" | sed 's/[\\/&]/\\&/g')
   if grep -q "^${key}=" .env 2>/dev/null; then
     if sed --version >/dev/null 2>&1; then
@@ -490,7 +510,8 @@ update_env_var QDRANT_URL "$QDRANT_URL"
 if [ -n "$QDRANT_PLATFORM" ]; then
   update_env_var QDRANT_PLATFORM "$QDRANT_PLATFORM"
 fi
-update_env_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
+update_env_var QDRANT_COLLECTION "documents"
+update_env_var EMB_MODEL_NAME "ai-forever/sbert_large_nlu_ru"
 update_env_var RERANK_MODEL_NAME "sbert_cross_ru"
 update_env_var MONGO_HOST "$MONGO_HOST"
 update_env_var MONGO_PORT "$MONGO_PORT"
@@ -679,7 +700,7 @@ update_env_var STATEFUL_VERSION "$STATEFUL_VERSION"
 printf '[i] Component versions: backend=%s telegram=%s stateful=%s\n' "$BACKEND_VERSION" "$TELEGRAM_VERSION" "$STATEFUL_VERSION"
 
 printf '[+] Building images sequentially...\n'
-SERVICES=(app telegram-bot)
+SERVICES=(app telegram-bot celery_worker celery_beat)
 for svc in "${SERVICES[@]}"; do
   if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
     printf '[!] Failed to build %s\n' "$svc"
@@ -693,11 +714,12 @@ if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
   PROFILE_ARGS+=(--profile local-llm)
 fi
 
+UP_CMD=(${COMPOSE_CMD[@]})
 if [ ${#PROFILE_ARGS[@]} -gt 0 ]; then
-  "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
-else
-  "${COMPOSE_CMD[@]}" up -d
+  UP_CMD+=(${PROFILE_ARGS[@]})
 fi
+UP_CMD+=("up" "-d" "--force-recreate" "--build")
+"${UP_CMD[@]}"
 printf '[✓] Containers running\n'
 
 printf '[+] Verifying Mongo connectivity...\n'

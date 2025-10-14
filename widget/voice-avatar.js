@@ -456,6 +456,7 @@
     .sitellm-voice-wrapper.sitellm-anchor-top-left { left: 24px; top: 24px; }
     @media (max-width: 640px) {
       .sitellm-voice-wrapper {
+        width: calc(100vw - 24px);
         max-width: calc(100vw - 24px);
       }
       .sitellm-voice-wrapper.sitellm-anchor-bottom-right,
@@ -1671,9 +1672,6 @@
       enableReadingMode: () => {
         enableReadingMode();
       },
-      disableReadingMode: () => {
-        disableReadingMode();
-      },
       setSpeechRate: (value) => {
         const next = clampSpeechRate(Number(value));
         speechRate = next;
@@ -1903,33 +1901,6 @@
       if (readingMode) return;
       readingMode = true;
       voiceSettings.reading = true;
-      updateReadingUiState();
-    }
-
-    function disableReadingMode(options = {}) {
-      const { clearPages = true } = options;
-      if (!readingMode && clearPages) {
-        // still clear stale data even if already disabled
-      }
-      readingMode = false;
-      voiceSettings.reading = false;
-      if (clearPages) {
-        readingState.pages = [];
-        readingState.offset = 0;
-        readingState.total = 0;
-        readingState.currentIndex = 0;
-        readingState.hasMore = false;
-        readingState.loading = false;
-        readingState.notice = null;
-        readingState.crossProject = null;
-        readingState.referenceUrl = null;
-      }
-      if (readingScroll && clearPages) {
-        readingScroll.innerHTML = '';
-      }
-      if (readingPlaceholder) {
-        readingPlaceholder.style.display = clearPages ? 'none' : readingPlaceholder.style.display;
-      }
       updateReadingUiState();
     }
 
@@ -3236,23 +3207,8 @@
         spokenChars = buffer.length;
       }
 
-      currentSource.addEventListener('meta', (event) => {
-        try {
-          const meta = JSON.parse(event.data);
-          if (!meta || typeof meta !== 'object') return;
-          const hasReadingFlag = Object.prototype.hasOwnProperty.call(meta, 'reading_mode') || Object.prototype.hasOwnProperty.call(meta, 'reading_available');
-          if (hasReadingFlag) {
-            const readingActive = meta.reading_mode === true || meta.reading_available === true;
-            voiceSettings.reading = readingActive;
-            if (readingActive) {
-              enableReadingMode();
-            } else {
-              disableReadingMode();
-            }
-          }
-        } catch (err) {
-          console.warn('[SiteLLM voice-avatar] meta parse error', err);
-        }
+      currentSource.addEventListener('meta', () => {
+        // optional meta
       });
       currentSource.addEventListener('reading', (event) => {
         try {

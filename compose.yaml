@@ -33,11 +33,12 @@ services:
       test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
 
   redis:
-    # Redis is used for the vector store and Celery broker
+    # Redis acts as Celery broker and cache for application responses
     image: bitnami/redis:7.0
     restart: unless-stopped
     env_file: .env
     environment:
+      ALLOW_EMPTY_PASSWORD: "no"
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     ports:
       - "${HOST_REDIS_PORT:-16379}:6379"
@@ -48,9 +49,9 @@ services:
   celery_worker:
     # Processes scheduled tasks that update the vector store
     image: ${BACKEND_IMAGE:-sitellm/backend}:${BACKEND_VERSION:-1}
+    build: *backend-build
     restart: unless-stopped
     env_file: .env
-    profiles: ["local-llm"]
     environment:
       REDIS_URL: ${REDIS_URL}
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
@@ -59,6 +60,8 @@ services:
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
     command: ["celery", "-A", "worker", "worker", "--loglevel=INFO"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -77,10 +80,12 @@ services:
   celery_beat:
     # Scheduler for periodic vector store updates
     image: ${BACKEND_IMAGE:-sitellm/backend}:${BACKEND_VERSION:-1}
+    build: *backend-build
     restart: unless-stopped
     env_file: .env
-    profiles: ["local-llm"]
     command: ["celery", "-A", "worker", "beat", "--loglevel=INFO"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy

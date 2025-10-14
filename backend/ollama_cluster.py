@@ -337,27 +337,79 @@ class OllamaClusterManager:
         url = f"{server.base_url.rstrip('/')}/api/generate"
         model_name = model or backend_settings.llm_model or backend_settings.ollama_model
         payload = {"model": model_name, "prompt": prompt, "stream": True}
-        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-            async with client.stream("POST", url, json=payload) as resp:
+        attempts = 0
+        while attempts < 2:
+            attempts += 1
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
                 try:
-                    resp.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    if exc.response is not None and exc.response.status_code == 404:
-                        raise ModelNotFoundError(model_name, server.base_url) from exc
+                    async with client.stream("POST", url, json=payload) as resp:
+                        try:
+                            resp.raise_for_status()
+                        except httpx.HTTPStatusError as exc:
+                            if (
+                                exc.response is not None
+                                and exc.response.status_code == 404
+                                and attempts == 1
+                            ):
+                                await self._pull_model(server.base_url, model_name)
+                                continue
+                            if exc.response is not None and exc.response.status_code == 404:
+                                raise ModelNotFoundError(model_name, server.base_url) from exc
+                            raise
+                        async for line in resp.aiter_lines():
+                            if not line:
+                                continue
+                            try:
+                                data = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            token = data.get("response")
+                            if token:
+                                yield token
+                                await asyncio.sleep(0)
+                            if data.get("done"):
+                                return
+                except httpx.HTTPStatusError:
                     raise
-                async for line in resp.aiter_lines():
-                    if not line:
-                        continue
-                    try:
-                        data = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    token = data.get("response")
-                    if token:
-                        yield token
-                        await asyncio.sleep(0)
-                    if data.get("done"):
-                        return
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "ollama_stream_error",
+                        base_url=server.base_url,
+                        model=model_name,
+                        error=str(exc),
+                    )
+                    raise
+
+    async def _pull_model(self, base_url: str, model: str) -> None:
+        url = f"{base_url.rstrip('/')}/api/pull"
+        logger.info("ollama_pull_start", base_url=base_url, model=model)
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            try:
+                async with client.stream("POST", url, json={"name": model}) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line:
+                            continue
+                        try:
+                            payload = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        status = payload.get("status")
+                        if payload.get("error"):
+                            raise RuntimeError(str(payload["error"]))
+                        if status:
+                            logger.debug(
+                                "ollama_pull_status",
+                                base_url=base_url,
+                                model=model,
+                                status=status,
+                            )
+                        if status == "success":
+                            logger.info("ollama_pull_success", base_url=base_url, model=model)
+                            return
+            except httpx.HTTPError as exc:
+                raise RuntimeError(f"HTTP error while pulling model: {exc}") from exc
+        raise RuntimeError("Unexpected end of pull stream")
 
     async def _warm_loop(self) -> None:
         try:

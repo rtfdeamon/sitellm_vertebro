@@ -41,6 +41,8 @@ def _build_client(monkeypatch, *, admin_password: str):
         crawler_router=APIRouter(),
         reading_router=APIRouter(),
         voice_router=APIRouter(),
+        _DEFAULT_KNOWLEDGE_PRIORITY=[],
+        _KNOWN_KNOWLEDGE_SOURCES={},
     )
     monkeypatch.setitem(sys.modules, "api", api_mod)
 
@@ -100,6 +102,10 @@ def _build_client(monkeypatch, *, admin_password: str):
             password = ""
             secure = False
 
+        class celery:
+            broker = "redis://"
+            result = "redis://"
+
     class DummyMongoSettings:
         host = ""
         port = 0
@@ -157,8 +163,6 @@ def _build_client(monkeypatch, *, admin_password: str):
             shutdown_cluster=lambda *a, **k: None,
         ),
     )
-    monkeypatch.setitem(sys.modules, "pymongo", types.SimpleNamespace(MongoClient=object))
-
     class DummyQdrantClient:
         def __init__(self, *a, **k):
             pass
@@ -166,9 +170,15 @@ def _build_client(monkeypatch, *, admin_password: str):
         def close(self):
             pass
 
-    monkeypatch.setitem(
-        sys.modules, "qdrant_client", types.SimpleNamespace(QdrantClient=DummyQdrantClient)
-    )
+    qdrant_pkg = types.ModuleType("qdrant_client")
+    qdrant_pkg.QdrantClient = DummyQdrantClient
+    qdrant_pkg.__spec__ = importlib.util.spec_from_loader("qdrant_client", loader=None)
+    monkeypatch.setitem(sys.modules, "qdrant_client", qdrant_pkg)
+
+    qdrant_http_pkg = types.ModuleType("qdrant_client.http")
+    qdrant_http_pkg.models = types.SimpleNamespace()
+    qdrant_http_pkg.__spec__ = importlib.util.spec_from_loader("qdrant_client.http", loader=None)
+    monkeypatch.setitem(sys.modules, "qdrant_client.http", qdrant_http_pkg)
     monkeypatch.setitem(
         sys.modules,
         "redis",
@@ -192,6 +202,11 @@ def _build_client(monkeypatch, *, admin_password: str):
         "knowledge.tasks",
         types.SimpleNamespace(queue_auto_description=lambda *a, **k: None),
     )
+    retrieval_mod = types.ModuleType("retrieval")
+    retrieval_mod.__spec__ = importlib.util.spec_from_loader("retrieval", loader=None)
+    retrieval_mod.encode = lambda *a, **k: types.SimpleNamespace()
+    retrieval_mod.search = lambda *a, **k: []
+    monkeypatch.setitem(sys.modules, "retrieval", retrieval_mod)
     monkeypatch.setitem(
         sys.modules,
         "knowledge.text",
@@ -200,6 +215,8 @@ def _build_client(monkeypatch, *, admin_password: str):
             extract_docx_text=lambda *a, **k: "",
             extract_pdf_text=lambda *a, **k: "",
             extract_best_effort_text=lambda *a, **k: "",
+            extract_xls_text=lambda *a, **k: "",
+            extract_xlsx_text=lambda *a, **k: "",
         ),
     )
     monkeypatch.setitem(
@@ -231,6 +248,8 @@ def _build_client(monkeypatch, *, admin_password: str):
     retrieval_pkg = types.ModuleType("retrieval")
     search_mod = types.SimpleNamespace(qdrant=None)
     retrieval_pkg.search = search_mod
+    retrieval_pkg.encode = lambda *a, **k: types.SimpleNamespace()
+    retrieval_pkg.__spec__ = importlib.util.spec_from_loader("retrieval", loader=None)
     monkeypatch.setitem(sys.modules, "retrieval", retrieval_pkg)
     monkeypatch.setitem(sys.modules, "retrieval.search", search_mod)
 
@@ -260,7 +279,7 @@ def client(monkeypatch):
 def test_admin_requires_auth(client):
     response = client.get("/admin")
     assert response.status_code == 401
-    assert response.headers["WWW-Authenticate"] == "Basic"
+    assert response.headers["WWW-Authenticate"] == 'Basic realm="admin"'
 
 
 def test_admin_with_basic_auth(client):

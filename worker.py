@@ -1,4 +1,4 @@
-"""Celery worker tasks for updating the Redis vector store and voice models."""
+"""Celery worker tasks for updating the Qdrant vector store, backups, and voice models."""
 
 import asyncio
 import os
@@ -190,12 +190,21 @@ def get_documents_sync(
 
 
 def get_mongo_client() -> SyncMongoClient:
-    """Return a synchronous MongoDB client.
+    """Return a synchronous MongoDB client using configured credentials if provided."""
 
-    Uses credentials from :class:`Settings` to construct the connection URL.
-    """
-    url = f"mongodb://{quote_plus(settings.mongo.username)}:{quote_plus(settings.mongo.password)}@{settings.mongo.host}:{settings.mongo.port}/{settings.mongo.auth}"
-    logger.info("connect mongo", host=settings.mongo.host)
+    username = os.getenv("MONGO_USERNAME", settings.mongo.username or "")
+    password = os.getenv("MONGO_PASSWORD", settings.mongo.password or "")
+    host = os.getenv("MONGO_HOST", settings.mongo.host or "localhost")
+    port = int(os.getenv("MONGO_PORT", settings.mongo.port or 27017))
+    auth_db = os.getenv("MONGO_AUTH", settings.mongo.auth or "admin")
+
+    if username and password:
+        credentials = f"{quote_plus(username)}:{quote_plus(password)}@"
+    else:
+        credentials = ""
+
+    url = f"mongodb://{credentials}{host}:{port}/{auth_db}"
+    logger.info("connect mongo", host=host)
     return SyncMongoClient(url)
 
 
@@ -305,6 +314,7 @@ def prune_knowledge_collection(db, collection) -> dict[str, int]:
                 "content_hash": 1,
                 "description": 1,
                 "project": 1,
+                "autoDescriptionPending": 1,
             },
         )
         for doc in cursor:
@@ -329,7 +339,7 @@ def prune_knowledge_collection(db, collection) -> dict[str, int]:
             else:
                 skip_low_value = True
 
-            if skip_low_value:
+            if skip_low_value and not bool(doc.get("autoDescriptionPending")):
                 _delete_document(collection, gridfs, file_id)
                 low_value += 1
                 removed += 1
