@@ -519,7 +519,8 @@
               <input type="password" id="projectTelegramToken" data-i18n-placeholder="tokenPlaceholder" placeholder="Enter token" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectTelegramAutoStart" data-i18n="autoStartLabel"> Auto-start on launch
+              <input type="checkbox" id="projectTelegramAutoStart">
+              <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
             <div>Status: <span id="projectTelegramStatus">—</span></div>
             <div class="muted" id="projectTelegramInfo"></div>
@@ -536,7 +537,8 @@
               <input type="password" id="projectMaxToken" data-i18n-placeholder="tokenPlaceholder" placeholder="Enter token" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectMaxAutoStart" data-i18n="autoStartLabel"> Auto-start on launch
+              <input type="checkbox" id="projectMaxAutoStart">
+              <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
             <div>Status: <span id="projectMaxStatus">—</span></div>
             <div class="muted" id="projectMaxInfo"></div>
@@ -553,7 +555,8 @@
               <input type="password" id="projectVkToken" data-i18n-placeholder="tokenPlaceholder" placeholder="Enter token" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectVkAutoStart" data-i18n="autoStartLabel"> Auto-start on launch
+              <input type="checkbox" id="projectVkAutoStart">
+              <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
             <div>Status: <span id="projectVkStatus">—</span></div>
             <div class="muted" id="projectVkInfo"></div>
@@ -582,16 +585,16 @@
               <input type="url" id="projectBitrixWebhook" placeholder="https://example.bitrix24.ru/rest/1/xxxxxxxxx/" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectBitrixEnabled" data-i18n="activateIntegration">
-              Activate integration
+              <input type="checkbox" id="projectBitrixEnabled">
+              <span data-i18n="activateIntegration">Activate integration</span>
             </label>
             <span class="muted" id="projectBitrixHint" data-i18n="hintWebhook">Webhook is used for model requests and stored on the server.</span>
           </div>
           <div class="project-mail" style="flex:1 1 320px; min-width:280px;">
             <b style="display:block; margin-bottom:8px;" data-i18n="labelMailConnector">Mail connector</b>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectMailEnabled" data-i18n="enableIntegrationButton">
-              Enable integration
+              <input type="checkbox" id="projectMailEnabled">
+              <span data-i18n="enableIntegrationButton">Enable integration</span>
             </label>
             <div class="muted" id="projectMailHint" data-i18n="hintMailSettings">Specify IMAP/SMTP parameters so the assistant can send and read emails.</div>
             <div style="display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top:10px;">
@@ -603,7 +606,7 @@
               </label>
               <label style="display:flex; gap:6px; align-items:center;">
                 <input type="checkbox" id="projectMailImapSsl" checked>
-                IMAP SSL
+                <span data-i18n="imapSslLabel">IMAP SSL</span>
               </label>
               <label data-i18n="smtpHostLabel">SMTP host
                 <input type="text" id="projectMailSmtpHost" placeholder="smtp.example.com">
@@ -613,7 +616,7 @@
               </label>
               <label style="display:flex; gap:6px; align-items:center;">
                 <input type="checkbox" id="projectMailSmtpTls" checked>
-                SMTP STARTTLS
+                <span data-i18n="smtpStarttlsLabel">SMTP STARTTLS</span>
               </label>
               <label data-i18n="labelUsername">Username
                 <input type="text" id="projectMailUsername" placeholder="user@example.com">
@@ -700,20 +703,22 @@
 
     <section id="block-llm" class="dashboard-stack span-4" data-block-id="llm" data-block-group="manage">
       <div class="card control-card">
-        <b>LLM</b>
-        <div>Model: <code id="model">–</code></div>
-        <div>Backend: <span id="backend">–</span></div>
-        <div>Device: <span id="device">–</span></div>
+        <b data-i18n="llmSectionTitle">LLM</b>
+        <div data-i18n-wrapper="llmModelLabel">Model: <code id="model" data-i18n-value>–</code></div>
+        <div data-i18n-wrapper="llmBackendLabel">Backend: <span id="backend" data-i18n-value>–</span></div>
+        <div data-i18n-wrapper="llmDeviceLabel">Device: <span id="device" data-i18n-value>–</span></div>
         <div style="margin-top:6px;">
-          <label>Ollama Base:
+          <label>
+            <span data-i18n="ollamaBaseLabel">Ollama Base:</span>
             <input type="text" id="ollamaBase" placeholder="http://host.docker.internal:11434" style="width:100%">
           </label>
-          <label style="display:block; margin-top:6px;">Model name:
+          <label style="display:block; margin-top:6px;">
+            <span data-i18n="ollamaModelNameLabel">Model name:</span>
             <input type="text" id="ollamaModel" placeholder="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest" style="width:100%">
           </label>
           <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-            <button type="button" id="saveLLM">Save</button>
-            <button type="button" id="pingLLM">Ping</button>
+            <button type="button" id="saveLLM" data-i18n="llmSaveButton">Save</button>
+            <button type="button" id="pingLLM" data-i18n="llmPingButton">Ping</button>
             <span id="pingRes" class="muted"></span>
           </div>
           <div class="ollama-catalog" id="ollamaCatalog">
@@ -746,8 +751,8 @@
                   <input type="text" id="ollamaServerName" data-i18n-placeholder="identifierPlaceholder" placeholder="identifier" required>
                   <input type="text" id="ollamaServerUrl" placeholder="http://host:11434" required>
                   <label class="ollama-server-enabled">
-                    <input type="checkbox" id="ollamaServerEnabled" checked data-i18n="enabledStatus">
-                    Enabled
+                    <input type="checkbox" id="ollamaServerEnabled" checked>
+                    <span data-i18n="enabledStatus">Enabled</span>
                   </label>
                   <button type="submit" data-i18n="addButton">Add</button>
                 </div>
@@ -798,8 +803,8 @@
         <b data-i18n="intelligentProcessingTitle">Intelligent processing</b>
         <div class="muted" data-i18n="hintPromptConfig">Configure the prompt and vector knowledge base refresh mode.</div>
         <label style="display:flex; align-items:center; gap:8px; margin:10px 0;">
-          <input type="checkbox" id="knowledgeServiceToggle" data-i18n="labelServiceEnabled">
-          Service enabled
+          <input type="checkbox" id="knowledgeServiceToggle">
+          <span data-i18n="labelServiceEnabled">Service enabled</span>
         </label>
         <label style="display:flex; flex-direction:column; gap:6px;">
           <span data-i18n="labelRunMode">Run mode</span>
@@ -820,15 +825,15 @@
         </div>
       </div>
       <div class="card prompts-card">
-        <b>LLM Prompts</b>
+        <b data-i18n="llmPromptsTitle">LLM Prompts</b>
         <div class="muted" data-i18n="latestRequestsTitle">Latest requests (including knowledge base)</div>
         <pre id="promptLogs" style="white-space:pre-wrap; padding:10px; border-radius:8px; overflow:auto;"></pre>
       </div>
       <div class="card logs-card">
-        <b>Logs (last 200)</b>
+        <b data-i18n="logsCardTitle">Logs (last 200)</b>
         <div style="margin:6px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
           <label data-i18n-text="logLinesLabel">Lines: <input type="number" id="logLimit" min="50" max="1000" value="200" style="width:80px;"></label>
-          <button id="copyLogs" type="button">Copy</button>
+          <button id="copyLogs" type="button" data-i18n="logCopyButton">Copy</button>
           <span class="muted" id="logInfo"></span>
         </div>
         <pre id="logs" style="white-space:pre-wrap; background:#0b1021; color:#b8c1ec; padding:10px; border-radius:8px; max-height:320px; overflow:auto;"></pre>
@@ -872,8 +877,8 @@
             <input type="password" id="projectModalAdminPassword" data-i18n-placeholder="skipSettingPlaceholder" placeholder="Leave empty to skip setting">
           </label>
           <label style="display:flex; gap:10px; align-items:center;">
-            <input type="checkbox" id="projectModalEmotions" checked data-i18n="emotionsLabel">
-            Emotions and emojis in replies
+            <input type="checkbox" id="projectModalEmotions" checked>
+            <span data-i18n="emotionsLabel">Emotions and emojis in replies</span>
           </label>
         </div>
         <div class="modal-footer">
@@ -898,7 +903,8 @@
         <label data-i18n="labelName">Name
           <input type="text" id="kbModalName" required>
         </label>
-        <label>URL
+        <label>
+          <span data-i18n="labelUrl">URL</span>
           <input type="url" id="kbModalUrl" placeholder="https://example.com">
         </label>
         <label data-i18n="labelDescription">Description

@@ -166,6 +166,76 @@
         ru: 'Включён',
         match: ['Включён'],
       },
+      imapSslLabel: {
+        en: 'IMAP SSL',
+        ru: 'IMAP SSL',
+        match: ['IMAP SSL'],
+      },
+      smtpStarttlsLabel: {
+        en: 'SMTP STARTTLS',
+        ru: 'SMTP STARTTLS',
+        match: ['SMTP STARTTLS'],
+      },
+      llmSectionTitle: {
+        en: 'LLM',
+        ru: 'LLM',
+        match: ['LLM'],
+      },
+      llmModelLabel: {
+        en: 'Model: {value}',
+        ru: 'Модель: {value}',
+        match: ['Модель: {value}'],
+      },
+      llmBackendLabel: {
+        en: 'Backend: {value}',
+        ru: 'Бэкенд: {value}',
+        match: ['Бэкенд: {value}'],
+      },
+      llmDeviceLabel: {
+        en: 'Device: {value}',
+        ru: 'Устройство: {value}',
+        match: ['Устройство: {value}'],
+      },
+      llmSaveButton: {
+        en: 'Save',
+        ru: 'Сохранить',
+        match: ['Сохранить'],
+      },
+      llmPingButton: {
+        en: 'Ping',
+        ru: 'Проверить',
+        match: ['Проверить'],
+      },
+      ollamaBaseLabel: {
+        en: 'Ollama Base:',
+        ru: 'Адрес Ollama:',
+        match: ['Адрес Ollama:'],
+      },
+      ollamaModelNameLabel: {
+        en: 'Model name:',
+        ru: 'Название модели:',
+        match: ['Название модели:'],
+      },
+      llmPromptsTitle: {
+        en: 'LLM Prompts',
+        ru: 'Промпты LLM',
+        match: ['Промпты LLM'],
+      },
+      logsCardTitle: {
+        en: 'Logs (last 200)',
+        ru: 'Логи (последние 200)',
+        match: ['Логи (последние 200)'],
+      },
+      logCopyButton: {
+        en: 'Copy',
+        ru: 'Скопировать',
+        match: ['Скопировать'],
+      },
+      labelUrl: {
+        en: 'URL',
+        ru: 'URL',
+        match: ['URL'],
+      },
       smtpHostLabel: {
         en: 'SMTP host',
         ru: 'SMTP хост',
