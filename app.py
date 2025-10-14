@@ -2417,12 +2417,6 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             except Exception as exc:  # noqa: BLE001
                 logger.warning("basic_auth_decode_failed", error=str(exc))
 
-        # Fallback: allow access if super admin password is default
-        if ADMIN_PASSWORD_DIGEST == hashlib.sha256(b"admin").digest():
-            logger.warning("admin_auth_fallback_default_password")
-            request.state.admin = AdminIdentity(username=ADMIN_USER.lower(), is_super=True)
-            return await call_next(request)
-
         return self._unauthorized_response(request)
 
 
@@ -3776,9 +3770,6 @@ async def admin_upload_knowledge(
             "status_message": status_message,
         }
     )
-
-
-<<<<<<< HEAD
 
 
 @app.post("/api/v1/admin/knowledge/deduplicate", response_class=ORJSONResponse)
