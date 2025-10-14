@@ -54,11 +54,11 @@
 
   function buildInfo(status) {
     if (!status) {
-      return 'Выберите проект, чтобы управлять MAX ботом.';
+      return tl('Выберите проект, чтобы управлять MAX ботом.');
     }
     const parts = [];
-    parts.push(status.token_set ? `Токен: ${status.token_preview || '••••'}` : 'Токен не задан');
-    parts.push(`Автозапуск: ${status.auto_start ? 'включён' : 'выключен'}`);
+    parts.push(status.token_set ? `Токен: ${status.token_preview || '••••'}` : tl('Токен не задан'));
+    parts.push(`Автозапуск: ${status.auto_start ? tl('включён') : tl('выключен')}`);
     if (status.last_error) {
       parts.push(`Последняя ошибка: ${status.last_error}`);
     }
@@ -67,7 +67,7 @@
 
   function updatePlaceholder(status) {
     if (!tokenInput) return;
-    tokenInput.placeholder = status?.token_set ? 'Токен сохранён' : 'Введите токен';
+    tokenInput.placeholder = status?.token_set ? tl('Токен сохранён') : tl('Введите токен');
   }
 
   function updateButtons(status) {
@@ -88,7 +88,7 @@
       updatePlaceholder(null);
       return;
     }
-    statusLabel.textContent = status.running ? 'Запущен' : 'Остановлен';
+    statusLabel.textContent = status.running ? tl('Запущен') : tl('Остановлен');
     if (autoStartInput) {
       autoStartInput.checked = !!status.auto_start;
     }
@@ -100,7 +100,7 @@
   function reset() {
     if (tokenInput) {
       tokenInput.value = '';
-      tokenInput.placeholder = 'Введите токен';
+      tokenInput.placeholder = tl('Введите токен');
     }
     if (messageLabel) {
       messageLabel.textContent = '';
@@ -125,7 +125,7 @@
     if (!project || !project.name) {
       applyStatus(null);
     } else if (!lastStatus) {
-      infoLabel.textContent = 'Сохраните токен и запустите MAX бота.';
+      infoLabel.textContent = tl('Сохраните токен и запустите MAX бота.');
       updatePlaceholder(null);
       updateButtons(null);
     }
@@ -155,7 +155,7 @@
       return;
     }
     try {
-      infoLabel.textContent = 'Обновляем статус…';
+      infoLabel.textContent = tl('Обновляем статус…');
       const response = await global.fetch(`/api/v1/admin/projects/${encodeURIComponent(project)}/max`);
       if (!response.ok) {
         throw new Error(await extractError(response));
@@ -166,7 +166,7 @@
       if (tokenInput) tokenInput.value = '';
     } catch (error) {
       console.error('max_status_failed', error);
-      setMessage(error.message || 'Ошибка статуса', 4500);
+      setMessage(error.message || tl('Ошибка статуса'), 4500);
       applyStatus(null);
     }
   }
@@ -174,7 +174,7 @@
   function ensureProjectSelected() {
     const name = projectName();
     if (!name) {
-      setMessage('Выберите проект', 3500);
+      setMessage(tl('Выберите проект'), 3500);
       updateButtons(null);
       return null;
     }
@@ -186,7 +186,7 @@
     if (!project) return;
     busy = true;
     updateButtons(lastStatus);
-    setMessage('Выполняю…', 0);
+    setMessage(tl('Выполняю…'), 0);
     try {
       const response = await global.fetch(
         `/api/v1/admin/projects/${encodeURIComponent(project)}${endpoint}`,
@@ -205,7 +205,7 @@
       if (tokenInput) tokenInput.value = '';
     } catch (error) {
       console.error('max_action_failed', error);
-      setMessage(error.message || 'Ошибка действия', 6000);
+      setMessage(error.message || tl('Ошибка действия'), 6000);
     } finally {
       busy = false;
       updateButtons(lastStatus);
@@ -218,7 +218,7 @@
         auto_start: autoStartInput ? !!autoStartInput.checked : false,
         token: tokenInput ? tokenInput.value : '',
       };
-      send('/max/config', payload, 'Сохранено');
+      send('/max/config', payload, tl('Сохранено'));
     });
   }
 
@@ -231,7 +231,7 @@
       if (token) {
         payload.token = token;
       }
-      send('/max/start', payload, 'Запущено');
+      send('/max/start', payload, tl('Запущено'));
     });
   }
 
@@ -240,7 +240,7 @@
       const payload = {
         auto_start: autoStartInput ? !!autoStartInput.checked : false,
       };
-      send('/max/stop', payload, 'Остановлено');
+      send('/max/stop', payload, tl('Остановлено'));
     });
   }
 

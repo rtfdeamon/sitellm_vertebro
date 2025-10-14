@@ -10,6 +10,7 @@
     const FALLBACK_LANGUAGE = 'en';
     const BASE_STRINGS = {
       pillOperations: 'Operations',
+      pageTitle: 'Crawler Admin',
       headerTitle: 'Crawler Control Panel',
       headerSubtitle: 'Manage crawling, knowledge base, and infrastructure in one dashboard',
       buttonReorder: 'Reorder blocks',
@@ -101,6 +102,8 @@
       knowledgeServiceSaving: 'Saving…',
       knowledgeServiceSaved: 'Saved',
       knowledgeServiceSaveError: 'Save failed',
+      kbLimitLabel: 'Limit',
+      logLinesLabel: 'Lines:',
       authTitle: 'Administrator sign-in',
       authPrompt: 'Enter administrator credentials to continue.',
       authHint: 'Credentials are sent to {host}.',
@@ -115,7 +118,7 @@
       authErrorInvalid: 'Invalid credentials',
       authErrorNetwork: 'Could not verify credentials',
       errorAuthRequired: 'Administrator credentials required',
-      developerCredit: 'Created by дев-бот-су',
+      developerCredit: 'Created by dev-bot.su',
       feedbackSectionTitle: 'Feedback',
       feedbackStatusOpen: 'Open',
       feedbackStatusInProgress: 'In progress',
@@ -653,6 +656,7 @@
         knowledgeServiceSaveError: 'Erro ao salvar'
       }),
       ru: createLanguage('Русский', 'ltr', {
+        pageTitle: 'Панель управления краулером',
         pillOperations: 'Операции',
         headerTitle: 'Панель управления краулером',
         headerSubtitle: 'Управляйте краулингом, базой знаний и окружением в одном окне',
@@ -745,6 +749,8 @@
         knowledgeServiceSaving: 'Сохраняем…',
         knowledgeServiceSaved: 'Сохранено',
         knowledgeServiceSaveError: 'Ошибка сохранения',
+        kbLimitLabel: 'Лимит',
+        logLinesLabel: 'Строк:',
         backupCardTitle: 'Резервные копии',
         backupScheduleTitle: 'Расписание',
         backupEnableLabel: 'Включить ежедневное резервирование',
@@ -802,7 +808,8 @@
         authErrorMissing: 'Введите логин и пароль',
         authErrorInvalid: 'Неверные учетные данные',
         authErrorNetwork: 'Не удалось проверить учетные данные',
-        errorAuthRequired: 'Требуется вход администратора'
+        errorAuthRequired: 'Требуется вход администратора',
+        developerCredit: 'Создано дев-бот-су'
       }),
       zh: createLanguage('中文', 'ltr', {
         pillOperations: '运维',
@@ -1088,6 +1095,44 @@
       })
     };
 
+    const STATIC_CONFIG = global.ADMIN_I18N_STATIC || {};
+    const STATIC_MATCH_MAP = new Map();
+
+    const registerMatch = (key, raw) => {
+      if (!key || !raw) return;
+      const trimmed = String(raw).trim();
+      if (!trimmed) return;
+      if (!STATIC_MATCH_MAP.has(trimmed)) {
+        STATIC_MATCH_MAP.set(trimmed, key);
+      }
+    };
+
+    const mergeExtraStrings = (collection = {}, includeMatches = true) => {
+      Object.entries(collection).forEach(([key, value = {}]) => {
+        const { en, ru, match } = value;
+        if (en) {
+          BASE_STRINGS[key] = en;
+        }
+        if (ru && LANGUAGES.ru) {
+          LANGUAGES.ru.strings[key] = ru;
+        }
+        if (includeMatches) {
+          if (Array.isArray(match) && match.length) {
+            match.forEach((entry) => registerMatch(key, entry));
+          } else if (ru) {
+            registerMatch(key, ru);
+          } else if (en) {
+            registerMatch(key, en);
+          }
+        }
+      });
+    };
+
+    mergeExtraStrings(STATIC_CONFIG.text);
+    mergeExtraStrings(STATIC_CONFIG.placeholders);
+    mergeExtraStrings(STATIC_CONFIG.titles);
+    mergeExtraStrings(STATIC_CONFIG.alt);
+
 
     let currentLanguage = (() => {
       try {
@@ -1145,6 +1190,27 @@
         node.setAttribute('aria-label', t(key));
       });
 
+      document.querySelectorAll('[data-i18n-title]').forEach((node) => {
+        const key = node.dataset.i18nTitle;
+        node.setAttribute('title', t(key));
+      });
+
+      document.querySelectorAll('[data-i18n-alt]').forEach((node) => {
+        const key = node.dataset.i18nAlt;
+        node.setAttribute('alt', t(key));
+      });
+
+      document.querySelectorAll('[data-i18n-text]').forEach((node) => {
+        const key = node.dataset.i18nText;
+        const translation = t(key);
+        const textNode = Array.from(node.childNodes).find((child) => child.nodeType === Node.TEXT_NODE);
+        if (textNode) {
+          textNode.textContent = translation;
+        } else {
+          node.insertBefore(global.document.createTextNode(translation), node.firstChild || null);
+        }
+      });
+
       document.querySelectorAll('[data-i18n-wrapper]').forEach((node) => {
         const key = node.dataset.i18nWrapper;
         const valueNode = node.querySelector('[data-i18n-value]');
@@ -1186,6 +1252,21 @@
     }
 
     global.t = t;
+    global.tl = (phrase, params = {}) => {
+      if (typeof phrase !== 'string') return '';
+      const trimmed = phrase.trim();
+      const key = STATIC_MATCH_MAP.get(trimmed);
+      if (key) {
+        return t(key, params);
+      }
+      if (Object.keys(params || {}).length) {
+        return trimmed.replace(/\{(\w+)\}/g, (_, token) => {
+          if (token in params) return String(params[token]);
+          return '';
+        });
+      }
+      return trimmed;
+    };
 
     return {
       t,

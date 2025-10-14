@@ -137,7 +137,18 @@ function handleLanguageApplied() {
   if (window.VoiceModule?.handleLanguageApplied) {
     window.VoiceModule.handleLanguageApplied();
   }
+  if (window.ProjectsModule?.handleLanguageApplied) {
+    window.ProjectsModule.handleLanguageApplied();
+  }
   renderFeedbackTasks(feedbackTasksCache);
+  renderKnowledgePriority(knowledgePriorityOrder);
+  if (kbPriorityStatus) kbPriorityStatus.textContent = '';
+  if (kbDropZone) {
+    kbDropZoneDefaultText = t('dragFilesHint');
+    if (!kbDropZone.classList.contains('has-files')) {
+      kbDropZone.textContent = kbDropZoneDefaultText;
+    }
+  }
 }
 
 const summaryProjectCard = document.getElementById('summaryProjectCard');
@@ -157,7 +168,7 @@ const kbDedupStatus = document.getElementById('kbDedupStatus');
 const kbClearBtn = document.getElementById('kbClearKnowledge');
 const kbClearStatus = document.getElementById('kbClearStatus');
 const kbDropZone = document.getElementById('kbDropZone');
-const kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
+let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
 const kbNewFileInput = document.getElementById('kbNewFile');
 const kbThinkingOverlay = document.getElementById('kbThinkingOverlay');
 const kbThinkingCaption = document.getElementById('kbThinkingCaption');
@@ -188,17 +199,17 @@ const KB_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '
 const KB_TEXT_LIKE_TYPES = new Set(['application/json', 'application/xml', 'text/csv']);
 const KB_STATUS_PENDING = new Set(['pending_auto_description', 'auto_description_in_progress']);
 const KNOWLEDGE_SOURCES = [
-  { id: 'qa', label: 'FAQ (Вопрос–ответ)' },
-  { id: 'qdrant', label: 'Векторный поиск' },
-  { id: 'mongo', label: 'Документы и файлы' },
+  { id: 'qa', labelKey: 'knowledgeSourceFaq' },
+  { id: 'qdrant', labelKey: 'knowledgeSourceVector' },
+  { id: 'mongo', labelKey: 'knowledgeSourceDocsFiles' },
 ];
 
 const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 const kbTables = {
-  text: { body: kbTableText, counter: kbCountText, empty: 'Текстовые документы отсутствуют' },
-  docs: { body: kbTableDocs, counter: kbCountDocs, empty: 'Файлы не найдены' },
-  images: { body: kbTableImages, counter: kbCountImages, empty: 'Нет изображений' },
+  text: { body: kbTableText, counter: kbCountText, emptyKey: 'knowledgeTableTextEmpty' },
+  docs: { body: kbTableDocs, counter: kbCountDocs, emptyKey: 'knowledgeTableDocsEmpty' },
+  images: { body: kbTableImages, counter: kbCountImages, emptyKey: 'knowledgeTableImagesEmpty' },
 };
 
 const getDocCategory = (doc) => {
@@ -221,7 +232,7 @@ const createAutoBadge = (doc) => {
     const badge = document.createElement('span');
     badge.className = 'kb-auto-badge pending';
     badge.textContent = 'AI';
-    badge.title = message || 'Описание формируется';
+    badge.title = message || t('knowledgeAutoDescriptionPending');
     badge.setAttribute('aria-label', badge.title);
     return badge;
   }
@@ -229,7 +240,7 @@ const createAutoBadge = (doc) => {
     const badge = document.createElement('span');
     badge.className = 'kb-auto-badge failed';
     badge.textContent = 'AI';
-    badge.title = message || 'Автоописание не удалось';
+    badge.title = message || t('knowledgeAutoDescriptionFailed');
     badge.setAttribute('aria-label', badge.title);
     return badge;
   }
@@ -240,7 +251,7 @@ const createTypeBadge = (category) => {
   if (category === 'text') return null;
   const badge = document.createElement('span');
   badge.className = 'kb-type-badge';
-  badge.textContent = category === 'images' ? 'Фото' : 'Файл';
+  badge.textContent = t(category === 'images' ? 'knowledgeBadgePhoto' : 'knowledgeBadgeFile');
   return badge;
 };
 
@@ -374,7 +385,7 @@ async function fetchFeedbackTasks() {
     return;
   }
   feedbackUnavailable = false;
-  feedbackTasksList.innerHTML = '<div class="muted">Загрузка…</div>';
+  feedbackTasksList.innerHTML = `<div class="muted">${t('loadingEllipsis')}</div>`;
   try {
     const resp = await fetch('/api/v1/admin/feedback');
     if (!resp.ok) {
@@ -408,7 +419,7 @@ const renderKnowledgeRow = (doc, category) => {
   const linkTd = document.createElement('td');
   if (doc.fileId || doc.downloadUrl || doc.url) {
     const a = document.createElement('a');
-    a.textContent = 'Скачать';
+    a.textContent = t('buttonDownload');
     const href = doc.downloadUrl || doc.url || `/api/v1/admin/knowledge/documents/${encodeURIComponent(doc.fileId)}`;
     a.href = href;
     a.target = '_blank';
@@ -422,10 +433,10 @@ const renderKnowledgeRow = (doc, category) => {
   const actionsTd = document.createElement('td');
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
-  editBtn.textContent = 'Редактировать';
+  editBtn.textContent = t('buttonEdit');
   if (category !== 'text') {
-    editBtn.textContent = 'Описание';
-    editBtn.title = 'Изменить описание и метаданные';
+    editBtn.textContent = t('labelDescription');
+    editBtn.title = t('tooltipEditDescription');
   }
   editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
   actionsTd.appendChild(editBtn);
@@ -433,7 +444,7 @@ const renderKnowledgeRow = (doc, category) => {
   if (doc.fileId) {
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
-    deleteBtn.textContent = 'Удалить';
+    deleteBtn.textContent = t('buttonDelete');
     deleteBtn.className = 'danger-btn';
     const docProject = (doc.project || doc.domain || currentProject || '').trim().toLowerCase();
     deleteBtn.addEventListener('click', () => deleteKnowledgeDocument(doc.fileId, docProject));
@@ -477,7 +488,7 @@ const renderKnowledgePriority = (order) => {
     li.draggable = true;
     li.dataset.source = source.id;
     const label = document.createElement('span');
-    label.textContent = source.label;
+    label.textContent = t(source.labelKey);
     li.appendChild(label);
     const handle = document.createElement('span');
     handle.className = 'kb-priority-handle';
@@ -551,7 +562,7 @@ async function loadKnowledgePriority(projectName) {
       knowledgePriorityUnavailable = true;
       renderKnowledgePriority(knowledgePriorityOrder);
       if (kbPriorityStatus) {
-        kbPriorityStatus.textContent = 'Приоритеты недоступны';
+        kbPriorityStatus.textContent = t('knowledgePriorityUnavailable');
         setTimeout(() => { kbPriorityStatus.textContent = ''; }, 4000);
       }
       return;
@@ -563,7 +574,7 @@ async function loadKnowledgePriority(projectName) {
     console.error('knowledge_priority_load_failed', error);
     renderKnowledgePriority(knowledgePriorityOrder);
     if (kbPriorityStatus) {
-      kbPriorityStatus.textContent = 'Не удалось загрузить приоритеты';
+      kbPriorityStatus.textContent = t('knowledgePriorityLoadError');
     }
   }
 }
@@ -572,7 +583,7 @@ async function saveKnowledgePriority() {
   if (!kbPriorityList || !kbPrioritySave || knowledgePriorityUnavailable) return;
   const order = getKnowledgePriorityOrder();
   if (kbPriorityStatus) {
-    kbPriorityStatus.textContent = 'Сохраняем...';
+    kbPriorityStatus.textContent = t('knowledgePrioritySaving');
   }
   kbPrioritySave.disabled = true;
   try {
@@ -589,19 +600,19 @@ async function saveKnowledgePriority() {
     if (resp.status === 404) {
       knowledgePriorityUnavailable = true;
       if (kbPriorityStatus) {
-        kbPriorityStatus.textContent = 'Сохранение недоступно';
+        kbPriorityStatus.textContent = t('knowledgePrioritySaveUnavailable');
         setTimeout(() => { kbPriorityStatus.textContent = ''; }, 4000);
       }
       return;
     }
     if (!resp.ok) throw new Error(await resp.text());
     if (kbPriorityStatus) {
-      kbPriorityStatus.textContent = 'Приоритеты обновлены';
+      kbPriorityStatus.textContent = t('knowledgePrioritySaved');
     }
   } catch (error) {
     console.error('knowledge_priority_save_failed', error);
     if (kbPriorityStatus) {
-      kbPriorityStatus.textContent = 'Не удалось сохранить приоритеты';
+      kbPriorityStatus.textContent = t('knowledgePrioritySaveError');
     }
   } finally {
     kbPrioritySave.disabled = false;
@@ -688,13 +699,13 @@ const renderAutoDescription = (text) => {
     kbAutoDescription.classList.remove('visible');
     return;
   }
-  kbAutoDescription.textContent = `Автоописание: ${value}`;
+  kbAutoDescription.textContent = t('knowledgeAutoDescriptionLabel', { value });
   kbAutoDescription.classList.add('visible');
 };
 
 const showKnowledgeThinking = (
-  caption = 'Генерируем описание…',
-  subtitle = 'Это может занять несколько секунд.'
+  caption = t('knowledgeThinkingCaption'),
+  subtitle = t('knowledgeThinkingSubtitle')
 ) => {
   if (!kbThinkingOverlay) return;
   kbThinkingOverlay.classList.add('active');
@@ -737,7 +748,7 @@ function updateDropZonePreview(fileList) {
   if (!kbDropZone) return;
   const files = Array.from(fileList || []).filter(Boolean);
   if (!files.length) {
-    kbDropZone.textContent = kbDropZoneDefaultText || 'Перетащите файлы сюда или нажмите на поле выше';
+    kbDropZone.textContent = kbDropZoneDefaultText || t('dragFilesHint');
     kbDropZone.classList.remove('has-files');
     return;
   }
@@ -748,7 +759,11 @@ function updateDropZonePreview(fileList) {
     return `${file.name}${size}`;
   }).join(', ');
   const remaining = files.length > maxPreview ? `, +${files.length - maxPreview}` : '';
-  kbDropZone.textContent = `Выбрано файлов: ${files.length}. ${preview}${remaining}`;
+  kbDropZone.textContent = t('knowledgeDropSummary', {
+    count: files.length,
+    preview,
+    remaining,
+  });
   kbDropZone.classList.add('has-files');
 }
 
@@ -788,38 +803,42 @@ function filterRecentLines(lines) {
 
 function renderKnowledgeServiceStatus(data) {
   if (!knowledgeServiceStatus) return;
-  const bits = [];
-  const message = data?.message || (data?.enabled ? 'Сервис включён' : 'Сервис выключен');
-  if (message) bits.push(message);
+  const parts = [];
+  const message = data?.message || (data?.enabled ? t('serviceStateOn') : t('serviceStateOff'));
+  if (message) parts.push(message);
   if (typeof data?.enabled === 'boolean') {
-    bits.push(data.enabled ? 'Сервис: включён' : 'Сервис: выключен');
+    parts.push(data.enabled ? t('serviceStateLabelOn') : t('serviceStateLabelOff'));
   }
   if (typeof data?.mode === 'string') {
-    const normalized = data.mode === 'auto' ? 'автоматический' : data.mode === 'manual' ? 'ручной' : data.mode;
-    bits.push(`Режим: ${normalized}`);
+    const normalizedMode = data.mode === 'auto'
+      ? t('serviceModeAuto')
+      : data.mode === 'manual'
+        ? t('serviceModeManual')
+        : data.mode;
+    parts.push(t('serviceModeLabel', { value: normalizedMode }));
   }
   if (typeof data?.running === 'boolean') {
-    bits.push(data.running ? 'Статус: активен' : 'Статус: остановлен');
+    parts.push(data.running ? t('serviceStatusActive') : t('serviceStatusStopped'));
   }
   if (typeof data?.last_queue === 'number') {
-    bits.push(`Очередь: ${data.last_queue}`);
+    parts.push(t('knowledgeQueueLabel', { value: data.last_queue }));
   }
   if (typeof data?.idle_seconds === 'number') {
-    bits.push(`Простой: ${Math.max(0, Math.round(data.idle_seconds))} с`);
+    parts.push(t('knowledgeIdleLabel', { seconds: Math.max(0, Math.round(data.idle_seconds)) }));
   }
   if (data?.last_run_ts) {
-    bits.push(`Последний запуск: ${formatTimestamp(data.last_run_ts)}`);
+    parts.push(t('knowledgeLastRunLabel', { value: formatTimestamp(data.last_run_ts) }));
   }
   if (data?.last_error) {
-    bits.push(`Ошибка: ${data.last_error}`);
+    parts.push(t('knowledgeErrorLabel', { value: data.last_error }));
   }
   if (data?.manual_reason && data.manual_reason !== 'manual') {
-    bits.push(`Причина: ${data.manual_reason}`);
+    parts.push(t('knowledgeReasonLabel', { value: data.manual_reason }));
   }
   if (data?.updated_at) {
-    bits.push(`Обновлено: ${formatTimestamp(data.updated_at)}`);
+    parts.push(t('knowledgeUpdatedLabel', { value: formatTimestamp(data.updated_at) }));
   }
-  knowledgeServiceStatus.textContent = bits.join(' • ') || '—';
+  knowledgeServiceStatus.textContent = parts.join(' • ') || '—';
 }
 
 async function callKnowledgeService(method = 'GET', payload = null, pathSuffix = '') {
@@ -955,15 +974,15 @@ async function saveKnowledgeServiceState() {
 async function runKnowledgeService() {
   if (!knowledgeServiceRun) return;
   if (!adminSession.is_super) return;
-  knowledgeServiceStatus.textContent = 'Запускаем обработку…';
+  knowledgeServiceStatus.textContent = t('knowledgeProcessingStarting');
   setKnowledgeServiceControlsDisabled(true);
   try {
     const payload = { reason: 'manual_button' };
     const result = await callKnowledgeService('POST', payload, '/run');
     if (result?.error) {
-      knowledgeServiceStatus.textContent = 'Обработка завершена с ошибкой';
+      knowledgeServiceStatus.textContent = t('knowledgeProcessingFailed');
     } else {
-      knowledgeServiceStatus.textContent = 'Обработка завершена';
+      knowledgeServiceStatus.textContent = t('knowledgeProcessingDone');
     }
     await fetchKnowledgeServiceStatus(true);
   } catch (error) {
@@ -971,7 +990,7 @@ async function runKnowledgeService() {
     if (error?.message === 'not_found') {
       knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
     } else {
-      knowledgeServiceStatus.textContent = 'Ошибка запуска обработки';
+      knowledgeServiceStatus.textContent = t('knowledgeProcessingStartError');
     }
   } finally {
     setKnowledgeServiceControlsDisabled(false);
@@ -1128,7 +1147,7 @@ function initLayoutReordering() {
 
 function setSummaryProject(name, meta) {
   const label = name || '—';
-  const metaText = meta || 'Нет выбранного проекта';
+  const metaText = meta || t('overviewProjectMeta');
   const signature = `${label}::${metaText}`;
   if (summaryState.project === signature) return;
   summaryState.project = signature;
@@ -1172,7 +1191,7 @@ function setSummaryBuild(main, meta) {
 }
 
 function setSummaryPrompt(text, docs, meta) {
-  const display = text || 'История запросов появится здесь';
+  const display = text || t('overviewLLMEmpty');
   const docsList = Array.isArray(docs) ? docs.join('|') : '';
   const signature = `${display}::${docsList}::${meta || ''}`;
   if (summaryState.prompt === signature) return;

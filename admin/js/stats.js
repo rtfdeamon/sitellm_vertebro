@@ -231,8 +231,8 @@
       statsGraphState.currentPoints = [];
       drawStatsGraph([]);
       if (statsSummary) {
-        statsSummary.dataset.lastText = 'Нет данных';
-        statsSummary.textContent = 'Нет данных';
+        statsSummary.dataset.lastText = tl('Нет данных');
+        statsSummary.textContent = tl('Нет данных');
       }
       if (statsSubtitle) {
         statsSubtitle.textContent = `Последние ${STATS_DAYS} дней`;
@@ -252,7 +252,7 @@
     const total = stats.reduce((sum, item) => sum + (item.count || 0), 0);
     const average = total && stats.length ? (total / stats.length).toFixed(1) : null;
     if (statsSummary) {
-      const text = total ? `Всего ${total} запросов${average ? ` · в день ${average}` : ''}` : 'Нет данных';
+      const text = total ? `Всего ${total} запросов${average ? ` · в день ${average}` : ''}` : tl('Нет данных');
       statsSummary.dataset.lastText = text;
       statsSummary.textContent = text;
     }
@@ -268,8 +268,8 @@
   const loadRequestStats = async () => {
     if (!statsCanvas) return;
     const previousSummary = statsSummary ? (statsSummary.dataset.lastText || statsSummary.textContent) : '';
-    if (statsSummary) statsSummary.textContent = 'Загружаем…';
-    if (statsEmpty) statsEmpty.textContent = 'Загрузка…';
+    if (statsSummary) statsSummary.textContent = tl('Загружаем…');
+    if (statsEmpty) statsEmpty.textContent = tl('Загрузка…');
     const params = new URLSearchParams();
     if (global.currentProject) params.set('project', global.currentProject);
     const end = new Date();
@@ -281,20 +281,20 @@
       const resp = await fetch(`/api/v1/admin/stats/requests?${params.toString()}`);
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      if (statsEmpty) statsEmpty.textContent = 'Нет данных';
+      if (statsEmpty) statsEmpty.textContent = tl('Нет данных');
       renderStatsChart(data.stats || [], { animate: true });
     } catch (error) {
       console.error(error);
       if (statsEmpty) {
-        statsEmpty.textContent = 'Ошибка загрузки';
+        statsEmpty.textContent = tl('Ошибка загрузки');
         statsEmpty.style.display = 'grid';
       }
       drawStatsGraph([]);
       if (statsSummary) {
-        statsSummary.textContent = 'Ошибка загрузки';
+        statsSummary.textContent = tl('Ошибка загрузки');
       }
       setTimeout(() => {
-        if (statsSummary && statsSummary.textContent === 'Ошибка загрузки') {
+        if (statsSummary && statsSummary.textContent === tl('Ошибка загрузки')) {
           statsSummary.textContent = previousSummary || '—';
         }
       }, 3000);
@@ -312,7 +312,7 @@
     params.set('end', formatDateISO(end));
     const previousSummary = statsSummary ? (statsSummary.dataset.lastText || statsSummary.textContent) : '';
     try {
-      if (statsSummary) statsSummary.textContent = 'Готовим CSV…';
+      if (statsSummary) statsSummary.textContent = tl('Готовим CSV…');
       const resp = await fetch(`/api/v1/admin/stats/requests/export?${params.toString()}`);
       if (!resp.ok) {
         const message = await resp.text();
@@ -330,9 +330,9 @@
         URL.revokeObjectURL(href);
       });
       if (statsSummary) {
-        statsSummary.textContent = 'CSV выгружен';
+        statsSummary.textContent = tl('CSV выгружен');
         setTimeout(() => {
-          if (statsSummary.textContent === 'CSV выгружен') {
+          if (statsSummary.textContent === tl('CSV выгружен')) {
             statsSummary.textContent = previousSummary || '—';
           }
         }, 2600);
@@ -342,7 +342,7 @@
       if (statsSummary) {
         statsSummary.textContent = `Ошибка экспорта: ${error.message || error}`;
         setTimeout(() => {
-          if (statsSummary.textContent?.startsWith('Ошибка экспорта')) {
+          if (statsSummary.textContent?.startsWith(tl('Ошибка экспорта'))) {
             statsSummary.textContent = previousSummary || '—';
           }
         }, 3600);

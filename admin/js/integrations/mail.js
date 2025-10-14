@@ -44,15 +44,15 @@
     const hasImap = Boolean(imapHostInput?.value.trim());
     const hasSmtp = Boolean(smtpHostInput?.value.trim());
     if (!hasImap && !hasSmtp) {
-      hintLabel.textContent = 'Укажите параметры IMAP/SMTP, чтобы ассистент мог работать с почтой.';
+      hintLabel.textContent = tl('Укажите параметры IMAP/SMTP, чтобы ассистент мог работать с почтой.');
       return;
     }
     if (enabled) {
-      hintLabel.textContent = 'Интеграция активна. Ассистент может отправлять и читать почту.';
+      hintLabel.textContent = tl('Интеграция активна. Ассистент может отправлять и читать почту.');
       return;
     }
     hintLabel.textContent =
-      'Параметры сохранены, но интеграция выключена. Включите переключатель, чтобы активировать почтовый коннектор.';
+      tl('Параметры сохранены, но интеграция выключена. Включите переключатель, чтобы активировать почтовый коннектор.');
   }
 
   function resetInputs() {
@@ -65,7 +65,7 @@
     smtpTlsInput.checked = true;
     usernameInput.value = '';
     passwordInput.value = '';
-    passwordInput.placeholder = 'Пароль';
+    passwordInput.placeholder = tl('Пароль');
     fromInput.value = '';
     signatureInput.value = '';
   }
@@ -85,7 +85,7 @@
     smtpTlsInput.checked = project.mail_smtp_tls !== false;
     usernameInput.value = project.mail_username || '';
     passwordInput.value = '';
-    passwordInput.placeholder = project.mail_password_set ? 'Пароль сохранён' : 'Пароль';
+    passwordInput.placeholder = project.mail_password_set ? tl('Пароль сохранён') : tl('Пароль');
     fromInput.value = project.mail_from || '';
     signatureInput.value = project.mail_signature || '';
     refreshHint();

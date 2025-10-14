@@ -21,13 +21,13 @@
   function refreshHint() {
     const hasWebhook = Boolean(webhookInput.value.trim());
     if (!hasWebhook) {
-      hintLabel.textContent = 'Webhook используется для запросов модели и хранится на сервере.';
+      hintLabel.textContent = tl('Webhook используется для запросов модели и хранится на сервере.');
       return;
     }
     if (enabledInput.checked) {
-      hintLabel.textContent = 'Интеграция активна. Модель сможет запрашивать Bitrix24.';
+      hintLabel.textContent = tl('Интеграция активна. Модель сможет запрашивать Bitrix24.');
     } else {
-      hintLabel.textContent = 'Webhook сохранён, но интеграция выключена. Включите переключатель, чтобы использовать Bitrix.';
+      hintLabel.textContent = tl('Webhook сохранён, но интеграция выключена. Включите переключатель, чтобы использовать Bitrix.');
     }
   }
 

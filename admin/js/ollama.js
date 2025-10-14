@@ -19,6 +19,22 @@
   const hasCatalogUi = Boolean(catalogRoot && availabilityEl && installedListEl && popularListEl && jobsListEl);
   const hasServersUi = Boolean(serversPanelEl && serversListEl && serversStatusEl);
 
+  const translate = (key, fallback = '', params = null) => {
+    if (typeof global.t === 'function') {
+      try {
+        return params ? global.t(key, params) : global.t(key);
+      } catch (error) {
+        console.warn('ollama_translate_failed', error);
+      }
+    }
+    if (fallback && params && typeof fallback === 'string') {
+      return fallback.replace(/\{(\w+)\}/g, (_, token) =>
+        Object.prototype.hasOwnProperty.call(params, token) ? String(params[token]) : '',
+      );
+    }
+    return fallback || key;
+  };
+
   if (!hasCatalogUi && !hasServersUi) {
     const noopAsync = async () => {};
     global.refreshOllamaCatalog = noopAsync;
@@ -36,10 +52,10 @@
     error: 'error',
   };
   const JOB_TITLES = {
-    pending: 'Ожидает запуска',
-    running: 'Установка выполняется',
-    success: 'Установка завершена',
-    error: 'Ошибка установки',
+    pending: translate('ollamaJobPending', 'Pending'),
+    running: translate('ollamaJobRunning', 'Installing…'),
+    success: translate('ollamaJobSuccess', 'Installed'),
+    error: translate('ollamaJobError', 'Installation failed'),
   };
 
   let catalogLoading = false;
@@ -145,7 +161,7 @@
     const items = Array.isArray(models) ? models : [];
     if (!items.length) {
       const empty = doc.createElement('li');
-      empty.textContent = 'Нет установленных моделей.';
+      empty.textContent = translate('ollamaInstalledEmpty', 'No models installed.');
       installedListEl.appendChild(empty);
       return;
     }
@@ -165,9 +181,9 @@
       const bits = [];
       if (model.size_human) bits.push(model.size_human);
       const modified = formatTimestamp(model.modified_at);
-      if (modified) bits.push(`обновлена ${modified}`);
+      if (modified) bits.push(translate('ollamaServerUpdatedAt', 'updated {value}', { value: modified }));
       if (model.digest) bits.push(model.digest.substring(0, 12));
-      meta.textContent = bits.length ? bits.join(' · ') : 'нет сведений';
+      meta.textContent = bits.length ? bits.join(' · ') : translate('ollamaServerHealthyUnknown', 'unknown');
       meta.className = 'muted';
       meta.style.fontSize = '12px';
       info.appendChild(meta);
@@ -183,7 +199,7 @@
     const items = Array.isArray(models) ? models : [];
     if (!items.length) {
       const empty = doc.createElement('li');
-      empty.textContent = 'Нет рекомендованных моделей.';
+      empty.textContent = translate('ollamaPopularEmpty', 'No recommended models.');
       popularListEl.appendChild(empty);
       return;
     }
@@ -198,13 +214,15 @@
         const tag = doc.createElement('span');
         tag.className = 'muted';
         tag.style.fontSize = '12px';
-        tag.textContent = 'установлено';
+        tag.textContent = translate('ollamaServerToggleOn', 'Enabled');
         li.appendChild(tag);
       } else {
         const button = doc.createElement('button');
         button.type = 'button';
         button.className = 'ollama-install-btn';
-        button.textContent = installingSet.has(item.name) ? 'Устанавливаем…' : 'Установить';
+        button.textContent = installingSet.has(item.name)
+          ? translate('ollamaInstalling', 'Installing…')
+          : translate('ollamaInstallButton', 'Install');
         button.disabled = installingSet.has(item.name);
         button.dataset.model = item.name;
         li.appendChild(button);
@@ -221,7 +239,7 @@
     if (!list.length) {
       const empty = doc.createElement('div');
       empty.className = 'muted';
-      empty.textContent = 'Нет активных установок.';
+      empty.textContent = translate('ollamaJobsEmpty', 'No active installations.');
       jobsListEl.appendChild(empty);
       return;
     }
@@ -270,11 +288,15 @@
     toggleCatalogVisibility(available || installed.length || popular.length || Object.keys(jobs).length);
 
     if (available) {
-      setAvailabilityMessage(`Команда Ollama доступна. Установлено моделей: ${installed.length}.`);
+      setAvailabilityMessage(
+        translate('ollamaCatalogSummary', 'Ollama command available. Models installed: {count}.', {
+          count: installed.length,
+        }),
+      );
     } else if (installed.length) {
-      setAvailabilityMessage('Каталог недоступен: команда ollama не найдена, но модели обнаружены.');
+      setAvailabilityMessage(translate('ollamaCatalogUnavailable', 'Catalog unavailable: ollama command not found, but models detected.'));
     } else {
-      setAvailabilityMessage('Команда ollama не найдена на сервере.');
+      setAvailabilityMessage(translate('ollamaCommandMissing', 'Ollama command not found on the server.'));
     }
 
     renderInstalled(installed);
@@ -297,7 +319,7 @@
     if (!hasCatalogUi) return;
     if (catalogLoading) return;
     catalogLoading = true;
-    setAvailabilityMessage('Обновляем каталог…');
+    setAvailabilityMessage(translate('ollamaCatalogRefreshing', 'Refreshing catalog…'));
     clearCatalogPoll();
     try {
       const response = await fetch('/api/v1/admin/ollama/catalog');
@@ -308,7 +330,11 @@
       renderCatalogPayload(data);
     } catch (error) {
       console.error('ollama_catalog_load_failed', error);
-      setAvailabilityMessage(`Не удалось загрузить каталог: ${error.message || error}`);
+      setAvailabilityMessage(
+        translate('ollamaCatalogLoadError', 'Failed to load catalog: {error}', {
+          error: error.message || error,
+        }),
+      );
       toggleCatalogVisibility(false);
     } finally {
       catalogLoading = false;
@@ -319,7 +345,7 @@
     if (!model) return;
     if (control) {
       control.disabled = true;
-      control.textContent = 'Устанавливаем…';
+      control.textContent = translate('ollamaInstalling', 'Installing…');
     }
     try {
       const response = await fetch('/api/v1/admin/ollama/install', {
@@ -330,14 +356,20 @@
       if (!response.ok) {
         throw new Error(await parseError(response));
       }
-      setAvailabilityMessage(`Установка модели ${model} запущена.`);
+      setAvailabilityMessage(
+        translate('ollamaServerInstallStarted', 'Model {model} installation started.', { model })
+      );
       await refreshOllamaCatalog(true);
     } catch (error) {
       console.error('ollama_install_failed', error);
-      setAvailabilityMessage(`Ошибка установки ${model}: ${error.message || error}`);
+      setAvailabilityMessage(
+        translate('ollamaActionInstallError', 'Install error: {error}', {
+          error: `${model}: ${error.message || error}`,
+        }),
+      );
       if (control) {
         control.disabled = false;
-        control.textContent = 'Установить';
+        control.textContent = translate('ollamaInstallButton', 'Install');
       }
     }
   }
@@ -348,7 +380,7 @@
     const servers = Array.isArray(list) ? list : [];
     if (!servers.length) {
       const empty = doc.createElement('li');
-      empty.textContent = 'Не настроено ни одного сервера.';
+      empty.textContent = translate('ollamaServersNone', 'No servers configured.');
       serversListEl.appendChild(empty);
     } else {
       servers.forEach((server) => {
@@ -371,11 +403,25 @@
 
         const meta = doc.createElement('div');
         meta.className = 'ollama-server-meta';
+        const statusValue = server.enabled
+          ? (server.healthy ? translate('ollamaServerHealthy', 'healthy') : translate('ollamaServerError', 'error'))
+          : translate('ollamaServerDisabled', 'disabled');
         const metaBits = [
-          ['Статус', server.enabled ? (server.healthy ? 'активен' : 'ошибка') : 'выключен'],
-          ['Латентность', server.avg_latency_ms != null ? `${server.avg_latency_ms} мс` : '—'],
-          ['Запросов/час', server.requests_last_hour != null ? String(server.requests_last_hour) : '—'],
-          ['В работе', server.inflight != null ? String(server.inflight) : '—'],
+          [translate('ollamaServerStatusTitle', 'Status'), statusValue],
+          [
+            translate('ollamaLatencyLabel', 'Latency'),
+            server.avg_latency_ms != null
+              ? translate('ollamaLatencyValue', '{value} ms', { value: server.avg_latency_ms })
+              : '—',
+          ],
+          [
+            translate('ollamaRequestsPerHour', 'Requests/hour'),
+            server.requests_last_hour != null ? String(server.requests_last_hour) : '—',
+          ],
+          [
+            translate('ollamaInFlight', 'In flight'),
+            server.inflight != null ? String(server.inflight) : '—',
+          ],
         ];
         metaBits.forEach(([label, value]) => {
           const span = doc.createElement('span');
@@ -384,7 +430,9 @@
         });
         if (server.last_error) {
           const err = doc.createElement('span');
-          err.textContent = `Ошибка: ${server.last_error}`;
+          err.textContent = translate('ollamaActionGeneralError', 'Error: {error}', {
+            error: server.last_error,
+          });
           meta.appendChild(err);
         }
         row.appendChild(meta);
@@ -399,7 +447,9 @@
         toggle.disabled = Boolean(server.ephemeral);
         toggleWrap.appendChild(toggle);
         const toggleText = doc.createElement('span');
-        toggleText.textContent = 'Включён';
+        toggleText.textContent = server.enabled
+          ? translate('ollamaServerToggleOn', 'Enabled')
+          : translate('ollamaServerToggleOff', 'Disabled');
         toggleWrap.appendChild(toggleText);
         row.appendChild(toggleWrap);
 
@@ -407,7 +457,7 @@
         actions.className = 'ollama-server-actions';
         const removeBtn = doc.createElement('button');
         removeBtn.type = 'button';
-        removeBtn.textContent = 'Удалить';
+        removeBtn.textContent = translate('ollamaButtonDelete', 'Delete');
         removeBtn.dataset.name = server.name || '';
         removeBtn.disabled = Boolean(server.ephemeral);
         actions.appendChild(removeBtn);
@@ -422,15 +472,19 @@
     const active = servers.filter((server) => server.enabled && server.healthy).length;
     const enabled = servers.filter((server) => server.enabled).length;
     serversStatusEl.textContent = total
-      ? `Всего: ${total}. Включены: ${enabled}. Доступны: ${active}.`
-      : 'Нет зарегистрированных серверов Ollama.';
+      ? translate('ollamaServersSummary', 'Total: {total}. Enabled: {enabled}. Available: {active}.', {
+          total,
+          enabled,
+          active,
+        })
+      : translate('ollamaServersEmpty', 'No Ollama servers registered.');
   }
 
   async function refreshOllamaServers() {
     if (!hasServersUi) return;
     if (serversLoading) return;
     serversLoading = true;
-    serversStatusEl.textContent = 'Обновляем список…';
+    serversStatusEl.textContent = translate('ollamaRefreshUpdating', 'Refreshing list…');
     try {
       const response = await fetch('/api/v1/admin/ollama/servers');
       if (!response.ok) {
@@ -443,7 +497,9 @@
       }
     } catch (error) {
       console.error('ollama_servers_load_failed', error);
-      serversStatusEl.textContent = `Ошибка загрузки: ${error.message || error}`;
+      serversStatusEl.textContent = translate('ollamaRefreshError', 'Refresh error: {error}', {
+        error: error.message || error,
+      });
     } finally {
       serversLoading = false;
     }
@@ -456,10 +512,10 @@
       enabled: Boolean(enabled),
     };
     if (!payload.name || !payload.base_url) {
-      serversStatusEl.textContent = 'Укажите имя и адрес сервера.';
+      serversStatusEl.textContent = translate('ollamaServerFormInvalid', 'Specify server name and address.');
       return;
     }
-    serversStatusEl.textContent = 'Сохраняем сервер…';
+    serversStatusEl.textContent = translate('ollamaServerSaving', 'Saving server…');
     try {
       const response = await fetch('/api/v1/admin/ollama/servers', {
         method: 'POST',
@@ -469,18 +525,20 @@
       if (!response.ok) {
         throw new Error(await parseError(response));
       }
-      serversStatusEl.textContent = 'Сервер сохранён.';
+      serversStatusEl.textContent = translate('ollamaServerSaved', 'Server saved.');
       await refreshOllamaServers();
     } catch (error) {
       console.error('ollama_server_save_failed', error);
-      serversStatusEl.textContent = `Ошибка сохранения: ${error.message || error}`;
+      serversStatusEl.textContent = translate('ollamaActionSaveError', 'Save error: {error}', {
+        error: error.message || error,
+      });
     }
   }
 
   async function deleteServer(name) {
     const trimmed = (name || '').trim();
     if (!trimmed) return;
-    serversStatusEl.textContent = 'Удаляем сервер…';
+    serversStatusEl.textContent = translate('ollamaServerDeleting', 'Deleting server…');
     try {
       const response = await fetch(`/api/v1/admin/ollama/servers/${encodeURIComponent(trimmed)}`, {
         method: 'DELETE',
@@ -488,17 +546,21 @@
       if (!response.ok) {
         throw new Error(await parseError(response));
       }
-      serversStatusEl.textContent = 'Сервер удалён.';
+      serversStatusEl.textContent = translate('ollamaServerDeleted', 'Server deleted.');
       await refreshOllamaServers();
     } catch (error) {
       console.error('ollama_server_delete_failed', error);
-      serversStatusEl.textContent = `Ошибка удаления: ${error.message || error}`;
+      serversStatusEl.textContent = translate('ollamaActionDeleteError', 'Delete error: {error}', {
+        error: error.message || error,
+      });
     }
   }
 
   async function toggleServerEnabled(name, baseUrl, enabled) {
     if (!name || !baseUrl) return;
-    serversStatusEl.textContent = enabled ? 'Включаем сервер…' : 'Выключаем сервер…';
+    serversStatusEl.textContent = enabled
+      ? translate('ollamaServerUpdatingState', 'Enabling server…')
+      : translate('ollamaServerDisabling', 'Disabling server…');
     try {
       const response = await fetch('/api/v1/admin/ollama/servers', {
         method: 'POST',
@@ -512,11 +574,13 @@
       if (!response.ok) {
         throw new Error(await parseError(response));
       }
-      serversStatusEl.textContent = 'Состояние сервера обновлено.';
+      serversStatusEl.textContent = translate('ollamaServerUpdated', 'Server state updated.');
       await refreshOllamaServers();
     } catch (error) {
       console.error('ollama_server_toggle_failed', error);
-      serversStatusEl.textContent = `Ошибка обновления: ${error.message || error}`;
+      serversStatusEl.textContent = translate('ollamaActionUpdateError', 'Update error: {error}', {
+        error: error.message || error,
+      });
       await refreshOllamaServers();
     }
   }
