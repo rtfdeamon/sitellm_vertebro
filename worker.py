@@ -318,6 +318,7 @@ def prune_knowledge_collection(db, collection) -> dict[str, int]:
                 "content_hash": 1,
                 "description": 1,
                 "project": 1,
+                "autoDescriptionPending": 1,
             },
         )
         for doc in cursor:
@@ -342,7 +343,7 @@ def prune_knowledge_collection(db, collection) -> dict[str, int]:
             else:
                 skip_low_value = True
 
-            if skip_low_value:
+            if skip_low_value and not bool(doc.get("autoDescriptionPending")):
                 _delete_document(collection, gridfs, file_id)
                 low_value += 1
                 removed += 1

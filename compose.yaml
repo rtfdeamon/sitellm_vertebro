@@ -60,6 +60,8 @@ services:
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
     command: ["celery", "-A", "worker", "worker", "--loglevel=INFO"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -82,6 +84,8 @@ services:
     restart: unless-stopped
     env_file: .env
     command: ["celery", "-A", "worker", "beat", "--loglevel=INFO"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
