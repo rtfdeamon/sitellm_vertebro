@@ -3267,18 +3267,6 @@
           console.warn('[SiteLLM voice-avatar] reading payload parse error', err);
         }
       });
-      currentSource.addEventListener('reading', (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          const items = Array.isArray(data?.items) ? data.items : [];
-          const target = items.find((item) => Array.isArray(item?.pages) && item.pages.length) || items[0];
-          if (target) {
-            applyReadingData(target);
-          }
-        } catch (err) {
-          console.warn('[SiteLLM voice-avatar] reading payload parse error', err);
-        }
-      });
       currentSource.addEventListener('sources', (event) => {
         try {
           const data = JSON.parse(event.data);
