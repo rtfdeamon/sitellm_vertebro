@@ -10,14 +10,19 @@
     return `${numeric} B`;
   });
 
-  const translate = (key, fallback = '') => {
+  const translate = (key, fallback = '', params = null) => {
     try {
       if (typeof global.t === 'function') {
-        const result = global.t(key);
+        const result = params ? global.t(key, params) : global.t(key);
         if (result && result !== key) return result;
       }
     } catch (error) {
       console.warn('voice_translate_failed', error);
+    }
+    if (fallback && params && typeof fallback === 'string') {
+      return fallback.replace(/\{(\w+)\}/g, (_, token) =>
+        Object.prototype.hasOwnProperty.call(params, token) ? String(params[token]) : '',
+      );
     }
     return fallback || key;
   };
@@ -78,8 +83,8 @@
 
   const translateRecordLabel = (recording) => (
     recording
-      ? translate('voiceRecordStopButton', 'Остановить запись')
-      : translate('voiceRecordButton', 'Записать дорожку')
+      ? translate('voiceStopRecording', 'Stop recording')
+      : translate('voiceRecordButton', 'Record sample')
   );
 
   const refreshVoiceTrainingState = () => {
@@ -100,15 +105,15 @@
     if (elements.trainButton) {
       elements.trainButton.disabled = !currentProject || activeJob || !enoughSamples;
     }
-    if (elements.trainStatus) {
-      if (activeJob) {
-        elements.trainStatus.textContent = translate('voiceTrainStatusRunning', 'Обучение уже выполняется');
-      } else if (!enoughSamples && state.samples.length > 0) {
-        elements.trainStatus.textContent = translate('voiceTrainStatusMoreSamples', 'Добавьте ещё дорожки');
-      } else if (['Обучение уже выполняется', 'Добавьте ещё дорожки'].includes(elements.trainStatus.textContent)) {
-        elements.trainStatus.textContent = '—';
-      }
+  if (elements.trainStatus) {
+    if (activeJob) {
+      elements.trainStatus.textContent = translate('voiceTrainingAlreadyRunning', 'Training is already running');
+    } else if (!enoughSamples && state.samples.length > 0) {
+      elements.trainStatus.textContent = translate('voiceAddMoreSamples', 'Add more samples');
+    } else if ([translate('voiceTrainingAlreadyRunning', 'Training is already running'), translate('voiceAddMoreSamples', 'Add more samples')].includes(elements.trainStatus.textContent)) {
+      elements.trainStatus.textContent = '—';
     }
+  }
   };
 
   const cleanupRecorderStream = () => {
@@ -142,7 +147,7 @@
     if (elements.uploadStatus) elements.uploadStatus.textContent = '—';
     if (elements.trainStatus) elements.trainStatus.textContent = '—';
     if (elements.summary) {
-      elements.summary.textContent = message || translate('voiceTrainingSummary', 'Загрузите как минимум 3 дорожки.');
+      elements.summary.textContent = message || translate('voiceMinSamplesRequired', 'Upload at least 3 samples.');
     }
     stopVoiceRecording(true);
     cleanupRecorderStream();
@@ -153,7 +158,7 @@
     if (elements.samplesContainer) {
       elements.samplesContainer.innerHTML = '';
       if (elements.samplesEmpty) {
-        elements.samplesEmpty.textContent = translate('voiceSamplesEmpty', 'Дорожки не загружены.');
+        elements.samplesEmpty.textContent = translate('voiceSamplesEmpty', 'No samples uploaded.');
         elements.samplesContainer.appendChild(elements.samplesEmpty);
       }
     }
@@ -166,12 +171,12 @@
   const uploadRecordedBlob = async (blob, filename) => {
     const project = (global.currentProject || '').trim();
     if (!project) {
-      setRecordStatus('Выберите проект, чтобы добавить запись.');
+      setRecordStatus(translate('voiceSelectProjectToAddSample', 'Select a project to add a recording.'));
       return;
     }
     state.recorder.uploading = true;
     refreshVoiceTrainingState();
-    setRecordStatus('Загрузка записи…');
+    setRecordStatus(translate('voiceUploadRecording', 'Uploading recording…'));
     try {
       const formData = new FormData();
       formData.append('project', project);
@@ -183,13 +188,13 @@
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
       renderVoiceSamples(data.samples || []);
-      setRecordStatus('Запись загружена');
+      setRecordStatus(translate('voiceRecordingUploaded', 'Recording uploaded'));
       setTimeout(() => {
         if (!state.recorder.active) setRecordStatus('—');
       }, 4000);
     } catch (error) {
       console.error('voice_record_upload_failed', error);
-      setRecordStatus('Не удалось загрузить запись');
+      setRecordStatus(translate('voiceRecordingLoadError', 'Failed to load recording.'));
     } finally {
       state.recorder.uploading = false;
       refreshVoiceTrainingState();
@@ -228,14 +233,14 @@
     if (!MEDIA_RECORDER_SUPPORTED) return;
     const project = (global.currentProject || '').trim();
     if (!project) {
-      setRecordStatus('Выберите проект для записи.');
+      setRecordStatus(translate('voiceSelectProjectForRecording', 'Select a project to record.'));
       return;
     }
     if (state.recorder.uploading) {
-      setRecordStatus('Подождите окончания загрузки.');
+      setRecordStatus(translate('voiceUploadPending', 'Please wait until the upload finishes.'));
       return;
     }
-    setRecordStatus('Подготовка микрофона…');
+    setRecordStatus(translate('voiceMicPreparing', 'Preparing microphone…'));
     try {
       if (!state.recorder.stream) {
         state.recorder.stream = await global.navigator.mediaDevices.getUserMedia({
@@ -249,7 +254,7 @@
       }
     } catch (error) {
       console.error('voice_record_permission_failed', error);
-      setRecordStatus('Доступ к микрофону запрещён.');
+      setRecordStatus(translate('voiceMicDenied', 'Microphone access denied.'));
       cleanupRecorderStream();
       return;
     }
@@ -274,7 +279,7 @@
       state.recorder.instance = new global.MediaRecorder(state.recorder.stream, options);
     } catch (error) {
       console.error('voice_record_init_failed', error);
-      setRecordStatus('Не удалось начать запись.');
+      setRecordStatus(translate('voiceRecordingStartError', 'Failed to start recording.'));
       cleanupRecorderStream();
       return;
     }
@@ -289,7 +294,7 @@
     state.recorder.instance.addEventListener('stop', handleRecorderStop);
     state.recorder.instance.addEventListener('error', (event) => {
       console.error('voice_record_error', event.error);
-      setRecordStatus('Ошибка записи.');
+      setRecordStatus(translate('voiceRecordingError', 'Recording error.'));
       cleanupRecorderStream();
     });
     state.recorder.instance.start(1000);
@@ -300,7 +305,11 @@
     }
     state.recorder.timer = global.setInterval(() => {
       const elapsed = Date.now() - state.recorder.startedAt;
-      setRecordStatus(`Запись ${Math.floor(elapsed / 1000)} с`);
+      setRecordStatus(
+        translate('voiceRecordingSeconds', 'Recording {seconds} s', {
+          seconds: Math.floor(elapsed / 1000),
+        }),
+      );
       if (elapsed >= MAX_RECORDING_MS) {
         stopVoiceRecording();
       }
@@ -314,14 +323,17 @@
     elements.samplesContainer.innerHTML = '';
     const total = state.samples.length;
     const remaining = Math.max(0, VOICE_MIN_SAMPLE_COUNT - total);
-    if (elements.summary) {
-      elements.summary.textContent = remaining > 0
-        ? `Загрузите как минимум ${VOICE_MIN_SAMPLE_COUNT} дорожки. Осталось добавить ${remaining}.`
-        : 'Собрано достаточно дорожек. Можно запускать обучение.';
-    }
+  if (elements.summary) {
+    elements.summary.textContent = remaining > 0
+      ? translate('voiceMinSamplesRemaining', 'Upload at least {min} samples. Remaining: {remaining}.', {
+          min: VOICE_MIN_SAMPLE_COUNT,
+          remaining,
+        })
+      : translate('voiceSamplesReady', 'Enough samples collected. You can start training.');
+  }
     if (!total) {
       if (elements.samplesEmpty) {
-        elements.samplesEmpty.textContent = translate('voiceSamplesEmpty', 'Дорожки не загружены.');
+        elements.samplesEmpty.textContent = translate('voiceSamplesEmpty', 'No samples uploaded.');
         elements.samplesContainer.appendChild(elements.samplesEmpty);
       }
       refreshVoiceTrainingState();
@@ -339,7 +351,7 @@
       label.innerHTML = `<strong>${sample.filename}</strong><span class="muted">${formatBytesOptionalFn(sample.sizeBytes || 0)}</span>`;
       const removeBtn = doc.createElement('button');
       removeBtn.type = 'button';
-      removeBtn.textContent = 'Удалить';
+      removeBtn.textContent = translate('voiceDeleteSample', 'Delete');
       removeBtn.addEventListener('click', () => deleteVoiceSample(sample.id));
       row.appendChild(label);
       row.appendChild(removeBtn);
@@ -356,7 +368,7 @@
     if (!state.jobs.length) {
       const placeholder = doc.createElement('div');
       placeholder.className = 'muted';
-      placeholder.textContent = 'История запусков появится после обучения.';
+      placeholder.textContent = translate('voiceHistoryEmpty', 'Training history will appear after the first run.');
       elements.jobsContainer.appendChild(placeholder);
       refreshVoiceTrainingState();
       return;
@@ -397,7 +409,7 @@
   const refreshVoiceTraining = async (projectName) => {
     clearJobsPoll();
     if (!projectName) {
-      resetVoiceTrainingUi('Выберите проект, чтобы загрузить дорожки.');
+      resetVoiceTrainingUi(translate('voiceSelectProjectToUpload', 'Select a project to upload samples.'));
       return;
     }
     if (elements.uploadBtn) elements.uploadBtn.disabled = false;
@@ -419,20 +431,20 @@
       }
     } catch (error) {
       console.error('voice_training_refresh_failed', error);
-      resetVoiceTrainingUi('Не удалось загрузить данные по голосовому обучению.');
+      resetVoiceTrainingUi(translate('voiceTrainingLoadError', 'Failed to load training data.'));
     }
   };
 
   const uploadVoiceSamples = async (projectName) => {
     if (!projectName) return;
     if (!elements.fileInput || !elements.fileInput.files?.length) {
-      if (elements.uploadStatus) elements.uploadStatus.textContent = 'Выберите файлы для загрузки.';
+      if (elements.uploadStatus) elements.uploadStatus.textContent = translate('voiceSelectFilesPrompt', 'Select files to upload.');
       return;
     }
     const formData = new FormData();
     formData.append('project', projectName);
     Array.from(elements.fileInput.files).forEach((file) => formData.append('files', file));
-    if (elements.uploadStatus) elements.uploadStatus.textContent = 'Загрузка…';
+    if (elements.uploadStatus) elements.uploadStatus.textContent = translate('voiceLoading', 'Loading…');
     try {
       const response = await fetch('/api/v1/voice/samples', {
         method: 'POST',
@@ -445,10 +457,10 @@
       const data = await response.json();
       renderVoiceSamples(data.samples || []);
       elements.fileInput.value = '';
-      if (elements.uploadStatus) elements.uploadStatus.textContent = 'Готово';
+      if (elements.uploadStatus) elements.uploadStatus.textContent = translate('voiceDone', 'Done');
     } catch (error) {
       console.error('voice_upload_failed', error);
-      if (elements.uploadStatus) elements.uploadStatus.textContent = 'Ошибка при загрузке дорожек';
+      if (elements.uploadStatus) elements.uploadStatus.textContent = translate('voiceUploadError', 'Failed to upload samples');
     }
   };
 
@@ -471,7 +483,7 @@
     if (!projectName) return;
     state.jobPending = true;
     refreshVoiceTrainingState();
-    if (elements.trainStatus) elements.trainStatus.textContent = 'Подготовка…';
+    if (elements.trainStatus) elements.trainStatus.textContent = translate('voicePreparing', 'Preparing…');
     try {
       const formData = new FormData();
       formData.append('project', projectName);
@@ -492,12 +504,12 @@
       if (!response.ok) {
         const detail = (data && typeof data === 'object' && data.detail) ? data.detail : raw;
         if (response.status === 409) {
-          if (elements.trainStatus) elements.trainStatus.textContent = 'Обучение уже выполняется';
+          if (elements.trainStatus) elements.trainStatus.textContent = translate('voiceTrainingAlreadyRunning', 'Training is already running');
           await refreshVoiceTraining(projectName);
           return;
         }
         if (response.status === 400 && (detail || '').startsWith('not_enough_samples')) {
-          if (elements.trainStatus) elements.trainStatus.textContent = 'Добавьте ещё дорожки';
+          if (elements.trainStatus) elements.trainStatus.textContent = translate('voiceAddMoreSamples', 'Add more samples');
           await refreshVoiceTraining(projectName);
           return;
         }
@@ -506,17 +518,17 @@
       const detail = (data && typeof data === 'object' && data.detail) ? data.detail : '';
       if (elements.trainStatus) {
         if (detail === 'job_in_progress') {
-          elements.trainStatus.textContent = 'Обучение уже выполняется';
+          elements.trainStatus.textContent = translate('voiceTrainingAlreadyRunning', 'Training is already running');
         } else if (detail === 'job_resumed') {
-          elements.trainStatus.textContent = 'Перезапускаем обучение';
+          elements.trainStatus.textContent = translate('voiceTrainingRestart', 'Restarting training');
         } else {
-          elements.trainStatus.textContent = 'Обучение запущено';
+          elements.trainStatus.textContent = translate('voiceTrainingStarted', 'Training started');
         }
       }
       await refreshVoiceTraining(projectName);
     } catch (error) {
       console.error('voice_train_failed', error);
-      if (elements.trainStatus) elements.trainStatus.textContent = 'Не удалось запустить обучение';
+      if (elements.trainStatus) elements.trainStatus.textContent = translate('voiceTrainingStartError', 'Failed to start training.');
     } finally {
       state.jobPending = false;
       refreshVoiceTrainingState();
@@ -535,7 +547,7 @@
       elements.uploadBtn.addEventListener('click', () => {
         const project = (global.currentProject || '').trim();
         if (!project) {
-          if (elements.uploadStatus) elements.uploadStatus.textContent = 'Выберите проект, чтобы загрузить дорожки.';
+          if (elements.uploadStatus) elements.uploadStatus.textContent = translate('voiceSelectProjectToUpload', 'Select a project to upload samples.');
           return;
         }
         uploadVoiceSamples(project);
@@ -544,7 +556,7 @@
     if (elements.recordButton) {
       if (!MEDIA_RECORDER_SUPPORTED) {
         elements.recordButton.disabled = true;
-        setRecordStatus('Запись не поддерживается в этом браузере.');
+        setRecordStatus(translate('voiceRecordingUnsupported', 'Recording is not supported in this browser.'));
       } else {
         elements.recordButton.addEventListener('click', () => {
           if (!state.recorder.active) {
@@ -559,15 +571,15 @@
       elements.trainButton.addEventListener('click', () => {
         const project = (global.currentProject || '').trim();
         if (!project) {
-          if (elements.trainStatus) elements.trainStatus.textContent = 'Выберите проект для обучения.';
+          if (elements.trainStatus) elements.trainStatus.textContent = translate('voiceSelectProjectForTraining', 'Select a project to start training.');
           return;
         }
         if (state.jobs.some((job) => VOICE_ACTIVE_STATUSES.has(String(job.status || '').toLowerCase()))) {
-          if (elements.trainStatus) elements.trainStatus.textContent = 'Обучение уже выполняется';
+          if (elements.trainStatus) elements.trainStatus.textContent = translate('voiceTrainingAlreadyRunning', 'Training is already running');
           return;
         }
         if (state.samples.length < VOICE_MIN_SAMPLE_COUNT) {
-          if (elements.trainStatus) elements.trainStatus.textContent = 'Добавьте ещё дорожки';
+          if (elements.trainStatus) elements.trainStatus.textContent = translate('voiceAddMoreSamples', 'Add more samples');
           return;
         }
         triggerVoiceTraining(project);

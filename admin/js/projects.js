@@ -101,31 +101,35 @@ const voiceModule = window.VoiceModule || null;
 const PROMPT_AI_ROLES = [
   {
     value: 'friendly_expert',
-    label: 'Дружелюбный эксперт',
-    hint: 'Тёплый тон, поддержка клиента и забота о его задачах.',
+    labelKey: 'projectsRoleFriendlyLabel',
+    hintKey: 'projectsRoleFriendlyHint',
   },
   {
     value: 'formal_consultant',
-    label: 'Формальный консультант',
-    hint: 'Деловой стиль общения, акцент на фактах и регламентах.',
+    labelKey: 'projectsRoleFormalLabel',
+    hintKey: 'projectsRoleFormalHint',
   },
   {
     value: 'sales_manager',
-    label: 'Активный менеджер',
-    hint: 'Фокус на выгодах продукта и мягких продажах.',
+    labelKey: 'projectsRoleManagerLabel',
+    hintKey: 'projectsRoleManagerHint',
   },
 ];
 
-const ensurePromptRoleOptions = (select) => {
-  if (!select || select.options.length) return;
+const renderPromptRoleOptions = (select) => {
+  if (!select) return;
+  const previous = select.value;
+  select.innerHTML = '';
   PROMPT_AI_ROLES.forEach((role) => {
     const option = document.createElement('option');
     option.value = role.value;
-    option.textContent = role.label;
-    if (role.hint) option.title = role.hint;
+    option.textContent = t(role.labelKey);
+    if (role.hintKey) option.title = t(role.hintKey);
     select.appendChild(option);
   });
-  if (PROMPT_AI_ROLES.length) {
+  if (previous && Array.from(select.options).some((opt) => opt.value === previous)) {
+    select.value = previous;
+  } else if (PROMPT_AI_ROLES.length) {
     select.value = PROMPT_AI_ROLES[0].value;
   }
 };
@@ -152,7 +156,7 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
     return null;
   }
 
-  ensurePromptRoleOptions(roleSelect);
+  renderPromptRoleOptions(roleSelect);
   let controller = null;
   let generating = false;
 
@@ -183,7 +187,7 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
 
   textarea.addEventListener('input', () => {
     if (generating) {
-      stopGeneration('Остановлено: ввод пользователя');
+      stopGeneration(t('projectsStoppedByInput'));
     }
   });
 
@@ -232,7 +236,7 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
     } catch (error) {
       console.error('prompt_ai_failed', error);
       if (error.name === 'AbortError') {
-        setStatus('Остановлено');
+        setStatus(t('projectsStopped'));
       } else {
         const message = error?.message || 'prompt_generation_failed';
         setStatus(t('promptAiError', { message }), 4000);
@@ -293,29 +297,29 @@ function updateProjectSummary() {
   const normalized = (currentProject || '').trim().toLowerCase();
   const project = normalized ? projectsCache[normalized] || null : null;
   if (!project) {
-    setSummaryProject('—', 'Нет выбранного проекта');
-    setSummaryPrompt('', [], 'Выберите проект, чтобы увидеть активность');
+    setSummaryProject('—', t('overviewProjectMeta'));
+    setSummaryPrompt('', [], t('projectsSelectForActivity'));
     return;
   }
   const metaBits = [];
-  if (project.domain) metaBits.push(`Домен: ${project.domain}`);
-  if (project.llm_model) metaBits.push(`Модель: ${project.llm_model}`);
-  const emoText = project.llm_emotions_enabled === false ? 'Эмоции: выкл' : 'Эмоции: вкл';
+  if (project.domain) metaBits.push(t('projectsDomainLabel', { value: project.domain }));
+  if (project.llm_model) metaBits.push(t('projectsModelLabel', { value: project.llm_model }));
+  const emoText = project.llm_emotions_enabled === false ? t('projectsEmotionsOff') : t('projectsEmotionsOn');
   metaBits.push(emoText);
-  metaBits.push(project.debug_info_enabled ? 'Справка: вкл' : 'Справка: выкл');
-  metaBits.push(project.debug_enabled ? 'Отладка: вкл' : 'Отладка: выкл');
-  metaBits.push(project.llm_sources_enabled ? 'Источники: вкл' : 'Источники: выкл');
+  metaBits.push(project.debug_info_enabled ? t('projectsHelpOn') : t('projectsHelpOff'));
+  metaBits.push(project.debug_enabled ? t('projectsDebugOn') : t('projectsDebugOff'));
+  metaBits.push(project.llm_sources_enabled ? t('projectsSourcesOn') : t('projectsSourcesOff'));
   metaBits.push(
     project.knowledge_image_caption_enabled === false
-      ? 'Подписи изображений: выкл'
-      : 'Подписи изображений: вкл',
+      ? t('projectsCaptionsOff')
+      : t('projectsCaptionsOn'),
   );
   if (project.llm_voice_enabled === false) {
-    metaBits.push('Голосовой режим: выкл');
+    metaBits.push(t('projectsVoiceModeOff'));
   } else if (project.llm_voice_model) {
-    metaBits.push(`Голосовая модель: ${project.llm_voice_model}`);
+    metaBits.push(t('projectsVoiceModelLabel', { value: project.llm_voice_model }));
   } else {
-    metaBits.push('Голосовой режим: вкл');
+    metaBits.push(t('projectsVoiceModeOn'));
   }
   const storage = projectStorageCache[normalized] || projectStorageCache.__default__ || null;
   if (storage) {
@@ -324,14 +328,19 @@ function updateProjectSummary() {
     const ctxBytes = storage.context_bytes || 0;
     const redisBytes = storage.redis_bytes || 0;
     metaBits.push(
-      `Хранилище: тексты ${formatBytesOptionalFn(textBytes)} · файлы ${formatBytesOptionalFn(fileBytes)} · контексты ${formatBytesOptionalFn(ctxBytes)} · Redis ${formatBytesOptionalFn(redisBytes)}`,
+      t('projectsStorageSummary', {
+        text: formatBytesOptionalFn(textBytes),
+        files: formatBytesOptionalFn(fileBytes),
+        contexts: formatBytesOptionalFn(ctxBytes),
+        redis: formatBytesOptionalFn(redisBytes),
+      }),
     );
   }
   setSummaryProject(
     project.title || project.name || normalized,
     metaBits.join('\n') || '—',
   );
-  setSummaryPrompt('', [], 'Ожидаем активности модели');
+  setSummaryPrompt('', [], t('projectsAwaitingActivity'));
 }
 
 window.ProjectsModule = {
@@ -344,6 +353,7 @@ window.ProjectsModule = {
   loadLlmModels,
   refreshProjectWidgetUI,
   promptAiHandlers,
+  handleLanguageApplied: handleProjectsLanguageApplied,
 };
 
 const useIntegration = (name) => {
@@ -377,12 +387,12 @@ async function fetchProjectStorage() {
 function updateProjectDeleteInfo(projectKey) {
   if (!projectDeleteInfo) return;
   if (!projectKey) {
-    projectDeleteInfo.textContent = 'Выберите проект, чтобы увидеть объём данных.';
+    projectDeleteInfo.textContent = t('projectsSelectForStorage');
     return;
   }
   const stats = projectStorageCache?.[projectKey];
   if (!stats || typeof stats !== 'object') {
-    projectDeleteInfo.textContent = 'Данные о хранилище недоступны.';
+    projectDeleteInfo.textContent = t('projectsStorageUnavailable');
     return;
   }
   const docCount = Number.isFinite(stats.document_count) ? Number(stats.document_count) : null;
@@ -393,13 +403,13 @@ function updateProjectDeleteInfo(projectKey) {
   const fileBytes = Number(stats.binary_bytes || 0);
   const ctxBytes = Number(stats.context_bytes || 0);
   const redisBytes = Number(stats.redis_bytes || 0);
-  if (docCount !== null) parts.push(`документов: ${docCount}`);
-  if (contextCount !== null) parts.push(`контекстов: ${contextCount}`);
-  if (redisKeys !== null) parts.push(`ключей Redis: ${redisKeys}`);
-  parts.push(`тексты: ${formatBytesOptionalFn(textBytes)}`);
-  parts.push(`файлы: ${formatBytesOptionalFn(fileBytes)}`);
-  parts.push(`контексты: ${formatBytesOptionalFn(ctxBytes)}`);
-  parts.push(`Redis: ${formatBytesOptionalFn(redisBytes)}`);
+  if (docCount !== null) parts.push(t('projectsDeleteDocuments', { value: docCount }));
+  if (contextCount !== null) parts.push(t('projectsDeleteContexts', { value: contextCount }));
+  if (redisKeys !== null) parts.push(t('projectsDeleteRedisKeys', { value: redisKeys }));
+  parts.push(t('projectsDeleteTextsSize', { value: formatBytesOptionalFn(textBytes) }));
+  parts.push(t('projectsDeleteFilesSize', { value: formatBytesOptionalFn(fileBytes) }));
+  parts.push(t('projectsDeleteContextsSize', { value: formatBytesOptionalFn(ctxBytes) }));
+  parts.push(t('projectsDeleteRedisSize', { value: formatBytesOptionalFn(redisBytes) }));
   projectDeleteInfo.textContent = parts.join(' · ');
 }
 
@@ -415,6 +425,27 @@ function updateProjectInputs() {
 window.fetchProjectStorage = fetchProjectStorage;
 window.loadProjectsList = loadProjectsList;
 
+const handleProjectsLanguageApplied = () => {
+  renderPromptRoleOptions(projectPromptRoleSelect);
+  if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
+  if (projectAdminPasswordInput) {
+    projectAdminPasswordInput.placeholder = adminSession.is_super
+      ? t('projectsKeepEmpty')
+      : t('projectsPasswordPrompt');
+  }
+  const currentProjectEntry = currentProject ? projectsCache[currentProject] || null : null;
+  updateProjectAdminHintText(currentProjectEntry);
+  if (projectEmotionsInput) refreshEmotionsHint(projectEmotionsInput.checked);
+  if (projectVoiceInput) refreshVoiceHint(projectVoiceInput.checked);
+  if (projectImageCaptionsInput) refreshImageCaptionsHint(projectImageCaptionsInput.checked);
+  if (projectSourcesInput) refreshSourcesHint(projectSourcesInput.checked);
+  if (projectDebugInfoInput) refreshDebugInfoHint(projectDebugInfoInput.checked);
+  if (projectDebugInput) refreshDebugHint(projectDebugInput.checked);
+  refreshProjectWidgetUI();
+  updateProjectSummary();
+  updateProjectDeleteInfo(currentProject);
+};
+
 function refreshProjectWidgetUI() {
   if (!projectWidgetUrl || !projectWidgetLink || !projectWidgetHint || !projectWidgetCopyBtn) return;
   const normalized = (currentProject || '').trim().toLowerCase();
@@ -423,11 +454,11 @@ function refreshProjectWidgetUI() {
   const effectivePath = customValue || defaultPath;
   if (!normalized) {
     projectWidgetLink.href = '#';
-    projectWidgetLink.textContent = 'Открыть виджет';
+    projectWidgetLink.textContent = t('projectsOpenWidget');
     projectWidgetLink.style.pointerEvents = 'none';
     projectWidgetLink.style.opacity = '0.6';
     projectWidgetCopyBtn.disabled = true;
-    projectWidgetHint.textContent = 'Ссылка отображается после выбора проекта';
+    projectWidgetHint.textContent = t('projectsWidgetNoProject');
     return;
   }
   const href = resolveWidgetHref(effectivePath);
@@ -438,7 +469,9 @@ function refreshProjectWidgetUI() {
   projectWidgetLink.style.opacity = hasLink ? '1' : '0.6';
   projectWidgetCopyBtn.disabled = !hasLink;
   if (projectWidgetHint) {
-    projectWidgetHint.textContent = customValue ? 'Используется сохранённая ссылка' : `По умолчанию: ${defaultPath || '/widget'}`;
+    projectWidgetHint.textContent = customValue
+      ? t('projectsWidgetCustomLink')
+      : t('projectsWidgetDefault', { path: defaultPath || '/widget' });
   }
 }
 
@@ -458,10 +491,10 @@ if (projectWidgetCopyBtn) {
     const href = resolveWidgetHref(effectivePath);
     try {
       await navigator.clipboard.writeText(href);
-      if (projectWidgetMessage) projectWidgetMessage.textContent = 'Скопировано';
+      if (projectWidgetMessage) projectWidgetMessage.textContent = t('projectsCopied');
     } catch (error) {
       console.error(error);
-      if (projectWidgetMessage) projectWidgetMessage.textContent = 'Не удалось скопировать';
+      if (projectWidgetMessage) projectWidgetMessage.textContent = t('projectsCopyFailed');
     }
     if (projectWidgetMessage) {
       setTimeout(() => { projectWidgetMessage.textContent = ''; }, 2000);
@@ -472,15 +505,15 @@ if (projectWidgetCopyBtn) {
 const refreshEmotionsHint = (enabled) => {
   if (!projectEmotionsHint) return;
   projectEmotionsHint.textContent = enabled
-    ? 'Ответы будут тёплыми и могут включать эмодзи.'
-    : 'Ответы будут нейтральными без эмодзи.';
+    ? t('projectsEmotionsOnHint')
+    : t('projectsEmotionsOffHint');
 };
 
 const refreshVoiceHint = (enabled) => {
   if (!projectVoiceHint) return;
   projectVoiceHint.textContent = enabled
-    ? 'Виджет может показывать анимированного голосового ассистента.'
-    : 'Голосовой консультант не будет доступен в виджете.';
+    ? t('projectsWidgetVoiceHintOn')
+    : t('projectsWidgetVoiceHintOff');
   if (projectVoiceModelInput) {
     projectVoiceModelInput.disabled = !enabled;
   }
@@ -489,29 +522,44 @@ const refreshVoiceHint = (enabled) => {
 const refreshImageCaptionsHint = (enabled) => {
   if (!projectImageCaptionsHint) return;
   projectImageCaptionsHint.textContent = enabled
-    ? 'LLM создаёт короткие подписи для изображений при индексации.'
-    : 'Подписи не генерируются, изображения сохраняются без описания.';
+    ? t('projectsCaptionsHint')
+    : t('projectsCaptionsOffHint');
 };
 
 const refreshSourcesHint = (enabled) => {
   if (!projectSourcesHint) return;
   projectSourcesHint.textContent = enabled
-    ? 'После каждого ответа бот покажет ссылки на использованные материалы.'
-    : 'Список источников будет скрыт, если пользователь явно не попросит о нём.';
+    ? t('projectsSourcesOnHint')
+    : t('projectsSourcesOffHint');
 };
 
 const refreshDebugInfoHint = (enabled) => {
   if (!projectDebugInfoHint) return;
   projectDebugInfoHint.textContent = enabled
-    ? 'Перед каждым ответом бот отправит служебную справку о запросе.'
-    : 'Служебная справка перед ответом отключена.';
+    ? t('projectsDebugInfoOnHint')
+    : t('projectsDebugInfoOffHint');
 };
 
 const refreshDebugHint = (enabled) => {
   if (!projectDebugHint) return;
   projectDebugHint.textContent = enabled
-    ? 'После ответа будет приходить подробная сводка (символы, знания, сессия).'
-    : 'Финальная отладочная сводка отключена.';
+    ? t('projectsDebugOnHint')
+    : t('projectsDebugOffHint');
+};
+
+const updateProjectAdminHintText = (project) => {
+  if (!projectAdminHint) return;
+  if (!project) {
+    projectAdminHint.textContent = t('projectsAdminSelectHint');
+  } else if (adminSession.is_super) {
+    projectAdminHint.textContent = project?.admin_password_set
+      ? t('projectsAdminPasswordSet')
+      : t('projectsAdminCredentialsHint');
+  } else {
+    projectAdminHint.textContent = project?.admin_password_set
+      ? t('projectsAdminPasswordChange')
+      : t('projectsAdminPasswordSetup');
+  }
 };
 
 const submitProjectForm = () => {
@@ -590,7 +638,8 @@ function populateProjectForm(projectName){
   projectDomainInput.value = project?.domain || '';
   populateModelOptions(project?.llm_model || '');
   projectPromptInput.value = project?.llm_prompt || '';
-  if (projectPromptRoleSelect) ensurePromptRoleOptions(projectPromptRoleSelect);
+if (projectPromptRoleSelect) renderPromptRoleOptions(projectPromptRoleSelect);
+if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
   if (projectPromptAiStatus) projectPromptAiStatus.textContent = '—';
   if (mainPromptAiHandler && typeof mainPromptAiHandler.reset === 'function') {
     mainPromptAiHandler.reset();
@@ -661,53 +710,49 @@ function populateProjectForm(projectName){
     projectAdminPasswordInput.value = '';
     projectAdminPasswordInput.disabled = !project;
     projectAdminPasswordInput.placeholder = adminSession.is_super
-      ? 'Оставьте пустым, чтобы не менять'
-      : 'Введите новый пароль';
+      ? t('projectsKeepEmpty')
+      : t('projectsPasswordPrompt');
   }
-  if (projectAdminHint) {
-    if (!project) {
-      projectAdminHint.textContent = 'Выберите проект, чтобы управлять учётными данными.';
-    } else if (adminSession.is_super) {
-      projectAdminHint.textContent = project?.admin_password_set
-        ? 'Пароль настроен. Оставьте поле пустым, чтобы не менять.'
-        : 'Укажите логин и пароль администратора проекта.';
-    } else {
-      projectAdminHint.textContent = project?.admin_password_set
-        ? 'Введите новый пароль, чтобы сменить текущий.'
-        : 'Установите пароль для доступа к админке проекта.';
-    }
-  }
+  updateProjectAdminHintText(project);
   if (crawlerProjectLabel) {
     crawlerProjectLabel.textContent = project ? project.name || normalized || '—' : (normalized || '—');
   }
   const metaBits = [];
-  if (project?.domain) metaBits.push(`Домен: ${project.domain}`);
-  if (project?.llm_model) metaBits.push(`Модель: ${project.llm_model}`);
+  if (project?.domain) metaBits.push(t('projectsDomainLabel', { value: project.domain }));
+  if (project?.llm_model) metaBits.push(t('projectsModelLabel', { value: project.llm_model }));
   if (project) {
-    const emoText = project.llm_emotions_enabled === false ? 'Эмоции: выкл' : 'Эмоции: вкл';
+    const emoText = project.llm_emotions_enabled === false ? t('projectsEmotionsOff') : t('projectsEmotionsOn');
     metaBits.push(emoText);
-    metaBits.push(project.debug_info_enabled ? 'Справка: вкл' : 'Справка: выкл');
-    metaBits.push(project.debug_enabled ? 'Отладка: вкл' : 'Отладка: выкл');
-    metaBits.push(project.llm_sources_enabled ? 'Источники: вкл' : 'Источники: выкл');
+    metaBits.push(project.debug_info_enabled ? t('projectsHelpOn') : t('projectsHelpOff'));
+    metaBits.push(project.debug_enabled ? t('projectsDebugOn') : t('projectsDebugOff'));
+    metaBits.push(project.llm_sources_enabled ? t('projectsSourcesOn') : t('projectsSourcesOff'));
     metaBits.push(
       project.knowledge_image_caption_enabled === false
-        ? 'Подписи изображений: выкл'
-        : 'Подписи изображений: вкл'
+        ? t('projectsCaptionsOff')
+        : t('projectsCaptionsOn')
     );
-    const voiceEnabledBit = project.llm_voice_enabled === false ? 'Голосовой режим: выкл' : 'Голосовой режим: вкл';
+    const voiceEnabledBit = project.llm_voice_enabled === false ? t('projectsVoiceModeOff') : t('projectsVoiceModeOn');
     if (project.llm_voice_enabled !== false && project.llm_voice_model) {
-      metaBits.push(`Голосовая модель: ${project.llm_voice_model}`);
+      metaBits.push(t('projectsVoiceModelLabel', { value: project.llm_voice_model }));
     } else {
       metaBits.push(voiceEnabledBit);
     }
   }
   if (storage && (textBytes || fileBytes || ctxBytes || redisBytes)) {
     metaBits.push(
-      `Хранилище: тексты ${formatBytesOptionalFn(textBytes)} · файлы ${formatBytesOptionalFn(fileBytes)} · контексты ${formatBytesOptionalFn(ctxBytes)} · Redis ${formatBytesOptionalFn(redisBytes)}`
+      t('projectsStorageSummary', {
+        text: formatBytesOptionalFn(textBytes),
+        files: formatBytesOptionalFn(fileBytes),
+        contexts: formatBytesOptionalFn(ctxBytes),
+        redis: formatBytesOptionalFn(redisBytes),
+      })
     );
   }
-  setSummaryProject(project?.title || project?.name || normalized || '—', metaBits.join('\n') || 'Нет выбранного проекта');
-  setSummaryPrompt('', [], project ? 'Ожидаем активности модели' : 'Выберите проект, чтобы увидеть активность');
+  setSummaryProject(
+    project?.title || project?.name || normalized || '—',
+    metaBits.join('\n') || t('overviewProjectMeta'),
+  );
+  setSummaryPrompt('', [], project ? t('projectsAwaitingActivity') : t('projectsSelectForActivity'));
   if (project && project.domain && startUrlInput && !startUrlManual) {
     const normalizedDomain = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
     startUrlInput.value = normalizedDomain;
@@ -743,7 +788,7 @@ async function fetchProjects(){
   try {
     const resp = await fetch('/api/v1/admin/projects');
     if (!resp.ok) {
-      setProjectStatus('Не удалось загрузить проекты', 3000);
+      setProjectStatus(t('projectsLoadFailed'), 3000);
       return;
     }
     const data = await resp.json();
@@ -753,7 +798,7 @@ async function fetchProjects(){
     lastProjectCount = projects.length;
 
     if (!projects.length) {
-      projectSelect.appendChild(new Option('— нет проектов —', '', true, true));
+      projectSelect.appendChild(new Option(t('projectsEmptyPlaceholder'), '', true, true));
       projectSelect.disabled = true;
       currentProject = '';
       populateProjectForm('');
@@ -778,7 +823,7 @@ async function fetchProjects(){
 
     projectSelect.disabled = false;
     if (adminSession.is_super) {
-      projectSelect.appendChild(new Option('— выберите проект —', '', false, !selectedKey));
+      projectSelect.appendChild(new Option(t('projectsSelectPlaceholder'), '', false, !selectedKey));
     }
 
     projects.forEach((p, index) => {
@@ -833,7 +878,7 @@ async function fetchProjects(){
     projectPromptSaveBtn.disabled = !currentProject;
   } catch (error) {
     console.error(error);
-    setProjectStatus('Ошибка загрузки проектов', 3000);
+    setProjectStatus(t('projectsLoadError'), 3000);
   }
 }
 
@@ -854,7 +899,7 @@ projectForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = projectNameInput.value.trim().toLowerCase();
   if (!name) {
-    setProjectStatus('Укажите идентификатор', 3000);
+    setProjectStatus(t('projectsEnterIdentifier'), 3000);
     return;
   }
   const payload = {
@@ -938,7 +983,7 @@ projectForm.addEventListener('submit', async (e) => {
       payload.admin_password = adminPasswordRaw;
     }
   }
-  setProjectStatus('Сохраняем проект...');
+  setProjectStatus(t('projectsSaving'));
   try {
     const resp = await fetch('/api/v1/admin/projects', {
       method: 'POST',
@@ -946,7 +991,7 @@ projectForm.addEventListener('submit', async (e) => {
       body: JSON.stringify(payload),
     });
     if (!resp.ok) {
-      setProjectStatus('Не удалось сохранить проект', 4000);
+      setProjectStatus(t('projectsSaveFailed'), 4000);
       return;
     }
     currentProject = name;
@@ -955,22 +1000,22 @@ projectForm.addEventListener('submit', async (e) => {
     await fetchProjectStorage();
     await loadKnowledge();
     pollStatus();
-    setProjectStatus('Сохранено', 2000);
+    setProjectStatus(t('projectsSaved'), 2000);
     populateProjectForm(currentProject);
   } catch (error) {
     console.error(error);
-    setProjectStatus('Ошибка сохранения', 4000);
+    setProjectStatus(t('projectsSaveError'), 4000);
   }
 });
 
 if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
   if (!currentProject) return;
-  if (!confirm(`Удалить проект ${currentProject}?`)) return;
+  if (!confirm(t('projectsDeleteConfirm', { project: currentProject }))) return;
   const toDelete = currentProject;
   try {
     const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(toDelete)}`, { method: 'DELETE' });
     if (!resp.ok) {
-      setProjectStatus('Не удалось удалить', 4000);
+      setProjectStatus(t('projectsDeleteFailed'), 4000);
       return;
     }
     const payload = await resp.json().catch(() => ({}));
@@ -983,29 +1028,32 @@ if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
     document.getElementById('kbInfo').textContent = '';
     const removed = payload?.removed || {};
     const parts = [];
-    if (typeof removed.documents === 'number') parts.push(`документов: ${removed.documents}`);
-    if (typeof removed.files === 'number') parts.push(`файлов: ${removed.files}`);
-    if (typeof removed.contexts === 'number') parts.push(`контекстов: ${removed.contexts}`);
-    if (typeof removed.stats === 'number') parts.push(`записей статистики: ${removed.stats}`);
-    setProjectStatus(parts.length ? `Удалено (${parts.join(', ')})` : 'Удалено', 4000);
+    if (typeof removed.documents === 'number') parts.push(t('projectsRemovedDocuments', { value: removed.documents }));
+    if (typeof removed.files === 'number') parts.push(t('projectsRemovedFiles', { value: removed.files }));
+    if (typeof removed.contexts === 'number') parts.push(t('projectsRemovedContexts', { value: removed.contexts }));
+    if (typeof removed.stats === 'number') parts.push(t('projectsRemovedStats', { value: removed.stats }));
+    setProjectStatus(
+      parts.length ? t('projectsRemovedSummary', { value: parts.join(', ') }) : t('projectsDeleted'),
+      4000,
+    );
     applySessionPermissions();
     updateProjectDeleteInfo(currentProject);
   } catch (error) {
     console.error(error);
-    setProjectStatus('Ошибка удаления', 4000);
+    setProjectStatus(t('projectsDeleteError'), 4000);
   }
 });
 
 projectTestBtn.addEventListener('click', async () => {
   if (!currentProject) {
-    setProjectStatus('Выберите проект', 3000);
+    setProjectStatus(t('projectsSelectProject'), 3000);
     return;
   }
-  setProjectStatus('Тестируем сервисы...');
+  setProjectStatus(t('projectsTestingServices'));
   try {
     const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/test`);
     if (!resp.ok) {
-      setProjectStatus('Ошибка теста', 4000);
+      setProjectStatus(t('projectsTestError'), 4000);
       return;
     }
     const data = await resp.json();
@@ -1016,6 +1064,6 @@ projectTestBtn.addEventListener('click', async () => {
     setProjectStatus(parts.join(' · '), 4000);
   } catch (error) {
     console.error(error);
-    setProjectStatus('Ошибка теста', 4000);
+    setProjectStatus(t('projectsTestError'), 4000);
   }
 });

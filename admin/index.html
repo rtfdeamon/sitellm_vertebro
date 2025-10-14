@@ -10,7 +10,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Crawler Admin</title>
+  <title data-i18n="pageTitle">Crawler Admin</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%228%22%20fill%3D%22%230b1026%22/%3E%3Ccircle%20cx%3D%2216%22%20cy%3D%2216%22%20r%3D%229%22%20fill%3D%22%2360a5fa%22/%3E%3C/svg%3E">
   <link rel="stylesheet" href="./css/base.css">
   <link rel="stylesheet" href="./css/knowledge-controls.css">
@@ -22,39 +22,39 @@
   <link rel="stylesheet" href="./css/backup.css">
 </head>
 <body>
-  <div id="clusterWarning" class="cluster-warning" style="display:none;">Работа с LLM приостановлена. Нет доступных серверов Ollama.</div>
+  <div id="clusterWarning" class="cluster-warning" style="display:none;" data-i18n="clusterWarningMessage">LLM operations are paused. No Ollama servers available.</div>
   <div class="page-shell">
     <div class="page-header">
       <div>
         <span class="pill" data-i18n="pillOperations">Operations</span>
         <h1 data-i18n="headerTitle">Crawler Control Panel</h1>
-        <p class="page-subtitle" data-i18n="headerSubtitle">Управление краулингом, базой знаний и окружением в едином окне</p>
+        <p class="page-subtitle" data-i18n="headerSubtitle">Manage crawling, knowledge base, and infrastructure in one dashboard</p>
       </div>
       <div class="page-header-actions">
-        <select id="adminLanguage" arыia-label="Language" data-i18n-aria-label="languageLabel"></select>
-        <button type="button" id="toggleLayoutOrdering" data-i18n="buttonReorder">Упорядочить блоки</button>
-        <button type="button" id="adminLogout" data-i18n="buttonLogout">Выйти</button>
-        <a class="dev-credit" href="https://dev-bot.su" target="_blank" rel="noopener" data-i18n="developerCredit">Created by дев-бот-су</a>
+        <select id="adminLanguage" aria-label="Language" data-i18n-aria-label="languageLabel"></select>
+        <button type="button" id="toggleLayoutOrdering" data-i18n="buttonReorder">Reorder blocks</button>
+        <button type="button" id="adminLogout" data-i18n="buttonLogout">Log out</button>
+        <a class="dev-credit" href="https://dev-bot.su" target="_blank" rel="noopener" data-i18n="developerCredit">Created by dev-bot.su</a>
       </div>
     </div>
 
     <div class="top-knowledge">
-      <h2 class="section-title">База знаний</h2>
+      <h2 class="section-title" data-i18n="knowledgeSectionTitle">Knowledge Base</h2>
 
-      <section id="block-knowыыledge" class="dashboard-stack top-knowledge-stack" data-block-id="knowledge" data-block-group="knowledge">
+      <section id="block-knowledge" class="dashboard-stack top-knowledge-stack" data-block-id="knowledge" data-block-group="knowledge">
         <div class="card knowledge-card">
-          <b>Knowledge Base</b>
-          <div class="kb-section-nav" role="tablist" aria-label="Управление базой знаний">
-            <button type="button" class="kb-tab-button active" id="kbTabOverview" data-kb-target="overview" role="tab" aria-selected="true" aria-controls="kbSectionOverview">Обзор</button>
-            <button type="button" class="kb-tab-button" id="kbTabUpload" data-kb-target="upload" role="tab" aria-selected="false" aria-controls="kbSectionUpload" tabindex="-1">Загрузка</button>
-            <button type="button" class="kb-tab-button" id="kbTabDocuments" data-kb-target="documents" role="tab" aria-selected="false" aria-controls="kbSectionDocuments" tabindex="-1">Документы</button>
-            <button type="button" class="kb-tab-button" id="kbTabQA" data-kb-target="qa" role="tab" aria-selected="false" aria-controls="kbSectionQA" tabindex="-1">Вопрос–ответ</button>
-            <button type="button" class="kb-tab-button" id="kbTabUnanswered" data-kb-target="unanswered" role="tab" aria-selected="false" aria-controls="kbSectionUnanswered" tabindex="-1">Вопросы без ответа</button>
+          <b data-i18n="knowledgeCardTitle">Knowledge Base</b>
+          <div class="kb-section-nav" role="tablist" aria-label="Knowledge base management" data-i18n-aria-label="knowledgeNavLabel">
+            <button type="button" class="kb-tab-button active" id="kbTabOverview" data-kb-target="overview" role="tab" aria-selected="true" aria-controls="kbSectionOverview" data-i18n="knowledgeTabOverview">Overview</button>
+            <button type="button" class="kb-tab-button" id="kbTabUpload" data-kb-target="upload" role="tab" aria-selected="false" aria-controls="kbSectionUpload" tabindex="-1" data-i18n="knowledgeTabUpload">Upload</button>
+            <button type="button" class="kb-tab-button" id="kbTabDocuments" data-kb-target="documents" role="tab" aria-selected="false" aria-controls="kbSectionDocuments" tabindex="-1" data-i18n="knowledgeTabDocuments">Documents</button>
+            <button type="button" class="kb-tab-button" id="kbTabQA" data-kb-target="qa" role="tab" aria-selected="false" aria-controls="kbSectionQA" tabindex="-1" data-i18n="knowledgeTabQa">Q&amp;A</button>
+            <button type="button" class="kb-tab-button" id="kbTabUnanswered" data-kb-target="unanswered" role="tab" aria-selected="false" aria-controls="kbSectionUnanswered" tabindex="-1" data-i18n="knowledgeTabUnanswered">Unanswered</button>
           </div>
           <div class="kb-priority-panel">
             <div class="kb-priority-header">
-              <strong data-i18n="kbPriorityTitle">Приоритет источников</strong>
-              <button type="button" id="kbPrioritySave" data-i18n="saveButton">Сохранить</button>
+              <strong data-i18n="kbPriorityTitle">Source priority</strong>
+              <button type="button" id="kbPrioritySave" data-i18n="buttonSave">Save</button>
             </div>
             <ul class="kb-priority-list" id="kbPriorityList"></ul>
             <span class="muted" id="kbPriorityStatus"></span>
@@ -63,30 +63,31 @@
             <div class="thinking-inner">
               <img
                 src="data:image/svg+xml;utf8,%3Csvg%20width%3D%22180%22%20height%3D%22140%22%20viewBox%3D%220%200%20180%20140%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%3E%0A%20%20%3Cdefs%3E%0A%20%20%20%20%3ClinearGradient%20id%3D%22grad%22%20x1%3D%220%22%20x2%3D%221%22%20y1%3D%220%22%20y2%3D%221%22%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%220%25%22%20stop-color%3D%22%2360a5fa%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%2250%25%22%20stop-color%3D%22%237c3aed%22/%3E%0A%20%20%20%20%20%20%3Cstop%20offset%3D%22100%25%22%20stop-color%3D%22%23f97316%22/%3E%0A%20%20%20%20%3C/linearGradient%3E%0A%20%20%20%20%3Cfilter%20id%3D%22blur%22%20x%3D%22-20%25%22%20y%3D%22-20%25%22%20width%3D%22140%25%22%20height%3D%22140%25%22%3E%0A%20%20%20%20%20%20%3CfeGaussianBlur%20stdDeviation%3D%2218%22/%3E%0A%20%20%20%20%3C/filter%3E%0A%20%20%3C/defs%3E%0A%20%20%3Ccircle%20cx%3D%2250%22%20cy%3D%2270%22%20r%3D%2240%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.65%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22110%22%20cy%3D%2250%22%20r%3D%2230%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.45%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%2295%22%20r%3D%2236%22%20fill%3D%22url(%23grad)%22%20opacity%3D%220.55%22%20filter%3D%22url(%23blur)%22/%3E%0A%20%20%3Cpath%20d%3D%22M52%2036c26%200%2048%2020%2048%2045s-22%2045-48%2045-48-20-48-45%2022-45%2048-45zm0%2016c-18%200-32%2013-32%2029s14%2029%2032%2029%2032-13%2032-29-14-29-32-29z%22%20fill%3D%22%23111827%22%20opacity%3D%220.72%22/%3E%0A%20%20%3Cpath%20d%3D%22M116%2028c16%200%2028%2012%2028%2028s-12%2028-28%2028-28-12-28-28%2012-28%2028-28z%22%20fill%3D%22%231e293b%22%20opacity%3D%220.7%22/%3E%0A%20%20%3Ccircle%20cx%3D%22104%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Ccircle%20cx%3D%22128%22%20cy%3D%2256%22%20r%3D%226%22%20fill%3D%22%2393c5fd%22/%3E%0A%20%20%3Cpath%20d%3D%22M112%2072c5%206%2013%206%2018%200%22%20stroke%3D%22%23a855f7%22%20stroke-width%3D%223%22%20stroke-linecap%3D%22round%22/%3E%0A%3C/svg%3E"
-                alt="Идёт генерация описания"
+                alt="Generating description"
+                data-i18n-alt="knowledgeThinkingAlt"
                 class="thinking-illustration"
               >
               <div class="thinking-spinner"></div>
-              <div class="thinking-caption" id="kbThinkingCaption">Генерируем описание…</div>
-              <div class="thinking-subtitle" id="kbThinkingMessage">Это может занять несколько секунд.</div>
+              <div class="thinking-caption" id="kbThinkingCaption" data-i18n="knowledgeThinkingCaption">Generating description…</div>
+              <div class="thinking-subtitle" id="kbThinkingMessage" data-i18n="knowledgeThinkingSubtitle">This may take a few seconds.</div>
               <div class="thinking-preview" id="kbThinkingPreview"></div>
             </div>
           </div>
           <div class="kb-section active" data-kb-section="overview" id="kbSectionOverview" role="tabpanel" aria-labelledby="kbTabOverview">
             <form id="kbForm" style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
-              <label style="flex:1 1 200px;">Проект
+              <label style="flex:1 1 200px;" data-i18n="labelProject">Project
                 <input type="text" list="kbProjectList" id="kbProject" placeholder="mmvs" style="width:100%;" readonly>
                 <datalist id="kbProjectList"></datalist>
               </label>
-              <button type="button" id="kbReloadProjects" title="Обновить список проектов">↻</button>
-              <label style="flex:1 1 240px;">Поиск
-                <input type="text" id="kbSearch" placeholder="Название или описание" style="width:100%;">
+              <button type="button" id="kbReloadProjects" data-i18n-title="knowledgeProjectsReload" title="Refresh project list">↻</button>
+              <label style="flex:1 1 240px;" data-i18n="knowledgeSearchLabel">Search
+                <input type="text" id="kbSearch" data-i18n-placeholder="searchPlaceholder" placeholder="Name or description" style="width:100%;">
               </label>
-              <label>Limit
+              <label data-i18n-text="kbLimitLabel">Limit
                 <input type="number" id="kbLimit" min="10" max="1000" value="1000" style="width:100px;">
               </label>
-              <button type="submit">Обновить</button>
-              <button type="button" id="kbClear">Очистить</button>
+              <button type="submit" data-i18n="refreshButtonTitle">Refresh</button>
+              <button type="button" id="kbClear" data-i18n="buttonClear">Clear</button>
             </form>
             <div class="kb-meta-line">
               <span class="muted" id="kbInfo"></span>
@@ -95,48 +96,48 @@
           </div>
           <div class="kb-section" data-kb-section="upload" id="kbSectionUpload" role="tabpanel" aria-labelledby="kbTabUpload" aria-hidden="true">
             <form id="kbAddForm" style="display:flex; flex-wrap:wrap; gap:10px;">
-              <label style="flex:1 1 220px;">Имя
+              <label style="flex:1 1 220px;" data-i18n="labelName">Name
                 <input type="text" id="kbNewName" placeholder="document.txt" style="width:100%;">
               </label>
               <label style="flex:1 1 220px;">URL
                 <input type="url" id="kbNewUrl" placeholder="https://example.com" style="width:100%;">
               </label>
-              <label style="flex:1 1 220px;">Описание
-                <input type="text" id="kbNewDescription" placeholder="Краткое описание" style="width:100%;">
+              <label style="flex:1 1 220px;" data-i18n="labelDescription">Description
+                <input type="text" id="kbNewDescription" data-i18n-placeholder="shortDescriptionPlaceholder" placeholder="Short description" style="width:100%;">
               </label>
-              <label style="flex:1 1 220px;">Файл
+              <label style="flex:1 1 220px;" data-i18n="labelFile">File
                 <input type="file" id="kbNewFile" multiple style="width:100%;">
               </label>
-              <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;">
-                Перетащите файлы сюда или нажмите на поле выше
+              <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;" data-i18n="dragFilesHint">
+                Drag files here or use the field above
               </div>
               <div id="kbAutoDescription" class="auto-description"></div>
-              <label style="flex:1 1 100%;">Текст
-                <textarea id="kbNewContent" placeholder="Введите текст документа" style="width:100%; min-height:120px;"></textarea>
+              <label style="flex:1 1 100%;" data-i18n="labelText">Text
+                <textarea id="kbNewContent" data-i18n-placeholder="contentPlaceholder" placeholder="Enter document text" style="width:100%; min-height:120px;"></textarea>
               </label>
               <div style="display:flex; gap:10px; align-items:center;">
-                <button type="submit">Сохранить</button>
-                <button type="button" id="kbResetForm">Сбросить</button>
+                <button type="submit" data-i18n="buttonSave">Save</button>
+                <button type="button" id="kbResetForm" data-i18n="buttonReset">Reset</button>
                 <span class="muted" id="kbAddStatus"></span>
               </div>
             </form>
           </div>
           <div class="kb-section" data-kb-section="documents" id="kbSectionDocuments" role="tabpanel" aria-labelledby="kbTabDocuments" aria-hidden="true">
             <div class="knowledge-actions">
-              <button type="button" id="kbDeduplicate">Очистить дубликаты</button>
-              <button type="button" id="kbClearKnowledge">Очистить базу</button>
+              <button type="button" id="kbDeduplicate" data-i18n="knowledgeButtonDeduplicate">Remove duplicates</button>
+              <button type="button" id="kbClearKnowledge" data-i18n="knowledgeButtonClearAll">Clear knowledge base</button>
               <span class="muted" id="kbDedupStatus"></span>
               <span class="muted" id="kbClearStatus"></span>
             </div>
             <div class="kb-category" data-kb-category="text">
               <div class="kb-category-header">
-                <strong>Текст</strong>
+                <strong data-i18n="labelText">Text</strong>
                 <span class="muted" id="kbCountText">—</span>
               </div>
               <div class="kb-table-wrapper">
                 <table>
                   <thead>
-                  <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                  <tr><th class="nowrap" data-i18n="labelName">Name</th><th data-i18n="labelDescription">Description</th><th class="nowrap" data-i18n="labelProject">Project</th><th class="nowrap" data-i18n="labelFile">File</th><th class="nowrap" data-i18n="tableActions">Actions</th></tr>
                   </thead>
                   <tbody id="kbTableText"></tbody>
                 </table>
@@ -144,13 +145,13 @@
             </div>
             <div class="kb-category" data-kb-category="docs">
               <div class="kb-category-header">
-                <strong>Документы</strong>
+                <strong data-i18n="knowledgeTabDocuments">Documents</strong>
                 <span class="muted" id="kbCountDocs">—</span>
               </div>
               <div class="kb-table-wrapper">
                 <table>
                   <thead>
-                  <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                  <tr><th class="nowrap" data-i18n="labelName">Name</th><th data-i18n="labelDescription">Description</th><th class="nowrap" data-i18n="labelProject">Project</th><th class="nowrap" data-i18n="labelFile">File</th><th class="nowrap" data-i18n="tableActions">Actions</th></tr>
                   </thead>
                   <tbody id="kbTableDocs"></tbody>
                 </table>
@@ -158,13 +159,13 @@
             </div>
             <div class="kb-category" data-kb-category="images">
               <div class="kb-category-header">
-                <strong>Фото</strong>
+                <strong data-i18n="labelImages">Images</strong>
                 <span class="muted" id="kbCountImages">—</span>
               </div>
               <div class="kb-table-wrapper">
                 <table>
                   <thead>
-                  <tr><th class="nowrap">Имя</th><th>Описание</th><th class="nowrap">Проект</th><th class="nowrap">Файл</th><th class="nowrap">Действия</th></tr>
+                  <tr><th class="nowrap" data-i18n="labelName">Name</th><th data-i18n="labelDescription">Description</th><th class="nowrap" data-i18n="labelProject">Project</th><th class="nowrap" data-i18n="labelFile">File</th><th class="nowrap" data-i18n="tableActions">Actions</th></tr>
                   </thead>
                   <tbody id="kbTableImages"></tbody>
                 </table>
@@ -175,28 +176,28 @@
             <div class="qa-import">
               <form id="kbQaImportForm">
                 <label class="qa-upload">
-                  <span>Excel файл с колонками «Вопрос» и «Ответ»</span>
+                  <span data-i18n="knowledgeQaUploadHint">Excel file with columns “Question” and “Answer”</span>
                   <input type="file" id="kbQaFile" accept=".xlsx,.xlsm,.xltx,.xltm,.csv" required>
                 </label>
                 <div class="qa-actions">
-                  <button type="submit">Импортировать</button>
-                  <button type="button" id="kbQaAddRow">Добавить вручную</button>
+                  <button type="submit" data-i18n="buttonImport">Import</button>
+                  <button type="button" id="kbQaAddRow" data-i18n="addManualButton">Add manually</button>
                   <span class="muted" id="kbQaStatus"></span>
                 </div>
               </form>
             </div>
             <div class="kb-meta-line">
-              <span>Всего пар:</span>
+              <span data-i18n="questionPairsLabel">Total pairs:</span>
               <span class="muted" id="kbCountQa">—</span>
             </div>
             <div class="kb-table-wrapper">
               <table class="qa-table">
                 <thead>
                   <tr>
-                    <th>Вопрос</th>
-                    <th>Ответ</th>
-                    <th class="nowrap">Приоритет</th>
-                    <th class="nowrap">Действия</th>
+                    <th data-i18n="labelQuestion">Question</th>
+                    <th data-i18n="answerLabel">Answer</th>
+                    <th class="nowrap" data-i18n="labelPriority">Priority</th>
+                    <th class="nowrap" data-i18n="tableActions">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="kbTableQa"></tbody>
@@ -205,27 +206,27 @@
           </div>
           <div class="kb-section" data-kb-section="unanswered" id="kbSectionUnanswered" role="tabpanel" aria-labelledby="kbTabUnanswered" aria-hidden="true">
             <div class="kb-meta-line">
-              <span>Всего вопросов без ответа:</span>
+              <span data-i18n="summaryUnanswered">Total unanswered questions:</span>
               <span class="muted" id="kbCountUnanswered">—</span>
             </div>
             <div class="unanswered-actions">
-              <button type="button" id="kbUnansweredExport">Экспорт CSV</button>
-              <button type="button" id="kbUnansweredClear">Очистить список</button>
+              <button type="button" id="kbUnansweredExport" data-i18n="exportCsvButton">Export CSV</button>
+              <button type="button" id="kbUnansweredClear" data-i18n="buttonClearList">Clear list</button>
               <span class="muted" id="kbUnansweredStatus"></span>
             </div>
             <div class="kb-table-wrapper">
               <table class="unanswered-table">
                 <thead>
                   <tr>
-                    <th>Вопрос</th>
-                    <th class="nowrap">Количество</th>
-                    <th class="nowrap">Последний раз</th>
+                    <th data-i18n="labelQuestion">Question</th>
+                    <th class="nowrap" data-i18n="labelCount">Count</th>
+                    <th class="nowrap" data-i18n="labelLastTime">Last time</th>
                   </tr>
                 </thead>
                 <tbody id="kbTableUnanswered"></tbody>
               </table>
             </div>
-            <p class="muted" style="margin-top:12px;">Вопросы старше 30 дней удаляются автоматически.</p>
+            <p class="muted" style="margin-top:12px;" data-i18n="userFlowHint">Questions older than 30 days are removed automatically.</p>
           </div>
         </div>
       </section>
@@ -235,31 +236,31 @@
     <div class="overview-banner">
     <div class="overview-card" id="summaryProjectCard">
       <div class="overview-pulse"></div>
-      <h2>Проект</h2>
+      <h2 data-i18n="labelProject">Project</h2>
       <strong id="summaryProject">—</strong>
-      <div class="overview-meta" id="summaryProjectMeta">Нет выбранного проекта</div>
+      <div class="overview-meta" id="summaryProjectMeta" data-i18n="overviewProjectMeta">No project selected</div>
     </div>
     <div class="overview-card" id="summaryCrawlerCard">
       <div class="overview-pulse"></div>
-      <h2>Краулинг</h2>
+      <h2 data-i18n="summaryCrawlerTitle">Crawling</h2>
       <strong id="summaryCrawler">—</strong>
       <div class="overview-meta" id="summaryCrawlerMeta"></div>
     </div>
     <div class="overview-card" id="summaryPerfCard">
       <div class="overview-pulse"></div>
-      <h2>Ресурсы</h2>
+      <h2 data-i18n="summaryResourcesTitle">Resources</h2>
       <strong id="summaryPerf">—</strong>
       <div class="overview-meta" id="summaryPerfMeta"></div>
     </div>
     <div class="overview-card" id="summaryLLMCard">
       <div class="overview-pulse"></div>
-      <h2>LLM мысли</h2>
-      <div class="prompt-preview" id="summaryPrompt">История запросов появится здесь</div>
+      <h2 data-i18n="summaryLlmTitle">LLM insights</h2>
+      <div class="prompt-preview" id="summaryPrompt" data-i18n="overviewLLMEmpty">Recent prompts will appear here</div>
       <div class="prompt-docs" id="summaryPromptDocs"></div>
     </div>
     <div class="overview-card" id="summaryBuildCard">
       <div class="overview-pulse"></div>
-      <h2>Сборка</h2>
+      <h2 data-i18n="summaryBuildTitle">Build</h2>
       <strong id="summaryBuild">—</strong>
       <div class="overview-meta" id="summaryBuildMeta">—</div>
     </div>
@@ -269,15 +270,15 @@
     <section id="block-projects" class="dashboard-stack span-3" data-block-id="projects" data-block-group="overview">
       <details class="card project-switch-card collapsible-card" data-collapsible="projects">
         <summary class="collapsible-summary">
-          <span class="collapsible-title">Projects</span>
+          <span class="collapsible-title" data-i18n="cardProjectsTitle">Projects</span>
           <span class="collapsible-chevron" aria-hidden="true"></span>
         </summary>
         <div class="collapsible-body">
           <div class="collapsible-content">
             <select id="projectSelect" size="6"></select>
             <div class="project-switch-actions">
-              <button type="button" id="projectAdd">Добавить проект</button>
-              <button type="button" id="projectRefresh">Обновить список</button>
+              <button type="button" id="projectAdd" data-i18n="buttonAddProject">Add project</button>
+              <button type="button" id="projectRefresh" data-i18n="buttonRefreshProjects">Refresh list</button>
             </div>
             <span class="muted" id="projectStatus"></span>
             <datalist id="llmModelOptions"></datalist>
@@ -288,7 +289,7 @@
 
     <section id="block-status" class="dashboard-stack span-9 status-tiles" data-block-id="status" data-block-group="overview">
       <div class="card status-card">
-        <b data-i18n="crawlerStatusTitle">Статус краулера</b>
+        <b data-i18n="crawlerStatusTitle">Crawler status</b>
         <div data-i18n-wrapper="crawlerQueued">Queued: <span data-i18n-value id="queued">0</span></div>
         <div data-i18n-wrapper="crawlerInProgress">In progress: <span data-i18n-value id="in_progress">0</span></div>
         <div data-i18n-wrapper="crawlerDone">Done: <span data-i18n-value id="done">0</span></div>
@@ -297,20 +298,20 @@
         <div class="muted" data-i18n-wrapper="crawlerProjectLabel">Project: <span data-i18n-value id="crawlerProject">—</span></div>
         <div>
           <details>
-            <summary data-i18n="crawlerLastUrls">Последние URL</summary>
+            <summary data-i18n="crawlerLastUrls">Recent URLs</summary>
             <ol id="recent_urls" style="margin-top:6px;"></ol>
           </details>
         </div>
       </div>
       <div class="card status-card">
-        <b data-i18n="servicesTitle">Сервисы</b>
+        <b data-i18n="servicesTitle">Services</b>
         <div data-i18n-wrapper="serviceMongo">Mongo: <span id="mongo" class="bad" data-i18n-value>down</span></div>
         <div data-i18n-wrapper="serviceRedis">Redis: <span id="redis" class="bad" data-i18n-value>down</span></div>
         <div data-i18n-wrapper="serviceQdrant">Qdrant: <span id="qdrant" class="bad" data-i18n-value>down</span></div>
         <div data-i18n-wrapper="serviceOverall">Status: <span id="overall" data-i18n-value>degraded</span></div>
       </div>
       <div class="card status-card">
-        <b data-i18n="resourcesTitle">Ресурсы</b>
+        <b data-i18n="resourcesTitle">Resources</b>
         <div data-i18n-wrapper="resourceCpuApp">CPU (app): <span id="cpu" data-i18n-value>–</span></div>
         <div data-i18n-wrapper="resourceCpuSys">CPU (sys): <span id="cpuSys" data-i18n-value>–</span></div>
         <div data-i18n-wrapper="resourceRam">RAM: <span id="ram" data-i18n-value>–</span></div>
@@ -320,14 +321,14 @@
       </div>
     </section>
 
-    <h2 class="section-title span-all" data-i18n="manageSection">Управление</h2>
+    <h2 class="section-title span-all" data-i18n="manageSection">Management</h2>
 
     <section id="block-crawler" class="dashboard-stack span-4" data-block-id="crawler" data-block-group="manage">
       <div class="card control-card">
         <div class="crawler-header">
-          <b data-i18n="crawlerLaunchTitle">Запуск краулера</b>
+          <b data-i18n="crawlerLaunchTitle">Crawler launch</b>
           <div class="crawler-logs-buttons">
-            <button type="button" id="crawlerLogsBtn" class="icon-button" title="Показать логи" data-i18n-title="crawlerLogsTooltip">?</button>
+            <button type="button" id="crawlerLogsBtn" class="icon-button" data-i18n-title="logsShowTitle" title="Show logs" data-i18n-title="crawlerLogsTooltip">?</button>
           </div>
         </div>
         <div class="crawler-progress" id="crawlerProgress">
@@ -335,8 +336,8 @@
             <div class="crawler-progress-fill" id="crawlerProgressFill"></div>
           </div>
           <div class="crawler-progress-meta">
-            <span id="crawlerProgressStatus">Ожидание запуска</span>
-            <span id="crawlerProgressCounters">0 / 0 страниц</span>
+            <span id="crawlerProgressStatus" data-i18n="startWaiting">Waiting to start</span>
+            <span id="crawlerProgressCounters" data-i18n="zeroPagesPlaceholder">0 / 0 pages</span>
           </div>
           <div class="crawler-progress-note" id="crawlerProgressNote"></div>
         </div>
@@ -361,217 +362,220 @@
             <input type="checkbox" id="crawlerCollectMedex">
             <span data-i18n="crawlerCollectMedex">Collect Medesk booking links</span>
           </label>
-          <button type="submit" data-i18n="crawlerStartButton">Запустить</button>
-          <button type="button" id="stopBtn" data-i18n="crawlerStopButton">Остановить</button>
+          <button type="submit" data-i18n="crawlerStartButton">Start</button>
+          <button type="button" id="stopBtn" data-i18n="crawlerStopButton">Stop</button>
           <span id="launchMsg" class="muted"></span>
         </form>
         <div class="crawler-actions">
-          <button type="button" id="crawlerResetBtn" data-i18n="crawlerResetButton">Сбросить счётчики</button>
-          <button type="button" id="crawlerDedupBtn" data-i18n="crawlerDedupButton">Убрать дубликаты URL</button>
+          <button type="button" id="crawlerResetBtn" data-i18n="crawlerResetButton">Reset counters</button>
+          <button type="button" id="crawlerDedupBtn" data-i18n="crawlerDedupButton">Remove duplicate URLs</button>
           <span class="muted" id="crawlerActionStatus"></span>
         </div>
         <div class="crawler-logs" id="crawlerLogsPanel">
           <div class="crawler-logs-header">
             <span data-i18n="crawlerLogsHeader">Crawler logs</span>
             <div class="crawler-logs-buttons">
-              <button type="button" id="crawlerLogsCopy" class="icon-button" title="Скопировать" data-i18n-title="crawlerLogsCopy">⧉</button>
-              <button type="button" id="crawlerLogsRefresh" class="icon-button" title="Обновить" data-i18n-title="crawlerLogsRefresh">↻</button>
-              <button type="button" id="crawlerLogsClose" class="icon-button" title="Скрыть" data-i18n-title="crawlerLogsHide">×</button>
+              <button type="button" id="crawlerLogsCopy" class="icon-button" data-i18n-title="logsCopyTitle" title="Copy" data-i18n-title="crawlerLogsCopy">⧉</button>
+              <button type="button" id="crawlerLogsRefresh" class="icon-button" data-i18n-title="refreshButtonTitle" title="Refresh" data-i18n-title="crawlerLogsRefresh">↻</button>
+              <button type="button" id="crawlerLogsClose" class="icon-button" data-i18n-title="logsHideTitle" title="Hide" data-i18n-title="crawlerLogsHide">×</button>
             </div>
           </div>
-          <pre id="crawlerLogsOutput" class="crawler-logs-output" data-i18n="crawlerLogsEmpty">Логи будут загружены по запросу.</pre>
+          <pre id="crawlerLogsOutput" class="crawler-logs-output" data-i18n="crawlerLogsEmpty">Logs will be fetched on demand.</pre>
         </div>
       </div>
     </section>
     <section id="block-project" class="dashboard-stack span-8" data-block-id="project" data-block-group="manage">
       <details class="card control-card project-card collapsible-card" data-collapsible="project">
         <summary class="collapsible-summary">
-          <span class="collapsible-title">Project</span>
+          <span class="collapsible-title" data-i18n="projectCardTitle">Project</span>
           <span class="collapsible-chevron" aria-hidden="true"></span>
         </summary>
         <div class="collapsible-body">
           <b>Project</b>
         <form id="projectForm" style="display:flex; flex-wrap:wrap; gap:10px;">
-          <label style="flex:1 1 200px;">Идентификатор (ENG)
+          <label style="flex:1 1 200px;" data-i18n="identifierLabel">Identifier (ENG)
             <input type="text" id="projectName" placeholder="mmvs" required>
           </label>
-          <label style="flex:1 1 200px;">Название
-            <input type="text" id="projectTitle" placeholder="Название проекта">
+          <label style="flex:1 1 200px;" data-i18n="labelTitle">Title
+            <input type="text" id="projectTitle" data-i18n-placeholder="projectNamePlaceholder" placeholder="Project name">
           </label>
-          <label style="flex:1 1 200px;">Домен (необязательно)
+          <label style="flex:1 1 200px;" data-i18n="labelDomainOptional">Domain (optional)
             <input type="text" id="projectDomain" placeholder="https://example.com">
           </label>
-          <label style="flex:1 1 200px;">LLM модель
+          <label style="flex:1 1 200px;" data-i18n="labelLlmModel">LLM model
             <select id="projectModel" style="width:100%;"></select>
           </label>
-          <label style="flex:1 1 100%;">Стартовый промпт
-            <textarea id="projectPrompt" rows="3" placeholder="Укажите инструкцию для модели" style="width:100%; resize:vertical;"></textarea>
+          <label style="flex:1 1 100%;" data-i18n="labelPrompt">Initial prompt
+            <textarea id="projectPrompt" rows="3" data-i18n-placeholder="provideInstructionPlaceholder" placeholder="Provide instructions for the model" style="width:100%; resize:vertical;"></textarea>
           </label>
           <div class="prompt-ai-controls" style="flex:1 1 100%;">
             <select id="projectPromptRole"></select>
-            <button type="button" id="projectPromptAi">AI‑сгенерировать</button>
+            <button type="button" id="projectPromptAi" data-i18n="aiGenerateButton">Generate with AI</button>
             <span class="muted prompt-ai-status" id="projectPromptAiStatus">—</span>
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectEmotions" checked>
-              Эмоции и эмодзи в ответах
+              <input type="checkbox" id="projectEmotions" checked data-i18n="emotionsLabel">
+              Emotions and emojis in replies
             </label>
-            <span class="muted" id="projectEmotionsHint">Оставьте включённым, чтобы ответы были тёплыми и живыми.</span>
+            <span class="muted" id="projectEmotionsHint" data-i18n="hintWarmReplies">Leave enabled to keep responses warm and lively.</span>
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectVoiceEnabled" checked>
-              Голосовой консультант
+              <input type="checkbox" id="projectVoiceEnabled" checked data-i18n="voiceAssistantLabel">
+              Voice assistant
             </label>
-            <span class="muted" id="projectVoiceHint">Включите, чтобы показывать анимированного голосового ассистента на сайте.</span>
+            <span class="muted" id="projectVoiceHint" data-i18n="hintVoiceAssistant">Enable to display the animated voice assistant on the site.</span>
           </div>
-          <label style="flex:1 1 200px;">Модель для голосового режима (опционально)
-            <input type="text" id="projectVoiceModel" placeholder="Например, gpt-4o-mini" list="llmModelOptions">
+          <label style="flex:1 1 200px;" data-i18n="modelVoiceOptional">Voice mode model (optional)
+            <input type="text" id="projectVoiceModel" data-i18n-placeholder="voiceExampleModel" placeholder="For example, gpt-4o-mini" list="llmModelOptions">
           </label>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectImageCaptions" checked>
-              Подписи к изображениям базы знаний
+              <input type="checkbox" id="projectImageCaptions" checked data-i18n="imageCaptionsLabel">
+              Knowledge base image captions
             </label>
-            <span class="muted" id="projectImageCaptionsHint">LLM будет подбирать короткое описание при индексации изображений.</span>
+            <span class="muted" id="projectImageCaptionsHint" data-i18n="hintVoiceCaptions">LLM will generate short captions when indexing images.</span>
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectSourcesEnabled">
-              Показывать источники ответов
+              <input type="checkbox" id="projectSourcesEnabled" data-i18n="labelAnswerSources">
+              Show answer sources
             </label>
-            <span class="muted" id="projectSourcesHint">После ответа будет отображаться список ссылок на использованные материалы.</span>
+            <span class="muted" id="projectSourcesHint" data-i18n="hintAnswerSources">Show a list of sources after each answer.</span>
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectDebugInfo" checked>
-              Служебная справка перед ответом
+              <input type="checkbox" id="projectDebugInfo" checked data-i18n="labelServiceNote">
+              Pre-answer service note
             </label>
-            <span class="muted" id="projectDebugInfoHint">Включите, чтобы перед ответом в Telegram приходила служебная справка (endpoint, эмоции и т. п.).</span>
+            <span class="muted" id="projectDebugInfoHint" data-i18n="prePromptHint">Enable to send a service summary before the answer in Telegram (endpoint, emotions, etc.).</span>
           </div>
           <div style="flex:1 1 200px; display:flex; flex-direction:column; gap:4px; margin-top:4px;">
             <label style="display:flex; align-items:center; gap:8px;">
-              <input type="checkbox" id="projectDebug">
-              Подробная отладка после ответа
+              <input type="checkbox" id="projectDebug" data-i18n="detailedDebugLabel">
+              Detailed debug after response
             </label>
-            <span class="muted" id="projectDebugHint">Включите, чтобы после ответа приходила подробная сводка (символы, знания, сессия).</span>
+            <span class="muted" id="projectDebugHint" data-i18n="hintDetailedSummary">Enable to receive a detailed summary after each answer (tokens, knowledge, session).</span>
           </div>
           <div id="projectAdminSection" style="flex:1 1 100%; display:flex; flex-wrap:wrap; gap:10px; margin-top:8px;">
-            <label style="flex:1 1 200px;">Админ логин
+            <label style="flex:1 1 200px;" data-i18n="labelAdminLogin">Admin login
               <input type="text" id="projectAdminUsername" placeholder="project_admin">
             </label>
-            <label style="flex:1 1 200px;">Новый пароль
-              <input type="password" id="projectAdminPassword" placeholder="Оставьте пустым, чтобы не менять">
+            <label style="flex:1 1 200px;" data-i18n="labelNewPassword">New password
+              <input type="password" id="projectAdminPassword" data-i18n-placeholder="keepUnchangedPlaceholder" placeholder="Leave empty to keep unchanged">
             </label>
-            <span class="muted" id="projectAdminHint" style="flex:1 1 100%;">Укажите логин и пароль администратора проекта.</span>
+            <span class="muted" id="projectAdminHint" style="flex:1 1 100%;" data-i18n="hintProvideAdminCredentials">Provide the admin login and password for the project.</span>
           </div>
         <div class="project-storage-panel">
-          <div>Тексты: <span id="projectStorageText">—</span></div>
-          <div>Файлы: <span id="projectStorageFiles">—</span></div>
-          <div>Контексты: <span id="projectStorageContexts">—</span></div>
+          <div data-i18n="labelTexts">Prompts: <span id="projectStorageText">—</span></div>
+          <div data-i18n="filesLabel">Files: <span id="projectStorageFiles">—</span></div>
+          <div data-i18n="contextsLabel">Contexts: <span id="projectStorageContexts">—</span></div>
           <div>Redis: <span id="projectStorageRedis">—</span></div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
-          <button type="submit">Сохранить</button>
-          <button type="button" id="projectPromptSave">Сохранить промпт</button>
-          <button type="button" id="projectTest">Тест</button>
+          <button type="submit" data-i18n="buttonSave">Save</button>
+          <button type="button" id="projectPromptSave" data-i18n="buttonSavePrompt">Save prompt</button>
+          <button type="button" id="projectTest" data-i18n="labelTest">Test</button>
         </div>
       </form>
       <div class="card voice-training-card" id="voiceTrainingCard">
         <div>
-          <b data-i18n="voiceTrainingTitle">Обучение голоса</b>
-          <div class="muted" id="voiceTrainingSummary" data-i18n="voiceTrainingSummary">Загрузите 3+ аудиодорожки с чистой речью, чтобы обучить ассистента говорить голосом проекта.</div>
+          <b data-i18n="voiceTrainingTitle">Voice training</b>
+          <div class="muted" id="voiceTrainingSummary" data-i18n="voiceTrainingSummary">Upload 3+ clean voice clips to teach the assistant to speak like your project.</div>
         </div>
         <div class="voice-upload">
           <div class="voice-upload-row">
             <input type="file" id="voiceSampleInput" accept="audio/*" capture="microphone" multiple>
-            <button type="button" id="voiceSampleUpload" data-i18n="voiceUploadButton">Загрузить дорожки</button>
+            <button type="button" id="voiceSampleUpload" data-i18n="voiceUploadButton">Upload clips</button>
           </div>
           <div class="voice-upload-actions">
-            <button type="button" id="voiceRecordBtn" data-i18n="voiceRecordButton">Записать дорожку</button>
+            <button type="button" id="voiceRecordBtn" data-i18n="voiceRecordButton">Record clip</button>
             <span class="muted" id="voiceRecordStatus">—</span>
           </div>
           <span class="muted" id="voiceUploadStatus">—</span>
         </div>
         <div class="voice-samples" id="voiceSamplesContainer">
-          <div class="muted" id="voiceSamplesEmpty" data-i18n="voiceSamplesEmpty">Дорожки не загружены.</div>
+          <div class="muted" id="voiceSamplesEmpty" data-i18n="voiceSamplesEmpty">No clips uploaded.</div>
         </div>
         <div class="voice-train-actions">
-          <button type="button" id="voiceTrainButton" data-i18n="voiceTrainButton">Обучить голос</button>
+          <button type="button" id="voiceTrainButton" data-i18n="voiceTrainButton">Train custom voice</button>
           <span class="muted" id="voiceTrainStatus">—</span>
         </div>
         <div class="voice-jobs" id="voiceJobsContainer"></div>
       </div>
       <div class="project-danger" id="projectDangerZone">
         <div>
-          <strong>Опасная зона</strong>
-          <p>Удаление проекта безвозвратно очищает документы, файлы, контексты и статистику. Действие нельзя отменить.</p>
+          <strong data-i18n="dangerZoneTitle">Danger zone</strong>
+          <p data-i18n="warningProjectDeletion">Deleting a project permanently removes documents, files, contexts, and statistics. This action cannot be undone.</p>
         </div>
-          <button type="button" id="projectDelete" class="project-delete-btn" disabled>Удалить проект</button>
-          <span class="muted" id="projectDeleteInfo">Выберите проект, чтобы увидеть объём данных.</span>
+          <button type="button" id="projectDelete" class="project-delete-btn" disabled data-i18n="buttonDeleteProject">Delete project</button>
+          <span class="muted" id="projectDeleteInfo" data-i18n="knowledgeProjectHint">Select a project to view data volume.</span>
         </div>
         <div class="project-extensions" style="display:flex; flex-wrap:wrap; gap:16px; margin-top:16px;">
           <div class="project-telegram" style="flex:1 1 260px; min-width:240px;">
-            <b style="display:block; margin-bottom:8px;">Telegram бот</b>
+            <b style="display:block; margin-bottom:8px;" data-i18n="integrationTelegram">Telegram bot</b>
             <label style="display:block; margin-bottom:8px;">Bot Token
-              <input type="password" id="projectTelegramToken" placeholder="Введите токен" style="width:100%;">
+              <input type="password" id="projectTelegramToken" data-i18n-placeholder="tokenPlaceholder" placeholder="Enter token" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectTelegramAutoStart"> Автозапуск при старте
+              <input type="checkbox" id="projectTelegramAutoStart">
+              <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
             <div>Status: <span id="projectTelegramStatus">—</span></div>
             <div class="muted" id="projectTelegramInfo"></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <button type="button" id="projectTelegramSave">Сохранить</button>
-              <button type="button" id="projectTelegramStart">Запустить</button>
-              <button type="button" id="projectTelegramStop">Остановить</button>
+              <button type="button" id="projectTelegramSave" data-i18n="buttonSave">Save</button>
+              <button type="button" id="projectTelegramStart" data-i18n="crawlerStartButton">Start</button>
+              <button type="button" id="projectTelegramStop" data-i18n="crawlerStopButton">Stop</button>
               <span class="muted" id="projectTelegramMessage"></span>
             </div>
           </div>
           <div class="project-max" style="flex:1 1 260px; min-width:240px;">
-            <b style="display:block; margin-bottom:8px;">MAX бот</b>
+            <b style="display:block; margin-bottom:8px;" data-i18n="integrationMax">MAX bot</b>
             <label style="display:block; margin-bottom:8px;">Access Token
-              <input type="password" id="projectMaxToken" placeholder="Введите токен" style="width:100%;">
+              <input type="password" id="projectMaxToken" data-i18n-placeholder="tokenPlaceholder" placeholder="Enter token" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectMaxAutoStart"> Автозапуск при старте
+              <input type="checkbox" id="projectMaxAutoStart">
+              <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
             <div>Status: <span id="projectMaxStatus">—</span></div>
             <div class="muted" id="projectMaxInfo"></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <button type="button" id="projectMaxSave">Сохранить</button>
-              <button type="button" id="projectMaxStart">Запустить</button>
-              <button type="button" id="projectMaxStop">Остановить</button>
+              <button type="button" id="projectMaxSave" data-i18n="buttonSave">Save</button>
+              <button type="button" id="projectMaxStart" data-i18n="crawlerStartButton">Start</button>
+              <button type="button" id="projectMaxStop" data-i18n="crawlerStopButton">Stop</button>
               <span class="muted" id="projectMaxMessage"></span>
             </div>
           </div>
           <div class="project-vk" style="flex:1 1 260px; min-width:240px;">
-            <b style="display:block; margin-bottom:8px;">VK бот</b>
+            <b style="display:block; margin-bottom:8px;" data-i18n="integrationVk">VK bot</b>
             <label style="display:block; margin-bottom:8px;">Access Token
-              <input type="password" id="projectVkToken" placeholder="Введите токен" style="width:100%;">
+              <input type="password" id="projectVkToken" data-i18n-placeholder="tokenPlaceholder" placeholder="Enter token" style="width:100%;">
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-              <input type="checkbox" id="projectVkAutoStart"> Автозапуск при старте
+              <input type="checkbox" id="projectVkAutoStart">
+              <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
             <div>Status: <span id="projectVkStatus">—</span></div>
             <div class="muted" id="projectVkInfo"></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <button type="button" id="projectVkSave">Сохранить</button>
-              <button type="button" id="projectVkStart">Запустить</button>
-              <button type="button" id="projectVkStop">Остановить</button>
+              <button type="button" id="projectVkSave" data-i18n="buttonSave">Save</button>
+              <button type="button" id="projectVkStart" data-i18n="crawlerStartButton">Start</button>
+              <button type="button" id="projectVkStop" data-i18n="crawlerStopButton">Stop</button>
               <span class="muted" id="projectVkMessage"></span>
             </div>
           </div>
           <div class="project-widget" style="flex:1 1 260px; min-width:240px;">
-            <b style="display:block; margin-bottom:8px;">Виджет</b>
-            <label style="display:block; margin-bottom:8px;">Ссылка на виджет
+            <b style="display:block; margin-bottom:8px;" data-i18n="labelWidget">Widget</b>
+            <label style="display:block; margin-bottom:8px;" data-i18n="labelWidgetLink">Widget link
               <input type="url" id="projectWidgetUrl" placeholder="https://example.com/widget" style="width:100%;">
             </label>
-            <div class="muted" id="projectWidgetHint">Ссылка отображается после выбора проекта</div>
+            <div class="muted" id="projectWidgetHint" data-i18n="widgetLinkHint">Link appears after selecting a project.</div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <a id="projectWidgetLink" href="#" target="_blank" rel="noopener" style="pointer-events:none; opacity:0.6;">Открыть виджет</a>
-              <button type="button" id="projectWidgetCopy" disabled>Скопировать</button>
+              <a id="projectWidgetLink" href="#" target="_blank" rel="noopener" style="pointer-events:none; opacity:0.6;" data-i18n="buttonOpenWidget">Open widget</a>
+              <button type="button" id="projectWidgetCopy" disabled data-i18n="logsCopyTitle">Copy</button>
               <span class="muted" id="projectWidgetMessage"></span>
             </div>
           </div>
@@ -582,50 +586,50 @@
             </label>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
               <input type="checkbox" id="projectBitrixEnabled">
-              Активировать интеграцию
+              <span data-i18n="activateIntegration">Activate integration</span>
             </label>
-            <span class="muted" id="projectBitrixHint">Webhook используется для запросов модели и хранится на сервере.</span>
+            <span class="muted" id="projectBitrixHint" data-i18n="hintWebhook">Webhook is used for model requests and stored on the server.</span>
           </div>
           <div class="project-mail" style="flex:1 1 320px; min-width:280px;">
-            <b style="display:block; margin-bottom:8px;">Почтовый коннектор</b>
+            <b style="display:block; margin-bottom:8px;" data-i18n="labelMailConnector">Mail connector</b>
             <label style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
               <input type="checkbox" id="projectMailEnabled">
-              Включить интеграцию
+              <span data-i18n="enableIntegrationButton">Enable integration</span>
             </label>
-            <div class="muted" id="projectMailHint">Укажите параметры IMAP/SMTP, чтобы ассистент мог отправлять и просматривать письма.</div>
+            <div class="muted" id="projectMailHint" data-i18n="hintMailSettings">Specify IMAP/SMTP parameters so the assistant can send and read emails.</div>
             <div style="display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top:10px;">
-              <label>IMAP хост
+              <label data-i18n="imapHostLabel">IMAP host
                 <input type="text" id="projectMailImapHost" placeholder="imap.example.com">
               </label>
-              <label>IMAP порт
+              <label data-i18n="imapPortLabel">IMAP port
                 <input type="number" id="projectMailImapPort" placeholder="993" min="1" max="65535">
               </label>
               <label style="display:flex; gap:6px; align-items:center;">
                 <input type="checkbox" id="projectMailImapSsl" checked>
-                IMAP SSL
+                <span data-i18n="imapSslLabel">IMAP SSL</span>
               </label>
-              <label>SMTP хост
+              <label data-i18n="smtpHostLabel">SMTP host
                 <input type="text" id="projectMailSmtpHost" placeholder="smtp.example.com">
               </label>
-              <label>SMTP порт
+              <label data-i18n="smtpPortLabel">SMTP port
                 <input type="number" id="projectMailSmtpPort" placeholder="587" min="1" max="65535">
               </label>
               <label style="display:flex; gap:6px; align-items:center;">
                 <input type="checkbox" id="projectMailSmtpTls" checked>
-                SMTP STARTTLS
+                <span data-i18n="smtpStarttlsLabel">SMTP STARTTLS</span>
               </label>
-              <label>Имя пользователя
+              <label data-i18n="labelUsername">Username
                 <input type="text" id="projectMailUsername" placeholder="user@example.com">
               </label>
-              <label>Пароль
-                <input type="password" id="projectMailPassword" placeholder="Пароль" autocomplete="new-password">
+              <label data-i18n="passwordPlaceholder">Password
+                <input type="password" id="projectMailPassword" data-i18n-placeholder="passwordPlaceholder" placeholder="Password" autocomplete="new-password">
               </label>
-              <label>Отправитель (From)
+              <label data-i18n="labelSender">Sender (From)
                 <input type="email" id="projectMailFrom" placeholder="support@example.com">
               </label>
             </div>
-            <label style="display:block; margin-top:10px;">Подпись в письмах
-              <textarea id="projectMailSignature" rows="3" placeholder="С уважением, команда Example" style="width:100%; resize:vertical;"></textarea>
+            <label style="display:block; margin-top:10px;" data-i18n="emailSignatureLabel">Email signature
+              <textarea id="projectMailSignature" rows="3" data-i18n-placeholder="signaturePlaceholder" placeholder="Regards, Example team" style="width:100%; resize:vertical;"></textarea>
             </label>
           </div>
         </div>
@@ -636,60 +640,60 @@
     <section id="block-backup" class="dashboard-stack span-4" data-block-id="backup" data-block-group="manage">
       <details class="card control-card collapsible-card" data-collapsible="backup">
         <summary class="collapsible-summary">
-          <span class="collapsible-title" data-i18n="backupCardTitle">Резервные копии</span>
+          <span class="collapsible-title" data-i18n="backupCardTitle">Backups</span>
           <span class="collapsible-chevron" aria-hidden="true"></span>
         </summary>
         <div class="collapsible-body backup-card">
           <div class="backup-section">
-            <b data-i18n="backupScheduleTitle">Расписание</b>
+            <b data-i18n="backupScheduleTitle">Schedule</b>
             <label class="backup-toggle">
               <input type="checkbox" id="backupEnabled">
-              <span data-i18n="backupEnableLabel">Включить ежедневное резервирование</span>
+              <span data-i18n="backupEnableLabel">Enable daily backup</span>
             </label>
             <div class="backup-field-grid">
               <label>
-                <span data-i18n="backupTimeLabel">Время запуска</span>
+                <span data-i18n="backupTimeLabel">Run at</span>
                 <input type="time" id="backupTime" min="00:00" max="23:59">
               </label>
               <label>
-                <span data-i18n="backupTimezoneLabel">Часовой пояс</span>
+                <span data-i18n="backupTimezoneLabel">Timezone</span>
                 <select id="backupTimezone"></select>
               </label>
               <label>
-                <span data-i18n="backupFolderLabel">Папка на Яндекс.Диске</span>
+                <span data-i18n="backupFolderLabel">Remote folder</span>
                 <input type="text" id="backupFolder" placeholder="sitellm-backups" data-i18n-placeholder="backupFolderPlaceholder">
               </label>
             </div>
             <div class="backup-token-row">
               <label>
-                <span data-i18n="backupTokenLabel">OAuth токен</span>
+                <span data-i18n="backupTokenLabel">OAuth token</span>
                 <input type="password" id="backupToken" autocomplete="off" data-i18n-placeholder="backupTokenPlaceholder">
               </label>
-              <button type="button" id="backupTokenSave" data-i18n="backupTokenSave">Сохранить</button>
-              <button type="button" id="backupTokenClear" data-i18n="backupTokenClear">Удалить</button>
+              <button type="button" id="backupTokenSave" data-i18n="backupTokenSave">Save</button>
+              <button type="button" id="backupTokenClear" data-i18n="backupTokenClear">Delete</button>
               <span class="backup-status-line" id="backupTokenStatus"></span>
             </div>
             <div class="backup-action-buttons">
-              <button type="button" id="backupSettingsApply" data-i18n="backupScheduleSave">Сохранить расписание</button>
+              <button type="button" id="backupSettingsApply" data-i18n="backupScheduleSave">Save schedule</button>
             </div>
             <span class="backup-status-line" id="backupStatusLine"></span>
           </div>
           <div class="backup-section">
-            <b data-i18n="backupManualTitle">Ручные действия</b>
+            <b data-i18n="backupManualTitle">Manual actions</b>
             <div class="backup-action-buttons">
-              <button type="button" id="backupRunBtn" data-i18n="backupRunNow">Создать резервную копию</button>
-              <button type="button" id="backupRefreshBtn" data-i18n="backupRefresh">Обновить статус</button>
+              <button type="button" id="backupRunBtn" data-i18n="backupRunNow">Create backup now</button>
+              <button type="button" id="backupRefreshBtn" data-i18n="backupRefresh">Refresh status</button>
             </div>
             <label>
-              <span data-i18n="backupRestoreLabel">Восстановление по пути</span>
+              <span data-i18n="backupRestoreLabel">Restore from path</span>
               <input type="text" id="backupRestorePath" data-i18n-placeholder="backupRestorePlaceholder" placeholder="/sitellm-backups/backup.archive.gz">
             </label>
-            <button type="button" id="backupRestoreBtn" data-i18n="backupRestoreButton">Восстановить</button>
+            <button type="button" id="backupRestoreBtn" data-i18n="backupRestoreButton">Restore</button>
           </div>
           <div class="backup-section">
-            <b data-i18n="backupJobsTitle">Журнал операций</b>
+            <b data-i18n="backupJobsTitle">Operations log</b>
             <div class="backup-jobs-list" id="backupJobsList">
-              <div class="backup-empty" data-i18n="backupJobsEmpty">Пока нет записей.</div>
+              <div class="backup-empty" data-i18n="backupJobsEmpty">No records yet.</div>
             </div>
           </div>
           <div class="backup-status-line" id="backupErrorLine"></div>
@@ -699,56 +703,58 @@
 
     <section id="block-llm" class="dashboard-stack span-4" data-block-id="llm" data-block-group="manage">
       <div class="card control-card">
-        <b>LLM</b>
-        <div>Model: <code id="model">–</code></div>
-        <div>Backend: <span id="backend">–</span></div>
-        <div>Device: <span id="device">–</span></div>
+        <b data-i18n="llmSectionTitle">LLM</b>
+        <div data-i18n-wrapper="llmModelLabel">Model: <code id="model" data-i18n-value>–</code></div>
+        <div data-i18n-wrapper="llmBackendLabel">Backend: <span id="backend" data-i18n-value>–</span></div>
+        <div data-i18n-wrapper="llmDeviceLabel">Device: <span id="device" data-i18n-value>–</span></div>
         <div style="margin-top:6px;">
-          <label>Ollama Base:
+          <label>
+            <span data-i18n="ollamaBaseLabel">Ollama Base:</span>
             <input type="text" id="ollamaBase" placeholder="http://host.docker.internal:11434" style="width:100%">
           </label>
-          <label style="display:block; margin-top:6px;">Model name:
+          <label style="display:block; margin-top:6px;">
+            <span data-i18n="ollamaModelNameLabel">Model name:</span>
             <input type="text" id="ollamaModel" placeholder="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest" style="width:100%">
           </label>
           <div style="margin-top:6px; display:flex; gap:8px; flex-wrap:wrap;">
-            <button type="button" id="saveLLM">Save</button>
-            <button type="button" id="pingLLM">Ping</button>
+            <button type="button" id="saveLLM" data-i18n="llmSaveButton">Save</button>
+            <button type="button" id="pingLLM" data-i18n="llmPingButton">Ping</button>
             <span id="pingRes" class="muted"></span>
           </div>
           <div class="ollama-catalog" id="ollamaCatalog">
             <div class="ollama-catalog-header">
-              <span class="muted">Каталог моделей Ollama</span>
-              <button type="button" id="ollamaRefresh">Обновить</button>
+              <span class="muted" data-i18n="catalogOllamaTitle">Ollama model catalog</span>
+              <button type="button" id="ollamaRefresh" data-i18n="refreshButtonTitle">Refresh</button>
             </div>
             <div class="ollama-meta" id="ollamaAvailability">—</div>
             <div>
-              <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;">Установленные</strong>
+              <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;" data-i18n="installedTitle">Installed</strong>
               <ul class="ollama-list" id="ollamaInstalledList"></ul>
             </div>
             <div>
-              <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;">Популярные</strong>
+              <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;" data-i18n="popularTitle">Popular</strong>
               <ul class="ollama-list" id="ollamaPopularList"></ul>
             </div>
             <div>
-              <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;">Установка</strong>
+              <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;" data-i18n="installationTitle">Installation</strong>
               <div class="ollama-jobs" id="ollamaJobsList"></div>
             </div>
             <div class="ollama-servers" id="ollamaServersPanel">
               <div class="ollama-servers-header">
-                <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;">Серверы</strong>
-                <button type="button" id="ollamaServersRefresh">Обновить</button>
+                <strong style="font-size:12px; letter-spacing:0.06em; text-transform:uppercase;" data-i18n="labelServers">Servers</strong>
+                <button type="button" id="ollamaServersRefresh" data-i18n="refreshButtonTitle">Refresh</button>
               </div>
               <div class="ollama-meta" id="ollamaServersStatus">—</div>
               <ul class="ollama-list" id="ollamaServersList"></ul>
               <form id="ollamaServerForm" class="ollama-server-form">
                 <div class="ollama-server-form-grid">
-                  <input type="text" id="ollamaServerName" placeholder="идентификатор" required>
+                  <input type="text" id="ollamaServerName" data-i18n-placeholder="identifierPlaceholder" placeholder="identifier" required>
                   <input type="text" id="ollamaServerUrl" placeholder="http://host:11434" required>
                   <label class="ollama-server-enabled">
                     <input type="checkbox" id="ollamaServerEnabled" checked>
-                    Включён
+                    <span data-i18n="enabledStatus">Enabled</span>
                   </label>
-                  <button type="submit">Добавить</button>
+                  <button type="submit" data-i18n="addButton">Add</button>
                 </div>
               </form>
             </div>
@@ -772,19 +778,19 @@
     <section id="block-stats" class="dashboard-stack span-12" data-block-id="stats" data-block-group="manage">
       <details class="card stats-card collapsible-card" data-collapsible="stats">
         <summary class="collapsible-summary">
-          <span class="collapsible-title">Активность пользователей</span>
+          <span class="collapsible-title" data-i18n="statisticsTitle">User activity</span>
           <span class="collapsible-chevron" aria-hidden="true"></span>
         </summary>
         <div class="collapsible-body">
-          <div class="muted" id="statsSubtitle">Последние 14 дней</div>
+          <div class="muted" id="statsSubtitle" data-i18n="statsLast14Days">Last 14 days</div>
           <div class="stats-graph">
             <canvas id="statsCanvas"></canvas>
             <div id="statsTooltip" class="stats-tooltip"></div>
-            <div id="statsEmpty" class="stats-empty">Нет данных</div>
+            <div id="statsEmpty" class="stats-empty" data-i18n="knowledgeServiceNoData">No data</div>
           </div>
           <div class="stats-actions">
-            <button type="button" id="statsRefresh">Обновить</button>
-            <button type="button" id="statsExport">Экспорт CSV</button>
+            <button type="button" id="statsRefresh" data-i18n="refreshButtonTitle">Refresh</button>
+            <button type="button" id="statsExport" data-i18n="exportCsvButton">Export CSV</button>
             <span class="muted" id="statsSummary"></span>
           </div>
         </div>
@@ -794,40 +800,40 @@
 
     <section id="block-knowledge-tools" class="dashboard-stack span-12" data-block-id="knowledge-tools" data-block-group="knowledge">
       <div class="card knowledge-service-card">
-        <b>Интеллектуальная обработка</b>
-        <div class="muted">Настройте промт и режим обновления векторной базы знаний.</div>
+        <b data-i18n="intelligentProcessingTitle">Intelligent processing</b>
+        <div class="muted" data-i18n="hintPromptConfig">Configure the prompt and vector knowledge base refresh mode.</div>
         <label style="display:flex; align-items:center; gap:8px; margin:10px 0;">
           <input type="checkbox" id="knowledgeServiceToggle">
-          Сервис включён
+          <span data-i18n="labelServiceEnabled">Service enabled</span>
         </label>
         <label style="display:flex; flex-direction:column; gap:6px;">
-          <span>Режим запуска</span>
+          <span data-i18n="labelRunMode">Run mode</span>
           <select id="knowledgeServiceMode" style="max-width:260px;">
-            <option value="manual">Ручной (по команде)</option>
-            <option value="auto">Автоматический (при простое очереди)</option>
+            <option value="manual" data-i18n="labelModeManual">Manual (on demand)</option>
+            <option value="auto" data-i18n="automaticModeLabel">Automatic (when queue is idle)</option>
           </select>
         </label>
         <label style="display:flex; flex-direction:column; gap:6px;">
-          <span>Промт обработки</span>
-          <textarea id="knowledgeServicePrompt" rows="5" placeholder="Опишите, как обрабатывать документы по частям" style="min-height:120px;"></textarea>
+          <span data-i18n="labelProcessingPrompt">Processing prompt</span>
+          <textarea id="knowledgeServicePrompt" rows="5" data-i18n-placeholder="promptProcessingPlaceholder" placeholder="Describe how to process documents in parts" style="min-height:120px;"></textarea>
         </label>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <button type="button" id="knowledgeServiceApply">Сохранить</button>
-          <button type="button" id="knowledgeServiceRun">Запустить обработку</button>
-          <button type="button" id="knowledgeServiceRefresh">Обновить</button>
+          <button type="button" id="knowledgeServiceApply" data-i18n="buttonSave">Save</button>
+          <button type="button" id="knowledgeServiceRun" data-i18n="buttonStartProcessing">Start processing</button>
+          <button type="button" id="knowledgeServiceRefresh" data-i18n="refreshButtonTitle">Refresh</button>
           <span class="muted" id="knowledgeServiceStatus">—</span>
         </div>
       </div>
       <div class="card prompts-card">
-        <b>LLM Prompts</b>
-        <div class="muted">Последние запросы (с учётом базы знаний)</div>
+        <b data-i18n="llmPromptsTitle">LLM Prompts</b>
+        <div class="muted" data-i18n="latestRequestsTitle">Latest requests (including knowledge base)</div>
         <pre id="promptLogs" style="white-space:pre-wrap; padding:10px; border-radius:8px; overflow:auto;"></pre>
       </div>
       <div class="card logs-card">
-        <b>Logs (last 200)</b>
+        <b data-i18n="logsCardTitle">Logs (last 200)</b>
         <div style="margin:6px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-          <label>Lines: <input type="number" id="logLimit" min="50" max="1000" value="200" style="width:80px;"></label>
-          <button id="copyLogs" type="button">Copy</button>
+          <label data-i18n-text="logLinesLabel">Lines: <input type="number" id="logLimit" min="50" max="1000" value="200" style="width:80px;"></label>
+          <button id="copyLogs" type="button" data-i18n="logCopyButton">Copy</button>
           <span class="muted" id="logInfo"></span>
         </div>
         <pre id="logs" style="white-space:pre-wrap; background:#0b1021; color:#b8c1ec; padding:10px; border-radius:8px; max-height:320px; overflow:auto;"></pre>
@@ -839,47 +845,47 @@
   <div id="projectModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-header">
-        <strong>Новый проект</strong>
+        <strong data-i18n="newProjectTitle">New project</strong>
         <button type="button" class="modal-close" id="projectModalClose">×</button>
       </div>
       <form id="projectModalForm">
         <div class="modal-body">
-          <label>Идентификатор (ENG)
+          <label data-i18n="identifierLabel">Identifier (ENG)
             <input type="text" id="projectModalName" placeholder="mmvs" required>
           </label>
-          <label>Название
-            <input type="text" id="projectModalTitle" placeholder="Название проекта">
+          <label data-i18n="labelTitle">Title
+            <input type="text" id="projectModalTitle" data-i18n-placeholder="projectNamePlaceholder" placeholder="Project name">
           </label>
-          <label>Домен
+          <label data-i18n="labelDomain">Domain
             <input type="text" id="projectModalDomain" placeholder="https://example.com">
           </label>
-          <label>LLM модель
-            <input type="text" id="projectModalModel" list="llmModelOptions" placeholder="Например, yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest">
+          <label data-i18n="labelLlmModel">LLM model
+            <input type="text" id="projectModalModel" list="llmModelOptions" data-i18n-placeholder="voiceExampleCatalog" placeholder="For example, yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest">
           </label>
-          <label>Стартовый промпт
-            <textarea id="projectModalPrompt" rows="4" placeholder="Опишите инструкцию для модели"></textarea>
+          <label data-i18n="labelPrompt">Initial prompt
+            <textarea id="projectModalPrompt" rows="4" data-i18n-placeholder="promptInstructionPlaceholder" placeholder="Describe instructions for the model"></textarea>
           </label>
           <div class="prompt-ai-controls">
             <select id="projectModalPromptRole"></select>
-            <button type="button" id="projectModalPromptAi">AI‑сгенерировать</button>
+            <button type="button" id="projectModalPromptAi" data-i18n="aiGenerateButton">Generate with AI</button>
             <span class="muted prompt-ai-status" id="projectModalPromptAiStatus">—</span>
           </div>
-          <label>Админ логин
+          <label data-i18n="labelAdminLogin">Admin login
             <input type="text" id="projectModalAdminUsername" placeholder="project_admin">
           </label>
-          <label>Пароль администратора
-            <input type="password" id="projectModalAdminPassword" placeholder="Оставьте пустым, чтобы не задавать">
+          <label data-i18n="labelAdminPassword">Administrator password
+            <input type="password" id="projectModalAdminPassword" data-i18n-placeholder="skipSettingPlaceholder" placeholder="Leave empty to skip setting">
           </label>
           <label style="display:flex; gap:10px; align-items:center;">
             <input type="checkbox" id="projectModalEmotions" checked>
-            Эмоции и эмодзи в ответах
+            <span data-i18n="emotionsLabel">Emotions and emojis in replies</span>
           </label>
         </div>
         <div class="modal-footer">
           <span class="muted" id="projectModalStatus"></span>
           <div style="display:flex; gap:8px;">
-            <button type="submit">Создать</button>
-            <button type="button" id="projectModalCancel">Отмена</button>
+            <button type="submit" data-i18n="buttonCreate">Create</button>
+            <button type="button" id="projectModalCancel" data-i18n="authCancel">Cancel</button>
           </div>
         </div>
       </form>
@@ -889,39 +895,41 @@
   <div id="kbModal" class="modal-backdrop">
     <div class="modal">
       <div class="modal-header">
-        <strong id="kbModalTitle">Документ</strong>
+        <strong id="kbModalTitle" data-i18n="documentTitle">Document</strong>
         <button type="button" class="modal-close" id="kbModalClose">×</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="kbModalId">
-        <label>Имя
+        <label data-i18n="labelName">Name
           <input type="text" id="kbModalName" required>
         </label>
-        <label>URL
+        <label>
+          <span data-i18n="labelUrl">URL</span>
           <input type="url" id="kbModalUrl" placeholder="https://example.com">
         </label>
-        <label>Описание
-          <input type="text" id="kbModalDescription" placeholder="Краткое описание">
+        <label data-i18n="labelDescription">Description
+          <input type="text" id="kbModalDescription" data-i18n-placeholder="shortDescriptionPlaceholder" placeholder="Short description">
         </label>
-        <label>Проект
+        <label data-i18n="labelProject">Project
           <input type="text" id="kbModalProject" placeholder="project">
         </label>
-        <label>Текст
+        <label data-i18n="labelText">Text
           <textarea id="kbModalContent"></textarea>
         </label>
       </div>
       <div class="modal-footer">
         <span class="muted" id="kbModalStatus"></span>
         <div style="display:flex; gap:8px;">
-          <button type="button" id="kbModalCompile">Компилировать</button>
-          <button type="button" id="kbModalSave">Сохранить</button>
-          <button type="button" id="kbModalCancel">Закрыть</button>
+          <button type="button" id="kbModalCompile" data-i18n="buttonCompile">Compile</button>
+          <button type="button" id="kbModalSave" data-i18n="buttonSave">Save</button>
+          <button type="button" id="kbModalCancel" data-i18n="buttonClose">Close</button>
         </div>
       </div>
     </div>
   </div>
 
   </div>
+  <script src="./js/i18n-static.js"></script>
   <script src="./js/i18n.js"></script>
   <script src="./js/auth.js"></script>
   <script src="./js/session.js"></script>

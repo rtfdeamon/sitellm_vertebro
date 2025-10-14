@@ -24,30 +24,37 @@
   let crawlerLogsLoading = false;
   let crawlerActionTimer = null;
 
-  const translate = (key, fallback = '') => {
+  const translate = (key, fallback = '', params = null) => {
     if (typeof global.t === 'function') {
       try {
-        return global.t(key);
+        return params ? global.t(key, params) : global.t(key);
       } catch (error) {
         console.warn('crawler_translate_failed', error);
       }
+    }
+    if (fallback && params && typeof fallback === 'string') {
+      return fallback.replace(/\{(\w+)\}/g, (_, token) =>
+        Object.prototype.hasOwnProperty.call(params, token) ? String(params[token]) : '',
+      );
     }
     return fallback || key;
   };
 
   const resetCrawlerProgress = () => {
     if (crawlerProgressFill) crawlerProgressFill.style.width = '0%';
-    if (crawlerProgressStatus) crawlerProgressStatus.textContent = 'Ожидание запуска';
-    if (crawlerProgressCounters) crawlerProgressCounters.textContent = '0 / 0 страниц';
+    if (crawlerProgressStatus) crawlerProgressStatus.textContent = translate('crawlerStatusWaiting', 'Waiting to start');
+    if (crawlerProgressCounters) {
+      crawlerProgressCounters.textContent = translate('crawlerProgressCounters', '0 / 0 pages', { completed: 0, total: 0 });
+    }
     if (crawlerProgressNote) {
       crawlerProgressNote.textContent = '';
       crawlerProgressNote.style.display = 'none';
     }
   };
 
-  const setCrawlerProgressError = (message = 'Не удалось получить данные о краулере') => {
+  const setCrawlerProgressError = (message = translate('crawlerFetchError', 'Failed to fetch crawler data')) => {
     if (crawlerProgressFill) crawlerProgressFill.style.width = '0%';
-    if (crawlerProgressStatus) crawlerProgressStatus.textContent = 'Ошибка статуса';
+    if (crawlerProgressStatus) crawlerProgressStatus.textContent = translate('crawlerStatusError', 'Status error');
     if (crawlerProgressCounters) crawlerProgressCounters.textContent = '—';
     if (crawlerProgressNote) {
       crawlerProgressNote.textContent = message;
@@ -63,23 +70,27 @@
       crawlerProgressFill.style.width = `${percent}%`;
     }
     if (crawlerProgressStatus) {
-      let statusText = 'Ожидание запуска';
-      if (active > 0) statusText = `Сканирование (${active})`;
-      else if (queued > 0) statusText = `В очереди (${queued})`;
-      else if (failed > 0) statusText = 'Ошибки';
-      else if (done > 0) statusText = 'Готово';
+      let statusText = translate('crawlerStatusWaiting', 'Waiting to start');
+      if (active > 0) statusText = translate('crawlerStatusScanning', 'Scanning ({value})', { value: active });
+      else if (queued > 0) statusText = translate('crawlerStatusQueuedDetailed', 'Queued ({value})', { value: queued });
+      else if (failed > 0) statusText = translate('crawlerErrorsShort', 'Errors');
+      else if (done > 0) statusText = translate('crawlerDoneShort', 'Done');
       crawlerProgressStatus.textContent = statusText;
     }
     if (crawlerProgressCounters) {
       const total = Math.max(active + queued + done + failed, 0);
       const completed = Math.max(done, 0);
-      const base = total > 0 ? `${completed} / ${total} страниц` : '0 / 0 страниц';
-      crawlerProgressCounters.textContent = failed > 0 ? `${base} · ошибок: ${failed}` : base;
+      const base = total > 0
+        ? translate('crawlerProgressCounters', '{completed} / {total} pages', { completed, total })
+        : translate('crawlerProgressCounters', '0 / 0 pages', { completed: 0, total: 0 });
+      crawlerProgressCounters.textContent = failed > 0
+        ? translate('crawlerProgressCountersFailed', '{base} · errors: {failed}', { base, failed })
+        : base;
     }
     if (crawlerProgressNote) {
       const bits = [];
       if (note) bits.push(String(note));
-      if (lastUrl) bits.push(`Последний URL: ${lastUrl}`);
+      if (lastUrl) bits.push(translate('crawlerLastUrlLabel', 'Last URL: {value}', { value: lastUrl }));
       crawlerProgressNote.textContent = bits.join('\n');
       crawlerProgressNote.style.display = bits.length ? 'block' : 'none';
     }
@@ -107,17 +118,19 @@
     if (!force && now - lastCrawlerLogFetch < CRAWLER_LOG_REFRESH_INTERVAL) return;
     if (crawlerLogsLoading) return;
     crawlerLogsLoading = true;
-    crawlerLogsOutput.textContent = 'Загружаем…';
+    crawlerLogsOutput.textContent = translate('crawlerLogsLoading', 'Loading…');
     try {
       const resp = await fetch('/api/v1/admin/logs?limit=400');
       if (!resp.ok) throw new Error('logs request failed');
       const data = await resp.json();
       const lines = Array.isArray(data.lines) ? data.lines : [];
       const filtered = lines.filter((line) => /crawler/i.test(line));
-      crawlerLogsOutput.textContent = filtered.length ? filtered.join('\n') : 'Логи краулера пока пусты.';
+      crawlerLogsOutput.textContent = filtered.length
+        ? filtered.join('\n')
+        : translate('crawlerLogsEmptyState', 'Crawler logs are empty.');
     } catch (error) {
       console.error('crawler logs fetch failed', error);
-      crawlerLogsOutput.textContent = 'Не удалось загрузить логи краулера';
+      crawlerLogsOutput.textContent = translate('crawlerLogsLoadError', 'Failed to load crawler logs');
     } finally {
       crawlerLogsLoading = false;
       lastCrawlerLogFetch = Date.now();
@@ -134,10 +147,10 @@
 
   const performCrawlerAction = async (path, successMessage) => {
     if (!global.currentProject) {
-      setCrawlerActionStatus(translate('crawlerSelectProject', 'Выберите проект'), 2500);
+      setCrawlerActionStatus(translate('crawlerSelectProject', 'Select a project'), 2500);
       return;
     }
-    setCrawlerActionStatus(translate('crawlerActionProcessing', 'Выполняем…'), 0);
+    setCrawlerActionStatus(translate('crawlerActionProcessing', 'Processing…'), 0);
     try {
       const resp = await fetch(buildCrawlerActionUrl(path), { method: 'POST' });
       if (!resp.ok) {
@@ -149,7 +162,7 @@
       await refreshCrawlerLogs(true);
     } catch (error) {
       console.error('crawler_action_failed', error);
-      setCrawlerActionStatus(translate('crawlerActionExecuteError', 'Не удалось выполнить действие'), 3000);
+      setCrawlerActionStatus(translate('crawlerActionExecuteError', 'Failed to execute action'), 3000);
     }
   };
 
@@ -178,9 +191,12 @@
       if (lastCrawl) lastCrawl.textContent = 'Last: –';
       const recent = document.getElementById('recent_urls');
       if (recent) recent.innerHTML = '';
-      if (typeof global.setSummaryCrawler === 'function') {
-        global.setSummaryCrawler('Нет данных', 'Выберите проект слева');
-      }
+        if (typeof global.setSummaryCrawler === 'function') {
+          global.setSummaryCrawler(
+            translate('projectsNoData', 'No data'),
+            translate('crawlerSelectProjectHint', 'Select a project on the left'),
+          );
+        }
       resetCrawlerProgress();
       return;
     }
@@ -200,7 +216,7 @@
         setVal('failed', data.failed ?? 0);
         const iso = data.last_crawl_iso || '–';
         const lastCrawl = document.getElementById('last_crawl');
-        if (lastCrawl) lastCrawl.textContent = `Last: ${iso}`;
+        if (lastCrawl) lastCrawl.textContent = translate('crawlerLast', 'Last: {value}', { value: iso });
         const list = document.getElementById('recent_urls');
         if (list) {
           list.innerHTML = '';
@@ -229,10 +245,13 @@
         const done = Number(data.done ?? 0);
         const failed = Number(data.failed ?? 0);
         if (typeof global.setSummaryCrawler === 'function') {
-          const summaryMain = `${active} в работе · ${queued} в очереди`;
-          const metaLines = [`Готово: ${done}`, `Ошибки: ${failed}`];
-          if (data.last_url) metaLines.push(`Последний: ${data.last_url}`);
-          if (iso && iso !== '–') metaLines.push(`Последний запуск: ${iso}`);
+          const summaryMain = `${translate('crawlerInProgress', 'In progress: {value}', { value: active })} · ${translate('crawlerQueued', 'Queued: {value}', { value: queued })}`;
+          const metaLines = [
+            translate('crawlerDone', 'Done: {value}', { value: done }),
+            translate('crawlerFailed', 'Failed: {value}', { value: failed }),
+          ];
+          if (data.last_url) metaLines.push(translate('crawlerLast', 'Last: {value}', { value: data.last_url }));
+          if (iso && iso !== '–') metaLines.push(translate('crawlerLastRun', 'Last run: {value}', { value: iso }));
           global.setSummaryCrawler(summaryMain, metaLines.join('\n'));
         }
         updateCrawlerProgress(
@@ -247,12 +266,15 @@
           refreshCrawlerLogs();
         }
       } else {
-        setCrawlerProgressError('Не удалось получить статус краулера');
+        setCrawlerProgressError(translate('crawlerStatusFetchFailed', 'Failed to fetch crawler status'));
       }
     } catch (error) {
       console.error('poll_status_failed', error);
       if (typeof global.setSummaryCrawler === 'function') {
-        global.setSummaryCrawler('Ошибка', 'Не удалось получить статус краулера');
+        global.setSummaryCrawler(
+          translate('crawlerGenericError', 'Error'),
+          translate('crawlerStatusFetchFailed', 'Failed to fetch crawler status'),
+        );
       }
       setCrawlerProgressError();
     }
@@ -294,7 +316,7 @@
     if (crawlerCollectBooks) payload.collect_books = crawlerCollectBooks.checked;
     if (crawlerCollectMedex) payload.collect_medex = crawlerCollectMedex.checked;
     if (!global.currentProject) {
-      launchMsg.textContent = 'Выберите проект';
+      launchMsg.textContent = translate('crawlerSelectProject', 'Select a project');
       launchMsg.style.color = 'var(--danger)';
       return;
     }
@@ -302,7 +324,7 @@
     const crawlDomain = projectDomainInput?.value?.trim();
     if (crawlDomain) payload.domain = crawlDomain;
     resetCrawlerProgress();
-    launchMsg.textContent = 'Запускаем...';
+    launchMsg.textContent = translate('crawlerStarting', 'Starting…');
     launchMsg.style.color = '';
     try {
       const res = await fetch('/api/v1/crawler/run', {
@@ -311,11 +333,11 @@
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
-      launchMsg.textContent = 'Краулер запущен';
+      launchMsg.textContent = translate('crawlerStarted', 'Crawler started');
       await pollStatus();
     } catch (error) {
       console.error('crawler_start_failed', error);
-      launchMsg.textContent = 'Не удалось запустить краулер';
+      launchMsg.textContent = translate('crawlerStartFailed', 'Failed to start crawler');
       launchMsg.style.color = 'var(--danger)';
     }
   };
@@ -326,12 +348,12 @@
     try {
       const resp = await fetch('/api/v1/crawler/stop', { method: 'POST' });
       if (!resp.ok) throw new Error(await resp.text());
-      setCrawlerProgressError('Остановлено по запросу');
-      launchMsg.textContent = 'Останавливаем…';
+      setCrawlerProgressError(translate('crawlerStoppedByRequest', 'Stopped on request'));
+      launchMsg.textContent = translate('crawlerStopping', 'Stopping…');
     } catch (error) {
       console.error('crawler_stop_failed', error);
-      setCrawlerProgressError('Не удалось остановить краулер');
-      launchMsg.textContent = 'Не удалось остановить';
+      setCrawlerProgressError(translate('crawlerStopFailed', 'Failed to stop crawler'));
+      launchMsg.textContent = translate('crawlerStopError', 'Failed to stop');
     } finally {
       stopBtn.disabled = false;
     }
@@ -356,7 +378,7 @@
       crawlerLogsCopy.addEventListener('click', async () => {
         const text = crawlerLogsOutput?.textContent || '';
         if (!text.trim()) {
-          setCrawlerActionStatus(translate('crawlerActionNoData', 'Нет данных'), 2000);
+          setCrawlerActionStatus(translate('crawlerActionNoData', 'No data'), 2000);
           return;
         }
         try {
@@ -373,18 +395,18 @@
             selection.removeAllRanges();
             if (!ok) throw new Error('exec_command_failed');
           }
-          setCrawlerActionStatus(translate('logCopySuccess', 'Скопировано'), 2000);
+          setCrawlerActionStatus(translate('logCopySuccess', 'Logs copied'), 2000);
         } catch (error) {
           console.error('crawler_logs_copy_failed', error);
-          setCrawlerActionStatus(translate('logCopyError', 'Не удалось скопировать'), 3000);
+          setCrawlerActionStatus(translate('logCopyError', 'Failed to copy'), 3000);
         }
       });
     }
     if (crawlerResetBtn) {
-      crawlerResetBtn.addEventListener('click', () => performCrawlerAction('/reset', 'Счётчики сброшены'));
+      crawlerResetBtn.addEventListener('click', () => performCrawlerAction('/reset', translate('crawlerActionReset', 'Counters reset')));
     }
     if (crawlerDedupBtn) {
-      crawlerDedupBtn.addEventListener('click', () => performCrawlerAction('/deduplicate', 'Дубликаты удалены'));
+      crawlerDedupBtn.addEventListener('click', () => performCrawlerAction('/deduplicate', translate('crawlerActionDedup', 'Duplicates removed')));
     }
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && crawlerLogsPanel?.classList.contains('visible')) {
