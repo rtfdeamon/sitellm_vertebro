@@ -1009,6 +1009,42 @@
         </div>
       </div>
     </section>
+
+    <section class="download-section" id="desktopDownloads">
+      <h2>Desktop assistant for Windows &amp; Linux</h2>
+      <p>
+        Launch the voice avatar as a standalone program that stays on top of other windows, supports the same animated
+        characters, and listens for a wake word. Build installers from <code>widget/desktop</code> or place your signed
+        binaries in the paths below and the links will serve them directly.
+      </p>
+      <div class="download-grid">
+        <article class="download-card">
+          <h3>Windows (x64)</h3>
+          <p>Includes hotword activation, animated avatar, and auto-start options.</p>
+          <button type="button" class="btn" data-build-platform="windows">
+            Build &amp; download .exe
+          </button>
+        </article>
+        <article class="download-card">
+          <h3>Linux (AppImage / deb)</h3>
+          <p>Runs on any modern distribution, stays always-on-top, supports microphone wake word.</p>
+          <div class="download-links">
+            <button type="button" class="btn" data-build-platform="linux-appimage">
+              Build AppImage
+            </button>
+            <button type="button" class="btn secondary" data-build-platform="linux-deb">
+              Build deb package
+            </button>
+          </div>
+        </article>
+      </div>
+      <div class="download-note">
+        Builds run on demand when you click a button. Ensure <code>npm</code> and <code>electron-builder</code> are available on the server.
+        <div class="download-status" id="desktopBuildStatus" role="status" aria-live="polite">
+          Click a button to build the latest installer for your platform.
+        </div>
+      </div>
+    </section>
   </div>
   <div class="widget-launcher pos-bottom-right" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria" data-position="bottom-right">
     <div class="launcher-avatar">AI</div>
