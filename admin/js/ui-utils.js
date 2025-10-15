@@ -12,7 +12,9 @@
       unitIndex += 1;
     }
     const precision = unitIndex === 0 ? 0 : bytes < 10 ? 1 : 0;
-    return `${bytes.toFixed(precision)} ${UNITS[unitIndex]}`;
+    const formatted = bytes.toFixed(precision);
+    const cleaned = precision > 0 ? formatted.replace(/\.0$/, '') : formatted;
+    return `${cleaned} ${UNITS[unitIndex]}`;
   };
 
   const formatBytesOptional = (value) => {
@@ -51,8 +53,11 @@
     const raw = String(path).trim();
     if (!raw) return null;
     if (/^[a-z]+:\/\//i.test(raw)) return raw;
-    if (raw.startsWith('//')) return `${global.location.protocol}${raw}`;
-    if (raw.startsWith('/')) return `${global.location.origin}${raw}`;
+    if (raw.startsWith('//') && !raw.startsWith('///')) return `${global.location.protocol}${raw}`;
+    if (raw.startsWith('/')) {
+      const normalizedPath = `/${raw.replace(/^\/+/, '')}`;
+      return `${global.location.origin}${normalizedPath}`;
+    }
     return `${global.location.origin}/${raw.replace(/^\/+/, '')}`;
   };
 
