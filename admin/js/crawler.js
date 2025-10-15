@@ -442,6 +442,11 @@
     global.hideCrawlerLogs = hideCrawlerLogs;
     global.pollStatus = pollStatus;
     global.pollHealth = pollHealth;
+    try {
+      global.dispatchEvent(new Event('admin:poll-status-ready'));
+    } catch (error) {
+      console.warn('poll_status_event_dispatch_failed', error);
+    }
   };
 
   if (document.readyState === 'loading') {

@@ -3481,7 +3481,7 @@ async def admin_knowledge(
     collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
     filter_query = {"project": project_name} if project_name else {}
 
-    count_task: asyncio.Task[int] | None = None
+    count_future: asyncio.Future[int] | None = None
     try:
         if q:
             docs_models = await mongo_client.search_documents(
@@ -3491,9 +3491,7 @@ async def admin_knowledge(
             total = matched
             has_more = matched >= limit
         else:
-            count_task = asyncio.create_task(
-                mongo_client.db[collection].count_documents(filter_query or {})
-            )
+            count_future = mongo_client.db[collection].count_documents(filter_query or {})
             cursor = (
                 mongo_client.db[collection]
                 .find(filter_query, {"_id": False})
@@ -3504,9 +3502,9 @@ async def admin_knowledge(
             has_more = len(docs_models) > limit
             if has_more:
                 docs_models = docs_models[:limit]
-            total = await count_task
+            total = await count_future
             matched = total
-            count_task = None
+            count_future = None
 
         documents: list[dict[str, Any]] = []
         for item in docs_models:
@@ -3538,16 +3536,14 @@ async def admin_knowledge(
             if file_id:
                 doc["downloadUrl"] = _build_download_url(request, file_id)
     except Exception as exc:  # noqa: BLE001
-        if count_task is not None and not count_task.done():
-            count_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await count_task
+        if count_future is not None and not count_future.done():
+            with suppress(Exception):
+                await count_future
         raise HTTPException(status_code=503, detail=f"MongoDB query failed: {exc}") from exc
     finally:
-        if count_task is not None:
-            count_task.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await count_task
+        if count_future is not None and not count_future.done():
+            with suppress(Exception):
+                await count_future
         if owns_client:
             await mongo_client.close()
 

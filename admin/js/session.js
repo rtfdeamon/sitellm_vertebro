@@ -25,9 +25,14 @@
   global.clusterAvailabilityTimer = null;
   global.promptAiHandlers = [];
 
+  const AUTH_CANCELLED_ERROR = 'admin-auth-cancelled';
+
   async function fetchSession() {
     try {
       const resp = await fetch('/api/v1/admin/session');
+      if (resp.status === 401) {
+        throw new Error(AUTH_CANCELLED_ERROR);
+      }
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
       const normalize = typeof global.normalizeProjectName === 'function'
@@ -44,7 +49,9 @@
         primary_project: data.primary_project ? normalize(data.primary_project) : (projects[0] || null),
       };
     } catch (error) {
-      console.error('Failed to load admin session', error);
+      if (error && error.message !== AUTH_CANCELLED_ERROR) {
+        console.error('Failed to load admin session', error);
+      }
       global.adminSession = { ...sessionDefaults };
     }
     if (typeof global.applySessionPermissions === 'function') {
@@ -69,6 +76,12 @@
     updateProjectSummary,
   }) {
     await fetchSession();
+    if (!global.adminSession.username) {
+      const needAuth = typeof global.requestAdminAuth === 'function' ? await global.requestAdminAuth() : false;
+      if (needAuth) {
+        await fetchSession();
+      }
+    }
     if (typeof refreshClusterAvailability === 'function') {
       await refreshClusterAvailability();
     }
@@ -144,6 +157,10 @@
     if (global.clusterAvailabilityTimer) {
       clearInterval(global.clusterAvailabilityTimer);
       global.clusterAvailabilityTimer = null;
+    }
+    if (global.healthPollTimer) {
+      clearInterval(global.healthPollTimer);
+      global.healthPollTimer = null;
     }
   });
 })(window);

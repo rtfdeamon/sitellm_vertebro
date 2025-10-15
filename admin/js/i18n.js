@@ -1,4 +1,23 @@
 (function (global) {
+  const fallbackFormat = (value, params = {}) => {
+    if (value === null || value === undefined) return '';
+    const base = typeof value === 'string' ? value : String(value);
+    return base.replace(/\{(\w+)\}/g, (_, token) => {
+      if (Object.prototype.hasOwnProperty.call(params, token)) {
+        const replacement = params[token];
+        return replacement === null || replacement === undefined ? '' : String(replacement);
+      }
+      return '';
+    });
+  };
+  if (typeof global.t !== 'function') {
+    global.t = (key, params = {}) => fallbackFormat(key, params);
+  }
+
+  if (typeof global.tl !== 'function') {
+    global.tl = (phrase, params = {}) => fallbackFormat(phrase, params);
+  }
+
   function initAdminI18n({
     languageSelect = global.document.getElementById('adminLanguage'),
     authHint = global.document.getElementById('adminAuthHint'),

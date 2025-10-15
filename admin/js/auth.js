@@ -297,13 +297,16 @@
       return nativeFetch(input, init);
     };
 
-    return {
+    const api = {
       getAuthHeaderForBase,
       setAuthHeaderForBase,
       clearAuthHeaderForBase,
       setStoredAdminUser,
       requestAdminAuth,
     };
+
+    global.AdminAuth = api;
+    return api;
   }
 
   global.initAdminAuth = initAdminAuth;

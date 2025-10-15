@@ -97,6 +97,7 @@ const getDefaultWidgetPath = projectsUi.getDefaultWidgetPath || ((project) => {
 });
 const resolveWidgetHref = projectsUi.resolveWidgetHref || ((path) => path || null);
 const voiceModule = window.VoiceModule || null;
+let mainPromptAiHandler = null;
 
 const PROMPT_AI_ROLES = [
   {
@@ -343,6 +344,27 @@ function updateProjectSummary() {
   setSummaryPrompt('', [], t('projectsAwaitingActivity'));
 }
 
+function handleProjectsLanguageApplied() {
+  renderPromptRoleOptions(projectPromptRoleSelect);
+  if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
+  if (projectAdminPasswordInput) {
+    projectAdminPasswordInput.placeholder = adminSession.is_super
+      ? t('projectsKeepEmpty')
+      : t('projectsPasswordPrompt');
+  }
+  const currentProjectEntry = currentProject ? projectsCache[currentProject] || null : null;
+  updateProjectAdminHintText(currentProjectEntry);
+  if (projectEmotionsInput) refreshEmotionsHint(projectEmotionsInput.checked);
+  if (projectVoiceInput) refreshVoiceHint(projectVoiceInput.checked);
+  if (projectImageCaptionsInput) refreshImageCaptionsHint(projectImageCaptionsInput.checked);
+  if (projectSourcesInput) refreshSourcesHint(projectSourcesInput.checked);
+  if (projectDebugInfoInput) refreshDebugInfoHint(projectDebugInfoInput.checked);
+  if (projectDebugInput) refreshDebugHint(projectDebugInput.checked);
+  refreshProjectWidgetUI();
+  updateProjectSummary();
+  updateProjectDeleteInfo(currentProject);
+}
+
 window.ProjectsModule = {
   setProjectStatus,
   updateProjectSummary,
@@ -424,27 +446,6 @@ function updateProjectInputs() {
 
 window.fetchProjectStorage = fetchProjectStorage;
 window.loadProjectsList = loadProjectsList;
-
-const handleProjectsLanguageApplied = () => {
-  renderPromptRoleOptions(projectPromptRoleSelect);
-  if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
-  if (projectAdminPasswordInput) {
-    projectAdminPasswordInput.placeholder = adminSession.is_super
-      ? t('projectsKeepEmpty')
-      : t('projectsPasswordPrompt');
-  }
-  const currentProjectEntry = currentProject ? projectsCache[currentProject] || null : null;
-  updateProjectAdminHintText(currentProjectEntry);
-  if (projectEmotionsInput) refreshEmotionsHint(projectEmotionsInput.checked);
-  if (projectVoiceInput) refreshVoiceHint(projectVoiceInput.checked);
-  if (projectImageCaptionsInput) refreshImageCaptionsHint(projectImageCaptionsInput.checked);
-  if (projectSourcesInput) refreshSourcesHint(projectSourcesInput.checked);
-  if (projectDebugInfoInput) refreshDebugInfoHint(projectDebugInfoInput.checked);
-  if (projectDebugInput) refreshDebugHint(projectDebugInput.checked);
-  refreshProjectWidgetUI();
-  updateProjectSummary();
-  updateProjectDeleteInfo(currentProject);
-};
 
 function refreshProjectWidgetUI() {
   if (!projectWidgetUrl || !projectWidgetLink || !projectWidgetHint || !projectWidgetCopyBtn) return;

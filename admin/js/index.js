@@ -36,6 +36,13 @@ const knowledgeServiceEndpoints = [
   '/api/v1/admin/knowledge/service',
   '/api/v1/llm/admin/knowledge/service',
 ];
+const pollStatusProxy = (...args) => {
+  const fn = typeof window.pollStatus === 'function' ? window.pollStatus : null;
+  if (!fn) {
+    return undefined;
+  }
+  return fn(...args);
+};
 const indexUi = window.UIUtils || {};
 const formatBytes = indexUi.formatBytes || ((value) => {
   const numeric = Number(value);
@@ -88,6 +95,7 @@ const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/'];
 const {
   clearAuthHeaderForBase,
   setStoredAdminUser,
+  requestAdminAuth,
 } = initAdminAuth({
   authModal,
   authForm,
@@ -104,6 +112,8 @@ const {
   authCancelledCode: AUTH_CANCELLED_CODE,
   protectedPrefixes: ADMIN_PROTECTED_PREFIXES,
 });
+window.requestAdminAuth = requestAdminAuth;
+window.healthPollTimer = window.healthPollTimer || null;
 
 let feedbackTasksCache = [];
 let feedbackTasksList = window.feedbackTasksList || document.getElementById('feedbackTasksList') || null;
@@ -116,6 +126,14 @@ let qaPairsCache = [];
 let knowledgePriorityOrder = [];
 let draggingPriorityItem = null;
 
+const summaryState = {
+  project: '',
+  crawler: '',
+  perf: '',
+  build: '',
+  prompt: '',
+};
+
 const {
   t,
   applyLanguage,
@@ -127,8 +145,6 @@ const {
   authError,
   onLanguageApplied: handleLanguageApplied,
 });
-
-applyLanguage(getCurrentLanguage());
 
 function handleLanguageApplied() {
   if (window.BackupModule?.handleLanguageApplied) {
@@ -204,6 +220,8 @@ const KNOWLEDGE_SOURCES = [
   { id: 'mongo', labelKey: 'knowledgeSourceDocsFiles' },
 ];
 
+applyLanguage(getCurrentLanguage());
+
 const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 const kbTables = {
@@ -258,6 +276,12 @@ const createTypeBadge = (category) => {
 async function refreshClusterAvailability() {
   try {
     const resp = await fetch('/api/v1/admin/llm/availability');
+    if (resp.status === 401) {
+      if (clusterWarning) {
+        clusterWarning.style.display = '';
+      }
+      return false;
+    }
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -465,7 +489,7 @@ const renderEmptyRow = (tbody, text) => {
   tbody.appendChild(row);
 };
 
-const normalizeKnowledgePriority = (order) => {
+function normalizeKnowledgePriority(order) {
   const known = new Set(KNOWLEDGE_SOURCES.map((item) => item.id));
   const sanitized = Array.isArray(order)
     ? order.map((value) => String(value || '').trim()).filter((value) => known.has(value))
@@ -474,9 +498,9 @@ const normalizeKnowledgePriority = (order) => {
     if (!sanitized.includes(source.id)) sanitized.push(source.id);
   });
   return sanitized;
-};
+}
 
-const renderKnowledgePriority = (order) => {
+function renderKnowledgePriority(order) {
   if (!kbPriorityList) return;
   kbPriorityList.innerHTML = '';
   knowledgePriorityOrder = normalizeKnowledgePriority(order);
@@ -525,9 +549,9 @@ const renderKnowledgePriority = (order) => {
         after ? target.nextSibling : target,
       );
     });
-    kbPriorityList.dataset.dragBound = '1';
-  }
-};
+      kbPriorityList.dataset.dragBound = '1';
+    }
+}
 
 const getKnowledgePriorityOrder = () => {
   if (!kbPriorityList) return knowledgePriorityOrder;
@@ -732,14 +756,6 @@ const updateKnowledgeThinking = (subtitle, caption) => {
 const hideKnowledgeThinking = () => {
   if (kbThinkingOverlay) kbThinkingOverlay.classList.remove('active');
   resetKnowledgePreview();
-};
-
-const summaryState = {
-  project: '',
-  crawler: '',
-  perf: '',
-  build: '',
-  prompt: '',
 };
 
 const WEEK_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -1247,8 +1263,41 @@ bootstrapAdminApp({
   fetchFeedbackTasks,
   populateProjectForm,
   loadKnowledge,
-  pollStatus,
+  pollStatus: pollStatusProxy,
   updateProjectSummary,
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    pollStatusProxy();
+  } catch (error) {
+    console.error('poll_status_initial_failed', error);
+  }
+  if (!window.healthPollTimer && typeof window.pollHealth === 'function') {
+    window.pollHealth();
+    window.healthPollTimer = setInterval(() => {
+      const fn = typeof window.pollHealth === 'function' ? window.pollHealth : null;
+      if (fn) fn();
+    }, 20000);
+  }
+});
+
+document.addEventListener('admin:poll-status-ready', () => {
+  const fn = typeof window.pollStatus === 'function' ? window.pollStatus : null;
+  if (fn) {
+    try {
+      fn();
+    } catch (error) {
+      console.error('poll_status_initial_failed', error);
+    }
+  }
+  if (!window.healthPollTimer && typeof window.pollHealth === 'function') {
+    window.pollHealth();
+    window.healthPollTimer = setInterval(() => {
+      const pollFn = typeof window.pollHealth === 'function' ? window.pollHealth : null;
+      if (pollFn) pollFn();
+    }, 20000);
+  }
 });
 
 // Controls for LLM config
