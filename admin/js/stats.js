@@ -56,14 +56,15 @@
     if (!dims) return [];
     const { width, height } = dims;
     const paddingX = 28;
-    const paddingY = 24;
+    const paddingTop = 40;
+    const paddingBottom = 24;
     const innerWidth = Math.max(width - paddingX * 2, 10);
-    const innerHeight = Math.max(height - paddingY * 2, 10);
+    const innerHeight = Math.max(height - paddingTop - paddingBottom, 10);
     const maxValue = Math.max(...stats.map((item) => item.count || 0), 1);
     const step = stats.length > 1 ? innerWidth / (stats.length - 1) : 0;
     return stats.map((item, idx) => ({
       x: paddingX + step * idx,
-      y: height - paddingY - ((item.count || 0) / maxValue) * innerHeight,
+      y: height - paddingBottom - ((item.count || 0) / maxValue) * innerHeight,
       value: item.count || 0,
       date: item.date,
     }));
@@ -76,8 +77,9 @@
     const { width, height, dpr } = dims;
     const ctx = statsCanvas.getContext('2d');
     const paddingX = 28;
-    const paddingY = 24;
-    const baseline = height - paddingY;
+    const paddingTop = 40;
+    const paddingBottom = 24;
+    const baseline = height - paddingBottom;
 
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -88,7 +90,7 @@
     ctx.setLineDash([6, 6]);
     const gridSteps = 4;
     for (let i = 0; i <= gridSteps; i += 1) {
-      const y = paddingY + ((baseline - paddingY) / gridSteps) * i;
+      const y = paddingTop + ((baseline - paddingTop) / gridSteps) * i;
       ctx.beginPath();
       ctx.moveTo(paddingX, y);
       ctx.lineTo(width - paddingX, y);
@@ -102,7 +104,7 @@
       points.forEach((pt) => ctx.lineTo(pt.x, pt.y));
       ctx.lineTo(points[points.length - 1].x, baseline);
       ctx.closePath();
-      const gradient = ctx.createLinearGradient(0, paddingY, 0, baseline);
+      const gradient = ctx.createLinearGradient(0, paddingTop, 0, baseline);
       gradient.addColorStop(0, 'rgba(96, 165, 250, 0.32)');
       gradient.addColorStop(1, 'rgba(96, 165, 250, 0.04)');
       ctx.fillStyle = gradient;
@@ -128,7 +130,7 @@
       if (points[highlightIndex]) {
         const pt = points[highlightIndex];
         ctx.beginPath();
-        ctx.moveTo(pt.x, paddingY - 8);
+        ctx.moveTo(pt.x, paddingTop);
         ctx.lineTo(pt.x, baseline);
         ctx.strokeStyle = 'rgba(96, 165, 250, 0.28)';
         ctx.lineWidth = 1;
