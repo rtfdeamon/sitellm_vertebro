@@ -18,3 +18,4 @@ yallm.egg-info/
 deploy-backups/
 data/
 certs/
+node_modules/

@@ -263,6 +263,31 @@ let projectStatusTimer = null;
 let lastProjectCount = 0;
 let startUrlManual = false;
 
+if (!mainPromptAiHandler) {
+  const handler = initPromptAiControls({
+    textarea: projectPromptInput,
+    domainInput: projectDomainInput,
+    roleSelect: projectPromptRoleSelect,
+    button: projectPromptAiBtn,
+    status: projectPromptAiStatus,
+  });
+  if (handler) {
+    mainPromptAiHandler = handler;
+    promptAiHandlers.push(handler);
+  }
+}
+
+const modalPromptAiHandler = initPromptAiControls({
+  textarea: projectModalPrompt,
+  domainInput: projectModalDomain,
+  roleSelect: projectModalPromptRole,
+  button: projectModalPromptAiBtn,
+  status: projectModalPromptAiStatus,
+});
+if (modalPromptAiHandler) {
+  promptAiHandlers.push(modalPromptAiHandler);
+}
+
 const startUrlInput = document.getElementById('url');
 if (startUrlInput) {
   startUrlInput.addEventListener('input', () => {

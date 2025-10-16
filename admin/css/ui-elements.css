@@ -25,6 +25,25 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
 }
 
+.project-domain-input,
+#projectModalDomain {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.32), rgba(14, 165, 233, 0.18));
+  border: 1px solid rgba(148, 197, 255, 0.95);
+  box-shadow: 0 0 18px rgba(14, 165, 233, 0.32);
+  color: #f8fbff;
+}
+
+.project-domain-input::placeholder,
+#projectModalDomain::placeholder {
+  color: rgba(224, 242, 254, 0.85);
+}
+
+.project-domain-input:focus,
+#projectModalDomain:focus {
+  border-color: rgba(125, 211, 252, 0.95);
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.5);
+}
+
 select { appearance: none; background-image: linear-gradient(135deg, rgba(96, 165, 250, 0.2), rgba(96, 165, 250, 0)); }
 
 input[type="checkbox"],
@@ -66,6 +85,39 @@ tbody tr:hover { background: rgba(148, 163, 184, 0.08); }
 .project-switch-card select { min-height: 220px; color: var(--text-primary); }
 .project-switch-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .project-switch-card .muted { margin-top: 10px; display: block; }
+
+.project-menu-title {
+  display: inline-block;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: rgba(226, 232, 255, 0.9);
+}
+
+.project-domain-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.project-domain-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(30, 64, 175, 0.18);
+  border: 1px solid rgba(148, 197, 255, 0.35);
+}
+
+.domain-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: rgba(191, 219, 254, 0.8);
+}
 
 .overview-banner { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
 .overview-card { position: relative; overflow: hidden; padding: 18px 20px; border-radius: 18px; background: linear-gradient(180deg, rgba(30, 41, 59, 0.65), rgba(15, 23, 42, 0.65)); border: 1px solid rgba(99, 102, 241, 0.25); backdrop-filter: blur(28px); box-shadow: var(--card-shadow); }

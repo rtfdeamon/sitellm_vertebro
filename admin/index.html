@@ -391,7 +391,7 @@
           <span class="collapsible-chevron" aria-hidden="true"></span>
         </summary>
         <div class="collapsible-body">
-          <b>Project</b>
+          <b class="project-menu-title" data-i18n="projectMenuTitle">Project menu</b>
         <form id="projectForm" style="display:flex; flex-wrap:wrap; gap:10px;">
           <label style="flex:1 1 200px;" data-i18n="identifierLabel">Identifier (ENG)
             <input type="text" id="projectName" placeholder="mmvs" required>
@@ -399,9 +399,13 @@
           <label style="flex:1 1 200px;" data-i18n="labelTitle">Title
             <input type="text" id="projectTitle" data-i18n-placeholder="projectNamePlaceholder" placeholder="Project name">
           </label>
-          <label style="flex:1 1 200px;" data-i18n="labelDomainOptional">Domain (optional)
-            <input type="text" id="projectDomain" placeholder="https://example.com">
-          </label>
+          <div class="project-domain-container" style="flex:1 1 200px;">
+            <label for="projectDomain" data-i18n="labelDomainOptional">Domain (optional)</label>
+            <div class="project-domain-field">
+              <input type="text" id="projectDomain" class="project-domain-input" data-i18n-placeholder="projectDomainPlaceholder" placeholder="https://example.com">
+              <span class="muted domain-hint" data-i18n="projectDomainHint">Paste full URL, for example https://example.com</span>
+            </div>
+          </div>
           <label style="flex:1 1 200px;" data-i18n="labelLlmModel">LLM model
             <select id="projectModel" style="width:100%;"></select>
           </label>
