@@ -1028,7 +1028,8 @@
     </form>
   </div>
 </div>
-<script>
+<script type="module">
+import { attachChatInputHandler } from './chat-input.js?v=20241010.02';
 const form = document.getElementById('chat-form');
 const input = document.getElementById('question');
 const messages = document.getElementById('messages');
@@ -3834,6 +3835,7 @@ stopBtn.addEventListener('click', () => {
 });
 
 saveCfgBtn.addEventListener('click', saveConfig);
+attachChatInputHandler(form, input, sendBtn);
 
 setTheme(localStorage.getItem('chat_theme') || 'dark');
 

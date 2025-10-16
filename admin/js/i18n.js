@@ -1141,6 +1141,14 @@
         const { en, ru, match } = value;
         if (en) {
           BASE_STRINGS[key] = en;
+          if (LANGUAGES.en) {
+            LANGUAGES.en.strings[key] = en;
+          }
+          Object.entries(LANGUAGES).forEach(([code, lang]) => {
+            if (code !== 'en' && lang && lang.strings && !Object.prototype.hasOwnProperty.call(lang.strings, key)) {
+              lang.strings[key] = en;
+            }
+          });
         }
         if (ru && LANGUAGES.ru) {
           LANGUAGES.ru.strings[key] = ru;
