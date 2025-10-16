@@ -392,7 +392,15 @@
         }
 
         const header = doc.createElement('h4');
-        header.textContent = server.name || '—';
+        const rawName = typeof server.name === 'string' ? server.name.trim() : '';
+        const normalized = rawName.toLowerCase();
+        if (normalized === 'default') {
+          header.textContent = translate('ollamaServerDefaultTitle', 'Default');
+        } else if (rawName) {
+          header.textContent = rawName;
+        } else {
+          header.textContent = translate('ollamaServerUnnamed', 'Unnamed');
+        }
         row.appendChild(header);
 
         const urlLine = doc.createElement('div');

@@ -76,7 +76,7 @@
 .ollama-server-form-grid button { padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.45); background: rgba(99, 102, 241, 0.2); color: var(--text-primary); cursor: pointer; }
 .ollama-server-enabled { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-muted); }
 .ollama-server-row { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; background: rgba(15, 23, 42, 0.45); border-radius: 8px; border: 1px solid rgba(99, 102, 241, 0.25); width: 100%; }
-.ollama-server-row h4 { margin: 0; font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+.ollama-server-row h4 { margin: 0; font-size: 13px; letter-spacing: 0.04em; text-transform: none; }
 .ollama-server-meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 12px; color: var(--text-muted); }
 .ollama-server-actions { display: flex; gap: 6px; margin-top: 4px; }
 .ollama-server-actions button { padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(148, 163, 184, 0.4); background: rgba(30, 41, 59, 0.6); color: var(--text-primary); cursor: pointer; font-size: 12px; }

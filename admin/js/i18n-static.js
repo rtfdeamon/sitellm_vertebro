@@ -623,6 +623,22 @@
         en: 'Project',
         ru: 'Проект',
       },
+      projectMenuTitle: {
+        en: 'Project menu',
+        ru: 'Проектное меню',
+      },
+      feedbackSectionTitle: {
+        en: 'Feedback',
+        ru: 'Отзывы',
+      },
+      feedbackNoItems: {
+        en: 'No feedback yet.',
+        ru: 'Отзывов пока нет.',
+      },
+      projectDomainHint: {
+        en: 'Paste full URL, for example https://example.com',
+        ru: 'Вставьте полный адрес, например https://example.com',
+      },
       projectsRoleManagerHint: {
         en: 'Focus on product benefits and gentle sales.',
         ru: 'Фокус на выгодах продукта и мягких продажах.',
@@ -1015,6 +1031,14 @@
         en: 'Disabled',
         ru: 'выключен',
       },
+      ollamaServerDefaultTitle: {
+        en: 'Default',
+        ru: 'По умолчанию',
+      },
+      ollamaServerUnnamed: {
+        en: 'Unnamed',
+        ru: 'Без названия',
+      },
       ollamaServerErrorLabel: {
         en: 'Error: {value}',
         ru: 'Ошибка: {value}',
@@ -1234,6 +1258,11 @@
       projectsDeleteError: {
         en: 'Deletion error',
         ru: 'Ошибка удаления',
+      },
+      reloadProjects: {
+        en: 'Reload',
+        ru: 'Обновить',
+        match: ['Обновить'],
       },
       projectsSelectProject: {
         en: 'Select a project',
@@ -1674,6 +1703,11 @@
         en: 'Project name',
         ru: 'Название проекта',
         match: ['Название проекта'],
+      },
+      projectDomainPlaceholder: {
+        en: 'https://example.com',
+        ru: 'https://example.com',
+        match: ['https://example.com'],
       },
       voiceExampleModel: {
         en: 'For example, gpt-4o-mini',
