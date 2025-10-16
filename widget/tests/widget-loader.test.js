@@ -63,6 +63,7 @@ describe('widget-loader', () => {
     expect(frame?.style.height).toBe(defaultDataset.height);
     expect(iframe?.src).toContain('https://example.com/widget/index.html');
     expect(iframe?.src).toContain('project=demo');
+    expect(new URL(iframe.src).searchParams.get('v')).toBe('20241010.02');
     expect(overlay).not.toBeNull();
     expect(document.getElementById('__sitellmWidgetStyles')).not.toBeNull();
     launcher?.dispatchEvent(new Event('click'));
@@ -81,7 +82,7 @@ describe('widget-loader', () => {
     expect(launcher).toBeNull();
     const iframe = card?.querySelector('iframe');
     expect(iframe?.src).toContain('https://example.com/widget/index.html');
-    expect(iframe?.src).toContain('project=demo');
+    expect(new URL(iframe.src).searchParams.get('v')).toBe('20241010.02');
   });
 
   it('не дублирует стили при повторной инициализации', async () => {

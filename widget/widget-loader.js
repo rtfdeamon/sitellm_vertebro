@@ -299,8 +299,10 @@
     script.insertAdjacentElement('beforebegin', wrapper);
   }
 
+  const WIDGET_ASSET_VERSION = '20241010.02';
+
   function buildFrameSrc(base, project, session, extraParams) {
-    const search = new URLSearchParams({ embed: '1', session: session });
+    const search = new URLSearchParams({ embed: '1', session: session, v: WIDGET_ASSET_VERSION });
     if (project) search.set('project', project);
     if (extraParams.theme) search.set('theme', extraParams.theme);
     if (extraParams.debug === '1') search.set('debug', '1');
