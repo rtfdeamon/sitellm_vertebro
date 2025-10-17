@@ -847,6 +847,11 @@ async function loadKnowledge(projectName) {
   } catch {
     // already logged inside loadUnansweredQuestions
   }
+  try {
+    await unansweredPromise;
+  } catch {
+    // already logged inside loadUnansweredQuestions
+  }
 }
 
 async function loadKnowledgePriority(projectName) {
