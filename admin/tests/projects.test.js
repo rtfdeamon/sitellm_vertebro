@@ -93,6 +93,8 @@ const setupDom = () => {
   ensure('projectWidgetModal', 'div');
 
   // Modal controls
+  const modalBackdrop = ensure('projectModal', 'div');
+  modalBackdrop.className = 'modal-backdrop';
   ensure('projectModalPrompt', 'textarea', 'projectModalForm');
   ensure('projectModalPromptRole', 'select', 'projectModalForm');
   ensure('projectModalPromptAi', 'button', 'projectModalForm', { type: 'button' });
@@ -100,10 +102,15 @@ const setupDom = () => {
   ensure('projectModalName', 'input', 'projectModalForm');
   ensure('projectModalTitle', 'input', 'projectModalForm');
   ensure('projectModalDomain', 'input', 'projectModalForm');
-  ensure('projectModalModel', 'select', 'projectModalForm');
+  ensure('projectModalModel', 'input', 'projectModalForm');
   ensure('projectModalEmotions', 'input', 'projectModalForm', { type: 'checkbox' });
   ensure('projectModalAdminUsername', 'input', 'projectModalForm');
   ensure('projectModalAdminPassword', 'input', 'projectModalForm');
+  ensure('projectModalClose', 'button');
+  ensure('projectModalCancel', 'button', 'projectModalForm', { type: 'button' });
+  ensure('projectModalStatus', 'span', 'projectModalForm');
+  modalBackdrop.appendChild(document.getElementById('projectModalForm'));
+  modalBackdrop.insertBefore(document.getElementById('projectModalClose'), document.getElementById('projectModalForm'));
 
   // Auxiliary holders referenced in code
   ensure('projectDangerZone', 'div');
@@ -216,5 +223,128 @@ describe('Project prompt AI controls', () => {
     expect(domainInput.readOnly).toBe(false);
     domainInput.value = 'https://example.com';
     expect(domainInput.value).toBe('https://example.com');
+  });
+});
+
+describe('Project modal interactions', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.restoreAllMocks();
+    setupDom();
+
+    vi.stubGlobal('t', vi.fn((key) => key));
+    vi.stubGlobal('adminSession', { is_super: true, primary_project: null, can_manage_projects: true });
+    vi.stubGlobal('currentProject', '');
+    vi.stubGlobal('setSummaryProject', vi.fn());
+    vi.stubGlobal('setSummaryPrompt', vi.fn());
+    vi.stubGlobal('updateProjectAdminHintText', vi.fn());
+    vi.stubGlobal('UIUtils', {});
+    vi.stubGlobal('VoiceModule', { reset: vi.fn(), refresh: vi.fn() });
+    vi.stubGlobal('ProjectIntegrations', {});
+    vi.stubGlobal('applySessionPermissions', vi.fn());
+    vi.stubGlobal('normalizeProjectName', (value) => (typeof value === 'string' ? value.trim().toLowerCase() : ''));
+    vi.stubGlobal('loadKnowledge', vi.fn());
+    vi.stubGlobal('pollStatus', vi.fn());
+    vi.stubGlobal('loadLlmModels', vi.fn());
+    vi.stubGlobal('loadProjectsList', vi.fn().mockResolvedValue());
+    vi.stubGlobal('fetchProjectStorage', vi.fn().mockResolvedValue());
+    vi.stubGlobal('populateModelOptions', vi.fn());
+    vi.stubGlobal('fetchProjects', undefined);
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    vi.unstubAllGlobals();
+  });
+
+  it('открывает и закрывает модальное окно', async () => {
+    await loadProjectsModule();
+    const addBtn = document.getElementById('projectAdd');
+    const modal = document.getElementById('projectModal');
+    const cancelBtn = document.getElementById('projectModalCancel');
+    const nameInput = document.getElementById('projectModalName');
+
+    nameInput.value = 'prefilled';
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+
+    cancelBtn.click();
+
+    expect(modal.classList.contains('show')).toBe(false);
+    expect(document.body.classList.contains('modal-open')).toBe(false);
+
+    nameInput.value = 'to-be-cleared';
+    addBtn.click();
+
+    expect(modal.classList.contains('show')).toBe(true);
+    expect(document.body.classList.contains('modal-open')).toBe(true);
+    expect(nameInput.value).toBe('');
+  });
+
+  it('отправляет форму и создаёт проект', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ projects: [{ name: 'new-project', title: 'New Project' }] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ storage: {} }),
+      });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetchProjects', undefined);
+    vi.stubGlobal('loadProjectsList', vi.fn().mockResolvedValue());
+    vi.stubGlobal('fetchProjectStorage', vi.fn().mockResolvedValue());
+
+    await loadProjectsModule();
+
+    const modal = document.getElementById('projectModal');
+    const nameInput = document.getElementById('projectModalName');
+    const titleInput = document.getElementById('projectModalTitle');
+    const domainInput = document.getElementById('projectModalDomain');
+    const modelInput = document.getElementById('projectModalModel');
+    const promptInput = document.getElementById('projectModalPrompt');
+    const adminUserInput = document.getElementById('projectModalAdminUsername');
+    const adminPassInput = document.getElementById('projectModalAdminPassword');
+    const form = document.getElementById('projectModalForm');
+
+    document.getElementById('projectAdd').click();
+
+    nameInput.value = 'New-Project';
+    titleInput.value = 'New Project';
+    domainInput.value = 'example.com';
+    modelInput.value = 'model-x';
+    promptInput.value = 'Prompt text';
+    adminUserInput.value = 'user';
+    adminPassInput.value = 'secret';
+
+    form.requestSubmit();
+
+    await vi.waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/v1/admin/projects');
+    expect(init.method).toBe('POST');
+    const payload = JSON.parse(init.body);
+    expect(payload).toMatchObject({
+      name: 'new-project',
+      title: 'New Project',
+      domain: 'example.com',
+      llm_model: 'model-x',
+      llm_prompt: 'Prompt text',
+      admin_username: 'user',
+      admin_password: 'secret',
+    });
+
+    await vi.waitFor(() => {
+      expect(modal.classList.contains('show')).toBe(false);
+    });
+
+    expect(modal.classList.contains('show')).toBe(false);
   });
 });
