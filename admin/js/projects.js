@@ -97,6 +97,17 @@ const getDefaultWidgetPath = projectsUi.getDefaultWidgetPath || ((project) => {
 });
 const resolveWidgetHref = projectsUi.resolveWidgetHref || ((path) => path || null);
 const voiceModule = window.VoiceModule || null;
+const translate = (key, params) => (typeof t === 'function' ? t(key, params) : key);
+const safeNormalizeProjectName = (value) => {
+  if (typeof globalThis.normalizeProjectName === 'function') {
+    try {
+      return globalThis.normalizeProjectName(value);
+    } catch (error) {
+      console.error('normalizeProjectName_failed', error);
+    }
+  }
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+};
 let mainPromptAiHandler = null;
 
 const PROMPT_AI_ROLES = [
@@ -287,6 +298,48 @@ const modalPromptAiHandler = initPromptAiControls({
 if (modalPromptAiHandler) {
   promptAiHandlers.push(modalPromptAiHandler);
 }
+
+const toggleProjectModalVisibility = (visible) => {
+  if (!projectModalBackdrop) return;
+  projectModalBackdrop.classList.toggle('show', visible);
+  projectModalBackdrop.setAttribute('data-visible', visible ? 'true' : 'false');
+  if (document.body) {
+    document.body.classList.toggle('modal-open', visible);
+  }
+  if (!visible) {
+    modalPromptAiHandler?.abort?.();
+    modalPromptAiHandler?.reset?.();
+    if (projectModalStatus) projectModalStatus.textContent = '';
+  }
+};
+
+const resetProjectModal = () => {
+  if (!projectModalForm) return;
+  projectModalForm.reset();
+  modalPromptAiHandler?.reset?.();
+  if (projectModalStatus) projectModalStatus.textContent = '';
+  if (projectModalPromptAiStatus) projectModalPromptAiStatus.textContent = '—';
+};
+
+const openProjectModal = () => {
+  resetProjectModal();
+  toggleProjectModalVisibility(true);
+  projectModalName?.focus();
+};
+
+const closeProjectModal = () => {
+  toggleProjectModalVisibility(false);
+};
+
+const setProjectModalDisabled = (disabled) => {
+  if (!projectModalForm) return;
+  Array.from(projectModalForm.elements).forEach((element) => {
+    element.disabled = disabled;
+  });
+  if (projectModalClose) {
+    projectModalClose.disabled = disabled;
+  }
+};
 
 const startUrlInput = document.getElementById('url');
 if (startUrlInput) {
@@ -834,7 +887,7 @@ async function fetchProjects(){
     }
 
     const normalizedNames = projects
-      .map((project) => normalizeProjectName(project.name))
+      .map((project) => safeNormalizeProjectName(project.name))
       .filter(Boolean);
     const uniqueNames = [...new Set(normalizedNames)];
 
@@ -853,7 +906,7 @@ async function fetchProjects(){
     }
 
     projects.forEach((p, index) => {
-      const key = normalizeProjectName(p.name);
+      const key = safeNormalizeProjectName(p.name);
       if (!key) {
         return;
       }
@@ -919,6 +972,38 @@ projectSelect.addEventListener('change', () => {
 projectPromptSaveBtn.addEventListener('click', () => {
   if (projectPromptSaveBtn.disabled) return;
   projectForm.requestSubmit();
+});
+
+if (projectAddBtn && projectModalBackdrop) {
+  projectAddBtn.addEventListener('click', () => {
+    if (!adminSession?.can_manage_projects) {
+    setProjectStatus(translate('projectsNoPermission'), 3000);
+    return;
+  }
+  openProjectModal();
+});
+}
+
+if (projectModalCancel) {
+  projectModalCancel.addEventListener('click', () => closeProjectModal());
+}
+
+if (projectModalClose) {
+  projectModalClose.addEventListener('click', () => closeProjectModal());
+}
+
+if (projectModalBackdrop) {
+  projectModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === projectModalBackdrop) {
+      closeProjectModal();
+    }
+  });
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && projectModalBackdrop?.classList.contains('show')) {
+    closeProjectModal();
+  }
 });
 
 projectForm.addEventListener('submit', async (e) => {
@@ -1033,6 +1118,69 @@ projectForm.addEventListener('submit', async (e) => {
     setProjectStatus(t('projectsSaveError'), 4000);
   }
 });
+
+if (projectModalForm) {
+  projectModalForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!adminSession?.can_manage_projects) {
+      if (projectModalStatus) projectModalStatus.textContent = translate('projectsNoPermission');
+      return;
+    }
+    const rawName = projectModalName?.value?.trim() || '';
+    const normalizedName = safeNormalizeProjectName(rawName);
+    if (!normalizedName) {
+      if (projectModalStatus) projectModalStatus.textContent = translate('projectsEnterIdentifier');
+      projectModalName?.focus();
+      return;
+    }
+
+    const payload = {
+      name: normalizedName,
+      title: projectModalTitle?.value?.trim() || null,
+      domain: projectModalDomain?.value?.trim() || null,
+      llm_model: projectModalModel?.value || null,
+      llm_prompt: projectModalPrompt?.value?.trim() || null,
+      llm_emotions_enabled: projectModalEmotions ? !!projectModalEmotions.checked : true,
+    };
+    const adminUsername = projectModalAdminUsername?.value?.trim() || '';
+    if (adminUsername) {
+      payload.admin_username = adminUsername;
+    }
+    const adminPassword = projectModalAdminPassword?.value || '';
+    if (adminPassword.trim()) {
+      payload.admin_password = adminPassword;
+    }
+
+    if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaving');
+    setProjectModalDisabled(true);
+
+    try {
+      const resp = await fetch('/api/v1/admin/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaveFailed');
+        return;
+      }
+      await resp.json().catch(() => ({}));
+      currentProject = normalizedName;
+      await fetchProjects();
+      await loadProjectsList();
+      await fetchProjectStorage();
+      await loadKnowledge();
+      pollStatus();
+      setProjectStatus(translate('projectsSaved'), 2000);
+      closeProjectModal();
+    } catch (error) {
+      console.error(error);
+      if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaveError');
+    } finally {
+      setProjectModalDisabled(false);
+    }
+  });
+}
 
 if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
   if (!currentProject) return;
