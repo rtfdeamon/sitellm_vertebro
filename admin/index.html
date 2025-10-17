@@ -602,37 +602,45 @@
             </label>
             <div class="muted" id="projectMailHint" data-i18n="hintMailSettings">Specify IMAP/SMTP parameters so the assistant can send and read emails.</div>
             <div style="display:grid; gap:8px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-top:10px;">
-              <label data-i18n="imapHostLabel">IMAP host
+              <label class="project-mail-field">
+                <span data-i18n="imapHostLabel">IMAP host</span>
                 <input type="text" id="projectMailImapHost" placeholder="imap.example.com">
               </label>
-              <label data-i18n="imapPortLabel">IMAP port
+              <label class="project-mail-field">
+                <span data-i18n="imapPortLabel">IMAP port</span>
                 <input type="number" id="projectMailImapPort" placeholder="993" min="1" max="65535">
               </label>
               <label style="display:flex; gap:6px; align-items:center;">
                 <input type="checkbox" id="projectMailImapSsl" checked>
                 <span data-i18n="imapSslLabel">IMAP SSL</span>
               </label>
-              <label data-i18n="smtpHostLabel">SMTP host
+              <label class="project-mail-field">
+                <span data-i18n="smtpHostLabel">SMTP host</span>
                 <input type="text" id="projectMailSmtpHost" placeholder="smtp.example.com">
               </label>
-              <label data-i18n="smtpPortLabel">SMTP port
+              <label class="project-mail-field">
+                <span data-i18n="smtpPortLabel">SMTP port</span>
                 <input type="number" id="projectMailSmtpPort" placeholder="587" min="1" max="65535">
               </label>
               <label style="display:flex; gap:6px; align-items:center;">
                 <input type="checkbox" id="projectMailSmtpTls" checked>
                 <span data-i18n="smtpStarttlsLabel">SMTP STARTTLS</span>
               </label>
-              <label data-i18n="labelUsername">Username
+              <label class="project-mail-field">
+                <span data-i18n="labelUsername">Username</span>
                 <input type="text" id="projectMailUsername" placeholder="user@example.com">
               </label>
-              <label data-i18n="passwordPlaceholder">Password
+              <label class="project-mail-field">
+                <span data-i18n="passwordPlaceholder">Password</span>
                 <input type="password" id="projectMailPassword" data-i18n-placeholder="passwordPlaceholder" placeholder="Password" autocomplete="new-password">
               </label>
-              <label data-i18n="labelSender">Sender (From)
+              <label class="project-mail-field">
+                <span data-i18n="labelSender">Sender (From)</span>
                 <input type="email" id="projectMailFrom" placeholder="support@example.com">
               </label>
             </div>
-            <label style="display:block; margin-top:10px;" data-i18n="emailSignatureLabel">Email signature
+            <label class="project-mail-field" style="display:block; margin-top:10px;">
+              <span data-i18n="emailSignatureLabel">Email signature</span>
               <textarea id="projectMailSignature" rows="3" data-i18n-placeholder="signaturePlaceholder" placeholder="Regards, Example team" style="width:100%; resize:vertical;"></textarea>
             </label>
           </div>

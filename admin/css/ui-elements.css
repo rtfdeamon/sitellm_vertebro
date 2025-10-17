@@ -4,6 +4,19 @@
 
 label { display: inline-block; margin: 6px 8px 6px 0; color: var(--text-muted); font-size: 13px; }
 
+.project-mail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  width: 100%;
+}
+
+.project-mail-field > span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 input:not([type="checkbox"]):not([type="radio"]),
 select,
 textarea {

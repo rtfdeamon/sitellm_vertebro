@@ -1214,7 +1214,22 @@
 
       document.querySelectorAll('[data-i18n]').forEach((node) => {
         const key = node.dataset.i18n;
-        node.textContent = t(key);
+        const translation = t(key);
+        const hasElementChildren = Array.from(node.childNodes).some(
+          (child) => child.nodeType === Node.ELEMENT_NODE,
+        );
+        if (!hasElementChildren) {
+          node.textContent = translation;
+          return;
+        }
+        const textNode = Array.from(node.childNodes).find(
+          (child) => child.nodeType === Node.TEXT_NODE,
+        );
+        if (textNode) {
+          textNode.textContent = translation;
+        } else {
+          node.insertBefore(global.document.createTextNode(translation), node.firstChild || null);
+        }
       });
 
       document.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
