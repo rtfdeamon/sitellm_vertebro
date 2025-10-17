@@ -459,6 +459,26 @@
         en: 'No images',
         ru: 'Нет изображений',
       },
+      knowledgeLoadError: {
+        en: 'Failed to load documents.',
+        ru: 'Не удалось загрузить документы.',
+      },
+      knowledgeTotalDocs: {
+        en: 'Total documents: {value}',
+        ru: 'Всего документов: {value}',
+      },
+      knowledgeMatchedDocs: {
+        en: 'Shown: {value}',
+        ru: 'Показано: {value}',
+      },
+      knowledgeHasMoreDocs: {
+        en: 'There are more results. Narrow the search.',
+        ru: 'Есть дополнительные результаты. Уточните поиск.',
+      },
+      knowledgeProjectSummary: {
+        en: 'Project: {value}',
+        ru: 'Проект: {value}',
+      },
       knowledgeAutoDescriptionPending: {
         en: 'Description in progress',
         ru: 'Описание формируется',
@@ -1651,6 +1671,31 @@
         en: 'Total unanswered questions:',
         ru: 'Всего вопросов без ответа:',
         match: ['Всего вопросов без ответа:'],
+      },
+      knowledgeUnansweredLoadError: {
+        en: 'Failed to load unanswered questions.',
+        ru: 'Не удалось загрузить вопросы без ответа.',
+        match: [],
+      },
+      knowledgeUnansweredClearing: {
+        en: 'Clearing the list…',
+        ru: 'Очищаем список…',
+        match: [],
+      },
+      knowledgeUnansweredCleared: {
+        en: 'Removed {value} unanswered questions.',
+        ru: 'Удалено {value} вопросов без ответа.',
+        match: [],
+      },
+      knowledgeUnansweredClearError: {
+        en: 'Failed to clear unanswered questions.',
+        ru: 'Не удалось очистить список вопросов без ответа.',
+        match: [],
+      },
+      knowledgeUnansweredClearConfirm: {
+        en: 'Clear all unanswered questions?',
+        ru: 'Очистить список вопросов без ответа?',
+        match: [],
       },
       userFlowHint: {
         en: 'Questions older than 30 days are removed automatically.',
