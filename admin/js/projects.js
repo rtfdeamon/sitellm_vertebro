@@ -157,8 +157,10 @@ const buildTargetUrl = (raw) => {
     const parsed = new URL(candidate);
     if (!parsed.hostname) return null;
     if (!parsed.pathname) parsed.pathname = '/';
+    console.log('[projects:buildTargetUrl]', { input: raw, output: parsed.toString() });
     return parsed.toString();
   } catch (error) {
+    console.warn('[projects:buildTargetUrl:fail]', { input: raw, error });
     return null;
   }
 };
@@ -167,6 +169,14 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
   if (!textarea || !domainInput || !button || !status || !roleSelect) {
     return null;
   }
+
+  console.log('[projects:initPromptAiControls] attach', {
+    textarea: textarea.id,
+    domainInput: domainInput.id,
+    roleSelect: roleSelect.id,
+    button: button.id,
+    status: status.id,
+  });
 
   renderPromptRoleOptions(roleSelect);
   let controller = null;
@@ -205,6 +215,13 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
 
   button.addEventListener('click', async () => {
     const pageUrl = buildTargetUrl(domainInput.value || projectDomainInput?.value || '');
+    console.log('[projects:promptAi:click]', {
+      scope: button.id,
+      domainValue: domainInput.value,
+      fallbackDomain: projectDomainInput?.value,
+      pageUrl,
+      role: roleSelect.value,
+    });
     if (!pageUrl) {
       setStatus(t('promptAiInvalidDomain'), 4000);
       return;
@@ -239,6 +256,11 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
       }
       const result = await response.json();
       const generated = typeof result?.prompt === 'string' ? result.prompt.trim() : '';
+      console.log('[projects:promptAi:response]', {
+        scope: button.id,
+        status: response.status,
+        hasPrompt: Boolean(generated),
+      });
       if (!generated) {
         setStatus(t('promptAiEmpty'), 4000);
         return;
@@ -246,7 +268,10 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
       textarea.value = generated;
       setStatus(t('promptAiReady'), 2000);
     } catch (error) {
-      console.error('prompt_ai_failed', error);
+      console.error('prompt_ai_failed', {
+        scope: button.id,
+        error,
+      });
       if (error.name === 'AbortError') {
         setStatus(t('projectsStopped'));
       } else {
@@ -258,6 +283,10 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
       button.disabled = false;
       roleSelect.disabled = false;
       controller = null;
+      console.log('[projects:promptAi:complete]', {
+        scope: button.id,
+        generating,
+      });
     }
   });
 

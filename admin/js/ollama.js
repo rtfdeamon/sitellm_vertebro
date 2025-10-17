@@ -41,7 +41,6 @@
     global.refreshOllamaServers = noopAsync;
     global.loadLlmModels = noopAsync;
     global.populateModelOptions = () => {};
-    return;
   }
 
   const JOB_ACTIVE_STATUSES = new Set(['pending', 'running']);
@@ -118,23 +117,70 @@
 
   function populateModelOptions(selected) {
     const datalist = doc.getElementById('llmModelOptions');
-    if (!datalist) return;
-    const currentInput = doc.getElementById('projectModel');
+    const selectEl = doc.getElementById('projectModel');
     const currentValue = typeof selected === 'string' && selected
-      ? selected
-      : (currentInput && typeof currentInput.value === 'string' ? currentInput.value.trim() : '');
+      ? selected.trim()
+      : (selectEl && typeof selectEl.value === 'string' ? selectEl.value.trim() : '');
+
+    console.log('[ollama] populateModelOptions: currentValue', currentValue, 'modelOptions', modelOptions);
 
     const values = modelOptions.slice();
     if (currentValue && !values.includes(currentValue)) {
       values.unshift(currentValue);
     }
 
-    datalist.innerHTML = '';
-    values.forEach((model) => {
-      const option = doc.createElement('option');
-      option.value = model;
-      datalist.appendChild(option);
-    });
+    if (datalist) {
+      datalist.innerHTML = '';
+      values.forEach((model) => {
+        const option = doc.createElement('option');
+        option.value = model;
+        datalist.appendChild(option);
+      });
+    }
+
+    if (selectEl) {
+      const wasActive = doc.activeElement === selectEl;
+      selectEl.innerHTML = '';
+
+      const existing = new Set();
+
+      values.forEach((model) => {
+        const option = doc.createElement('option');
+        option.value = model;
+        option.textContent = model;
+        if (currentValue && model === currentValue) {
+          option.selected = true;
+        }
+        selectEl.appendChild(option);
+        existing.add(model);
+      });
+
+      if (currentValue && !existing.has(currentValue)) {
+        const extra = doc.createElement('option');
+        extra.value = currentValue;
+        extra.textContent = currentValue;
+        extra.selected = true;
+        selectEl.appendChild(extra);
+      }
+
+      if (!selectEl.options.length) {
+        const placeholder = doc.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = translate('projectsModelPlaceholder', '—');
+        placeholder.selected = true;
+        selectEl.appendChild(placeholder);
+      }
+
+      if (currentValue && selectEl.value !== currentValue) {
+        selectEl.value = currentValue;
+      }
+
+      console.log('[ollama] populateModelOptions: select values', Array.from(selectEl.options).map((opt) => opt.value));
+
+      if (wasActive && typeof selectEl.focus === 'function') {
+        selectEl.focus({ preventScroll: true });
+      }
+    }
   }
 
   async function parseError(response) {
@@ -595,11 +641,14 @@
 
   async function loadLlmModels() {
     try {
+      console.log('[ollama] loadLlmModels: fetching /api/v1/admin/llm/models');
       const response = await fetch('/api/v1/admin/llm/models');
       if (!response.ok) {
+        console.warn('[ollama] loadLlmModels: non-ok status', response.status);
         throw new Error(await parseError(response));
       }
       const data = await response.json();
+      console.log('[ollama] loadLlmModels: payload', data);
       setModelOptions(Array.isArray(data?.models) ? data.models : []);
     } catch (error) {
       console.error('llm_models_load_failed', error);

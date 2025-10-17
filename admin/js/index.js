@@ -652,6 +652,7 @@ const renderKnowledgeDocuments = (documents) => {
     grouped[bucket].push(doc);
   });
 
+  console.debug('knowledge grouped categories', grouped);
   Object.entries(kbTables).forEach(([category, config]) => {
     if (!config?.body) return;
     const items = grouped[category] || [];
