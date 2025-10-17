@@ -459,6 +459,26 @@
         en: 'No images',
         ru: 'Нет изображений',
       },
+      knowledgeLoadError: {
+        en: 'Failed to load documents.',
+        ru: 'Не удалось загрузить документы.',
+      },
+      knowledgeTotalDocs: {
+        en: 'Total documents: {value}',
+        ru: 'Всего документов: {value}',
+      },
+      knowledgeMatchedDocs: {
+        en: 'Shown: {value}',
+        ru: 'Показано: {value}',
+      },
+      knowledgeHasMoreDocs: {
+        en: 'There are more results. Narrow the search.',
+        ru: 'Есть дополнительные результаты. Уточните поиск.',
+      },
+      knowledgeProjectSummary: {
+        en: 'Project: {value}',
+        ru: 'Проект: {value}',
+      },
       knowledgeAutoDescriptionPending: {
         en: 'Description in progress',
         ru: 'Описание формируется',

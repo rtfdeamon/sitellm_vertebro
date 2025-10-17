@@ -207,23 +207,54 @@
       const dataPoint = statsGraphState.data[closest];
       const point = statsGraphState.renderedPoints[closest];
       statsTooltip.textContent = `${dataPoint.date}: ${dataPoint.count}`;
-      statsTooltip.style.left = `${point.x}px`;
+      statsTooltip.classList.add('show');
+
+      const containerWidth =
+        statsGraphState.width ||
+        statsCanvas?.parentElement?.clientWidth ||
+        statsTooltip.parentElement?.clientWidth ||
+        0;
+      const tooltipWidth = statsTooltip.offsetWidth || 0;
+      const margin = 12;
+      let left = point.x - tooltipWidth / 2;
+      if (containerWidth && tooltipWidth) {
+        const maxLeft = Math.max(margin, containerWidth - margin - tooltipWidth);
+        left = Math.max(margin, Math.min(left, maxLeft));
+      }
+      if (!Number.isFinite(left)) left = point.x;
+      statsTooltip.style.left = `${left}px`;
+
+      if (tooltipWidth) {
+        const arrowOffset = Math.min(
+          Math.max(point.x - left, 8),
+          tooltipWidth - 8,
+        );
+        statsTooltip.style.setProperty('--arrow-offset', `${arrowOffset}px`);
+      } else {
+        statsTooltip.style.removeProperty('--arrow-offset');
+      }
+
       const clampedY = Math.max(point.y, 32);
       statsTooltip.style.top = `${clampedY}px`;
-      statsTooltip.classList.add('show');
     }
   };
 
   const clearStatsHover = () => {
     statsGraphState.hoverIndex = null;
     drawStatsGraph(statsGraphState.currentPoints);
-    if (statsTooltip) statsTooltip.classList.remove('show');
+    if (statsTooltip) {
+      statsTooltip.classList.remove('show');
+      statsTooltip.style.removeProperty('--arrow-offset');
+    }
   };
 
   const renderStatsChart = (stats, { animate = true } = {}) => {
     if (!statsCanvas) return;
     statsGraphState.hoverIndex = null;
-    if (statsTooltip) statsTooltip.classList.remove('show');
+    if (statsTooltip) {
+      statsTooltip.classList.remove('show');
+      statsTooltip.style.removeProperty('--arrow-offset');
+    }
 
     const hasData = Array.isArray(stats) && stats.length > 0;
     if (statsEmpty) statsEmpty.style.display = hasData ? 'none' : 'grid';

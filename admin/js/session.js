@@ -95,6 +95,9 @@
       if (typeof refreshOllamaServers === 'function') {
         await refreshOllamaServers();
       }
+      if (typeof loadLlmModels === 'function') {
+        await loadLlmModels();
+      }
     } else if (typeof loadLlmModels === 'function') {
       await loadLlmModels();
     }

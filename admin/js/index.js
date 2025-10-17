@@ -123,6 +123,7 @@ let knowledgePriorityUnavailable = false;
 let knowledgeQaUnavailable = false;
 let knowledgeUnansweredUnavailable = false;
 let qaPairsCache = [];
+let knowledgeDocumentsCache = [];
 let knowledgePriorityOrder = [];
 let knowledgeUnansweredItems = [];
 let knowledgeUnansweredVisible = false;
@@ -194,6 +195,8 @@ const kbDedupBtn = document.getElementById('kbDeduplicate');
 const kbDedupStatus = document.getElementById('kbDedupStatus');
 const kbClearBtn = document.getElementById('kbClearKnowledge');
 const kbClearStatus = document.getElementById('kbClearStatus');
+const kbInfo = document.getElementById('kbInfo');
+const kbProjectsSummary = document.getElementById('kbProjectsSummary');
 const kbDropZone = document.getElementById('kbDropZone');
 let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
 const kbNewFileInput = document.getElementById('kbNewFile');
@@ -438,6 +441,80 @@ async function fetchFeedbackTasks() {
   }
 }
 
+const nativeDeleteKnowledgeDocument =
+  typeof window.deleteKnowledgeDocument === 'function'
+    ? window.deleteKnowledgeDocument.bind(window)
+    : null;
+
+const deleteKnowledgeDocument = (fileId, project) => {
+  if (nativeDeleteKnowledgeDocument) {
+    return nativeDeleteKnowledgeDocument(fileId, project);
+  }
+  console.warn('knowledge_delete_not_implemented', { fileId, project });
+  return null;
+};
+
+if (!nativeDeleteKnowledgeDocument) {
+  window.deleteKnowledgeDocument = deleteKnowledgeDocument;
+}
+
+const nativeOpenKnowledgeModal =
+  typeof window.openKnowledgeModal === 'function'
+    ? window.openKnowledgeModal.bind(window)
+    : null;
+
+const showKnowledgeModal = (doc) => {
+  if (!kbModalBackdrop || !kbModalName) return;
+  if (kbModalTitle) kbModalTitle.textContent = doc?.name || t('documentTitle');
+  if (kbModalId) kbModalId.value = doc?.fileId || '';
+  kbModalName.value = doc?.name || '';
+  if (kbModalUrl) kbModalUrl.value = doc?.url || '';
+  if (kbModalDesc) kbModalDesc.value = doc?.description || '';
+  if (kbModalProject) kbModalProject.value = doc?.project || doc?.domain || '';
+  if (kbModalContent) kbModalContent.value = doc?.content || '';
+  if (kbModalStatus) kbModalStatus.textContent = '';
+  kbModalBackdrop.classList.add('show');
+  kbModalBackdrop.setAttribute('data-visible', 'true');
+};
+
+const closeKnowledgeModal = () => {
+  if (!kbModalBackdrop) return;
+  kbModalBackdrop.classList.remove('show');
+  kbModalBackdrop.setAttribute('data-visible', 'false');
+};
+
+const openKnowledgeModal = (fileId) => {
+  if (nativeOpenKnowledgeModal) {
+    nativeOpenKnowledgeModal(fileId);
+    return;
+  }
+  const doc = knowledgeDocumentsCache.find((item) => item.fileId === fileId);
+  if (!doc) {
+    console.warn('knowledge_modal_doc_missing', { fileId });
+    return;
+  }
+  showKnowledgeModal(doc);
+};
+
+if (!nativeOpenKnowledgeModal) {
+  window.openKnowledgeModal = openKnowledgeModal;
+}
+
+if (kbModalClose) kbModalClose.addEventListener('click', closeKnowledgeModal);
+if (kbModalCancel) kbModalCancel.addEventListener('click', closeKnowledgeModal);
+if (kbModalBackdrop) {
+  kbModalBackdrop.addEventListener('click', (event) => {
+    if (event.target === kbModalBackdrop) {
+      closeKnowledgeModal();
+    }
+  });
+}
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && kbModalBackdrop?.classList.contains('show')) {
+    closeKnowledgeModal();
+  }
+});
+
 const renderKnowledgeRow = (doc, category) => {
   const tr = document.createElement('tr');
   const nameTd = document.createElement('td');
@@ -565,6 +642,33 @@ function renderKnowledgePriority(order) {
       kbPriorityList.dataset.dragBound = '1';
     }
 }
+
+const renderKnowledgeDocuments = (documents) => {
+  knowledgeDocumentsCache = Array.isArray(documents) ? documents.slice() : [];
+  const grouped = { text: [], docs: [], images: [] };
+  knowledgeDocumentsCache.forEach((doc) => {
+    const bucket = getDocCategory(doc);
+    if (!grouped[bucket]) grouped[bucket] = [];
+    grouped[bucket].push(doc);
+  });
+
+  console.debug('knowledge grouped categories', grouped);
+  Object.entries(kbTables).forEach(([category, config]) => {
+    if (!config?.body) return;
+    const items = grouped[category] || [];
+    config.body.innerHTML = '';
+    if (!items.length) {
+      renderEmptyRow(config.body, t(config.emptyKey));
+    } else {
+      items.forEach((item) => {
+        config.body.appendChild(renderKnowledgeRow(item, category));
+      });
+    }
+    if (config?.counter) {
+      config.counter.textContent = items.length ? String(items.length) : '0';
+    }
+  });
+};
 
 const getUnansweredTimestampText = (item) => {
   if (!item) return '—';
@@ -713,9 +817,35 @@ async function loadKnowledge(projectName) {
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
+    const documents = Array.isArray(data?.documents) ? data.documents : [];
+    renderKnowledgeDocuments(documents);
     console.debug('knowledge data', data);
+
+    if (kbInfo) {
+      const total = Number(data?.total);
+      const matched = Number(data?.matched);
+      const metaBits = [];
+      if (Number.isFinite(total)) metaBits.push(t('knowledgeTotalDocs', { value: total }));
+      if (Number.isFinite(matched)) metaBits.push(t('knowledgeMatchedDocs', { value: matched }));
+      if (data?.has_more) metaBits.push(t('knowledgeHasMoreDocs'));
+      kbInfo.textContent = metaBits.join(' · ') || '—';
+    }
+    if (kbProjectsSummary) {
+      const projectLabel = data?.project || targetProject || '';
+      kbProjectsSummary.textContent = projectLabel
+        ? t('knowledgeProjectSummary', { value: projectLabel })
+        : '';
+    }
   } catch (error) {
     console.error('knowledge_load_failed', error);
+    renderKnowledgeDocuments([]);
+    if (kbInfo) kbInfo.textContent = t('knowledgeLoadError');
+    if (kbProjectsSummary) kbProjectsSummary.textContent = '';
+  }
+  try {
+    await unansweredPromise;
+  } catch {
+    // already logged inside loadUnansweredQuestions
   }
   try {
     await unansweredPromise;
@@ -815,6 +945,10 @@ const activateKnowledgeSection = (target) => {
     button.setAttribute('aria-selected', matches ? 'true' : 'false');
     button.setAttribute('tabindex', matches ? '0' : '-1');
   });
+
+  if (target === 'documents' && typeof loadKnowledge === 'function') {
+    loadKnowledge(getActiveProjectKey() || currentProject || '');
+  }
 };
 
 if (kbNavButtons.length && kbSections.length) {

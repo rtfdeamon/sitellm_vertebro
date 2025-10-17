@@ -29,7 +29,7 @@
   border: 1px solid rgba(96, 165, 250, 0.45);
   font-size: 11px;
   pointer-events: none;
-  transform: translate(-50%, -140%);
+  transform: translateY(-140%);
   transition: opacity 0.15s ease;
   opacity: 0;
   white-space: nowrap;
@@ -41,7 +41,7 @@
   content: '';
   position: absolute;
   top: 100%;
-  left: 50%;
+  left: var(--arrow-offset, 50%);
   transform: translate(-50%, 0);
   border-width: 6px 6px 0 6px;
   border-style: solid;
