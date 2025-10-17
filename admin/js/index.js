@@ -124,6 +124,17 @@ let knowledgeQaUnavailable = false;
 let knowledgeUnansweredUnavailable = false;
 let qaPairsCache = [];
 let knowledgePriorityOrder = [];
+let knowledgeUnansweredItems = [];
+let knowledgeUnansweredVisible = false;
+let kbNavButtons = [];
+let kbSections = [];
+
+const getActiveProjectKey = () => {
+  if (typeof currentProject === 'string' && currentProject.trim()) {
+    return currentProject.trim();
+  }
+  return '';
+};
 let draggingPriorityItem = null;
 
 const summaryState = {
@@ -211,6 +222,8 @@ const kbCountUnanswered = document.getElementById('kbCountUnanswered');
 const kbUnansweredExportBtn = document.getElementById('kbUnansweredExport');
 const kbUnansweredClearBtn = document.getElementById('kbUnansweredClear');
 const kbUnansweredStatus = document.getElementById('kbUnansweredStatus');
+const kbSectionUnanswered = document.getElementById('kbSectionUnanswered');
+const kbTabUnanswered = document.getElementById('kbTabUnanswered');
 const KB_IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
 const KB_TEXT_LIKE_TYPES = new Set(['application/json', 'application/xml', 'text/csv']);
 const KB_STATUS_PENDING = new Set(['pending_auto_description', 'auto_description_in_progress']);
@@ -553,6 +566,133 @@ function renderKnowledgePriority(order) {
     }
 }
 
+const getUnansweredTimestampText = (item) => {
+  if (!item) return '—';
+  const raw =
+    item.updated_at ??
+    item.updated_at_iso ??
+    item.created_at ??
+    item.created_at_iso ??
+    null;
+  if (raw === null || raw === undefined) return '—';
+  if (typeof raw === 'number') {
+    return formatTimestamp(raw);
+  }
+  if (typeof raw === 'string') {
+    const parsed = Date.parse(raw);
+    return Number.isNaN(parsed) ? raw : formatTimestamp(parsed);
+  }
+  return '—';
+};
+
+const renderUnansweredQuestions = (items) => {
+  if (!kbTableUnanswered) return;
+  knowledgeUnansweredItems = Array.isArray(items) ? items : [];
+  kbTableUnanswered.innerHTML = '';
+  if (!knowledgeUnansweredItems.length) {
+    return;
+  }
+  knowledgeUnansweredItems.forEach((item) => {
+    const row = document.createElement('tr');
+    const questionCell = document.createElement('td');
+    questionCell.textContent = (item.question || '').trim() || '—';
+
+    const countCell = document.createElement('td');
+    const countValue = Number.isFinite(Number(item.count))
+      ? Number(item.count)
+      : Number.isFinite(Number(item.hits))
+        ? Number(item.hits)
+        : null;
+    countCell.textContent = countValue !== null ? String(countValue) : '—';
+    countCell.className = 'nowrap';
+
+    const updatedCell = document.createElement('td');
+    updatedCell.textContent = getUnansweredTimestampText(item);
+    updatedCell.className = 'nowrap';
+
+    row.append(questionCell, countCell, updatedCell);
+    kbTableUnanswered.appendChild(row);
+  });
+};
+
+const setUnansweredVisibility = (visible) => {
+  if (!kbTabUnanswered || !kbSectionUnanswered) return;
+  knowledgeUnansweredVisible = Boolean(visible);
+  if (visible) {
+    kbTabUnanswered.style.display = '';
+    kbTabUnanswered.classList.remove('kb-hidden');
+    kbTabUnanswered.removeAttribute('aria-hidden');
+    kbSectionUnanswered.style.display = '';
+    kbSectionUnanswered.classList.remove('kb-hidden');
+    kbSectionUnanswered.removeAttribute('aria-hidden');
+  } else {
+    kbTabUnanswered.style.display = 'none';
+    kbTabUnanswered.classList.add('kb-hidden');
+    kbTabUnanswered.setAttribute('aria-hidden', 'true');
+    kbSectionUnanswered.style.display = 'none';
+    kbSectionUnanswered.classList.add('kb-hidden');
+    kbSectionUnanswered.setAttribute('aria-hidden', 'true');
+    if (kbTableUnanswered) kbTableUnanswered.innerHTML = '';
+    if (kbCountUnanswered) kbCountUnanswered.textContent = '—';
+    if (kbUnansweredStatus) kbUnansweredStatus.textContent = '';
+    if (kbTabUnanswered.classList.contains('active') && typeof activateKnowledgeSection === 'function') {
+      activateKnowledgeSection('overview');
+    }
+  }
+  if (kbUnansweredExportBtn) kbUnansweredExportBtn.disabled = !visible;
+  if (kbUnansweredClearBtn) kbUnansweredClearBtn.disabled = !visible;
+};
+
+async function loadUnansweredQuestions(projectName) {
+  if (
+    !kbTableUnanswered ||
+    !kbCountUnanswered ||
+    !kbTabUnanswered ||
+    !kbSectionUnanswered ||
+    knowledgeUnansweredUnavailable
+  ) {
+    return;
+  }
+  const params = new URLSearchParams();
+  const projectKey =
+    typeof projectName === 'string' && projectName.trim()
+      ? projectName.trim()
+      : getActiveProjectKey();
+  if (projectKey) params.set('project', projectKey);
+  const query = params.toString();
+  const url = query
+    ? `/api/v1/admin/knowledge/unanswered?${query}`
+    : '/api/v1/admin/knowledge/unanswered';
+  if (kbUnansweredStatus) kbUnansweredStatus.textContent = t('loadingEllipsis');
+  try {
+    const resp = await fetch(url);
+    if (resp.status === 404) {
+      knowledgeUnansweredUnavailable = true;
+      setUnansweredVisibility(false);
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    renderUnansweredQuestions(items);
+    if (kbCountUnanswered) {
+      kbCountUnanswered.textContent = items.length ? String(items.length) : '—';
+    }
+    if (items.length) {
+      setUnansweredVisibility(true);
+      if (kbUnansweredStatus) kbUnansweredStatus.textContent = '';
+    } else {
+      setUnansweredVisibility(false);
+    }
+  } catch (error) {
+    console.error('knowledge_unanswered_fetch_failed', error);
+    setUnansweredVisibility(true);
+    if (kbUnansweredStatus) {
+      kbUnansweredStatus.textContent = t('knowledgeUnansweredLoadError');
+    }
+  }
+}
+
 const getKnowledgePriorityOrder = () => {
   if (!kbPriorityList) return knowledgePriorityOrder;
   const order = Array.from(kbPriorityList.querySelectorAll('.kb-priority-item'))
@@ -563,14 +703,24 @@ const getKnowledgePriorityOrder = () => {
 };
 
 async function loadKnowledge(projectName) {
+  const targetProject =
+    typeof projectName === 'string' && projectName.trim()
+      ? projectName.trim()
+      : getActiveProjectKey();
+  const unansweredPromise = loadUnansweredQuestions(targetProject);
   try {
-    const url = projectName ? `/api/v1/admin/knowledge?project=${encodeURIComponent(projectName)}` : '/api/v1/admin/knowledge';
+    const url = targetProject ? `/api/v1/admin/knowledge?project=${encodeURIComponent(targetProject)}` : '/api/v1/admin/knowledge';
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     console.debug('knowledge data', data);
   } catch (error) {
     console.error('knowledge_load_failed', error);
+  }
+  try {
+    await unansweredPromise;
+  } catch {
+    // already logged inside loadUnansweredQuestions
   }
 }
 
@@ -645,8 +795,8 @@ async function saveKnowledgePriority() {
     }, 4000);
   }
 }
-const kbNavButtons = Array.from(document.querySelectorAll('[data-kb-target]'));
-const kbSections = Array.from(document.querySelectorAll('[data-kb-section]'));
+kbNavButtons = Array.from(document.querySelectorAll('[data-kb-target]'));
+kbSections = Array.from(document.querySelectorAll('[data-kb-section]'));
 
 const activateKnowledgeSection = (target) => {
   if (!target) return;
@@ -670,6 +820,7 @@ const activateKnowledgeSection = (target) => {
 if (kbNavButtons.length && kbSections.length) {
   const defaultTarget = (kbNavButtons.find((btn) => btn.classList.contains('active')) || kbNavButtons[0]).dataset.kbTarget;
   activateKnowledgeSection(defaultTarget);
+  setUnansweredVisibility(knowledgeUnansweredItems.length > 0);
 
   const focusTabByOffset = (currentIndex, delta) => {
     const total = kbNavButtons.length;
@@ -693,6 +844,56 @@ if (kbNavButtons.length && kbSections.length) {
         focusTabByOffset(index, -1);
       }
     });
+  });
+}
+
+if (kbUnansweredExportBtn) {
+  kbUnansweredExportBtn.addEventListener('click', () => {
+    if (!knowledgeUnansweredVisible || !kbUnansweredExportBtn) return;
+    const params = new URLSearchParams();
+    const projectKey = getActiveProjectKey();
+    if (projectKey) params.set('project', projectKey);
+    const query = params.toString();
+    const url = query
+      ? `/api/v1/admin/knowledge/unanswered/export?${query}`
+      : '/api/v1/admin/knowledge/unanswered/export';
+    window.open(url, '_blank', 'noopener');
+  });
+}
+
+if (kbUnansweredClearBtn) {
+  kbUnansweredClearBtn.addEventListener('click', async () => {
+    if (!knowledgeUnansweredVisible || !adminSession?.can_manage_projects) return;
+    const confirmMessage = t('knowledgeUnansweredClearConfirm');
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+    kbUnansweredClearBtn.disabled = true;
+    if (kbUnansweredStatus) kbUnansweredStatus.textContent = t('knowledgeUnansweredClearing');
+    try {
+      const payload = {};
+      const projectKey = getActiveProjectKey();
+      if (projectKey) payload.project = projectKey;
+      const resp = await fetch('/api/v1/admin/knowledge/unanswered/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json().catch(() => ({}));
+      if (kbUnansweredStatus) {
+        const removed = Number.isFinite(Number(data?.removed)) ? Number(data.removed) : 0;
+        kbUnansweredStatus.textContent = t('knowledgeUnansweredCleared', { value: removed });
+      }
+      await loadUnansweredQuestions(currentProject);
+    } catch (error) {
+      console.error('knowledge_unanswered_clear_failed', error);
+      if (kbUnansweredStatus) {
+        kbUnansweredStatus.textContent = t('knowledgeUnansweredClearError');
+      }
+    } finally {
+      kbUnansweredClearBtn.disabled = !knowledgeUnansweredVisible;
+    }
   });
 }
 

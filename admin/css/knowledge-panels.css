@@ -55,6 +55,10 @@
   display: flex;
 }
 
+.kb-hidden {
+  display: none !important;
+}
+
 .kb-meta-line {
   display: flex;
   gap: 12px;
