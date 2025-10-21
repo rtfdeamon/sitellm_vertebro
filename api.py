@@ -3133,9 +3133,14 @@ async def crawler_status(project: str | None = None) -> dict[str, object]:
     project_label = _normalize_project(project)
     data = status_dict(project_label)
     crawler = data.get("crawler") or {}
+    note_codes = data.get("note_codes")
+    if note_codes is None:
+        data["note_codes"] = []
+    elif not isinstance(note_codes, list):
+        data["note_codes"] = list(note_codes)
     note = get_crawler_note(project_label)
     if note:
-        data["notes"] = note
+        data["note_extra"] = note
     data.update(
         {
             "queued": crawler.get("queued", 0),

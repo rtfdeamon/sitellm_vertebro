@@ -63,6 +63,7 @@ class Status:
     last_crawl_ts: Optional[float] = None
     last_crawl_iso: Optional[str] = None
     notes: str = ""
+    note_codes: tuple[str, ...] = ()
     llm_available: Optional[bool] = None
 
 
@@ -187,10 +188,13 @@ def get_status(domain: str | None = None) -> Status:
     remaining = max(q + p, 0)
 
     notes_parts: list[str] = []
+    note_codes: list[str] = []
     if not ok:
-        notes_parts.append("Идет индексирование или есть ошибки; смотрите counters.")
+        notes_parts.append("Indexing in progress or errors detected; see counters.")
+        note_codes.append("crawler_indexing_or_errors")
     if llm_available is False:
-        notes_parts.append("LLM недоступно — обработка очереди приостановлена.")
+        notes_parts.append("LLM unavailable — queue processing paused.")
+        note_codes.append("llm_queue_paused")
     notes_text = " ".join(part for part in notes_parts if part)
 
     return Status(
@@ -210,6 +214,7 @@ def get_status(domain: str | None = None) -> Status:
         last_crawl_ts=last_crawl_ts,
         last_crawl_iso=last_crawl_iso,
         notes=notes_text,
+        note_codes=tuple(note_codes),
         llm_available=llm_available,
     )
 

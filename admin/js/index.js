@@ -31,6 +31,17 @@ const knowledgeServiceCard = document.querySelector('.knowledge-service-card');
 const knowledgeServiceMode = document.getElementById('knowledgeServiceMode');
 const knowledgeServicePrompt = document.getElementById('knowledgeServicePrompt');
 const knowledgeServiceRun = document.getElementById('knowledgeServiceRun');
+const llmModelEl = document.getElementById('model');
+const llmBackendEl = document.getElementById('backend');
+const llmDeviceEl = document.getElementById('device');
+const ollamaBaseInput = document.getElementById('ollamaBase');
+const ollamaModelInput = document.getElementById('ollamaModel');
+const llmPingResultEl = document.getElementById('pingRes');
+const saveLlmButton = document.getElementById('saveLLM');
+const pingLlmButton = document.getElementById('pingLLM');
+const copyLogsButton = document.getElementById('copyLogs');
+const logsElement = document.getElementById('logs');
+const logInfoElement = document.getElementById('logInfo');
 const knowledgeServiceEndpoints = [
   '/api/v1/knowledge/service',
   '/api/v1/admin/knowledge/service',
@@ -144,7 +155,11 @@ const summaryState = {
   perf: '',
   build: '',
   prompt: '',
+  crawlerData: null,
 };
+
+let knowledgeInfoSnapshot = null;
+let knowledgeProjectSnapshot = null;
 
 const {
   t,
@@ -168,6 +183,20 @@ function handleLanguageApplied() {
   if (window.ProjectsModule?.handleLanguageApplied) {
     window.ProjectsModule.handleLanguageApplied();
   }
+  if (window.OllamaModule?.handleLanguageApplied) {
+    window.OllamaModule.handleLanguageApplied();
+  }
+  if (summaryState.crawlerData) {
+    const snapshot = {
+      ...summaryState.crawlerData,
+    };
+    summaryState.crawler = '';
+    setSummaryCrawler(null, null, snapshot);
+  }
+  if (typeof global.reapplyCrawlerProgress === 'function') {
+    global.reapplyCrawlerProgress();
+  }
+  renderKnowledgeSummaryFromSnapshot();
   renderFeedbackTasks(feedbackTasksCache);
   renderKnowledgePriority(knowledgePriorityOrder);
   if (kbPriorityStatus) kbPriorityStatus.textContent = '';
@@ -314,6 +343,58 @@ async function refreshClusterAvailability() {
     return false;
   }
 }
+
+const LLM_FIELD_PLACEHOLDER = '—';
+
+const setLlmFieldValue = (element, value) => {
+  if (!element) return;
+  const display =
+    value === null || value === undefined || value === ''
+      ? LLM_FIELD_PLACEHOLDER
+      : String(value);
+  element.textContent = display;
+  if (element.dataset && Object.prototype.hasOwnProperty.call(element.dataset, 'i18nValue')) {
+    element.dataset.i18nValue = display;
+  }
+};
+
+const setInputValue = (input, value) => {
+  if (!input) return;
+  const normalized = value === null || value === undefined ? '' : String(value);
+  if (input.value !== normalized) {
+    input.value = normalized;
+  }
+};
+
+async function pollLLM() {
+  if (
+    !llmModelEl &&
+    !llmBackendEl &&
+    !llmDeviceEl &&
+    !ollamaBaseInput &&
+    !ollamaModelInput
+  ) {
+    return;
+  }
+  try {
+    const resp = await fetch('/api/v1/llm/info');
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    setLlmFieldValue(llmModelEl, data?.model);
+    setLlmFieldValue(llmBackendEl, data?.backend);
+    setLlmFieldValue(llmDeviceEl, data?.device);
+    setInputValue(ollamaBaseInput, data?.ollama_base);
+    if (ollamaModelInput) {
+      const targetModel = typeof data?.model === 'string' ? data.model : '';
+      setInputValue(ollamaModelInput, targetModel);
+    }
+  } catch (error) {
+    console.error('llm_info_refresh_failed', error);
+  }
+}
+window.pollLLM = pollLLM;
 
 const FEEDBACK_STATUS_LABELS = {
   open: () => t('feedbackStatusOpen'),
@@ -806,6 +887,28 @@ const getKnowledgePriorityOrder = () => {
   return knowledgePriorityOrder;
 };
 
+const renderKnowledgeSummaryFromSnapshot = () => {
+  if (kbInfo) {
+    if (knowledgeInfoSnapshot) {
+      const { total, matched, hasMore } = knowledgeInfoSnapshot;
+      const metaBits = [];
+      if (Number.isFinite(total)) metaBits.push(t('knowledgeTotalDocs', { value: total }));
+      if (Number.isFinite(matched)) metaBits.push(t('knowledgeMatchedDocs', { value: matched }));
+      if (hasMore) metaBits.push(t('knowledgeHasMoreDocs'));
+      kbInfo.textContent = metaBits.join(' · ') || '—';
+    } else {
+      kbInfo.textContent = '—';
+    }
+  }
+  if (kbProjectsSummary) {
+    if (knowledgeProjectSnapshot) {
+      kbProjectsSummary.textContent = t('knowledgeProjectSummary', { value: knowledgeProjectSnapshot });
+    } else {
+      kbProjectsSummary.textContent = '';
+    }
+  }
+};
+
 async function loadKnowledge(projectName) {
   const targetProject =
     typeof projectName === 'string' && projectName.trim()
@@ -821,24 +924,21 @@ async function loadKnowledge(projectName) {
     renderKnowledgeDocuments(documents);
     console.debug('knowledge data', data);
 
-    if (kbInfo) {
-      const total = Number(data?.total);
-      const matched = Number(data?.matched);
-      const metaBits = [];
-      if (Number.isFinite(total)) metaBits.push(t('knowledgeTotalDocs', { value: total }));
-      if (Number.isFinite(matched)) metaBits.push(t('knowledgeMatchedDocs', { value: matched }));
-      if (data?.has_more) metaBits.push(t('knowledgeHasMoreDocs'));
-      kbInfo.textContent = metaBits.join(' · ') || '—';
-    }
-    if (kbProjectsSummary) {
-      const projectLabel = data?.project || targetProject || '';
-      kbProjectsSummary.textContent = projectLabel
-        ? t('knowledgeProjectSummary', { value: projectLabel })
-        : '';
-    }
+    const total = Number(data?.total);
+    const matched = Number(data?.matched);
+    const projectLabel = data?.project || targetProject || '';
+    knowledgeInfoSnapshot = {
+      total: Number.isFinite(total) ? total : null,
+      matched: Number.isFinite(matched) ? matched : null,
+      hasMore: Boolean(data?.has_more),
+    };
+    knowledgeProjectSnapshot = projectLabel || null;
+    renderKnowledgeSummaryFromSnapshot();
   } catch (error) {
     console.error('knowledge_load_failed', error);
     renderKnowledgeDocuments([]);
+    knowledgeInfoSnapshot = null;
+    knowledgeProjectSnapshot = null;
     if (kbInfo) kbInfo.textContent = t('knowledgeLoadError');
     if (kbProjectsSummary) kbProjectsSummary.textContent = '';
   }
@@ -1507,15 +1607,59 @@ function setSummaryProject(name, meta) {
   pulseCard(summaryProjectCard);
 }
 
-function setSummaryCrawler(main, meta) {
-  const display = main || '—';
-  const metaText = meta || '';
-  const signature = `${display}::${metaText}`;
+function formatCrawlerSummary(data) {
+  if (!data) {
+    return { display: '—', meta: '' };
+  }
+  const normalize = (value) => {
+    const num = Number(value ?? 0);
+    return Number.isFinite(num) ? num : 0;
+  };
+  const active = normalize(data.active);
+  const queued = normalize(data.queued);
+  const done = normalize(data.done);
+  const failed = normalize(data.failed);
+  const mainLine = `${t('crawlerInProgress', { value: active })} · ${t('crawlerQueued', { value: queued })}`;
+  const metaLines = [
+    t('crawlerDone', { value: done }),
+    t('crawlerFailed', { value: failed }),
+  ];
+  if (data.lastUrl) {
+    metaLines.push(t('crawlerLast', { value: data.lastUrl }));
+  }
+  if (data.lastRun) {
+    metaLines.push(t('crawlerLastRun', { value: data.lastRun }));
+  }
+  return { display: mainLine, meta: metaLines.join('\n') };
+}
+
+function applyCrawlerSummary(display, metaText) {
+  const safeDisplay = display || '—';
+  const safeMeta = metaText || '';
+  const signature = `${safeDisplay}::${safeMeta}`;
   if (summaryState.crawler === signature) return;
   summaryState.crawler = signature;
-  summaryCrawlerEl.textContent = display;
-  summaryCrawlerMeta.textContent = metaText;
+  summaryCrawlerEl.textContent = safeDisplay;
+  summaryCrawlerMeta.textContent = safeMeta;
   pulseCard(summaryCrawlerCard);
+}
+
+function setSummaryCrawler(main, meta, rawData = null) {
+  if (rawData) {
+    summaryState.crawlerData = {
+      active: rawData.active ?? 0,
+      queued: rawData.queued ?? 0,
+      done: rawData.done ?? 0,
+      failed: rawData.failed ?? 0,
+      lastUrl: rawData.lastUrl || '',
+      lastRun: rawData.lastRun || '',
+    };
+    const { display, meta: metaText } = formatCrawlerSummary(summaryState.crawlerData);
+    applyCrawlerSummary(display, metaText);
+    return;
+  }
+  summaryState.crawlerData = null;
+  applyCrawlerSummary(main, meta);
 }
 
 function setSummaryPerf(main, meta) {
@@ -1590,6 +1734,12 @@ bootstrapAdminApp({
   loadLlmModels,
   refreshOllamaCatalog,
   refreshOllamaServers,
+  renderOllamaCatalogFromCache: typeof window.OllamaModule?.renderCatalogFromCache === 'function'
+    ? window.OllamaModule.renderCatalogFromCache
+    : undefined,
+  renderOllamaServersFromCache: typeof window.OllamaModule?.renderServersFromCache === 'function'
+    ? window.OllamaModule.renderServersFromCache
+    : undefined,
   fetchProjectStorage,
   fetchProjects,
   loadProjectsList,
@@ -1636,37 +1786,71 @@ document.addEventListener('admin:poll-status-ready', () => {
 });
 
 // Controls for LLM config
-document.getElementById('saveLLM').addEventListener('click', async () => {
-  const base = document.getElementById('ollamaBase').value.trim();
-  const model = document.getElementById('ollamaModel').value.trim();
-  const payload = { ollama_base: base || null, model: model || null };
-  try {
-    const r = await fetch('/api/v1/llm/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
-    document.getElementById('pingRes').textContent = r.ok ? 'Saved' : 'Save failed';
-  } catch (error) {
-    console.error('llm_config_save_failed', error);
-    document.getElementById('pingRes').textContent = 'Save failed';
-  }
-  pollLLM();
-});
-document.getElementById('pingLLM').addEventListener('click', async () => {
-  try {
-    const r = await fetch('/api/v1/llm/ping');
-    if (!r.ok) {
-      document.getElementById('pingRes').textContent = 'Ping failed';
-      return;
+if (saveLlmButton) {
+  saveLlmButton.addEventListener('click', async () => {
+    const base = ollamaBaseInput ? ollamaBaseInput.value.trim() : '';
+    const model = ollamaModelInput ? ollamaModelInput.value.trim() : '';
+    const payload = { ollama_base: base || null, model: model || null };
+    try {
+      const resp = await fetch('/api/v1/llm/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (llmPingResultEl) {
+        llmPingResultEl.textContent = resp.ok ? 'Saved' : 'Save failed';
+      }
+    } catch (error) {
+      console.error('llm_config_save_failed', error);
+      if (llmPingResultEl) {
+        llmPingResultEl.textContent = 'Save failed';
+      }
     }
-    const j = await r.json();
-    if (!j.enabled) document.getElementById('pingRes').textContent = 'Disabled';
-    else document.getElementById('pingRes').textContent = j.reachable ? 'Reachable' : ('Unreachable' + (j.error ? `: ${j.error}` : ''));
-  } catch (error) {
-    console.error('llm_ping_failed', error);
-    document.getElementById('pingRes').textContent = 'Ping failed';
-  }
-});
+    await pollLLM();
+  });
+}
 
-document.getElementById('copyLogs').addEventListener('click', async () => {
-  const t = document.getElementById('logs').textContent;
-  try{ await navigator.clipboard.writeText(t); document.getElementById('logInfo').textContent = 'Copied'; }
-  catch{ document.getElementById('logInfo').textContent = 'Copy failed'; }
-});
+if (pingLlmButton) {
+  pingLlmButton.addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/v1/llm/ping');
+      if (!resp.ok) {
+        if (llmPingResultEl) llmPingResultEl.textContent = 'Ping failed';
+        return;
+      }
+      const payload = await resp.json();
+      if (!llmPingResultEl) return;
+      if (!payload.enabled) {
+        llmPingResultEl.textContent = 'Disabled';
+      } else if (payload.reachable) {
+        llmPingResultEl.textContent = 'Reachable';
+      } else {
+        const suffix = payload.error ? `: ${payload.error}` : '';
+        llmPingResultEl.textContent = `Unreachable${suffix}`;
+      }
+    } catch (error) {
+      console.error('llm_ping_failed', error);
+      if (llmPingResultEl) llmPingResultEl.textContent = 'Ping failed';
+    }
+  });
+}
+
+if (copyLogsButton && logsElement && logInfoElement) {
+  copyLogsButton.addEventListener('click', async () => {
+    const content = logsElement.textContent || '';
+    try {
+      await navigator.clipboard.writeText(content);
+      logInfoElement.textContent = 'Copied';
+    } catch {
+      logInfoElement.textContent = 'Copy failed';
+    }
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    pollLLM();
+  });
+} else {
+  pollLLM();
+}

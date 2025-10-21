@@ -121,6 +121,11 @@
         ru: 'Контексты:',
         match: ['Контексты:'],
       },
+      projectStorageRedis: {
+        en: 'Redis: {value}',
+        ru: 'Redis: {value}',
+        match: ['Redis: {value}'],
+      },
       dangerZoneTitle: {
         en: 'Danger zone',
         ru: 'Опасная зона',
@@ -345,6 +350,11 @@
         en: 'VK bot',
         ru: 'VK бот',
         match: ['VK бот'],
+      },
+      integrationBitrixTitle: {
+        en: 'Bitrix24',
+        ru: 'Bitrix24',
+        match: ['Bitrix24'],
       },
       intelligentProcessingTitle: {
         en: 'Intelligent processing',
@@ -924,8 +934,16 @@
         ru: 'Обновляем каталог…',
       },
       ollamaCatalogSummary: {
-        en: 'Ollama command available. Models installed: {count}.',
-        ru: 'Команда Ollama доступна. Установлено моделей: {count}.',
+        en: 'Local Ollama CLI available. Models installed: {count}.',
+        ru: 'Локальная команда Ollama доступна. Установлено моделей: {count}.',
+      },
+      ollamaCatalogRemoteSummary: {
+        en: 'Remote Ollama server available. Models installed: {count}.',
+        ru: 'Доступен удалённый сервер Ollama. Установлено моделей: {count}.',
+      },
+      ollamaCatalogHybridSummary: {
+        en: 'Local CLI and remote servers available. Models installed: {count}.',
+        ru: 'Доступны локальная CLI и удалённые серверы Ollama. Установлено моделей: {count}.',
       },
       ollamaCatalogLoadError: {
         en: 'Failed to load catalog: {error}',
@@ -1316,6 +1334,14 @@
         en: '{base} · errors: {failed}',
         ru: '{base} · ошибок: {failed}',
       },
+      crawlerNoteIndexing: {
+        en: 'Indexing in progress or errors detected; check counters.',
+        ru: 'Идёт индексирование или есть ошибки; проверьте счётчики.',
+      },
+      crawlerNoteLlmPaused: {
+        en: 'LLM unavailable — queue processing paused.',
+        ru: 'LLM недоступно — обработка очереди приостановлена.',
+      },
       crawlerLastUrlLabel: {
         en: 'Last URL: {value}',
         ru: 'Последний URL: {value}',
@@ -1651,6 +1677,11 @@
         en: 'Total pairs:',
         ru: 'Всего пар:',
         match: ['Всего пар:'],
+      },
+      integrationStatusWrapper: {
+        en: 'Status: {value}',
+        ru: 'Статус: {value}',
+        match: ['Статус: {value}'],
       },
       startWaiting: {
         en: 'Waiting to start',
