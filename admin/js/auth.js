@@ -13,7 +13,7 @@
     authHeaderSessionKey = 'admin_auth_header_v1',
     authUserStorageKey = 'admin_auth_user_v1',
     authCancelledCode = 'ADMIN_AUTH_CANCELLED',
-    protectedPrefixes = ['/api/v1/admin/', '/api/v1/backup/'],
+    protectedPrefixes = ['/api/v1/admin/', '/api/v1/backup/', '/api/v1/crawler/'],
   } = {}) {
     const nativeFetch = global.fetch.bind(global);
     const adminAuthHeaders = new Map();

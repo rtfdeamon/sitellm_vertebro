@@ -167,6 +167,20 @@ def _normalize_project(value: str | None) -> str | None:
     return None
 
 
+def _require_super_admin(request: Request):
+    """Ensure the current admin session has superuser privileges.
+
+    This duplicates the admin check from `app.py` to avoid an import cycle.
+    """
+
+    identity = getattr(request.state, "admin", None)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+    if not getattr(identity, "is_super", False):
+        raise HTTPException(status_code=403, detail="Super admin privileges required")
+    return identity
+
+
 def _get_mongo_client(request: Request) -> MongoClient:
     mongo_client: MongoClient | None = getattr(request.state, "mongo", None)
     if mongo_client is None:
@@ -3188,8 +3202,9 @@ async def crawler_deduplicate(request: Request, project: str | None = None) -> d
 
 
 @crawler_router.post("/stop", status_code=202)
-async def stop_crawler() -> dict[str, str]:
+async def stop_crawler(request: Request) -> dict[str, str]:
     """Attempt to stop the last started crawler process by PID file."""
+    _require_super_admin(request)
     pid_path = Path("/tmp") / "crawler.pid"
     try:
         pid = int(pid_path.read_text(encoding="utf-8").strip())

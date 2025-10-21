@@ -2545,6 +2545,13 @@ async def _fetch_qa_document(mongo_client: MongoClient, pair_id: str) -> dict | 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
     _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin", "/api/v1/backup")
+    # Exact method+path pairs that must be admin-protected even if their prefix is different
+    # Keep minimal and explicit to avoid over-protecting public APIs like crawler status.
+    _PROTECTED_EXACT: set[tuple[str, str]] = {
+        ("POST", "/api/v1/crawler/reset"),
+        ("POST", "/api/v1/crawler/deduplicate"),
+        ("POST", "/api/v1/crawler/stop"),
+    }
 
     @staticmethod
     def _unauthorized_response(request: Request) -> Response:
@@ -2591,7 +2598,13 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if not any(path.startswith(prefix) for prefix in self._PROTECTED_PREFIXES):
+        method = request.method.upper()
+        normalized_path = path.rstrip("/") or "/"
+        is_protected = (
+            any(path.startswith(prefix) for prefix in self._PROTECTED_PREFIXES)
+            or (method, normalized_path) in self._PROTECTED_EXACT
+        )
+        if not is_protected:
             return await call_next(request)
 
         auth = request.headers.get("Authorization")
