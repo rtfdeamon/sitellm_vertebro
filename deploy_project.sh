@@ -575,7 +575,30 @@ update_env_var HOST_MONGO_PORT "$MONGO_PORT_HOST"
 update_env_var HOST_REDIS_PORT "$REDIS_PORT_HOST"
 update_env_var HOST_QDRANT_HTTP_PORT "$QDRANT_HTTP_HOST"
 update_env_var HOST_QDRANT_GRPC_PORT "$QDRANT_GRPC_HOST"
-update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+
+normalize_bool() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|on|ON)
+      echo "1"
+      ;;
+    *)
+      echo "0"
+      ;;
+  esac
+}
+
+RUN_LOCAL_AUTOSTART_RAW="${RUN_LOCAL_AUTOSTART_OLLAMA:-}"
+if [ -z "$RUN_LOCAL_AUTOSTART_RAW" ] && [ -f .env ]; then
+  RUN_LOCAL_AUTOSTART_RAW=$(awk -F= '/^RUN_LOCAL_AUTOSTART_OLLAMA=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+fi
+AUTOSTART_LOCAL_OLLAMA=$(normalize_bool "$RUN_LOCAL_AUTOSTART_RAW")
+update_env_var RUN_LOCAL_AUTOSTART_OLLAMA "$AUTOSTART_LOCAL_OLLAMA"
+
+DEFAULT_OLLAMA_BASE_URL="http://host.docker.internal:11434"
+if [ "$AUTOSTART_LOCAL_OLLAMA" = "1" ]; then
+  DEFAULT_OLLAMA_BASE_URL="http://ollama:11434"
+fi
+update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-$DEFAULT_OLLAMA_BASE_URL}"
 
 TLS_ENABLED_RAW=${APP_ENABLE_TLS:-}
 if [ -z "$TLS_ENABLED_RAW" ] && [ -f .env ]; then
@@ -714,6 +737,9 @@ done
 PROFILE_ARGS=()
 if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
   PROFILE_ARGS+=(--profile local-llm)
+fi
+if [ "$AUTOSTART_LOCAL_OLLAMA" = "1" ]; then
+  PROFILE_ARGS+=(--profile local-ollama)
 fi
 
 UP_CMD=(${COMPOSE_CMD[@]})

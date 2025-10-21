@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import os
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Iterable
 
@@ -108,18 +109,13 @@ class DocumentsParser:
         # Remove None values from payload to keep Qdrant schema tidy
         payload_clean = {key: value for key, value in payload.items() if value not in (None, "")}
 
-        point_id = document.fileId
-        if point_id is None:
-            raise ValueError("Document missing fileId for vector upsert")
-        qdrant_id = str(point_id).strip()
-        if not qdrant_id:
-            raise ValueError("Document fileId cannot be empty")
+        qdrant_id = self._normalize_point_id(document.fileId)
 
         self._client.upsert(
             collection_name=self.collection,
             points=[
                 qmodels.PointStruct(
-                    id=qdrant_id,  # Qdrant accepts string identifiers directly
+                    id=qdrant_id,  # Accepts UUID strings or uint64 ints
                     vector=list(vector),
                     payload=payload_clean,
                 )
@@ -192,6 +188,47 @@ class DocumentsParser:
                 return TextLoader(tmp_txt_path), tmp_txt_path
             case _:
                 return None, None
+
+    def _normalize_point_id(self, raw_point_id) -> str | int:
+        """Return a Qdrant-compatible point identifier.
+
+        Qdrant only accepts unsigned integers up to 64 bits or UUID strings.
+        Legacy documents use Mongo ObjectId values (24 hex chars / 96 bits),
+        so we map unsupported values onto a deterministic UUIDv5 namespace.
+        """
+
+        if raw_point_id is None:
+            raise ValueError("Document missing fileId for vector upsert")
+
+        point_str = str(raw_point_id).strip()
+        if not point_str:
+            raise ValueError("Document fileId cannot be empty")
+
+        try:
+            # Allow already valid UUIDs
+            return str(uuid.UUID(point_str))
+        except (ValueError, TypeError):
+            pass
+
+        try:
+            # Accept small positive integers (including digit strings)
+            value = int(point_str, 10)
+            if 0 <= value <= (2**64 - 1):
+                return value
+        except ValueError:
+            pass
+
+        try:
+            # Accept hex values that fit in the allowed range
+            value = int(point_str, 16)
+            if 0 <= value <= (2**64 - 1):
+                return value
+        except ValueError:
+            pass
+
+        # Stable UUIDv5 fallback for ObjectId-sized values
+        stabilized_uuid = uuid.uuid5(uuid.NAMESPACE_URL, f"qdrant:{point_str}")
+        return str(stabilized_uuid)
 
 
 def _ensure_iterable(result) -> Iterable:
