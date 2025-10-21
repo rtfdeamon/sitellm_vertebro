@@ -101,7 +101,7 @@ const AUTH_CANCELLED_CODE = 'ADMIN_AUTH_CANCELLED';
 const ADMIN_AUTH_HEADER_SESSION_KEY = 'admin_auth_header_v1';
 const ADMIN_AUTH_USER_STORAGE_KEY = 'admin_auth_user_v1';
 const ADMIN_BASE_KEY = window.location.origin.replace(/\/$/, '');
-const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/'];
+const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/', '/api/v1/crawler/'];
 
 const {
   clearAuthHeaderForBase,
@@ -1350,7 +1350,7 @@ const showKnowledgeDescriptionPreview = (text) => {
   kbThinkingPreview.classList.add('visible');
 };
 
-const renderAutoDescription = (text) => {
+function renderAutoDescription(text) {
   if (!kbAutoDescription) return;
   const value = (text || '').trim();
   if (!value) {
@@ -1360,7 +1360,7 @@ const renderAutoDescription = (text) => {
   }
   kbAutoDescription.textContent = t('knowledgeAutoDescriptionLabel', { value });
   kbAutoDescription.classList.add('visible');
-};
+}
 
 const showKnowledgeThinking = (
   caption = t('knowledgeThinkingCaption'),
