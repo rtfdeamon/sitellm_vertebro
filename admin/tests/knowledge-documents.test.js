@@ -148,6 +148,20 @@ const emptyDocumentsResponse = {
 const mockFetchSequence = (responses) => {
   let callIndex = 0;
   return vi.fn((url) => {
+    if (typeof url === 'string' && url.includes('/api/v1/llm/info')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          model: null,
+          backend: 'local',
+          device: 'cpu',
+          ollama_base: null,
+        }),
+      });
+    }
+    if (callIndex >= responses.length) {
+      throw new Error(`Unexpected fetch URL ${url}`);
+    }
     const response = responses[callIndex];
     callIndex += 1;
     if (typeof response === 'function') {
@@ -188,7 +202,10 @@ describe('Knowledge documents rendering', () => {
     await bootConfig.loadKnowledge('demo');
 
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const relevantCalls = fetchMock.mock.calls.filter(
+        ([requestUrl]) => !requestUrl.includes('/api/v1/llm/info'),
+      );
+      expect(relevantCalls).toHaveLength(2);
     });
 
     expect(document.querySelectorAll('#kbTableText tr')).toHaveLength(1);
@@ -216,7 +233,10 @@ describe('Knowledge documents rendering', () => {
     await bootConfig.loadKnowledge('demo');
 
     await vi.waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const relevantCalls = fetchMock.mock.calls.filter(
+        ([requestUrl]) => !requestUrl.includes('/api/v1/llm/info'),
+      );
+      expect(relevantCalls).toHaveLength(2);
     });
 
     const placeholders = Array.from(document.querySelectorAll('#kbSectionDocuments tbody tr td'))

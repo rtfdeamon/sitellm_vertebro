@@ -85,6 +85,8 @@ describe('admin session', () => {
     const refreshClusterAvailability = vi.fn().mockResolvedValue();
     const refreshOllamaCatalog = vi.fn().mockResolvedValue();
     const refreshOllamaServers = vi.fn().mockResolvedValue();
+    const renderOllamaCatalogFromCache = vi.fn();
+    const renderOllamaServersFromCache = vi.fn();
     const fetchProjectStorage = vi.fn().mockResolvedValue();
     const fetchProjects = vi.fn().mockResolvedValue();
     const loadProjectsList = vi.fn().mockResolvedValue();
@@ -103,6 +105,8 @@ describe('admin session', () => {
       loadLlmModels,
       refreshOllamaCatalog,
       refreshOllamaServers,
+      renderOllamaCatalogFromCache,
+      renderOllamaServersFromCache,
       fetchProjectStorage,
       fetchProjects,
       loadProjectsList,
@@ -118,7 +122,7 @@ describe('admin session', () => {
     expect(refreshClusterAvailability).toHaveBeenCalledTimes(1);
     expect(refreshOllamaCatalog).toHaveBeenCalledWith(true);
     expect(refreshOllamaServers).toHaveBeenCalledTimes(1);
-    expect(loadLlmModels).not.toHaveBeenCalled();
+    expect(loadLlmModels).toHaveBeenCalledTimes(1);
     expect(fetchProjectStorage).toHaveBeenCalledTimes(2);
     expect(fetchProjects).toHaveBeenCalledTimes(1);
     expect(loadProjectsList).toHaveBeenCalledTimes(1);
@@ -129,6 +133,8 @@ describe('admin session', () => {
     expect(loadKnowledge).toHaveBeenCalledTimes(1);
     expect(pollStatus).toHaveBeenCalledTimes(1);
     expect(updateProjectSummary).not.toHaveBeenCalled();
+    expect(renderOllamaCatalogFromCache).not.toHaveBeenCalled();
+    expect(renderOllamaServersFromCache).not.toHaveBeenCalled();
     expect(window.currentProject).toBe('demo');
     expect(window.clusterAvailabilityTimer).toBe(42);
     expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 20000);
@@ -152,6 +158,8 @@ describe('admin session', () => {
     const refreshClusterAvailability = vi.fn().mockResolvedValue();
     const refreshOllamaCatalog = vi.fn();
     const refreshOllamaServers = vi.fn();
+    const renderOllamaCatalogFromCache = vi.fn();
+    const renderOllamaServersFromCache = vi.fn();
     const fetchProjectStorage = vi.fn().mockResolvedValue();
     const fetchProjects = vi.fn().mockResolvedValue();
     const loadProjectsList = vi.fn().mockResolvedValue();
@@ -170,6 +178,8 @@ describe('admin session', () => {
       loadLlmModels,
       refreshOllamaCatalog,
       refreshOllamaServers,
+      renderOllamaCatalogFromCache,
+      renderOllamaServersFromCache,
       fetchProjectStorage,
       fetchProjects,
       loadProjectsList,
@@ -196,5 +206,7 @@ describe('admin session', () => {
     expect(loadKnowledge).toHaveBeenCalledTimes(1);
     expect(pollStatus).toHaveBeenCalledTimes(1);
     expect(updateProjectSummary).not.toHaveBeenCalled();
+    expect(renderOllamaCatalogFromCache).toHaveBeenCalledTimes(1);
+    expect(renderOllamaServersFromCache).toHaveBeenCalledTimes(1);
   });
 });

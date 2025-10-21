@@ -64,6 +64,8 @@
     loadLlmModels,
     refreshOllamaCatalog,
     refreshOllamaServers,
+    renderOllamaCatalogFromCache,
+    renderOllamaServersFromCache,
     fetchProjectStorage,
     fetchProjects,
     loadProjectsList,
@@ -91,15 +93,27 @@
     if (global.adminSession.is_super) {
       if (typeof refreshOllamaCatalog === 'function') {
         await refreshOllamaCatalog(true);
+      } else if (typeof renderOllamaCatalogFromCache === 'function') {
+        renderOllamaCatalogFromCache();
       }
       if (typeof refreshOllamaServers === 'function') {
         await refreshOllamaServers();
+      } else if (typeof renderOllamaServersFromCache === 'function') {
+        renderOllamaServersFromCache();
       }
       if (typeof loadLlmModels === 'function') {
         await loadLlmModels();
       }
-    } else if (typeof loadLlmModels === 'function') {
-      await loadLlmModels();
+    } else {
+      if (typeof renderOllamaCatalogFromCache === 'function') {
+        renderOllamaCatalogFromCache();
+      }
+      if (typeof renderOllamaServersFromCache === 'function') {
+        renderOllamaServersFromCache();
+      }
+      if (typeof loadLlmModels === 'function') {
+        await loadLlmModels();
+      }
     }
     if (typeof fetchProjectStorage === 'function') {
       await fetchProjectStorage();

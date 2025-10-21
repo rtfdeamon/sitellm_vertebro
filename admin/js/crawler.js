@@ -40,7 +40,19 @@
     return fallback || key;
   };
 
+  const NOTE_TRANSLATIONS = {
+    crawler_indexing_or_errors: {
+      key: 'crawlerNoteIndexing',
+      fallback: 'Indexing in progress or errors detected; see counters.',
+    },
+    llm_queue_paused: {
+      key: 'crawlerNoteLlmPaused',
+      fallback: 'LLM unavailable — queue processing paused.',
+    },
+  };
+
   const resetCrawlerProgress = () => {
+    lastProgressSnapshot = null;
     if (crawlerProgressFill) crawlerProgressFill.style.width = '0%';
     if (crawlerProgressStatus) crawlerProgressStatus.textContent = translate('crawlerStatusWaiting', 'Waiting to start');
     if (crawlerProgressCounters) {
@@ -62,7 +74,22 @@
     }
   };
 
-  const updateCrawlerProgress = (active, queued, done, failed, note, lastUrl) => {
+  let lastProgressSnapshot = null;
+
+  const updateCrawlerProgress = (active, queued, done, failed, note, lastUrl, options = {}) => {
+    const meta = options.meta || {};
+    if (!options.skipCache) {
+      lastProgressSnapshot = {
+        active,
+        queued,
+        done,
+        failed,
+        note,
+        lastUrl,
+        noteCodes: Array.isArray(meta.noteCodes) ? meta.noteCodes.slice() : [],
+        backendNote: typeof meta.backendNote === 'string' ? meta.backendNote : '',
+      };
+    }
     if (crawlerProgressFill) {
       const total = Math.max(active + queued + done + failed, 0);
       const completed = Math.max(done, 0);
@@ -94,6 +121,38 @@
       crawlerProgressNote.textContent = bits.join('\n');
       crawlerProgressNote.style.display = bits.length ? 'block' : 'none';
     }
+  };
+
+  const reapplyCrawlerProgress = () => {
+    if (!lastProgressSnapshot) return;
+    const {
+      active,
+      queued,
+      done,
+      failed,
+      noteCodes,
+      backendNote,
+      lastUrl,
+    } = lastProgressSnapshot;
+    let noteText = lastProgressSnapshot.note || '';
+    if (Array.isArray(noteCodes) && noteCodes.length) {
+      const resolved = noteCodes
+        .map((code) => {
+          const info = NOTE_TRANSLATIONS[code];
+          if (!info) return '';
+          return translate(info.key, info.fallback);
+        })
+        .filter((value) => Boolean(value && value.trim()));
+      if (backendNote) resolved.push(backendNote);
+      noteText = resolved.join('\n');
+    } else if (backendNote && !noteText) {
+      noteText = backendNote;
+    }
+    lastProgressSnapshot.note = noteText;
+    updateCrawlerProgress(active, queued, done, failed, noteText, lastUrl, {
+      skipCache: true,
+      meta: { noteCodes, backendNote },
+    });
   };
 
   const setCrawlerActionStatus = (message = '', timeout = 3000) => {
@@ -214,6 +273,14 @@
         setVal('in_progress', data.in_progress ?? 0);
         setVal('done', data.done ?? 0);
         setVal('failed', data.failed ?? 0);
+        const noteCodes = Array.isArray(data.note_codes) ? data.note_codes : [];
+        const resolvedNotes = noteCodes
+          .map((code) => {
+            const info = NOTE_TRANSLATIONS[code];
+            if (!info) return '';
+            return translate(info.key, info.fallback);
+          })
+          .filter((value) => Boolean(value && value.trim()));
         const iso = data.last_crawl_iso || '–';
         const lastCrawl = document.getElementById('last_crawl');
         if (lastCrawl) lastCrawl.textContent = translate('crawlerLast', 'Last: {value}', { value: iso });
@@ -244,23 +311,42 @@
         const queued = Number(data.queued ?? 0);
         const done = Number(data.done ?? 0);
         const failed = Number(data.failed ?? 0);
+        const statusNoteRaw = typeof data.notes === 'string' ? data.notes.trim() : '';
+        const extraNote = typeof data.note_extra === 'string' ? data.note_extra.trim() : '';
+        const legacyNote = (crawlerData && typeof crawlerData.notes === 'string' ? crawlerData.notes.trim() : '') || '';
+        const noteParts = [];
+        if (resolvedNotes.length) {
+          noteParts.push(...resolvedNotes);
+        } else if (statusNoteRaw) {
+          noteParts.push(statusNoteRaw);
+        }
+        if (extraNote) {
+          noteParts.push(extraNote);
+        }
+        const noteText = noteParts.length ? noteParts.join('\n') : legacyNote;
         if (typeof global.setSummaryCrawler === 'function') {
-          const summaryMain = `${translate('crawlerInProgress', 'In progress: {value}', { value: active })} · ${translate('crawlerQueued', 'Queued: {value}', { value: queued })}`;
-          const metaLines = [
-            translate('crawlerDone', 'Done: {value}', { value: done }),
-            translate('crawlerFailed', 'Failed: {value}', { value: failed }),
-          ];
-          if (data.last_url) metaLines.push(translate('crawlerLast', 'Last: {value}', { value: data.last_url }));
-          if (iso && iso !== '–') metaLines.push(translate('crawlerLastRun', 'Last run: {value}', { value: iso }));
-          global.setSummaryCrawler(summaryMain, metaLines.join('\n'));
+          global.setSummaryCrawler(null, null, {
+            active,
+            queued,
+            done,
+            failed,
+            lastUrl: data.last_url || crawlerData.last_url || '',
+            lastRun: iso && iso !== '–' ? iso : '',
+          });
         }
         updateCrawlerProgress(
           active,
           queued,
           done,
           failed,
-          data.notes || crawlerData.notes || '',
-          data.last_url || crawlerData.last_url || ''
+          noteText,
+          data.last_url || crawlerData.last_url || '',
+          {
+            meta: {
+              noteCodes,
+              backendNote: extraNote,
+            },
+          }
         );
         if (crawlerLogsPanel?.classList.contains('visible')) {
           refreshCrawlerLogs();
@@ -423,6 +509,7 @@
       resetCrawlerProgress,
       setCrawlerProgressError,
       updateCrawlerProgress,
+      reapplyCrawlerProgress,
       setCrawlerActionStatus,
       refreshCrawlerLogs,
       performCrawlerAction,
@@ -435,6 +522,7 @@
     global.resetCrawlerProgress = resetCrawlerProgress;
     global.setCrawlerProgressError = setCrawlerProgressError;
     global.updateCrawlerProgress = updateCrawlerProgress;
+    global.reapplyCrawlerProgress = reapplyCrawlerProgress;
     global.setCrawlerActionStatus = setCrawlerActionStatus;
     global.refreshCrawlerLogs = refreshCrawlerLogs;
     global.performCrawlerAction = performCrawlerAction;

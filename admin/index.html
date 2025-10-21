@@ -475,7 +475,7 @@
           <div data-i18n="labelTexts">Prompts: <span id="projectStorageText">—</span></div>
           <div data-i18n="filesLabel">Files: <span id="projectStorageFiles">—</span></div>
           <div data-i18n="contextsLabel">Contexts: <span id="projectStorageContexts">—</span></div>
-          <div>Redis: <span id="projectStorageRedis">—</span></div>
+          <div data-i18n-wrapper="projectStorageRedis">Redis: <span id="projectStorageRedis" data-i18n-value>—</span></div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
           <button type="submit" data-i18n="buttonSave">Save</button>
@@ -526,7 +526,7 @@
               <input type="checkbox" id="projectTelegramAutoStart">
               <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
-            <div>Status: <span id="projectTelegramStatus">—</span></div>
+            <div data-i18n-wrapper="integrationStatusWrapper">Status: <span id="projectTelegramStatus" data-i18n-value>—</span></div>
             <div class="muted" id="projectTelegramInfo"></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <button type="button" id="projectTelegramSave" data-i18n="buttonSave">Save</button>
@@ -544,7 +544,7 @@
               <input type="checkbox" id="projectMaxAutoStart">
               <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
-            <div>Status: <span id="projectMaxStatus">—</span></div>
+            <div data-i18n-wrapper="integrationStatusWrapper">Status: <span id="projectMaxStatus" data-i18n-value>—</span></div>
             <div class="muted" id="projectMaxInfo"></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <button type="button" id="projectMaxSave" data-i18n="buttonSave">Save</button>
@@ -562,7 +562,7 @@
               <input type="checkbox" id="projectVkAutoStart">
               <span data-i18n="autoStartLabel">Auto-start on launch</span>
             </label>
-            <div>Status: <span id="projectVkStatus">—</span></div>
+            <div data-i18n-wrapper="integrationStatusWrapper">Status: <span id="projectVkStatus" data-i18n-value>—</span></div>
             <div class="muted" id="projectVkInfo"></div>
             <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <button type="button" id="projectVkSave" data-i18n="buttonSave">Save</button>
@@ -584,7 +584,7 @@
             </div>
           </div>
           <div class="project-bitrix" style="flex:1 1 260px; min-width:240px;">
-            <b style="display:block; margin-bottom:8px;">Bitrix24</b>
+            <b style="display:block; margin-bottom:8px;" data-i18n="integrationBitrixTitle">Bitrix24</b>
             <label style="display:block; margin-bottom:8px;">Webhook URL
               <input type="url" id="projectBitrixWebhook" placeholder="https://example.bitrix24.ru/rest/1/xxxxxxxxx/" style="width:100%;">
             </label>
@@ -993,15 +993,15 @@
     })(window);
   </script>
   <script>
-    window.ADMIN_ASSET_VERSION = '20241010.02';
+    window.ADMIN_ASSET_VERSION = '20241101.01';
   </script>
   <script src="./js/i18n-static.js?v=20241017.01"></script>
-  <script src="./js/i18n.js?v=20241017.01"></script>
+  <script src="./js/i18n.js?v=20241101.01"></script>
   <script src="./js/auth.js?v=20241017.01"></script>
-  <script src="./js/session.js?v=20241018.01"></script>
+  <script src="./js/session.js?v=20241101.01"></script>
   <script src="./js/ui-utils.js?v=20241017.01"></script>
   <script src="./js/voice.js?v=20241017.01"></script>
-  <script src="./js/ollama.js?v=20241018.01"></script>
+  <script src="./js/ollama.js?v=20241101.01"></script>
   <script src="./js/integrations/telegram.js?v=20241017.01"></script>
   <script src="./js/integrations/max.js?v=20241017.01"></script>
   <script src="./js/integrations/vk.js?v=20241017.01"></script>
@@ -1010,7 +1010,7 @@
   <script src="./js/projects.js?v=20241018.02"></script>
   <script src="./js/stats.js?v=20241018.02"></script>
   <script src="./js/crawler.js?v=20241017.01"></script>
-  <script src="./js/index.js?v=20241017.01"></script>
+  <script src="./js/index.js?v=20241101.01"></script>
   <script src="./js/backup.js?v=20241017.01"></script>
   </body>
   </html>

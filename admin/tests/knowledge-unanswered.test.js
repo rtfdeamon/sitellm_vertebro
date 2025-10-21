@@ -107,6 +107,17 @@ describe('Knowledge unanswered tab', () => {
 
   it('shows unanswered tab when data is returned', async () => {
     const fetchMock = vi.fn((url) => {
+      if (url.includes('/api/v1/llm/info')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            model: null,
+            backend: 'local',
+            device: 'cpu',
+            ollama_base: null,
+          }),
+        });
+      }
       if (url.startsWith('/api/v1/admin/knowledge/unanswered')) {
         return Promise.resolve({
           ok: true,
@@ -146,6 +157,17 @@ describe('Knowledge unanswered tab', () => {
 
   it('hides unanswered tab when list is empty', async () => {
     const fetchMock = vi.fn((url) => {
+      if (url.includes('/api/v1/llm/info')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            model: null,
+            backend: 'local',
+            device: 'cpu',
+            ollama_base: null,
+          }),
+        });
+      }
       if (url.startsWith('/api/v1/admin/knowledge/unanswered')) {
         return Promise.resolve({
           ok: true,
@@ -177,6 +199,17 @@ describe('Knowledge unanswered tab', () => {
   it('clears unanswered list and refreshes data', async () => {
     let unansweredCall = 0;
     const fetchMock = vi.fn((url, init = {}) => {
+      if (typeof url === 'string' && url.includes('/api/v1/llm/info')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            model: null,
+            backend: 'local',
+            device: 'cpu',
+            ollama_base: null,
+          }),
+        });
+      }
       if (url.startsWith('/api/v1/admin/knowledge/unanswered/clear')) {
         return Promise.resolve({
           ok: true,
