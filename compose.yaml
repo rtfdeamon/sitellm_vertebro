@@ -30,7 +30,7 @@ services:
       test:
         - CMD-SHELL
         - >
-          curl -fsS http://localhost:11434/api/tags || exit 1
+          ollama list > /dev/null 2>&1 || exit 1
 
   mongo:
     # MongoDB stores conversation history and documents
