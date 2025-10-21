@@ -192,8 +192,9 @@ function handleLanguageApplied() {
     summaryState.crawler = '';
     setSummaryCrawler(null, null, snapshot);
   }
-  if (typeof global.reapplyCrawlerProgress === 'function') {
-    global.reapplyCrawlerProgress();
+  const runtime = typeof window !== 'undefined' ? window : globalThis;
+  if (typeof runtime.reapplyCrawlerProgress === 'function') {
+    runtime.reapplyCrawlerProgress();
   }
   renderKnowledgeSummaryFromSnapshot();
   renderFeedbackTasks(feedbackTasksCache);
@@ -204,6 +205,23 @@ function handleLanguageApplied() {
     if (!kbDropZone.classList.contains('has-files')) {
       kbDropZone.textContent = kbDropZoneDefaultText;
     }
+  }
+  if (typeof updateDropZonePreview === 'function') {
+    const source = (kbNewFileInput && kbNewFileInput.files && kbNewFileInput.files.length)
+      ? kbNewFileInput.files
+      : dropFilesBuffer;
+    updateDropZonePreview(source && source.length ? source : []);
+  }
+  if (kbNewDescriptionInput) {
+    const value = (kbNewDescriptionInput.value || '').trim();
+    if (value) {
+      renderAutoDescription(value);
+    } else {
+      renderAutoDescription('');
+    }
+  }
+  if (kbNewContentInput) {
+    showKnowledgeDescriptionPreview(kbNewContentInput.value || '');
   }
 }
 
@@ -242,7 +260,8 @@ let knowledgeDropFiles = [];
 const kbNewFileInput = document.getElementById('kbNewFile');
 const kbNewContentInput = document.getElementById('kbNewContent');
 const kbAddStatus = document.getElementById('kbAddStatus');
-const kbResetButton = document.getElementById('kbResetForm');
+const kbResetFormBtn = document.getElementById('kbResetForm');
+let dropFilesBuffer = [];
 const kbThinkingOverlay = document.getElementById('kbThinkingOverlay');
 const kbThinkingCaption = document.getElementById('kbThinkingCaption');
 const kbThinkingMessage = document.getElementById('kbThinkingMessage');
@@ -670,7 +689,15 @@ function renderKnowledgePriority(order) {
 }
 
 const renderKnowledgeDocuments = (documents) => {
-  knowledgeDocumentsCache = Array.isArray(documents) ? documents.slice() : [];
+  const normalized = [];
+  if (Array.isArray(documents)) {
+    documents.forEach((entry) => {
+      if (entry && typeof entry === 'object') {
+        normalized.push(entry);
+      }
+    });
+  }
+  knowledgeDocumentsCache = normalized;
   const grouped = { text: [], docs: [], images: [] };
   knowledgeDocumentsCache.forEach((doc) => {
     const bucket = getDocCategory(doc);
@@ -831,7 +858,7 @@ const getKnowledgePriorityOrder = () => {
   return knowledgePriorityOrder;
 };
 
-const renderKnowledgeSummaryFromSnapshot = () => {
+function renderKnowledgeSummaryFromSnapshot() {
   if (kbInfo) {
     if (knowledgeInfoSnapshot) {
       const { total, matched, hasMore } = knowledgeInfoSnapshot;
@@ -851,7 +878,7 @@ const renderKnowledgeSummaryFromSnapshot = () => {
       kbProjectsSummary.textContent = '';
     }
   }
-};
+}
 
 async function loadKnowledge(projectName) {
   const targetProject =
@@ -1096,6 +1123,172 @@ if (kbUnansweredClearBtn) {
   });
 }
 
+if (kbNewFileInput) {
+  kbNewFileInput.addEventListener('change', () => {
+    dropFilesBuffer = [];
+    updateDropZonePreview(kbNewFileInput.files);
+  });
+}
+
+if (kbDropZone) {
+  ['dragenter', 'dragover'].forEach((eventName) => {
+    kbDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      kbDropZone.classList.add('drag-over');
+    });
+  });
+  ['dragleave', 'dragend'].forEach((eventName) => {
+    kbDropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      kbDropZone.classList.remove('drag-over');
+    });
+  });
+  kbDropZone.addEventListener('click', () => {
+    if (kbNewFileInput && !kbNewFileInput.disabled) {
+      kbNewFileInput.click();
+    }
+  });
+  kbDropZone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    kbDropZone.classList.remove('drag-over');
+    const files = event.dataTransfer?.files;
+    if (!files || !files.length) return;
+    dropFilesBuffer = Array.from(files);
+    if (kbNewFileInput && typeof DataTransfer !== 'undefined') {
+      try {
+        const dt = new DataTransfer();
+        dropFilesBuffer.forEach((file) => dt.items.add(file));
+        kbNewFileInput.files = dt.files;
+        dropFilesBuffer = [];
+      } catch {
+        /* ignore fallback buffer */
+      }
+    }
+    const source = (kbNewFileInput && kbNewFileInput.files && kbNewFileInput.files.length)
+      ? kbNewFileInput.files
+      : dropFilesBuffer;
+    updateDropZonePreview(source);
+  });
+}
+
+if (kbResetFormBtn) {
+  kbResetFormBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    resetKnowledgeForm();
+  });
+}
+
+if (kbNewContentInput) {
+  kbNewContentInput.addEventListener('input', () => {
+    showKnowledgeDescriptionPreview(kbNewContentInput.value);
+  });
+}
+
+if (kbNewDescriptionInput) {
+  kbNewDescriptionInput.addEventListener('input', () => {
+    const value = (kbNewDescriptionInput.value || '').trim();
+    if (value) {
+      renderAutoDescription(value);
+    } else {
+      renderAutoDescription('');
+    }
+  });
+}
+
+if (kbAddForm) {
+  kbAddForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const projectKey = getActiveProjectKey() || currentProject || '';
+    if (!projectKey) {
+      if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadProjectMissing');
+      return;
+    }
+
+    const files = collectSelectedFiles();
+    const textValue = (kbNewContentInput?.value || '').trim();
+    if (!files.length && !textValue) {
+      if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadNothing');
+      return;
+    }
+
+    const descriptionValue = (kbNewDescriptionInput?.value || '').trim();
+    const urlValue = (kbNewUrlInput?.value || '').trim();
+    const baseNameValue = (kbNewNameInput?.value || '').trim();
+    const shouldShowOverlay = !descriptionValue && (files.length > 0 || Boolean(textValue));
+
+    if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadProcessing');
+    setKnowledgeFormButtonsDisabled(true);
+    if (shouldShowOverlay) {
+      showKnowledgeThinking();
+    }
+
+    try {
+      const tasks = [];
+      files.forEach((file, index) => {
+        const generatedName = files.length === 1 && baseNameValue
+          ? baseNameValue
+          : file.name || (baseNameValue ? `${baseNameValue}-${index + 1}` : `document-${Date.now()}-${index + 1}`);
+        tasks.push(
+          uploadKnowledgeFile(file, {
+            project: projectKey,
+            description: descriptionValue,
+            url: urlValue,
+            name: generatedName,
+          })
+        );
+      });
+
+      if (textValue) {
+        const textDocName = textValue && baseNameValue ? baseNameValue : baseNameValue || `text-${Date.now()}`;
+        tasks.push(
+          createKnowledgeTextDocument({
+            project: projectKey,
+            name: textDocName,
+            description: descriptionValue,
+            url: urlValue,
+            content: textValue,
+          })
+        );
+      }
+
+      const results = await Promise.allSettled(tasks);
+      const successes = results.filter((item) => item.status === 'fulfilled').length;
+      const failures = results.filter((item) => item.status === 'rejected');
+
+      if (failures.length) {
+        const errorMessage = failures.map((item) => getErrorMessage(item.reason)).join('; ');
+        if (successes) {
+          if (kbAddStatus) {
+            kbAddStatus.textContent = t('knowledgeUploadPartial', {
+              success: successes,
+              total: results.length,
+              error: errorMessage,
+            });
+          }
+        } else if (kbAddStatus) {
+          kbAddStatus.textContent = t('knowledgeUploadError', { error: errorMessage });
+        }
+      } else if (kbAddStatus) {
+        kbAddStatus.textContent = t('knowledgeUploadSuccess', { count: results.length });
+      }
+
+      if (successes) {
+        resetKnowledgeForm();
+        await loadKnowledge(projectKey);
+      }
+    } catch (error) {
+      console.error('knowledge_upload_failed', error);
+      if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadError', { error: getErrorMessage(error) });
+    } finally {
+      if (shouldShowOverlay) {
+        hideKnowledgeThinking();
+      }
+      setKnowledgeFormButtonsDisabled(false);
+    }
+  });
+}
+
 const resetKnowledgePreview = () => {
   if (kbThinkingPreview) {
     kbThinkingPreview.textContent = '';
@@ -1185,255 +1378,115 @@ function updateDropZonePreview(fileList) {
 
 window.updateDropZonePreview = updateDropZonePreview;
 
-const setKnowledgeStatus = (message, isError = false) => {
-  if (!kbAddStatus) return;
-  kbAddStatus.textContent = message || '';
-  kbAddStatus.classList.toggle('status-error', Boolean(isError && message));
-};
-
-const setKnowledgeFormDisabled = (disabled) => {
-  if (!kbAddForm) return;
-  const controls = kbAddForm.querySelectorAll('input, textarea, button');
-  controls.forEach((control) => {
-    if (control instanceof HTMLButtonElement || control instanceof HTMLInputElement || control instanceof HTMLTextAreaElement) {
-      control.disabled = disabled;
+function collectSelectedFiles() {
+  const filesMap = new Map();
+  const push = (file) => {
+    if (!file) return;
+    const key = [file.name || '', file.size || 0, file.type || '', file.lastModified || 0].join('|');
+    if (!filesMap.has(key)) {
+      filesMap.set(key, file);
     }
-  });
+  };
+  if (kbNewFileInput && kbNewFileInput.files) {
+    Array.from(kbNewFileInput.files).forEach(push);
+  }
+  dropFilesBuffer.forEach(push);
+  return Array.from(filesMap.values());
+}
+
+async function extractResponseError(response) {
+  if (!response) return 'unknown error';
+  try {
+    const data = await response.clone().json();
+    if (data && typeof data === 'object') {
+      if (data.detail) return Array.isArray(data.detail) ? data.detail.join(', ') : String(data.detail);
+      if (data.error) return String(data.error);
+      if (data.message) return String(data.message);
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const text = await response.text();
+    if (text) return text;
+  } catch {
+    /* ignore */
+  }
+  return `HTTP ${response.status}`;
+}
+
+const getErrorMessage = (error) => {
+  if (!error) return 'unknown error';
+  if (typeof error === 'string') return error;
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'object' && error.message) return String(error.message);
+  return String(error);
 };
 
-const resetKnowledgeForm = () => {
-  if (kbAddForm) kbAddForm.reset();
+async function uploadKnowledgeFile(file, { project, description, url, name }) {
+  if (!file) {
+    throw new Error('File payload missing');
+  }
+  const formData = new FormData();
+  formData.set('project', project);
+  if (description) formData.set('description', description);
+  if (url) formData.set('url', url);
+  if (name) formData.set('name', name);
+  formData.set('file', file, file.name);
+
+  const resp = await fetch('/api/v1/admin/knowledge/upload', {
+    method: 'POST',
+    body: formData,
+  });
+  if (!resp.ok) {
+    throw new Error(await extractResponseError(resp));
+  }
+  return resp.json().catch(() => ({}));
+}
+
+async function createKnowledgeTextDocument({ project, name, description, url, content }) {
+  const payload = {
+    project,
+    name,
+    description: description || '',
+    url: url || null,
+    content,
+  };
+  const resp = await fetch('/api/v1/admin/knowledge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!resp.ok) {
+    throw new Error(await extractResponseError(resp));
+  }
+  return resp.json().catch(() => ({}));
+}
+
+function resetKnowledgeForm() {
+  if (kbAddForm && typeof kbAddForm.reset === 'function') {
+    kbAddForm.reset();
+  }
+  dropFilesBuffer = [];
   if (kbNewFileInput) {
     kbNewFileInput.value = '';
   }
-  knowledgeDropFiles = [];
   updateDropZonePreview([]);
+  if (kbDropZone) {
+    kbDropZone.classList.remove('has-files', 'drag-over');
+    kbDropZone.textContent = kbDropZoneDefaultText || t('dragFilesHint');
+  }
+  resetKnowledgePreview();
   renderAutoDescription('');
-  setKnowledgeStatus('');
-};
+  if (kbAddStatus) kbAddStatus.textContent = '';
+}
 
-const refreshKnowledgeProjectsList = async () => {
-  if (!kbProjectList) return;
-  try {
-    const resp = await fetch('/api/v1/admin/projects/names');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    const projects = Array.isArray(data?.projects) ? data.projects : [];
-    kbProjectList.innerHTML = '';
-    const fragment = document.createDocumentFragment();
-    projects
-      .map((project) => normalizeProjectName(project))
-      .filter(Boolean)
-      .forEach((project) => {
-        const option = document.createElement('option');
-        option.value = project;
-        fragment.appendChild(option);
-      });
-    kbProjectList.appendChild(fragment);
-    if (kbProjectsSummary) {
-      kbProjectsSummary.textContent = projects.length
-        ? `${projects.length} projects`
-        : '';
-    }
-  } catch (error) {
-    console.error('knowledge_projects_load_failed', error);
-    if (kbProjectsSummary) kbProjectsSummary.textContent = '';
+function setKnowledgeFormButtonsDisabled(disabled) {
+  if (kbAddForm) {
+    const submitBtn = kbAddForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.disabled = disabled;
   }
-};
-
-const toggleDropZoneActive = (active) => {
-  if (!kbDropZone) return;
-  kbDropZone.classList.toggle('drag-over', Boolean(active));
-};
-
-const collectSelectedFiles = () => {
-  const fromInput = kbNewFileInput?.files
-    ? Array.from(kbNewFileInput.files).filter((file) => file && file.size)
-    : [];
-  const combined = [...knowledgeDropFiles, ...fromInput];
-  if (!combined.length) return [];
-  const seen = new Set();
-  return combined.filter((file) => {
-    if (!file) return false;
-    const key = `${file.name || ''}:${file.size || 0}:${file.lastModified || 0}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-};
-
-async function submitKnowledgeForm(event) {
-  event.preventDefault();
-  const projectKey = getKnowledgeProjectKey();
-  if (!projectKey) {
-    setKnowledgeStatus(t('projectsSelectPlaceholder') || 'Select a project first.', true);
-    return;
-  }
-
-  const textValue = (kbNewContentInput?.value || '').trim();
-  const files = collectSelectedFiles();
-  if (!textValue && !files.length) {
-    setKnowledgeStatus('Add text or select at least one file.', true);
-    return;
-  }
-
-  setKnowledgeStatus(t('knowledgeServiceSaving') || 'Saving…');
-  setKnowledgeFormDisabled(true);
-
-  const descriptionValue = (kbNewDescriptionInput?.value || '').trim();
-  const urlValue = (kbNewUrlInput?.value || '').trim();
-  const customNameValue = (kbNewNameInput?.value || '').trim();
-
-  let successCount = 0;
-  const errors = [];
-
-  try {
-    if (textValue) {
-      try {
-        const payload = {
-          project: projectKey,
-          content: textValue,
-        };
-        if (customNameValue) payload.name = customNameValue;
-        if (descriptionValue) payload.description = descriptionValue;
-        if (urlValue) payload.url = urlValue;
-        const resp = await fetch('/api/v1/admin/knowledge', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!resp.ok) {
-          const message = await resp.text().catch(() => '');
-          throw new Error(message || `HTTP ${resp.status}`);
-        }
-        successCount += 1;
-      } catch (error) {
-        console.error('knowledge_text_save_failed', error);
-        errors.push(t('knowledgeServiceSaveError') || 'Failed to save text document.');
-      }
-    }
-
-    for (const file of files) {
-      try {
-        const formData = new FormData();
-        formData.append('project', projectKey);
-        if (descriptionValue) formData.append('description', descriptionValue);
-        if (urlValue) formData.append('url', urlValue);
-        const effectiveName = files.length === 1 && customNameValue ? customNameValue : (file.name || 'document');
-        formData.append('name', effectiveName);
-        formData.append('file', file, file.name);
-        const resp = await fetch('/api/v1/admin/knowledge/upload', {
-          method: 'POST',
-          body: formData,
-        });
-        if (!resp.ok) {
-          const message = await resp.text().catch(() => '');
-          throw new Error(message || `HTTP ${resp.status}`);
-        }
-        successCount += 1;
-      } catch (error) {
-        console.error('knowledge_file_upload_failed', error);
-        errors.push(`${file.name || 'file'}: ${(error && error.message) || 'upload failed'}`);
-      }
-    }
-
-    if (successCount) {
-      resetKnowledgeForm();
-      await loadKnowledge(projectKey);
-      await loadKnowledgePriority(projectKey);
-    }
-
-    const successMessage = successCount
-      ? successCount === 1
-        ? 'Document saved.'
-        : `${successCount} items saved.`
-      : '';
-    const errorMessage = errors.length ? errors.join(' ') : '';
-    let finalMessage = successMessage;
-    if (errorMessage) {
-      finalMessage = finalMessage ? `${finalMessage} ${errorMessage}` : errorMessage;
-    }
-    if (!finalMessage) {
-      finalMessage = 'Nothing to save.';
-    }
-    const isError = !successCount && Boolean(errorMessage);
-    setKnowledgeStatus(finalMessage, isError);
-  } finally {
-    setKnowledgeFormDisabled(false);
-  }
-}
-
-if (kbReloadProjectsBtn) {
-  kbReloadProjectsBtn.addEventListener('click', () => {
-    refreshKnowledgeProjectsList();
-  });
-}
-
-if (kbForm) {
-  kbForm.addEventListener('submit', (event) => {
-    event.preventDefault();
-    loadKnowledge();
-  });
-}
-
-if (kbFilterClearBtn) {
-  kbFilterClearBtn.addEventListener('click', () => {
-    if (kbSearchInput) kbSearchInput.value = '';
-    if (kbLimitInput) kbLimitInput.value = '1000';
-    loadKnowledge();
-  });
-}
-
-if (kbNewFileInput) {
-  kbNewFileInput.addEventListener('change', () => {
-    knowledgeDropFiles = [];
-    updateDropZonePreview(kbNewFileInput.files);
-  });
-}
-
-if (kbNewContentInput) {
-  kbNewContentInput.addEventListener('input', () => renderAutoDescription(kbNewContentInput.value));
-}
-
-if (kbResetButton) {
-  kbResetButton.addEventListener('click', (event) => {
-    event.preventDefault();
-    resetKnowledgeForm();
-  });
-}
-
-if (kbAddForm) {
-  kbAddForm.addEventListener('submit', submitKnowledgeForm);
-}
-
-if (kbDropZone) {
-  ['dragenter', 'dragover'].forEach((eventName) => {
-    kbDropZone.addEventListener(eventName, (event) => {
-      event.preventDefault();
-      toggleDropZoneActive(true);
-    });
-  });
-  ['dragleave', 'dragend'].forEach((eventName) => {
-    kbDropZone.addEventListener(eventName, () => {
-      toggleDropZoneActive(false);
-    });
-  });
-  kbDropZone.addEventListener('drop', (event) => {
-    event.preventDefault();
-    toggleDropZoneActive(false);
-    const dropped = Array.from(event.dataTransfer?.files || []).filter(Boolean);
-    if (!dropped.length) {
-      updateDropZonePreview([]);
-      return;
-    }
-    knowledgeDropFiles = dropped;
-    if (kbNewFileInput && typeof DataTransfer !== 'undefined') {
-      const buffer = new DataTransfer();
-      dropped.forEach((file) => buffer.items.add(file));
-      kbNewFileInput.files = buffer.files;
-    }
-    updateDropZonePreview(dropped);
-  });
+  if (kbResetFormBtn) kbResetFormBtn.disabled = disabled;
 }
 
 function parseLogLineTimestamp(line) {
