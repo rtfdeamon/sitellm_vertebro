@@ -905,6 +905,15 @@ async function loadKnowledge(projectName) {
     const data = await resp.json();
     const documents = Array.isArray(data?.documents) ? data.documents : [];
     renderKnowledgeDocuments(documents);
+    if (kbInfo) {
+      const matchedCount = Number.isFinite(Number(data?.matched)) ? Number(data.matched) : documents.length;
+      const totalCount = Number.isFinite(Number(data?.total)) ? Number(data.total) : matchedCount;
+      if (matchedCount || totalCount) {
+        kbInfo.textContent = totalCount && totalCount !== matchedCount ? `${matchedCount} / ${totalCount}` : String(matchedCount || totalCount);
+      } else {
+        kbInfo.textContent = '—';
+      }
+    }
     console.debug('knowledge data', data);
 
     const total = Number(data?.total);
@@ -922,13 +931,9 @@ async function loadKnowledge(projectName) {
     renderKnowledgeDocuments([]);
     knowledgeInfoSnapshot = null;
     knowledgeProjectSnapshot = null;
+    renderKnowledgeSummaryFromSnapshot();
     if (kbInfo) kbInfo.textContent = t('knowledgeLoadError');
     if (kbProjectsSummary) kbProjectsSummary.textContent = '';
-  }
-  try {
-    await unansweredPromise;
-  } catch {
-    // already logged inside loadUnansweredQuestions
   }
   try {
     await unansweredPromise;
@@ -1167,6 +1172,13 @@ if (kbResetFormBtn) {
   kbResetFormBtn.addEventListener('click', (event) => {
     event.preventDefault();
     resetKnowledgeForm();
+  });
+}
+
+if (kbReloadProjectsBtn) {
+  kbReloadProjectsBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    refreshKnowledgeProjectsList();
   });
 }
 
@@ -1479,6 +1491,29 @@ function setKnowledgeFormButtonsDisabled(disabled) {
     if (submitBtn) submitBtn.disabled = disabled;
   }
   if (kbResetFormBtn) kbResetFormBtn.disabled = disabled;
+}
+
+async function refreshKnowledgeProjectsList() {
+  if (!kbProjectList) return;
+  try {
+    const resp = await fetch('/api/v1/admin/projects/names');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const projects = Array.isArray(data?.projects) ? data.projects : [];
+    const fragment = document.createDocumentFragment();
+    projects
+      .map((project) => normalizeProjectName(project))
+      .filter(Boolean)
+      .forEach((project) => {
+        const option = document.createElement('option');
+        option.value = project;
+        fragment.appendChild(option);
+      });
+    kbProjectList.innerHTML = '';
+    kbProjectList.appendChild(fragment);
+  } catch (error) {
+    console.error('knowledge_projects_load_failed', error);
+  }
 }
 
 function parseLogLineTimestamp(line) {
