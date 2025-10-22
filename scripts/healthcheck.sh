@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+./scripts/run_local.sh#!/usr/bin/env bash
 set -euo pipefail
 
 PORT=${APP_PORT:-${PORT:-8000}}

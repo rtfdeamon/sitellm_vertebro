@@ -65,9 +65,13 @@ const installGlobalStubs = () => {
   vi.stubGlobal('initAdminAuth', vi.fn(() => ({
     clearAuthHeaderForBase: vi.fn(),
     setStoredAdminUser: vi.fn(),
-    requestAdminAuth: vi.fn(),
+    requestAdminAuth: vi.fn().mockResolvedValue(true),
+    getAuthHeaderForBase: vi.fn(() => 'Basic test'),
   })));
-  vi.stubGlobal('bootstrapAdminApp', vi.fn());
+  vi.stubGlobal('AdminAuth', {
+    getAuthHeaderForBase: vi.fn(() => 'Basic test'),
+  });
+  vi.stubGlobal('bootstrapAdminApp', vi.fn(() => Promise.resolve()));
   vi.stubGlobal('window', globalThis);
   vi.stubGlobal('confirm', vi.fn(() => true));
   [
@@ -107,13 +111,7 @@ describe('Knowledge unanswered tab', () => {
 
   it('shows unanswered tab when data is returned', async () => {
     const fetchMock = vi.fn((url) => {
-    if (typeof url === 'string' && url.includes('/api/v1/admin/logs')) {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ lines: [] }),
-      });
-    }
-    if (url.includes('/api/v1/llm/info')) {
+      if (url.includes('/api/v1/llm/info')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -163,12 +161,6 @@ describe('Knowledge unanswered tab', () => {
 
   it('hides unanswered tab when list is empty', async () => {
     const fetchMock = vi.fn((url) => {
-      if (typeof url === 'string' && url.includes('/api/v1/admin/logs')) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ lines: [] }),
-        });
-      }
       if (url.includes('/api/v1/llm/info')) {
         return Promise.resolve({
           ok: true,
@@ -211,12 +203,6 @@ describe('Knowledge unanswered tab', () => {
   it('clears unanswered list and refreshes data', async () => {
     let unansweredCall = 0;
     const fetchMock = vi.fn((url, init = {}) => {
-      if (typeof url === 'string' && url.includes('/api/v1/admin/logs')) {
-        return Promise.resolve({
-          ok: true,
-          json: async () => ({ lines: [] }),
-        });
-      }
       if (typeof url === 'string' && url.includes('/api/v1/llm/info')) {
         return Promise.resolve({
           ok: true,

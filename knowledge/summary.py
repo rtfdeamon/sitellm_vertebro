@@ -9,6 +9,7 @@ import structlog
 
 from backend import llm_client
 from backend.llm_client import ModelNotFoundError
+from backend.settings import settings as backend_settings
 from models import Project
 
 
@@ -41,6 +42,29 @@ IMAGE_CAPTION_PROMPT_TEMPLATE = (
 )
 
 
+def _resolve_default_model() -> str | None:
+    """Return the preferred Ollama model for summary generation."""
+
+    primary = getattr(backend_settings, "ollama_model", None)
+    if primary and str(primary).strip():
+        return str(primary).strip()
+    fallback = getattr(backend_settings, "llm_model", None)
+    if fallback and str(fallback).strip():
+        return str(fallback).strip()
+    return None
+
+
+def select_summary_model(project: Project | None) -> str | None:
+    """Return the model identifier that should handle summary generation."""
+
+    default_model = _resolve_default_model()
+    if project and isinstance(project.llm_model, str):
+        trimmed = project.llm_model.strip()
+        if trimmed:
+            return trimmed
+    return default_model
+
+
 async def generate_document_summary(
     name: str,
     content: Optional[str],
@@ -61,11 +85,7 @@ async def generate_document_summary(
     excerpt = cleaned[:SUMMARY_EXCERPT_LIMIT]
     prompt = SUMMARY_PROMPT_TEMPLATE.format(name=safe_name, body=excerpt)
 
-    model_override = None
-    if project and isinstance(project.llm_model, str):
-        trimmed = project.llm_model.strip()
-        if trimmed:
-            model_override = trimmed
+    model_override = select_summary_model(project)
 
     chunks: list[str] = []
     try:
@@ -84,6 +104,7 @@ async def generate_document_summary(
         logger.warning(
             "summary_generate_failed",
             document=safe_name,
+            model=model_override or llm_client.MODEL_NAME,
             error=str(exc),
         )
         return fallback

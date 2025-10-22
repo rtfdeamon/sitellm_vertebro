@@ -181,6 +181,20 @@
       return error;
     }
 
+    function encodeBasicAuth(username, password) {
+      const raw = `${username}:${password}`;
+      try {
+        return global.btoa(raw);
+      } catch (error) {
+        try {
+          return global.btoa(unescape(encodeURIComponent(raw)));
+        } catch (fallbackError) {
+          console.warn('admin_auth_base64_failed', fallbackError);
+          return null;
+        }
+      }
+    }
+
     async function handleAuthSubmit(event) {
       event.preventDefault();
       if (!authForm) return;
@@ -192,7 +206,12 @@
         else authPasswordInput?.focus();
         return;
       }
-      const header = `Basic ${global.btoa(`${username}:${password}`)}`;
+      const token = encodeBasicAuth(username, password);
+      if (!token) {
+        setAuthErrorKey('authErrorInvalid');
+        return;
+      }
+      const header = `Basic ${token}`;
       setAuthSubmitting(true);
       const result = await verifyAdminCredentials(header);
       setAuthSubmitting(false);

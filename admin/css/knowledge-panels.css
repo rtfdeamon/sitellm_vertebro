@@ -140,6 +140,10 @@
   animation: none;
 }
 
+.kb-section .status-error {
+  color: #f87171;
+}
+
 .kb-type-badge {
   display: inline-flex;
   align-items: center;

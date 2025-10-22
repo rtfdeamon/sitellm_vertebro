@@ -42,20 +42,6 @@ const pingLlmButton = document.getElementById('pingLLM');
 const copyLogsButton = document.getElementById('copyLogs');
 const logsElement = document.getElementById('logs');
 const logInfoElement = document.getElementById('logInfo');
-const promptLogsElement = document.getElementById('promptLogs');
-const logLimitInput = document.getElementById('logLimit');
-
-const LOG_REFRESH_INTERVAL = 15000;
-const DEFAULT_LOG_LIMIT = 200;
-const PROMPT_LOG_EVENTS = new Set(['llm_prompt_compiled', 'llm_prompt_compiled_stream']);
-const LOG_TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})/;
-
-let logPollTimer = null;
-let logsAbortController = null;
-let logsFetchPending = false;
-let cachedAdminLogLines = [];
-let lastLogsRefreshedAt = 0;
-let logAccessDenied = false;
 const knowledgeServiceEndpoints = [
   '/api/v1/knowledge/service',
   '/api/v1/admin/knowledge/service',
@@ -99,164 +85,6 @@ const pulseCard = indexUi.pulseCard || (() => {});
 let activeKnowledgeServiceEndpoint = null;
 const clusterWarning = document.getElementById('clusterWarning');
 
-const translateText = (key, fallback, params) => (typeof t === 'function' ? t(key, params) : fallback || '');
-
-const normalizeLogLimit = () => {
-  if (!logLimitInput) return DEFAULT_LOG_LIMIT;
-  const parsed = Number.parseInt(logLimitInput.value, 10);
-  if (!Number.isFinite(parsed)) return DEFAULT_LOG_LIMIT;
-  const min = Number(logLimitInput.min) || 50;
-  const max = Number(logLimitInput.max) || 1000;
-  const clamped = Math.min(Math.max(parsed, min), max);
-  if (logLimitInput.value !== String(clamped)) {
-    logLimitInput.value = String(clamped);
-  }
-  return clamped;
-};
-
-const extractLogPayload = (line) => {
-  if (typeof line !== 'string') return null;
-  const braceIndex = line.indexOf('{');
-  if (braceIndex === -1) return null;
-  const fragment = line.slice(braceIndex);
-  try {
-    return JSON.parse(fragment);
-  } catch (error) {
-    return null;
-  }
-};
-
-const extractLogTimestamp = (line) => {
-  if (typeof line !== 'string') return '';
-  const match = LOG_TIMESTAMP_RE.exec(line);
-  return match ? match[1] : '';
-};
-
-const summarizeKnowledgeDocs = (knowledge) => {
-  if (!Array.isArray(knowledge) || !knowledge.length) return [];
-  const result = [];
-  knowledge.forEach((item) => {
-    if (!item || typeof item !== 'object') return;
-    const name = typeof item.name === 'string' && item.name.trim();
-    const source = typeof item.source === 'string' && item.source.trim();
-    const url = typeof item.url === 'string' && item.url.trim();
-    const label = name || source || url;
-    if (label) result.push(label);
-  });
-  return result.slice(0, 6);
-};
-
-const buildPromptEntries = (lines) => {
-  if (!Array.isArray(lines) || !lines.length) return [];
-  return lines
-    .map((line) => {
-      const payload = extractLogPayload(line);
-      if (!payload || !PROMPT_LOG_EVENTS.has(payload.event)) return null;
-      const projectLabel = typeof payload.project === 'string' ? payload.project : '';
-      const projectKey = projectLabel.trim().toLowerCase();
-      const promptPreview = typeof payload.prompt_preview === 'string' ? payload.prompt_preview.trim() : '';
-      const previewLine = promptPreview.split(/\r?\n/).find((entry) => entry && entry.trim()) || promptPreview.slice(0, 160);
-      const docLabels = summarizeKnowledgeDocs(payload.knowledge);
-      const emotions = typeof payload.emotions === 'boolean' ? payload.emotions : null;
-      return {
-        rawLine: line,
-        timestamp: extractLogTimestamp(line),
-        projectKey,
-        projectLabel,
-        promptPreview,
-        previewLine,
-        docLabels,
-        promptLength: typeof payload.prompt_length === 'number' ? payload.prompt_length : null,
-        emotions,
-      };
-    })
-    .filter(Boolean);
-};
-
-const formatPromptEntry = (entry) => {
-  const parts = [];
-  if (entry.timestamp) parts.push(entry.timestamp);
-  if (entry.projectLabel) parts.push(entry.projectLabel);
-  if (typeof entry.promptLength === 'number') parts.push(`len=${entry.promptLength}`);
-  const header = parts.join(' · ');
-  const lines = [];
-  if (header) lines.push(header);
-  if (entry.promptPreview) lines.push(entry.promptPreview);
-  if (entry.docLabels.length) lines.push(`Docs: ${entry.docLabels.join(', ')}`);
-  return lines.join('\n');
-};
-
-const renderPromptLogs = (lines) => {
-  if (!promptLogsElement) return;
-  const entries = buildPromptEntries(lines);
-  const currentKey = typeof currentProject === 'string' ? currentProject.trim().toLowerCase() : '';
-  const matching = currentKey ? entries.filter((entry) => entry.projectKey === currentKey) : entries;
-  const displayEntries = (matching.length ? matching : entries).slice(-20);
-  if (!displayEntries.length) {
-    if (entries.length && currentKey) {
-      promptLogsElement.textContent = translateText('llmPromptsEmptyForProject', 'No prompts recorded for the selected project yet.');
-    } else {
-      promptLogsElement.textContent = translateText('overviewLLMEmpty', 'Recent prompts will appear here');
-    }
-    if (typeof setSummaryPrompt === 'function') {
-      setSummaryPrompt('', [], translateText('projectsAwaitingActivity', 'Awaiting activity'));
-    }
-    return;
-  }
-  promptLogsElement.textContent = displayEntries.map(formatPromptEntry).join('\n\n');
-  const pool = matching.length ? matching : displayEntries;
-  const latest = pool[pool.length - 1];
-  if (latest && typeof setSummaryPrompt === 'function') {
-    const metaParts = [];
-    if (latest.projectLabel) metaParts.push(latest.projectLabel);
-    if (typeof latest.promptLength === 'number') metaParts.push(`len=${latest.promptLength}`);
-    if (typeof latest.emotions === 'boolean') metaParts.push(latest.emotions ? 'emotions:on' : 'emotions:off');
-    setSummaryPrompt(latest.previewLine, latest.docLabels.slice(0, 5), metaParts.join(' · '));
-  }
-};
-
-const handleLogsAccessDenied = () => {
-  logAccessDenied = true;
-  stopLogPolling();
-  cachedAdminLogLines = [];
-  if (logsElement) {
-    logsElement.textContent = translateText('logsAccessDenied', 'Logs are available only to super administrators.');
-  }
-  if (promptLogsElement) {
-    promptLogsElement.textContent = translateText('llmPromptsAccessDenied', 'Prompt history is limited to super administrators.');
-  }
-  if (typeof setSummaryPrompt === 'function') {
-    setSummaryPrompt('', [], translateText('projectsAwaitingActivity', 'Awaiting activity'));
-  }
-  if (logInfoElement) {
-    logInfoElement.textContent = '';
-  }
-};
-
-const renderLogs = (lines) => {
-  if (logsElement) {
-    logsElement.textContent = Array.isArray(lines) && lines.length ? lines.join('\n') : '';
-  }
-  renderPromptLogs(lines);
-};
-
-const stopLogPolling = () => {
-  if (!logPollTimer) return;
-  clearInterval(logPollTimer);
-  logPollTimer = null;
-};
-
-const startLogPolling = () => {
-  if (logPollTimer || logAccessDenied || LOG_REFRESH_INTERVAL <= 0) return;
-  logPollTimer = setInterval(() => {
-    refreshAdminLogs();
-  }, LOG_REFRESH_INTERVAL);
-};
-
-const renderPromptLogsFromCache = () => {
-  renderPromptLogs(cachedAdminLogLines);
-};
-
 const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
   if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
@@ -266,105 +94,6 @@ const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceRun) knowledgeServiceRun.disabled = disabled;
 };
 
-async function refreshAdminLogs(force = false) {
-  if (logAccessDenied) return;
-  if (!logsElement && !promptLogsElement) return;
-  if (logsFetchPending) {
-    if (force && logsAbortController) {
-      logsAbortController.abort();
-    } else {
-      return;
-    }
-  }
-  if (document.hidden && !force) return;
-
-  const limit = normalizeLogLimit();
-  const controller = new AbortController();
-  logsAbortController = controller;
-  logsFetchPending = true;
-    if (logInfoElement) {
-      logInfoElement.textContent = translateText('logsLoadingLabel', 'Loading…');
-    }
-
-  try {
-    const resp = await fetch(`/api/v1/admin/logs?limit=${limit}`, { signal: controller.signal });
-    if (resp.status === 401 || resp.status === 403) {
-      handleLogsAccessDenied();
-      return;
-    }
-    if (!resp.ok) {
-      throw new Error(`HTTP ${resp.status}`);
-    }
-    const data = await resp.json();
-    const lines = Array.isArray(data.lines) ? data.lines : [];
-    cachedAdminLogLines = lines;
-    lastLogsRefreshedAt = Date.now();
-    renderLogs(lines);
-    if (logInfoElement) {
-      const timeLabel = new Date(lastLogsRefreshedAt).toLocaleTimeString();
-      logInfoElement.textContent = translateText(
-        'logsUpdatedLabel',
-        `Updated ${timeLabel}`,
-        { time: timeLabel },
-      );
-    }
-    startLogPolling();
-  } catch (error) {
-    if (error && error.name === 'AbortError') return;
-    console.error('admin_logs_fetch_failed', error);
-    if (logInfoElement) {
-      logInfoElement.textContent = translateText('logsLoadFailed', 'Failed to load logs');
-    }
-    if (!cachedAdminLogLines.length) {
-      if (logsElement) logsElement.textContent = translateText('logsLoadFailed', 'Failed to load logs');
-      if (promptLogsElement) promptLogsElement.textContent = translateText('logsLoadFailed', 'Failed to load logs');
-    }
-  } finally {
-    if (logsAbortController === controller) {
-      logsAbortController = null;
-    }
-    logsFetchPending = false;
-  }
-}
-
-window.refreshAdminLogs = refreshAdminLogs;
-window.renderPromptLogsFromCache = renderPromptLogsFromCache;
-window.onAdminProjectChange = () => {
-  renderPromptLogsFromCache();
-  if (logAccessDenied) return;
-  const elapsed = Date.now() - lastLogsRefreshedAt;
-  if (elapsed > LOG_REFRESH_INTERVAL / 2) {
-    refreshAdminLogs(true);
-  }
-};
-
-if (logLimitInput) {
-  logLimitInput.addEventListener('change', () => {
-    normalizeLogLimit();
-    if (!logAccessDenied) {
-      refreshAdminLogs(true);
-    }
-  });
-}
-
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) {
-    stopLogPolling();
-  } else if (!logAccessDenied) {
-    renderPromptLogsFromCache();
-    refreshAdminLogs(true);
-    startLogPolling();
-  }
-});
-
-window.addEventListener('beforeunload', () => {
-  stopLogPolling();
-  if (logsAbortController) {
-    logsAbortController.abort();
-    logsAbortController = null;
-  }
-});
-
 const logoutButton = document.getElementById('adminLogout');
 const LAYOUT_ORDER_STORAGE_KEY = 'admin_layout_order_v1';
 
@@ -372,7 +101,8 @@ const AUTH_CANCELLED_CODE = 'ADMIN_AUTH_CANCELLED';
 const ADMIN_AUTH_HEADER_SESSION_KEY = 'admin_auth_header_v1';
 const ADMIN_AUTH_USER_STORAGE_KEY = 'admin_auth_user_v1';
 const ADMIN_BASE_KEY = window.location.origin.replace(/\/$/, '');
-const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/', '/api/v1/crawler/'];
+const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/'];
+const ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX = '/api/v1/admin/knowledge/documents/';
 
 const {
   clearAuthHeaderForBase,
@@ -405,9 +135,9 @@ let knowledgePriorityUnavailable = false;
 let knowledgeQaUnavailable = false;
 let knowledgeUnansweredUnavailable = false;
 let qaPairsCache = [];
-let knowledgeDocumentsCache = [];
 let knowledgePriorityOrder = [];
 let knowledgeUnansweredItems = [];
+let knowledgeDocumentsCache = [];
 let knowledgeUnansweredVisible = false;
 let kbNavButtons = [];
 let kbSections = [];
@@ -443,18 +173,6 @@ const {
   authError,
   onLanguageApplied: handleLanguageApplied,
 });
-
-const bootstrapAdminLogs = () => {
-  if (logAccessDenied) return;
-  renderPromptLogsFromCache();
-  refreshAdminLogs(true);
-};
-
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootstrapAdminLogs);
-} else {
-  bootstrapAdminLogs();
-}
 
 function handleLanguageApplied() {
   if (window.BackupModule?.handleLanguageApplied) {
@@ -525,16 +243,23 @@ const kbDedupBtn = document.getElementById('kbDeduplicate');
 const kbDedupStatus = document.getElementById('kbDedupStatus');
 const kbClearBtn = document.getElementById('kbClearKnowledge');
 const kbClearStatus = document.getElementById('kbClearStatus');
+const kbForm = document.getElementById('kbForm');
+const kbProjectInput = document.getElementById('kbProject');
+const kbProjectList = document.getElementById('kbProjectList');
+const kbReloadProjectsBtn = document.getElementById('kbReloadProjects');
+const kbSearchInput = document.getElementById('kbSearch');
+const kbLimitInput = document.getElementById('kbLimit');
+const kbFilterClearBtn = document.getElementById('kbClear');
 const kbInfo = document.getElementById('kbInfo');
 const kbProjectsSummary = document.getElementById('kbProjectsSummary');
-const kbDropZone = document.getElementById('kbDropZone');
-let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
-const kbNewFileInput = document.getElementById('kbNewFile');
+const kbAddForm = document.getElementById('kbAddForm');
 const kbNewNameInput = document.getElementById('kbNewName');
 const kbNewUrlInput = document.getElementById('kbNewUrl');
 const kbNewDescriptionInput = document.getElementById('kbNewDescription');
+const kbDropZone = document.getElementById('kbDropZone');
+let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
+const kbNewFileInput = document.getElementById('kbNewFile');
 const kbNewContentInput = document.getElementById('kbNewContent');
-const kbAddForm = document.getElementById('kbAddForm');
 const kbAddStatus = document.getElementById('kbAddStatus');
 const kbResetFormBtn = document.getElementById('kbResetForm');
 let dropFilesBuffer = [];
@@ -577,6 +302,11 @@ const KNOWLEDGE_SOURCES = [
 applyLanguage(getCurrentLanguage());
 
 const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const getKnowledgeProjectKey = () => {
+  const explicit = normalizeProjectName(kbProjectInput?.value || '');
+  return explicit || getActiveProjectKey();
+};
 
 const kbTables = {
   text: { body: kbTableText, counter: kbCountText, emptyKey: 'knowledgeTableTextEmpty' },
@@ -831,79 +561,106 @@ async function fetchFeedbackTasks() {
   }
 }
 
-const nativeDeleteKnowledgeDocument =
-  typeof window.deleteKnowledgeDocument === 'function'
-    ? window.deleteKnowledgeDocument.bind(window)
-    : null;
-
-const deleteKnowledgeDocument = (fileId, project) => {
-  if (nativeDeleteKnowledgeDocument) {
-    return nativeDeleteKnowledgeDocument(fileId, project);
+function isInternalAdminDownloadUrl(href) {
+  if (!href) return false;
+  if (href.startsWith(ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX)) return true;
+  try {
+    const resolved = new URL(href, window.location.origin);
+    return resolved.origin === window.location.origin && resolved.pathname.startsWith(ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX);
+  } catch {
+    return false;
   }
-  console.warn('knowledge_delete_not_implemented', { fileId, project });
-  return null;
-};
-
-if (!nativeDeleteKnowledgeDocument) {
-  window.deleteKnowledgeDocument = deleteKnowledgeDocument;
 }
 
-const nativeOpenKnowledgeModal =
-  typeof window.openKnowledgeModal === 'function'
-    ? window.openKnowledgeModal.bind(window)
-    : null;
-
-const showKnowledgeModal = (doc) => {
-  if (!kbModalBackdrop || !kbModalName) return;
-  if (kbModalTitle) kbModalTitle.textContent = doc?.name || t('documentTitle');
-  if (kbModalId) kbModalId.value = doc?.fileId || '';
-  kbModalName.value = doc?.name || '';
-  if (kbModalUrl) kbModalUrl.value = doc?.url || '';
-  if (kbModalDesc) kbModalDesc.value = doc?.description || '';
-  if (kbModalProject) kbModalProject.value = doc?.project || doc?.domain || '';
-  if (kbModalContent) kbModalContent.value = doc?.content || '';
-  if (kbModalStatus) kbModalStatus.textContent = '';
-  kbModalBackdrop.classList.add('show');
-  kbModalBackdrop.setAttribute('data-visible', 'true');
-};
-
-const closeKnowledgeModal = () => {
-  if (!kbModalBackdrop) return;
-  kbModalBackdrop.classList.remove('show');
-  kbModalBackdrop.setAttribute('data-visible', 'false');
-};
-
-const openKnowledgeModal = (fileId) => {
-  if (nativeOpenKnowledgeModal) {
-    nativeOpenKnowledgeModal(fileId);
-    return;
-  }
-  const doc = knowledgeDocumentsCache.find((item) => item.fileId === fileId);
-  if (!doc) {
-    console.warn('knowledge_modal_doc_missing', { fileId });
-    return;
-  }
-  showKnowledgeModal(doc);
-};
-
-if (!nativeOpenKnowledgeModal) {
-  window.openKnowledgeModal = openKnowledgeModal;
-}
-
-if (kbModalClose) kbModalClose.addEventListener('click', closeKnowledgeModal);
-if (kbModalCancel) kbModalCancel.addEventListener('click', closeKnowledgeModal);
-if (kbModalBackdrop) {
-  kbModalBackdrop.addEventListener('click', (event) => {
-    if (event.target === kbModalBackdrop) {
-      closeKnowledgeModal();
+function parseFilenameFromDisposition(header) {
+  if (!header) return null;
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match && utf8Match[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      /* ignore decode errors */
     }
+  }
+  const quotedMatch = header.match(/filename="([^"]+)"/i);
+  if (quotedMatch && quotedMatch[1]) {
+    return quotedMatch[1];
+  }
+  const plainMatch = header.match(/filename=([^;]+)/i);
+  if (plainMatch && plainMatch[1]) {
+    return plainMatch[1].trim();
+  }
+  return null;
+}
+
+async function downloadKnowledgeDocumentWithAuth(href, fallbackName) {
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const headers = new Headers();
+      try {
+        const token =
+          (typeof AdminAuth?.getAuthHeaderForBase === 'function' && AdminAuth.getAuthHeaderForBase(ADMIN_BASE_KEY)) ||
+          null;
+        if (token) {
+          headers.set('Authorization', token);
+        }
+      } catch (error) {
+        console.warn('knowledge_download_auth_header_unavailable', error);
+      }
+      const response = await fetch(href, { credentials: 'same-origin', headers });
+      if (response.ok) {
+        const blob = await response.blob();
+        let filename = fallbackName || 'document';
+        const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition');
+        const extracted = parseFilenameFromDisposition(disposition);
+        if (extracted) {
+          filename = extracted;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      if (response.status === 401) {
+        if (typeof clearAuthHeaderForBase === 'function') {
+          clearAuthHeaderForBase(ADMIN_BASE_KEY);
+        }
+        if (attempt === 0 && typeof requestAdminAuth === 'function') {
+          const authenticated = await requestAdminAuth();
+          if (authenticated) {
+            continue;
+          }
+          const authError = new Error('admin-auth-cancelled');
+          authError.code = AUTH_CANCELLED_CODE;
+          throw authError;
+        }
+      }
+      const message = await response.text().catch(() => '');
+      throw new Error(message || `HTTP ${response.status}`);
+    }
+  } catch (error) {
+    if (error?.code === AUTH_CANCELLED_CODE) {
+      return;
+    }
+    console.error('knowledge_document_download_failed', error);
+    const message = error?.message ? `Download failed: ${error.message}` : 'Download failed';
+    window.alert(message);
+  }
+}
+
+function attachKnowledgeDownloadHandler(anchor, href, filename) {
+  if (!isInternalAdminDownloadUrl(href)) return;
+  anchor.removeAttribute('target');
+  anchor.addEventListener('click', (event) => {
+    event.preventDefault();
+    downloadKnowledgeDocumentWithAuth(href, filename);
   });
 }
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && kbModalBackdrop?.classList.contains('show')) {
-    closeKnowledgeModal();
-  }
-});
 
 const renderKnowledgeRow = (doc, category) => {
   const tr = document.createElement('tr');
@@ -929,6 +686,7 @@ const renderKnowledgeRow = (doc, category) => {
     a.target = '_blank';
     a.rel = 'noopener';
     if (doc.name) a.download = doc.name;
+    attachKnowledgeDownloadHandler(a, href, doc.name || doc.fileId || 'document');
     linkTd.appendChild(a);
   } else {
     linkTd.textContent = '—';
@@ -1029,22 +787,17 @@ function renderKnowledgePriority(order) {
         after ? target.nextSibling : target,
       );
     });
-      kbPriorityList.dataset.dragBound = '1';
-    }
+    kbPriorityList.dataset.dragBound = '1';
+  }
 }
 
 const renderKnowledgeDocuments = (documents) => {
-  const normalized = [];
-  if (Array.isArray(documents)) {
-    documents.forEach((entry) => {
-      if (entry && typeof entry === 'object') {
-        normalized.push(entry);
-      }
-    });
-  }
-  knowledgeDocumentsCache = normalized;
+  knowledgeDocumentsCache = Array.isArray(documents) ? documents.slice() : [];
   const grouped = { text: [], docs: [], images: [] };
   knowledgeDocumentsCache.forEach((doc) => {
+    if (!doc || typeof doc !== 'object') {
+      return;
+    }
     const bucket = getDocCategory(doc);
     if (!grouped[bucket]) grouped[bucket] = [];
     grouped[bucket].push(doc);
@@ -1067,7 +820,6 @@ const renderKnowledgeDocuments = (documents) => {
     }
   });
 };
-
 const getUnansweredTimestampText = (item) => {
   if (!item) return '—';
   const raw =
@@ -1158,8 +910,8 @@ async function loadUnansweredQuestions(projectName) {
   const params = new URLSearchParams();
   const projectKey =
     typeof projectName === 'string' && projectName.trim()
-      ? projectName.trim()
-      : getActiveProjectKey();
+      ? normalizeProjectName(projectName)
+      : getKnowledgeProjectKey();
   if (projectKey) params.set('project', projectKey);
   const query = params.toString();
   const url = query
@@ -1229,16 +981,45 @@ function renderKnowledgeSummaryFromSnapshot() {
 async function loadKnowledge(projectName) {
   const targetProject =
     typeof projectName === 'string' && projectName.trim()
-      ? projectName.trim()
-      : getActiveProjectKey();
+      ? normalizeProjectName(projectName)
+      : getKnowledgeProjectKey();
+  if (kbProjectInput) {
+    if (typeof projectName === 'string' && projectName.trim()) {
+      kbProjectInput.value = targetProject;
+    } else if (!kbProjectInput.value && targetProject) {
+      kbProjectInput.value = targetProject;
+    }
+  }
   const unansweredPromise = loadUnansweredQuestions(targetProject);
   try {
-    const url = targetProject ? `/api/v1/admin/knowledge?project=${encodeURIComponent(targetProject)}` : '/api/v1/admin/knowledge';
+    const params = new URLSearchParams();
+    if (targetProject) params.set('project', targetProject);
+    const queryValue = (kbSearchInput?.value || '').trim();
+    if (queryValue) params.set('q', queryValue);
+    const limitValue = parseInt(kbLimitInput?.value, 10);
+    if (Number.isFinite(limitValue)) {
+      const clampedLimit = Math.min(Math.max(limitValue, 10), 1000);
+      params.set('limit', String(clampedLimit));
+      if (kbLimitInput && clampedLimit !== limitValue) {
+        kbLimitInput.value = String(clampedLimit);
+      }
+    }
+    const query = params.toString();
+    const url = query ? `/api/v1/admin/knowledge?${query}` : '/api/v1/admin/knowledge';
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const documents = Array.isArray(data?.documents) ? data.documents : [];
     renderKnowledgeDocuments(documents);
+    if (kbInfo) {
+      const matchedCount = Number.isFinite(Number(data?.matched)) ? Number(data.matched) : documents.length;
+      const totalCount = Number.isFinite(Number(data?.total)) ? Number(data.total) : matchedCount;
+      if (matchedCount || totalCount) {
+        kbInfo.textContent = totalCount && totalCount !== matchedCount ? `${matchedCount} / ${totalCount}` : String(matchedCount || totalCount);
+      } else {
+        kbInfo.textContent = '—';
+      }
+    }
     console.debug('knowledge data', data);
 
     const total = Number(data?.total);
@@ -1256,13 +1037,9 @@ async function loadKnowledge(projectName) {
     renderKnowledgeDocuments([]);
     knowledgeInfoSnapshot = null;
     knowledgeProjectSnapshot = null;
+    renderKnowledgeSummaryFromSnapshot();
     if (kbInfo) kbInfo.textContent = t('knowledgeLoadError');
     if (kbProjectsSummary) kbProjectsSummary.textContent = '';
-  }
-  try {
-    await unansweredPromise;
-  } catch {
-    // already logged inside loadUnansweredQuestions
   }
   try {
     await unansweredPromise;
@@ -1275,7 +1052,11 @@ async function loadKnowledgePriority(projectName) {
   if (!kbPriorityList || knowledgePriorityUnavailable) return;
   try {
     const params = new URLSearchParams();
-    if (projectName) params.set('project', projectName);
+    const projectKey =
+      typeof projectName === 'string' && projectName.trim()
+        ? normalizeProjectName(projectName)
+        : getKnowledgeProjectKey();
+    if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
     const resp = await fetch(url);
@@ -1310,7 +1091,8 @@ async function saveKnowledgePriority() {
   try {
     const payload = { order };
     const params = new URLSearchParams();
-    if (currentProject) params.set('project', currentProject);
+    const projectKey = getKnowledgeProjectKey();
+    if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
     const resp = await fetch(url, {
@@ -1362,10 +1144,6 @@ const activateKnowledgeSection = (target) => {
     button.setAttribute('aria-selected', matches ? 'true' : 'false');
     button.setAttribute('tabindex', matches ? '0' : '-1');
   });
-
-  if (target === 'documents' && typeof loadKnowledge === 'function') {
-    loadKnowledge(getActiveProjectKey() || currentProject || '');
-  }
 };
 
 if (kbNavButtons.length && kbSections.length) {
@@ -1402,7 +1180,7 @@ if (kbUnansweredExportBtn) {
   kbUnansweredExportBtn.addEventListener('click', () => {
     if (!knowledgeUnansweredVisible || !kbUnansweredExportBtn) return;
     const params = new URLSearchParams();
-    const projectKey = getActiveProjectKey();
+    const projectKey = getKnowledgeProjectKey();
     if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query
@@ -1423,7 +1201,7 @@ if (kbUnansweredClearBtn) {
     if (kbUnansweredStatus) kbUnansweredStatus.textContent = t('knowledgeUnansweredClearing');
     try {
       const payload = {};
-      const projectKey = getActiveProjectKey();
+      const projectKey = getKnowledgeProjectKey();
       if (projectKey) payload.project = projectKey;
       const resp = await fetch('/api/v1/admin/knowledge/unanswered/clear', {
         method: 'POST',
@@ -1500,6 +1278,13 @@ if (kbResetFormBtn) {
   kbResetFormBtn.addEventListener('click', (event) => {
     event.preventDefault();
     resetKnowledgeForm();
+  });
+}
+
+if (kbReloadProjectsBtn) {
+  kbReloadProjectsBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    refreshKnowledgeProjectsList();
   });
 }
 
@@ -1633,7 +1418,7 @@ const showKnowledgeDescriptionPreview = (text) => {
   kbThinkingPreview.classList.add('visible');
 };
 
-function renderAutoDescription(text) {
+const renderAutoDescription = (text) => {
   if (!kbAutoDescription) return;
   const value = (text || '').trim();
   if (!value) {
@@ -1643,7 +1428,7 @@ function renderAutoDescription(text) {
   }
   kbAutoDescription.textContent = t('knowledgeAutoDescriptionLabel', { value });
   kbAutoDescription.classList.add('visible');
-}
+};
 
 const showKnowledgeThinking = (
   caption = t('knowledgeThinkingCaption'),
@@ -1812,6 +1597,29 @@ function setKnowledgeFormButtonsDisabled(disabled) {
     if (submitBtn) submitBtn.disabled = disabled;
   }
   if (kbResetFormBtn) kbResetFormBtn.disabled = disabled;
+}
+
+async function refreshKnowledgeProjectsList() {
+  if (!kbProjectList) return;
+  try {
+    const resp = await fetch('/api/v1/admin/projects/names');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const projects = Array.isArray(data?.projects) ? data.projects : [];
+    const fragment = document.createDocumentFragment();
+    projects
+      .map((project) => normalizeProjectName(project))
+      .filter(Boolean)
+      .forEach((project) => {
+        const option = document.createElement('option');
+        option.value = project;
+        fragment.appendChild(option);
+      });
+    kbProjectList.innerHTML = '';
+    kbProjectList.appendChild(fragment);
+  } catch (error) {
+    console.error('knowledge_projects_load_failed', error);
+  }
 }
 
 function parseLogLineTimestamp(line) {
@@ -2321,6 +2129,10 @@ if (feedbackRefreshBtn) {
   feedbackRefreshBtn.addEventListener('click', () => fetchFeedbackTasks());
 }
 
+if (kbProjectInput && getActiveProjectKey()) {
+  kbProjectInput.value = getActiveProjectKey();
+}
+
 initLayoutReordering();
 
 bootstrapAdminApp({
@@ -2344,7 +2156,18 @@ bootstrapAdminApp({
   loadKnowledge,
   pollStatus: pollStatusProxy,
   updateProjectSummary,
-});
+})
+  .then(() => {
+    if (kbProjectInput && getActiveProjectKey()) {
+      kbProjectInput.value = getActiveProjectKey();
+    }
+    if (kbProjectList) {
+      refreshKnowledgeProjectsList();
+    }
+  })
+  .catch((error) => {
+    console.error('bootstrap_init_failed', error);
+  });
 
 document.addEventListener('DOMContentLoaded', () => {
   try {

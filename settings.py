@@ -31,7 +31,7 @@ class MongoSettings(BaseSettings):
     voice_jobs: str = "voice_training_jobs"
     backups: str = "backup_jobs"
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", env_prefix="MONGO_")
 
 
 class Redis(BaseSettings):
@@ -48,7 +48,7 @@ class Redis(BaseSettings):
 
     vector: str | None = "vector"
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", env_prefix="REDIS_")
 
 
 class CelerySettings(BaseSettings):
@@ -82,9 +82,9 @@ class Settings(BaseSettings):
     telegram_request_timeout: int = 30
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 
-    mongo: MongoSettings = MongoSettings()
-    celery: CelerySettings = CelerySettings()
-    redis: Redis = Redis()
+    mongo: MongoSettings = Field(default_factory=MongoSettings)
+    celery: CelerySettings = Field(default_factory=CelerySettings)
+    redis: Redis = Field(default_factory=Redis)
 
     model_config = ConfigDict(
         env_file=".env",
@@ -96,10 +96,6 @@ class Settings(BaseSettings):
     )
 
     # Ensure nested settings only read their own prefixes
-    MongoSettings.model_config = ConfigDict(extra="ignore", env_prefix="MONGO_")
-    Redis.model_config = ConfigDict(extra="ignore", env_prefix="REDIS_")
-
-
 @lru_cache(maxsize=1)
 def get_settings() -> "Settings":
     """Return cached application settings."""

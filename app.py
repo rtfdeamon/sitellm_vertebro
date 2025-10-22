@@ -19,6 +19,7 @@ import time
 import asyncio
 import asyncio.subprocess as asyncio_subprocess
 import urllib.parse as urlparse
+from urllib.parse import quote
 import re
 import httpx
 import structlog
@@ -856,6 +857,18 @@ def _build_download_url(request: Request, file_id: str) -> str:
     except NoMatchFound:
         base = str(request.base_url).rstrip("/")
         return f"{base}/api/v1/admin/knowledge/documents/{file_id}"
+
+
+def _build_content_disposition(filename: str) -> str:
+    safe_name = (filename or "").strip()
+    ascii_name = safe_name.encode("ascii", "ignore").decode()
+    header = "attachment"
+    sanitized_ascii = ascii_name.replace('"', '') if ascii_name else ""
+    fallback_ascii = sanitized_ascii or "download"
+    header += f'; filename="{fallback_ascii}"'
+    fallback = quote(safe_name) if safe_name else fallback_ascii
+    header += f"; filename*=UTF-8''{fallback}"
+    return header
 
 
 def _build_token_preview(token: str | None) -> str | None:
@@ -2565,12 +2578,14 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     async def _authenticate(self, request: Request, username: str, password: str) -> AdminIdentity | None:
         normalized_username = username.strip().lower()
         if normalized_username == ADMIN_USER.strip().lower():
+            logger.debug("basic_auth_attempt_super", username=normalized_username)
             hashed = hashlib.sha256(password.encode()).digest()
             if hmac.compare_digest(hashed, ADMIN_PASSWORD_DIGEST):
                 logger.debug("admin_super_login_success", username=normalized_username)
                 return AdminIdentity(username=normalized_username, is_super=True)
-        elif normalized_username == ADMIN_USER.strip().lower():
-            logger.warning("admin_super_login_failed", username=normalized_username)
+            else: 
+                logger.warning("admin_super_login_failed", username=normalized_username)
+                return None
 
         mongo_client: MongoClient | None = getattr(request.app.state, "mongo", None)
         if not mongo_client:
@@ -2609,9 +2624,11 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
 
         auth = request.headers.get("Authorization")
         if auth and auth.lower().startswith("basic "):
+            encoded = ""
             try:
-                encoded = auth.split(" ", 1)[1]
-                decoded = base64.b64decode(encoded).decode()
+                encoded = auth.split(" ", 1)[1].strip()
+                raw_bytes = base64.b64decode(encoded.encode("ascii", "ignore"))
+                decoded = raw_bytes.decode("utf-8", errors="ignore").strip()
                 if ":" not in decoded:
                     logger.warning("admin_auth_malformed_header")
                     return self._unauthorized_response(request)
@@ -2622,7 +2639,11 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                     return await call_next(request)
                 logger.warning("admin_auth_invalid_credentials", username=username)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("basic_auth_decode_failed", error=str(exc))
+                logger.warning(
+                    "basic_auth_decode_failed",
+                    error=str(exc),
+                    header_length=len(encoded) if isinstance(encoded, str) else None,
+                )
 
         return self._unauthorized_response(request)
 
@@ -3644,6 +3665,7 @@ class ProjectCreate(BaseModel):
     llm_voice_model: str | None = None
     debug_enabled: bool | None = None
     debug_info_enabled: bool | None = None
+    knowledge_image_caption_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -5815,6 +5837,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         else:
             debug_info_value = True
 
+    if "knowledge_image_caption_enabled" in provided_fields:
+        captions_value = (
+            bool(payload.knowledge_image_caption_enabled)
+            if payload.knowledge_image_caption_enabled is not None
+            else True
+        )
+    else:
+        if existing and existing.knowledge_image_caption_enabled is not None:
+            captions_value = bool(existing.knowledge_image_caption_enabled)
+        else:
+            captions_value = True
+
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
             token_value = payload.telegram_token.strip() or None
@@ -5974,6 +6008,7 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_voice_model=voice_model_value,
         debug_enabled=debug_value,
         debug_info_enabled=debug_info_value,
+        knowledge_image_caption_enabled=captions_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,
@@ -6368,7 +6403,7 @@ async def admin_download_document(request: Request, file_id: str) -> Response:
         if not normalized_doc_project or normalized_doc_project not in allowed:
             raise HTTPException(status_code=403, detail="Access to document is forbidden")
     filename = doc_meta.get("name") or f"{file_id}.bin"
-    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    headers = {"Content-Disposition": _build_content_disposition(filename)}
     media_type = doc_meta.get("content_type") or "application/octet-stream"
     return Response(content=payload, media_type=media_type, headers=headers)
 
