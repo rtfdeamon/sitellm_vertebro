@@ -160,6 +160,12 @@ const mockFetchSequence = (responses) => {
         }),
       });
     }
+    if (typeof url === 'string' && url.includes('/api/v1/admin/logs')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ lines: [] }),
+      });
+    }
     if (callIndex >= responses.length) {
       throw new Error(`Unexpected fetch URL ${url}`);
     }
@@ -203,9 +209,10 @@ describe('Knowledge documents rendering', () => {
     await bootConfig.loadKnowledge('demo');
 
     await vi.waitFor(() => {
-      const relevantCalls = fetchMock.mock.calls.filter(
-        ([requestUrl]) => !requestUrl.includes('/api/v1/llm/info'),
-      );
+      const relevantCalls = fetchMock.mock.calls.filter(([requestUrl]) => {
+        if (typeof requestUrl !== 'string') return true;
+        return !requestUrl.includes('/api/v1/llm/info') && !requestUrl.includes('/api/v1/admin/logs');
+      });
       expect(relevantCalls).toHaveLength(2);
     });
 
@@ -234,9 +241,10 @@ describe('Knowledge documents rendering', () => {
     await bootConfig.loadKnowledge('demo');
 
     await vi.waitFor(() => {
-      const relevantCalls = fetchMock.mock.calls.filter(
-        ([requestUrl]) => !requestUrl.includes('/api/v1/llm/info'),
-      );
+      const relevantCalls = fetchMock.mock.calls.filter(([requestUrl]) => {
+        if (typeof requestUrl !== 'string') return true;
+        return !requestUrl.includes('/api/v1/llm/info') && !requestUrl.includes('/api/v1/admin/logs');
+      });
       expect(relevantCalls).toHaveLength(2);
     });
 

@@ -84,6 +84,17 @@ from integrations.mail import (
 )
 
 logger = structlog.get_logger(__name__)
+
+AUDIT_LOG_EVENTS = frozenset(
+    {
+        "llm_prompt_compiled",
+        "llm_prompt_compiled_stream",
+        "knowledge_context_attached",
+        "project_prompt_attached",
+        "bitrix_context_decision",
+        "mail_context_decision",
+    }
+)
 app_settings = get_app_settings()
 
 EMOTION_ON_PROMPT = (
@@ -422,6 +433,9 @@ class VoiceJobsResponse(BaseModel):
 
 
 def _log_debug_event(message: str, **kwargs) -> None:
+    if message in AUDIT_LOG_EVENTS:
+        logger.info(message, **kwargs)
+        return
     if app_settings.debug:
         logger.info(message, **kwargs)
     else:
