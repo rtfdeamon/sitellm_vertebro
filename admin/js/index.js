@@ -42,6 +42,20 @@ const pingLlmButton = document.getElementById('pingLLM');
 const copyLogsButton = document.getElementById('copyLogs');
 const logsElement = document.getElementById('logs');
 const logInfoElement = document.getElementById('logInfo');
+const promptLogsElement = document.getElementById('promptLogs');
+const logLimitInput = document.getElementById('logLimit');
+
+const LOG_REFRESH_INTERVAL = 15000;
+const DEFAULT_LOG_LIMIT = 200;
+const PROMPT_LOG_EVENTS = new Set(['llm_prompt_compiled', 'llm_prompt_compiled_stream']);
+const LOG_TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})/;
+
+let logPollTimer = null;
+let logsAbortController = null;
+let logsFetchPending = false;
+let cachedAdminLogLines = [];
+let lastLogsRefreshedAt = 0;
+let logAccessDenied = false;
 const knowledgeServiceEndpoints = [
   '/api/v1/knowledge/service',
   '/api/v1/admin/knowledge/service',
@@ -85,6 +99,164 @@ const pulseCard = indexUi.pulseCard || (() => {});
 let activeKnowledgeServiceEndpoint = null;
 const clusterWarning = document.getElementById('clusterWarning');
 
+const translateText = (key, fallback, params) => (typeof t === 'function' ? t(key, params) : fallback || '');
+
+const normalizeLogLimit = () => {
+  if (!logLimitInput) return DEFAULT_LOG_LIMIT;
+  const parsed = Number.parseInt(logLimitInput.value, 10);
+  if (!Number.isFinite(parsed)) return DEFAULT_LOG_LIMIT;
+  const min = Number(logLimitInput.min) || 50;
+  const max = Number(logLimitInput.max) || 1000;
+  const clamped = Math.min(Math.max(parsed, min), max);
+  if (logLimitInput.value !== String(clamped)) {
+    logLimitInput.value = String(clamped);
+  }
+  return clamped;
+};
+
+const extractLogPayload = (line) => {
+  if (typeof line !== 'string') return null;
+  const braceIndex = line.indexOf('{');
+  if (braceIndex === -1) return null;
+  const fragment = line.slice(braceIndex);
+  try {
+    return JSON.parse(fragment);
+  } catch (error) {
+    return null;
+  }
+};
+
+const extractLogTimestamp = (line) => {
+  if (typeof line !== 'string') return '';
+  const match = LOG_TIMESTAMP_RE.exec(line);
+  return match ? match[1] : '';
+};
+
+const summarizeKnowledgeDocs = (knowledge) => {
+  if (!Array.isArray(knowledge) || !knowledge.length) return [];
+  const result = [];
+  knowledge.forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const name = typeof item.name === 'string' && item.name.trim();
+    const source = typeof item.source === 'string' && item.source.trim();
+    const url = typeof item.url === 'string' && item.url.trim();
+    const label = name || source || url;
+    if (label) result.push(label);
+  });
+  return result.slice(0, 6);
+};
+
+const buildPromptEntries = (lines) => {
+  if (!Array.isArray(lines) || !lines.length) return [];
+  return lines
+    .map((line) => {
+      const payload = extractLogPayload(line);
+      if (!payload || !PROMPT_LOG_EVENTS.has(payload.event)) return null;
+      const projectLabel = typeof payload.project === 'string' ? payload.project : '';
+      const projectKey = projectLabel.trim().toLowerCase();
+      const promptPreview = typeof payload.prompt_preview === 'string' ? payload.prompt_preview.trim() : '';
+      const previewLine = promptPreview.split(/\r?\n/).find((entry) => entry && entry.trim()) || promptPreview.slice(0, 160);
+      const docLabels = summarizeKnowledgeDocs(payload.knowledge);
+      const emotions = typeof payload.emotions === 'boolean' ? payload.emotions : null;
+      return {
+        rawLine: line,
+        timestamp: extractLogTimestamp(line),
+        projectKey,
+        projectLabel,
+        promptPreview,
+        previewLine,
+        docLabels,
+        promptLength: typeof payload.prompt_length === 'number' ? payload.prompt_length : null,
+        emotions,
+      };
+    })
+    .filter(Boolean);
+};
+
+const formatPromptEntry = (entry) => {
+  const parts = [];
+  if (entry.timestamp) parts.push(entry.timestamp);
+  if (entry.projectLabel) parts.push(entry.projectLabel);
+  if (typeof entry.promptLength === 'number') parts.push(`len=${entry.promptLength}`);
+  const header = parts.join(' · ');
+  const lines = [];
+  if (header) lines.push(header);
+  if (entry.promptPreview) lines.push(entry.promptPreview);
+  if (entry.docLabels.length) lines.push(`Docs: ${entry.docLabels.join(', ')}`);
+  return lines.join('\n');
+};
+
+const renderPromptLogs = (lines) => {
+  if (!promptLogsElement) return;
+  const entries = buildPromptEntries(lines);
+  const currentKey = typeof currentProject === 'string' ? currentProject.trim().toLowerCase() : '';
+  const matching = currentKey ? entries.filter((entry) => entry.projectKey === currentKey) : entries;
+  const displayEntries = (matching.length ? matching : entries).slice(-20);
+  if (!displayEntries.length) {
+    if (entries.length && currentKey) {
+      promptLogsElement.textContent = translateText('llmPromptsEmptyForProject', 'No prompts recorded for the selected project yet.');
+    } else {
+      promptLogsElement.textContent = translateText('overviewLLMEmpty', 'Recent prompts will appear here');
+    }
+    if (typeof setSummaryPrompt === 'function') {
+      setSummaryPrompt('', [], translateText('projectsAwaitingActivity', 'Awaiting activity'));
+    }
+    return;
+  }
+  promptLogsElement.textContent = displayEntries.map(formatPromptEntry).join('\n\n');
+  const pool = matching.length ? matching : displayEntries;
+  const latest = pool[pool.length - 1];
+  if (latest && typeof setSummaryPrompt === 'function') {
+    const metaParts = [];
+    if (latest.projectLabel) metaParts.push(latest.projectLabel);
+    if (typeof latest.promptLength === 'number') metaParts.push(`len=${latest.promptLength}`);
+    if (typeof latest.emotions === 'boolean') metaParts.push(latest.emotions ? 'emotions:on' : 'emotions:off');
+    setSummaryPrompt(latest.previewLine, latest.docLabels.slice(0, 5), metaParts.join(' · '));
+  }
+};
+
+const handleLogsAccessDenied = () => {
+  logAccessDenied = true;
+  stopLogPolling();
+  cachedAdminLogLines = [];
+  if (logsElement) {
+    logsElement.textContent = translateText('logsAccessDenied', 'Logs are available only to super administrators.');
+  }
+  if (promptLogsElement) {
+    promptLogsElement.textContent = translateText('llmPromptsAccessDenied', 'Prompt history is limited to super administrators.');
+  }
+  if (typeof setSummaryPrompt === 'function') {
+    setSummaryPrompt('', [], translateText('projectsAwaitingActivity', 'Awaiting activity'));
+  }
+  if (logInfoElement) {
+    logInfoElement.textContent = '';
+  }
+};
+
+const renderLogs = (lines) => {
+  if (logsElement) {
+    logsElement.textContent = Array.isArray(lines) && lines.length ? lines.join('\n') : '';
+  }
+  renderPromptLogs(lines);
+};
+
+const stopLogPolling = () => {
+  if (!logPollTimer) return;
+  clearInterval(logPollTimer);
+  logPollTimer = null;
+};
+
+const startLogPolling = () => {
+  if (logPollTimer || logAccessDenied || LOG_REFRESH_INTERVAL <= 0) return;
+  logPollTimer = setInterval(() => {
+    refreshAdminLogs();
+  }, LOG_REFRESH_INTERVAL);
+};
+
+const renderPromptLogsFromCache = () => {
+  renderPromptLogs(cachedAdminLogLines);
+};
+
 const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
   if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
@@ -93,6 +265,105 @@ const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServicePrompt) knowledgeServicePrompt.disabled = disabled;
   if (knowledgeServiceRun) knowledgeServiceRun.disabled = disabled;
 };
+
+async function refreshAdminLogs(force = false) {
+  if (logAccessDenied) return;
+  if (!logsElement && !promptLogsElement) return;
+  if (logsFetchPending) {
+    if (force && logsAbortController) {
+      logsAbortController.abort();
+    } else {
+      return;
+    }
+  }
+  if (document.hidden && !force) return;
+
+  const limit = normalizeLogLimit();
+  const controller = new AbortController();
+  logsAbortController = controller;
+  logsFetchPending = true;
+    if (logInfoElement) {
+      logInfoElement.textContent = translateText('logsLoadingLabel', 'Loading…');
+    }
+
+  try {
+    const resp = await fetch(`/api/v1/admin/logs?limit=${limit}`, { signal: controller.signal });
+    if (resp.status === 401 || resp.status === 403) {
+      handleLogsAccessDenied();
+      return;
+    }
+    if (!resp.ok) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    cachedAdminLogLines = lines;
+    lastLogsRefreshedAt = Date.now();
+    renderLogs(lines);
+    if (logInfoElement) {
+      const timeLabel = new Date(lastLogsRefreshedAt).toLocaleTimeString();
+      logInfoElement.textContent = translateText(
+        'logsUpdatedLabel',
+        `Updated ${timeLabel}`,
+        { time: timeLabel },
+      );
+    }
+    startLogPolling();
+  } catch (error) {
+    if (error && error.name === 'AbortError') return;
+    console.error('admin_logs_fetch_failed', error);
+    if (logInfoElement) {
+      logInfoElement.textContent = translateText('logsLoadFailed', 'Failed to load logs');
+    }
+    if (!cachedAdminLogLines.length) {
+      if (logsElement) logsElement.textContent = translateText('logsLoadFailed', 'Failed to load logs');
+      if (promptLogsElement) promptLogsElement.textContent = translateText('logsLoadFailed', 'Failed to load logs');
+    }
+  } finally {
+    if (logsAbortController === controller) {
+      logsAbortController = null;
+    }
+    logsFetchPending = false;
+  }
+}
+
+window.refreshAdminLogs = refreshAdminLogs;
+window.renderPromptLogsFromCache = renderPromptLogsFromCache;
+window.onAdminProjectChange = () => {
+  renderPromptLogsFromCache();
+  if (logAccessDenied) return;
+  const elapsed = Date.now() - lastLogsRefreshedAt;
+  if (elapsed > LOG_REFRESH_INTERVAL / 2) {
+    refreshAdminLogs(true);
+  }
+};
+
+if (logLimitInput) {
+  logLimitInput.addEventListener('change', () => {
+    normalizeLogLimit();
+    if (!logAccessDenied) {
+      refreshAdminLogs(true);
+    }
+  });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopLogPolling();
+  } else if (!logAccessDenied) {
+    renderPromptLogsFromCache();
+    refreshAdminLogs(true);
+    startLogPolling();
+  }
+});
+
+window.addEventListener('beforeunload', () => {
+  stopLogPolling();
+  if (logsAbortController) {
+    logsAbortController.abort();
+    logsAbortController = null;
+  }
+});
 
 const logoutButton = document.getElementById('adminLogout');
 const LAYOUT_ORDER_STORAGE_KEY = 'admin_layout_order_v1';
@@ -172,6 +443,18 @@ const {
   authError,
   onLanguageApplied: handleLanguageApplied,
 });
+
+const bootstrapAdminLogs = () => {
+  if (logAccessDenied) return;
+  renderPromptLogsFromCache();
+  refreshAdminLogs(true);
+};
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapAdminLogs);
+} else {
+  bootstrapAdminLogs();
+}
 
 function handleLanguageApplied() {
   if (window.BackupModule?.handleLanguageApplied) {

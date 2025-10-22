@@ -871,6 +871,13 @@ if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
     startUrlInput.value = normalizedDomain;
   }
   currentProject = normalized;
+  if (typeof window.onAdminProjectChange === 'function') {
+    try {
+      window.onAdminProjectChange(currentProject);
+    } catch (error) {
+      console.error('admin_project_change_handler_failed', error);
+    }
+  }
   projectSelect.value = currentProject;
   updateProjectInputs();
   projectPromptSaveBtn.disabled = !project;
