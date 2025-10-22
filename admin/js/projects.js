@@ -1000,7 +1000,7 @@ async function fetchProjects(){
 projectSelect.addEventListener('change', () => {
   currentProject = projectSelect.value.trim().toLowerCase();
   populateProjectForm(currentProject);
-  loadKnowledge();
+  loadKnowledge(currentProject);
   pollStatus();
 });
 
@@ -1145,7 +1145,7 @@ projectForm.addEventListener('submit', async (e) => {
     await fetchProjects();
     await loadProjectsList();
     await fetchProjectStorage();
-    await loadKnowledge();
+    await loadKnowledge(currentProject);
     pollStatus();
     setProjectStatus(t('projectsSaved'), 2000);
     populateProjectForm(currentProject);
@@ -1205,7 +1205,7 @@ if (projectModalForm) {
       await fetchProjects();
       await loadProjectsList();
       await fetchProjectStorage();
-      await loadKnowledge();
+      await loadKnowledge(currentProject);
       pollStatus();
       setProjectStatus(translate('projectsSaved'), 2000);
       closeProjectModal();
@@ -1234,8 +1234,10 @@ if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
     await fetchProjects();
     await loadProjectsList();
     await fetchProjectStorage();
-    document.getElementById('kbTable').innerHTML = '';
-    document.getElementById('kbInfo').textContent = '';
+    const legacyTable = document.getElementById('kbTable');
+    if (legacyTable) legacyTable.innerHTML = '';
+    const kbInfoEl = document.getElementById('kbInfo');
+    if (kbInfoEl) kbInfoEl.textContent = '';
     const removed = payload?.removed || {};
     const parts = [];
     if (typeof removed.documents === 'number') parts.push(t('projectsRemovedDocuments', { value: removed.documents }));

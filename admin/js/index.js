@@ -527,14 +527,21 @@ const kbClearBtn = document.getElementById('kbClearKnowledge');
 const kbClearStatus = document.getElementById('kbClearStatus');
 const kbInfo = document.getElementById('kbInfo');
 const kbProjectsSummary = document.getElementById('kbProjectsSummary');
-const kbDropZone = document.getElementById('kbDropZone');
-let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
-const kbNewFileInput = document.getElementById('kbNewFile');
+const kbForm = document.getElementById('kbForm');
+const kbProjectInput = document.getElementById('kbProject');
+const kbProjectList = document.getElementById('kbProjectList');
+const kbReloadProjectsBtn = document.getElementById('kbReloadProjects');
+const kbSearchInput = document.getElementById('kbSearch');
+const kbLimitInput = document.getElementById('kbLimit');
+const kbFilterClearBtn = document.getElementById('kbClear');
+const kbAddForm = document.getElementById('kbAddForm');
 const kbNewNameInput = document.getElementById('kbNewName');
 const kbNewUrlInput = document.getElementById('kbNewUrl');
 const kbNewDescriptionInput = document.getElementById('kbNewDescription');
+const kbDropZone = document.getElementById('kbDropZone');
+let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
+const kbNewFileInput = document.getElementById('kbNewFile');
 const kbNewContentInput = document.getElementById('kbNewContent');
-const kbAddForm = document.getElementById('kbAddForm');
 const kbAddStatus = document.getElementById('kbAddStatus');
 const kbResetFormBtn = document.getElementById('kbResetForm');
 let dropFilesBuffer = [];
@@ -577,6 +584,11 @@ const KNOWLEDGE_SOURCES = [
 applyLanguage(getCurrentLanguage());
 
 const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
+
+const getKnowledgeProjectKey = () => {
+  const explicit = normalizeProjectName(kbProjectInput?.value || '');
+  return explicit || getActiveProjectKey();
+};
 
 const kbTables = {
   text: { body: kbTableText, counter: kbCountText, emptyKey: 'knowledgeTableTextEmpty' },
@@ -1150,8 +1162,8 @@ async function loadUnansweredQuestions(projectName) {
   const params = new URLSearchParams();
   const projectKey =
     typeof projectName === 'string' && projectName.trim()
-      ? projectName.trim()
-      : getActiveProjectKey();
+      ? normalizeProjectName(projectName)
+      : getKnowledgeProjectKey();
   if (projectKey) params.set('project', projectKey);
   const query = params.toString();
   const url = query
@@ -1221,16 +1233,45 @@ function renderKnowledgeSummaryFromSnapshot() {
 async function loadKnowledge(projectName) {
   const targetProject =
     typeof projectName === 'string' && projectName.trim()
-      ? projectName.trim()
-      : getActiveProjectKey();
+      ? normalizeProjectName(projectName)
+      : getKnowledgeProjectKey();
+  if (kbProjectInput) {
+    if (typeof projectName === 'string' && projectName.trim()) {
+      kbProjectInput.value = targetProject;
+    } else if (!kbProjectInput.value && targetProject) {
+      kbProjectInput.value = targetProject;
+    }
+  }
   const unansweredPromise = loadUnansweredQuestions(targetProject);
   try {
-    const url = targetProject ? `/api/v1/admin/knowledge?project=${encodeURIComponent(targetProject)}` : '/api/v1/admin/knowledge';
+    const params = new URLSearchParams();
+    if (targetProject) params.set('project', targetProject);
+    const queryValue = (kbSearchInput?.value || '').trim();
+    if (queryValue) params.set('q', queryValue);
+    const limitValue = parseInt(kbLimitInput?.value, 10);
+    if (Number.isFinite(limitValue)) {
+      const clampedLimit = Math.min(Math.max(limitValue, 10), 1000);
+      params.set('limit', String(clampedLimit));
+      if (kbLimitInput && clampedLimit !== limitValue) {
+        kbLimitInput.value = String(clampedLimit);
+      }
+    }
+    const query = params.toString();
+    const url = query ? `/api/v1/admin/knowledge?${query}` : '/api/v1/admin/knowledge';
     const resp = await fetch(url);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const documents = Array.isArray(data?.documents) ? data.documents : [];
     renderKnowledgeDocuments(documents);
+    if (kbInfo) {
+      const matchedCount = Number.isFinite(Number(data?.matched)) ? Number(data.matched) : documents.length;
+      const totalCount = Number.isFinite(Number(data?.total)) ? Number(data.total) : matchedCount;
+      if (matchedCount || totalCount) {
+        kbInfo.textContent = totalCount && totalCount !== matchedCount ? `${matchedCount} / ${totalCount}` : String(matchedCount || totalCount);
+      } else {
+        kbInfo.textContent = '—';
+      }
+    }
     console.debug('knowledge data', data);
 
     const total = Number(data?.total);
@@ -1248,13 +1289,9 @@ async function loadKnowledge(projectName) {
     renderKnowledgeDocuments([]);
     knowledgeInfoSnapshot = null;
     knowledgeProjectSnapshot = null;
+    renderKnowledgeSummaryFromSnapshot();
     if (kbInfo) kbInfo.textContent = t('knowledgeLoadError');
     if (kbProjectsSummary) kbProjectsSummary.textContent = '';
-  }
-  try {
-    await unansweredPromise;
-  } catch {
-    // already logged inside loadUnansweredQuestions
   }
   try {
     await unansweredPromise;
@@ -1267,7 +1304,11 @@ async function loadKnowledgePriority(projectName) {
   if (!kbPriorityList || knowledgePriorityUnavailable) return;
   try {
     const params = new URLSearchParams();
-    if (projectName) params.set('project', projectName);
+    const projectKey =
+      typeof projectName === 'string' && projectName.trim()
+        ? normalizeProjectName(projectName)
+        : getKnowledgeProjectKey();
+    if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
     const resp = await fetch(url);
@@ -1302,7 +1343,8 @@ async function saveKnowledgePriority() {
   try {
     const payload = { order };
     const params = new URLSearchParams();
-    if (currentProject) params.set('project', currentProject);
+    const projectKey = getKnowledgeProjectKey();
+    if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
     const resp = await fetch(url, {
@@ -1394,7 +1436,7 @@ if (kbUnansweredExportBtn) {
   kbUnansweredExportBtn.addEventListener('click', () => {
     if (!knowledgeUnansweredVisible || !kbUnansweredExportBtn) return;
     const params = new URLSearchParams();
-    const projectKey = getActiveProjectKey();
+    const projectKey = getKnowledgeProjectKey();
     if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query
@@ -1415,7 +1457,7 @@ if (kbUnansweredClearBtn) {
     if (kbUnansweredStatus) kbUnansweredStatus.textContent = t('knowledgeUnansweredClearing');
     try {
       const payload = {};
-      const projectKey = getActiveProjectKey();
+      const projectKey = getKnowledgeProjectKey();
       if (projectKey) payload.project = projectKey;
       const resp = await fetch('/api/v1/admin/knowledge/unanswered/clear', {
         method: 'POST',
@@ -1492,6 +1534,13 @@ if (kbResetFormBtn) {
   kbResetFormBtn.addEventListener('click', (event) => {
     event.preventDefault();
     resetKnowledgeForm();
+  });
+}
+
+if (kbReloadProjectsBtn) {
+  kbReloadProjectsBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    refreshKnowledgeProjectsList();
   });
 }
 
@@ -1804,6 +1853,29 @@ function setKnowledgeFormButtonsDisabled(disabled) {
     if (submitBtn) submitBtn.disabled = disabled;
   }
   if (kbResetFormBtn) kbResetFormBtn.disabled = disabled;
+}
+
+async function refreshKnowledgeProjectsList() {
+  if (!kbProjectList) return;
+  try {
+    const resp = await fetch('/api/v1/admin/projects/names');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const projects = Array.isArray(data?.projects) ? data.projects : [];
+    const fragment = document.createDocumentFragment();
+    projects
+      .map((project) => normalizeProjectName(project))
+      .filter(Boolean)
+      .forEach((project) => {
+        const option = document.createElement('option');
+        option.value = project;
+        fragment.appendChild(option);
+      });
+    kbProjectList.innerHTML = '';
+    kbProjectList.appendChild(fragment);
+  } catch (error) {
+    console.error('knowledge_projects_load_failed', error);
+  }
 }
 
 function parseLogLineTimestamp(line) {
@@ -2313,6 +2385,10 @@ if (feedbackRefreshBtn) {
   feedbackRefreshBtn.addEventListener('click', () => fetchFeedbackTasks());
 }
 
+if (kbProjectInput && getActiveProjectKey()) {
+  kbProjectInput.value = getActiveProjectKey();
+}
+
 initLayoutReordering();
 
 bootstrapAdminApp({
@@ -2336,7 +2412,18 @@ bootstrapAdminApp({
   loadKnowledge,
   pollStatus: pollStatusProxy,
   updateProjectSummary,
-});
+})
+  .then(() => {
+    if (kbProjectInput && getActiveProjectKey()) {
+      kbProjectInput.value = getActiveProjectKey();
+    }
+    if (kbProjectList) {
+      refreshKnowledgeProjectsList();
+    }
+  })
+  .catch((error) => {
+    console.error('bootstrap_init_failed', error);
+  });
 
 document.addEventListener('DOMContentLoaded', () => {
   try {

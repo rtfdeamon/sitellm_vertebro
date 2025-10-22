@@ -3644,6 +3644,7 @@ class ProjectCreate(BaseModel):
     llm_voice_model: str | None = None
     debug_enabled: bool | None = None
     debug_info_enabled: bool | None = None
+    knowledge_image_caption_enabled: bool | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -5815,6 +5816,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         else:
             debug_info_value = True
 
+    if "knowledge_image_caption_enabled" in provided_fields:
+        captions_value = (
+            bool(payload.knowledge_image_caption_enabled)
+            if payload.knowledge_image_caption_enabled is not None
+            else True
+        )
+    else:
+        if existing and existing.knowledge_image_caption_enabled is not None:
+            captions_value = bool(existing.knowledge_image_caption_enabled)
+        else:
+            captions_value = True
+
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
             token_value = payload.telegram_token.strip() or None
@@ -5974,6 +5987,7 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_voice_model=voice_model_value,
         debug_enabled=debug_value,
         debug_info_enabled=debug_info_value,
+        knowledge_image_caption_enabled=captions_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,
