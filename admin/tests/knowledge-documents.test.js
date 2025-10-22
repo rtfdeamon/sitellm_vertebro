@@ -116,7 +116,6 @@ const documentsResponse = {
       content_type: 'text/plain',
       project: 'demo',
     },
-    null,
     {
       fileId: 'file-1',
       name: 'report.pdf',
