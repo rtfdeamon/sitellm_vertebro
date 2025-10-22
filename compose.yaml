@@ -15,23 +15,6 @@ x-health: &health_defaults
   start_period: 20s
 
 services:
-  ollama:
-    image: ${OLLAMA_IMAGE:-ollama/ollama}:${OLLAMA_VERSION:-latest}
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      OLLAMA_HOST: 0.0.0.0
-    ports:
-      - "${HOST_OLLAMA_PORT:-11434}:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      <<: *health_defaults
-      test:
-        - CMD-SHELL
-        - >
-          ollama list > /dev/null 2>&1 || exit 1
-
   mongo:
     # MongoDB stores conversation history and documents
     image: mongo:8.0
@@ -54,9 +37,12 @@ services:
     image: ${REDIS_IMAGE:-bitnami/redis:latest}
     restart: unless-stopped
     env_file: .env
-    environment:
-      ALLOW_EMPTY_PASSWORD: "no"
-      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    command:
+      - redis-server
+      - "--appendonly"
+      - "no"
+      - "--requirepass"
+      - "${REDIS_PASSWORD}"
     ports:
       - "${HOST_REDIS_PORT:-16379}:6379"
     healthcheck:
@@ -73,10 +59,10 @@ services:
       REDIS_URL: ${REDIS_URL}
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
       CRAWL_START_URL: ${CRAWL_START_URL:-https://mmvs.ru}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       CMAKE_ARGS: "-DLLAMA_CUBLAS=OFF -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
     command: ["celery", "-A", "worker", "worker", "--loglevel=INFO"]
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -86,6 +72,8 @@ services:
       mongo:
         condition: service_healthy
       celery_beat:
+        condition: service_started
+      ollama:
         condition: service_started
     volumes:
       - ./data/hf:/root/.cache/huggingface
@@ -109,16 +97,33 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: ${REDIS_URL}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
       CMAKE_ARGS: "-DLLAMA_CUBLAS=OFF -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
 
     healthcheck:
       <<: *health_defaults
       test:
         - CMD-SHELL
         - pgrep -af "[c]elery.*beat" >/dev/null || exit 1
+
+  ollama:
+    # Local Ollama runtime hosting GGUF models
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "${HOST_OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      test:
+        - CMD
+        - ollama
+        - ps
 
   app:
     # FastAPI application exposing the LLM endpoints
@@ -158,12 +163,12 @@ services:
            curl -fsS http://localhost:${APP_PORT:-8000}/health ||
            pgrep -af "[u]vicorn.*app:app" >/dev/null) || exit 1
     depends_on:
-      ollama:
-        condition: service_healthy
       mongo:
         condition: service_healthy
       redis:
         condition: service_healthy
+      ollama:
+        condition: service_started
       qdrant:
         condition: service_started
 

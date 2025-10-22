@@ -630,7 +630,9 @@ mkdir -p deploy-backups
 tar -czf "deploy-backups/${timestamp}.tar.gz" .env compose.yaml
 printf '[✓] Environment saved to deploy-backups/%s.tar.gz\n' "$timestamp"
 
-ensure_self_signed_cert
+if [ "$TLS_ENABLED_RAW" = "1" ]; then
+  ensure_self_signed_cert
+fi
 
 if ! grep -q "^MONGO_PASSWORD=" .env; then
   echo '[!] MONGO_PASSWORD not found in .env'; exit 1

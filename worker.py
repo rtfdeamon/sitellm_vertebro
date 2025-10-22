@@ -31,7 +31,7 @@ from models import BackupOperation, BackupStatus, Document, VoiceTrainingStatus
 from mongo import MongoClient as AsyncMongoClient
 from settings import Settings
 from vectors import DocumentsParser
-from yallm import YaLLMEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from core.status import status_dict
 from observability.logging import configure_logging
 
@@ -208,16 +208,34 @@ def get_mongo_client() -> SyncMongoClient:
     return SyncMongoClient(url)
 
 
-def get_document_parser() -> DocumentsParser:
-    """Construct a ``DocumentsParser`` using YaLLM embeddings.
+def _local_llm_enabled() -> bool:
+    """Return ``True`` when llama.cpp embeddings should be used."""
 
-    The parser is configured to store vectors in Redis using the parameters
-    defined in :class:`Settings`.
-    """
+    raw = os.getenv("LOCAL_LLM_ENABLED", "")
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_embeddings_model():
+    """Return the embeddings implementation based on configuration."""
+
+    if _local_llm_enabled():
+        logger.info("using local llama.cpp embeddings")
+        from yallm import YaLLMEmbeddings  # local import to avoid llama-cpp dependency by default
+
+        return YaLLMEmbeddings().get_embeddings_model()
+
+    model_name = os.getenv("EMB_MODEL_NAME") or settings.emb_model_name
+    logger.info("using huggingface embeddings", model=model_name)
+    return HuggingFaceEmbeddings(model_name=model_name)
+
+
+def get_document_parser() -> DocumentsParser:
+    """Construct a ``DocumentsParser`` with the configured embeddings backend."""
+
     logger.info("create document parser")
-    embeddings = YaLLMEmbeddings()
+    embeddings = _build_embeddings_model()
     return DocumentsParser(
-        embeddings.get_embeddings_model(),
+        embeddings,
         settings.redis.vector,
         settings.redis.host,
         settings.redis.port,

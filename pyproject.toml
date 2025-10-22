@@ -29,7 +29,7 @@ dependencies = [
     "uvloop>=0.17.0",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
-    # sentence-transformers (and torch) removed for Ollama-only runtime
+    "sentence-transformers>=2.7.0",
     "nltk>=3.8.1",
     "prometheus-client>=0.20.0",
     "requests>=2.32,<3",
