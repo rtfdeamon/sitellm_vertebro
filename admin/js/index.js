@@ -689,15 +689,7 @@ function renderKnowledgePriority(order) {
 }
 
 const renderKnowledgeDocuments = (documents) => {
-  const normalized = [];
-  if (Array.isArray(documents)) {
-    documents.forEach((entry) => {
-      if (entry && typeof entry === 'object') {
-        normalized.push(entry);
-      }
-    });
-  }
-  knowledgeDocumentsCache = normalized;
+  knowledgeDocumentsCache = Array.isArray(documents) ? documents.slice() : [];
   const grouped = { text: [], docs: [], images: [] };
   knowledgeDocumentsCache.forEach((doc) => {
     const bucket = getDocCategory(doc);
