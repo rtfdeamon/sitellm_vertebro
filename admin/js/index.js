@@ -1029,20 +1029,12 @@ function renderKnowledgePriority(order) {
         after ? target.nextSibling : target,
       );
     });
-      kbPriorityList.dataset.dragBound = '1';
-    }
+    kbPriorityList.dataset.dragBound = '1';
+  }
 }
 
 const renderKnowledgeDocuments = (documents) => {
-  const normalized = [];
-  if (Array.isArray(documents)) {
-    documents.forEach((entry) => {
-      if (entry && typeof entry === 'object') {
-        normalized.push(entry);
-      }
-    });
-  }
-  knowledgeDocumentsCache = normalized;
+  knowledgeDocumentsCache = Array.isArray(documents) ? documents.slice() : [];
   const grouped = { text: [], docs: [], images: [] };
   knowledgeDocumentsCache.forEach((doc) => {
     const bucket = getDocCategory(doc);
