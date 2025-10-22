@@ -102,6 +102,7 @@ const ADMIN_AUTH_HEADER_SESSION_KEY = 'admin_auth_header_v1';
 const ADMIN_AUTH_USER_STORAGE_KEY = 'admin_auth_user_v1';
 const ADMIN_BASE_KEY = window.location.origin.replace(/\/$/, '');
 const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/'];
+const ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX = '/api/v1/admin/knowledge/documents/';
 
 const {
   clearAuthHeaderForBase,
@@ -136,6 +137,7 @@ let knowledgeUnansweredUnavailable = false;
 let qaPairsCache = [];
 let knowledgePriorityOrder = [];
 let knowledgeUnansweredItems = [];
+let knowledgeDocumentsCache = [];
 let knowledgeUnansweredVisible = false;
 let kbNavButtons = [];
 let kbSections = [];
@@ -256,7 +258,6 @@ const kbNewUrlInput = document.getElementById('kbNewUrl');
 const kbNewDescriptionInput = document.getElementById('kbNewDescription');
 const kbDropZone = document.getElementById('kbDropZone');
 let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
-let knowledgeDropFiles = [];
 const kbNewFileInput = document.getElementById('kbNewFile');
 const kbNewContentInput = document.getElementById('kbNewContent');
 const kbAddStatus = document.getElementById('kbAddStatus');
@@ -560,6 +561,107 @@ async function fetchFeedbackTasks() {
   }
 }
 
+function isInternalAdminDownloadUrl(href) {
+  if (!href) return false;
+  if (href.startsWith(ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX)) return true;
+  try {
+    const resolved = new URL(href, window.location.origin);
+    return resolved.origin === window.location.origin && resolved.pathname.startsWith(ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX);
+  } catch {
+    return false;
+  }
+}
+
+function parseFilenameFromDisposition(header) {
+  if (!header) return null;
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match && utf8Match[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1]);
+    } catch {
+      /* ignore decode errors */
+    }
+  }
+  const quotedMatch = header.match(/filename="([^"]+)"/i);
+  if (quotedMatch && quotedMatch[1]) {
+    return quotedMatch[1];
+  }
+  const plainMatch = header.match(/filename=([^;]+)/i);
+  if (plainMatch && plainMatch[1]) {
+    return plainMatch[1].trim();
+  }
+  return null;
+}
+
+async function downloadKnowledgeDocumentWithAuth(href, fallbackName) {
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const headers = new Headers();
+      try {
+        const token =
+          (typeof AdminAuth?.getAuthHeaderForBase === 'function' && AdminAuth.getAuthHeaderForBase(ADMIN_BASE_KEY)) ||
+          null;
+        if (token) {
+          headers.set('Authorization', token);
+        }
+      } catch (error) {
+        console.warn('knowledge_download_auth_header_unavailable', error);
+      }
+      const response = await fetch(href, { credentials: 'same-origin', headers });
+      if (response.ok) {
+        const blob = await response.blob();
+        let filename = fallbackName || 'document';
+        const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition');
+        const extracted = parseFilenameFromDisposition(disposition);
+        if (extracted) {
+          filename = extracted;
+        }
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      if (response.status === 401) {
+        if (typeof clearAuthHeaderForBase === 'function') {
+          clearAuthHeaderForBase(ADMIN_BASE_KEY);
+        }
+        if (attempt === 0 && typeof requestAdminAuth === 'function') {
+          const authenticated = await requestAdminAuth();
+          if (authenticated) {
+            continue;
+          }
+          const authError = new Error('admin-auth-cancelled');
+          authError.code = AUTH_CANCELLED_CODE;
+          throw authError;
+        }
+      }
+      const message = await response.text().catch(() => '');
+      throw new Error(message || `HTTP ${response.status}`);
+    }
+  } catch (error) {
+    if (error?.code === AUTH_CANCELLED_CODE) {
+      return;
+    }
+    console.error('knowledge_document_download_failed', error);
+    const message = error?.message ? `Download failed: ${error.message}` : 'Download failed';
+    window.alert(message);
+  }
+}
+
+function attachKnowledgeDownloadHandler(anchor, href, filename) {
+  if (!isInternalAdminDownloadUrl(href)) return;
+  anchor.removeAttribute('target');
+  anchor.addEventListener('click', (event) => {
+    event.preventDefault();
+    downloadKnowledgeDocumentWithAuth(href, filename);
+  });
+}
+
 const renderKnowledgeRow = (doc, category) => {
   const tr = document.createElement('tr');
   const nameTd = document.createElement('td');
@@ -584,6 +686,7 @@ const renderKnowledgeRow = (doc, category) => {
     a.target = '_blank';
     a.rel = 'noopener';
     if (doc.name) a.download = doc.name;
+    attachKnowledgeDownloadHandler(a, href, doc.name || doc.fileId || 'document');
     linkTd.appendChild(a);
   } else {
     linkTd.textContent = '—';
@@ -692,6 +795,9 @@ const renderKnowledgeDocuments = (documents) => {
   knowledgeDocumentsCache = Array.isArray(documents) ? documents.slice() : [];
   const grouped = { text: [], docs: [], images: [] };
   knowledgeDocumentsCache.forEach((doc) => {
+    if (!doc || typeof doc !== 'object') {
+      return;
+    }
     const bucket = getDocCategory(doc);
     if (!grouped[bucket]) grouped[bucket] = [];
     grouped[bucket].push(doc);

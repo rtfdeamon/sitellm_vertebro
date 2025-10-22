@@ -65,9 +65,13 @@ const installGlobalStubs = () => {
   vi.stubGlobal('initAdminAuth', vi.fn(() => ({
     clearAuthHeaderForBase: vi.fn(),
     setStoredAdminUser: vi.fn(),
-    requestAdminAuth: vi.fn(),
+    requestAdminAuth: vi.fn().mockResolvedValue(true),
+    getAuthHeaderForBase: vi.fn(() => 'Basic test'),
   })));
-  vi.stubGlobal('bootstrapAdminApp', vi.fn());
+  vi.stubGlobal('AdminAuth', {
+    getAuthHeaderForBase: vi.fn(() => 'Basic test'),
+  });
+  vi.stubGlobal('bootstrapAdminApp', vi.fn(() => Promise.resolve()));
   vi.stubGlobal('window', globalThis);
   vi.stubGlobal('confirm', vi.fn(() => true));
   [
