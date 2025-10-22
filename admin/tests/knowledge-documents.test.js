@@ -116,7 +116,6 @@ const documentsResponse = {
       content_type: 'text/plain',
       project: 'demo',
     },
-    null,
     {
       fileId: 'file-1',
       name: 'report.pdf',
@@ -158,12 +157,6 @@ const mockFetchSequence = (responses) => {
           device: 'cpu',
           ollama_base: null,
         }),
-      });
-    }
-    if (typeof url === 'string' && url.includes('/api/v1/admin/logs')) {
-      return Promise.resolve({
-        ok: true,
-        json: async () => ({ lines: [] }),
       });
     }
     if (callIndex >= responses.length) {
@@ -209,10 +202,9 @@ describe('Knowledge documents rendering', () => {
     await bootConfig.loadKnowledge('demo');
 
     await vi.waitFor(() => {
-      const relevantCalls = fetchMock.mock.calls.filter(([requestUrl]) => {
-        if (typeof requestUrl !== 'string') return true;
-        return !requestUrl.includes('/api/v1/llm/info') && !requestUrl.includes('/api/v1/admin/logs');
-      });
+      const relevantCalls = fetchMock.mock.calls.filter(
+        ([requestUrl]) => !requestUrl.includes('/api/v1/llm/info'),
+      );
       expect(relevantCalls).toHaveLength(2);
     });
 
@@ -241,10 +233,9 @@ describe('Knowledge documents rendering', () => {
     await bootConfig.loadKnowledge('demo');
 
     await vi.waitFor(() => {
-      const relevantCalls = fetchMock.mock.calls.filter(([requestUrl]) => {
-        if (typeof requestUrl !== 'string') return true;
-        return !requestUrl.includes('/api/v1/llm/info') && !requestUrl.includes('/api/v1/admin/logs');
-      });
+      const relevantCalls = fetchMock.mock.calls.filter(
+        ([requestUrl]) => !requestUrl.includes('/api/v1/llm/info'),
+      );
       expect(relevantCalls).toHaveLength(2);
     });
 
