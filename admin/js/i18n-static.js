@@ -1269,6 +1269,10 @@
         en: 'Enter identifier',
         ru: 'Укажите идентификатор',
       },
+      projectsIdentifierExists: {
+        en: 'Project with this identifier already exists',
+        ru: 'Проект с таким идентификатором уже существует',
+      },
       projectsSaving: {
         en: 'Saving project…',
         ru: 'Сохраняем проект...',
@@ -1753,6 +1757,131 @@
         ru: '0 / 0 страниц',
         match: ['0 / 0 страниц'],
       },
+      knowledgeStatusUnknown: {
+        en: 'Status unavailable',
+        ru: 'Статус недоступен',
+      },
+      knowledgeProcessingRunning: {
+        en: 'Processing is running',
+        ru: 'Обработка выполняется',
+      },
+      knowledgeProcessingFailedShort: {
+        en: 'Processing finished with an error',
+        ru: 'Обработка завершилась с ошибкой',
+      },
+      knowledgeProcessingSuccessShort: {
+        en: 'Processing finished successfully',
+        ru: 'Обработка завершилась успешно',
+      },
+      knowledgeProcessingIdle: {
+        en: 'Processing idle',
+        ru: 'Обработка в ожидании',
+      },
+      knowledgeProcessingDisabled: {
+        en: 'Processing disabled',
+        ru: 'Обработка отключена',
+      },
+      integrationTokenPreview: {
+        en: 'Token: {value}',
+        ru: 'Токен: {value}',
+      },
+      integrationTokenNotSet: {
+        en: 'Token not set',
+        ru: 'Токен не задан',
+      },
+      integrationAutoStart: {
+        en: 'Auto-start: {value}',
+        ru: 'Автозапуск: {value}',
+      },
+      integrationAutoStartEnabled: {
+        en: 'enabled',
+        ru: 'включён',
+      },
+      integrationAutoStartDisabled: {
+        en: 'disabled',
+        ru: 'выключен',
+      },
+      integrationLastError: {
+        en: 'Last error: {value}',
+        ru: 'Последняя ошибка: {value}',
+      },
+      integrationStatusRunning: {
+        en: 'Running',
+        ru: 'Запущен',
+      },
+      integrationStatusStopped: {
+        en: 'Stopped',
+        ru: 'Остановлен',
+      },
+      integrationStatusUpdating: {
+        en: 'Updating status…',
+        ru: 'Обновляем статус…',
+        match: ['Обновляем статус…'],
+      },
+      integrationStatusError: {
+        en: 'Status error',
+        ru: 'Ошибка статуса',
+      },
+      integrationActionInProgress: {
+        en: 'Working…',
+        ru: 'Выполняю…',
+        match: ['Выполняю…'],
+      },
+      integrationActionFailed: {
+        en: 'Action failed',
+        ru: 'Ошибка действия',
+        match: ['Ошибка действия'],
+      },
+      integrationActionStarted: {
+        en: 'Started',
+        ru: 'Запущено',
+        match: ['Запущено'],
+      },
+      integrationActionStopped: {
+        en: 'Stopped',
+        ru: 'Остановлено',
+        match: ['Остановлено'],
+      },
+      integrationTelegramSelectProject: {
+        en: 'Select a project to manage the Telegram bot.',
+        ru: 'Выберите проект, чтобы управлять Telegram ботом.',
+      },
+      integrationTelegramSaveHint: {
+        en: 'Save the token and start the Telegram bot.',
+        ru: 'Сохраните токен и запустите Telegram бота.',
+      },
+      integrationMaxSelectProject: {
+        en: 'Select a project to manage the MAX bot.',
+        ru: 'Выберите проект, чтобы управлять MAX ботом.',
+      },
+      integrationMaxSaveHint: {
+        en: 'Save the token and start the MAX bot.',
+        ru: 'Сохраните токен и запустите MAX бота.',
+      },
+      integrationVkSelectProject: {
+        en: 'Select a project to manage the VK bot.',
+        ru: 'Выберите проект, чтобы управлять VK ботом.',
+      },
+      integrationVkSaveHint: {
+        en: 'Save the token and start the VK bot.',
+        ru: 'Сохраните токен и запустите VK бота.',
+      },
+      statsSummaryTotal: {
+        en: 'Total {total} requests',
+        ru: 'Всего {total} запросов',
+      },
+      statsSummaryTotalAverage: {
+        en: 'Total {total} requests · per day {average}',
+        ru: 'Всего {total} запросов · в день {average}',
+      },
+      statsRangeLastDays: {
+        en: 'Last {days} days',
+        ru: 'Последние {days} дней',
+      },
+      crawlerStatusWaiting: {
+        en: 'Waiting to start',
+        ru: 'Ожидание запуска',
+      },
     },
     placeholders: {
       contentPlaceholder: {
@@ -1764,6 +1893,10 @@
         en: 'Enter token',
         ru: 'Введите токен',
         match: ['Введите токен'],
+      },
+      integrationTokenSavedPlaceholder: {
+        en: 'Token saved',
+        ru: 'Токен сохранён',
       },
       shortDescriptionPlaceholder: {
         en: 'Short description',

@@ -348,6 +348,7 @@ const resetProjectModal = () => {
   modalPromptAiHandler?.reset?.();
   if (projectModalStatus) projectModalStatus.textContent = '';
   if (projectModalPromptAiStatus) projectModalPromptAiStatus.textContent = '—';
+  projectModalName?.classList.remove('input-warning');
 };
 
 const openProjectModal = () => {
@@ -368,7 +369,42 @@ const setProjectModalDisabled = (disabled) => {
   if (projectModalClose) {
     projectModalClose.disabled = disabled;
   }
+  if (projectModalBackdrop) {
+    projectModalBackdrop.setAttribute('data-busy', disabled ? 'true' : 'false');
+  }
 };
+
+const warnProjectSlugDuplicate = (slug) => {
+  if (!projectModalStatus) return;
+  const duplicateExists = slug && projectsCache && Object.prototype.hasOwnProperty.call(projectsCache, slug);
+  if (duplicateExists) {
+    projectModalStatus.textContent = translate('projectsIdentifierExists');
+    projectModalName?.classList.add('input-warning');
+  } else if (projectModalStatus.textContent === translate('projectsIdentifierExists')) {
+    projectModalStatus.textContent = '';
+    projectModalName?.classList.remove('input-warning');
+  } else {
+    projectModalName?.classList.remove('input-warning');
+  }
+};
+
+if (projectModalName) {
+  projectModalName.addEventListener('input', () => {
+    if (projectModalBackdrop?.getAttribute('data-busy') === 'true') {
+      return;
+    }
+    const originalValue = projectModalName.value;
+    const normalized = safeNormalizeProjectName(originalValue);
+    if (originalValue !== normalized) {
+      const { selectionStart, selectionEnd } = projectModalName;
+      projectModalName.value = normalized;
+      if (typeof selectionStart === 'number' && typeof selectionEnd === 'number') {
+        projectModalName.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
+    warnProjectSlugDuplicate(projectModalName.value);
+  });
+}
 
 const startUrlInput = document.getElementById('url');
 if (startUrlInput) {
@@ -913,7 +949,9 @@ async function fetchProjects(){
     lastProjectCount = projects.length;
 
     if (!projects.length) {
-      projectSelect.appendChild(new Option(t('projectsEmptyPlaceholder'), '', true, true));
+      const emptyOption = new Option(t('projectsEmptyPlaceholder'), '', true, true);
+      emptyOption.dataset.i18n = 'projectsEmptyPlaceholder';
+      projectSelect.appendChild(emptyOption);
       projectSelect.disabled = true;
       currentProject = '';
       populateProjectForm('');
@@ -938,7 +976,9 @@ async function fetchProjects(){
 
     projectSelect.disabled = false;
     if (adminSession.is_super) {
-      projectSelect.appendChild(new Option(t('projectsSelectPlaceholder'), '', false, !selectedKey));
+      const placeholderOption = new Option(t('projectsSelectPlaceholder'), '', false, !selectedKey);
+      placeholderOption.dataset.i18n = 'projectsSelectPlaceholder';
+      projectSelect.appendChild(placeholderOption);
     }
 
     projects.forEach((p, index) => {
@@ -1167,6 +1207,13 @@ if (projectModalForm) {
     if (!normalizedName) {
       if (projectModalStatus) projectModalStatus.textContent = translate('projectsEnterIdentifier');
       projectModalName?.focus();
+      return;
+    }
+    if (normalizedName && projectsCache && Object.prototype.hasOwnProperty.call(projectsCache, normalizedName)) {
+      if (projectModalStatus) projectModalStatus.textContent = translate('projectsIdentifierExists');
+      projectModalName?.focus();
+      warnProjectSlugDuplicate(normalizedName);
+      setProjectModalDisabled(false);
       return;
     }
 

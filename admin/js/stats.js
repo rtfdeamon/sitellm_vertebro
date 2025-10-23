@@ -9,6 +9,31 @@
 
   const STATS_DAYS = 14;
 
+  const formatTemplate = (template, params = {}) => {
+    if (typeof template !== 'string') return '';
+    return template.replace(/\{(\w+)\}/g, (_, token) => {
+      if (Object.prototype.hasOwnProperty.call(params, token)) {
+        const replacement = params[token];
+        return replacement === null || replacement === undefined ? '' : String(replacement);
+      }
+      return '';
+    });
+  };
+
+  const translate = (key, fallback = '', params = undefined) => {
+    if (typeof global.t === 'function') {
+      try {
+        return params ? global.t(key, params) : global.t(key);
+      } catch (error) {
+        console.warn('stats_translate_failed', error);
+      }
+    }
+    if (fallback) {
+      return formatTemplate(fallback, params);
+    }
+    return key;
+  };
+
   const statsGraphState = {
     data: [],
     currentPoints: [],
@@ -264,11 +289,17 @@
       statsGraphState.currentPoints = [];
       drawStatsGraph([]);
       if (statsSummary) {
-        statsSummary.dataset.lastText = tl('Нет данных');
-        statsSummary.textContent = tl('Нет данных');
+        const emptyText = tl('Нет данных');
+        statsSummary.dataset.summaryTotal = '';
+        statsSummary.dataset.summaryAverage = '';
+        statsSummary.dataset.summaryHasAverage = 'false';
+        statsSummary.dataset.lastText = emptyText;
+        statsSummary.textContent = emptyText;
       }
       if (statsSubtitle) {
-        statsSubtitle.textContent = `Последние ${STATS_DAYS} дней`;
+        statsSubtitle.dataset.rangeMode = 'relative';
+        statsSubtitle.dataset.rangeDays = String(STATS_DAYS);
+        statsSubtitle.textContent = translate('statsRangeLastDays', 'Last {days} days', { days: STATS_DAYS });
       }
       return;
     }
@@ -285,16 +316,35 @@
     const total = stats.reduce((sum, item) => sum + (item.count || 0), 0);
     const average = total && stats.length ? (total / stats.length).toFixed(1) : null;
     if (statsSummary) {
-      const text = total ? `Всего ${total} запросов${average ? ` · в день ${average}` : ''}` : tl('Нет данных');
+      const hasAverage = Boolean(total && average);
+      const text = total
+        ? translate(
+            hasAverage ? 'statsSummaryTotalAverage' : 'statsSummaryTotal',
+            hasAverage
+              ? `Total ${total} requests · per day ${average}`
+              : `Total ${total} requests`,
+            { total, average },
+          )
+        : tl('Нет данных');
+      statsSummary.dataset.summaryTotal = total ? String(total) : '';
+      statsSummary.dataset.summaryAverage = hasAverage ? String(average) : '';
+      statsSummary.dataset.summaryHasAverage = hasAverage ? 'true' : 'false';
       statsSummary.dataset.lastText = text;
       statsSummary.textContent = text;
     }
     if (statsSubtitle) {
       const first = stats[0]?.date;
       const last = stats[stats.length - 1]?.date;
-      statsSubtitle.textContent = first && last && stats.length > 1
-        ? `${first} — ${last}`
-        : (first || `Последние ${STATS_DAYS} дней`);
+      if (first && last && stats.length > 1) {
+        statsSubtitle.dataset.rangeMode = 'explicit';
+        statsSubtitle.dataset.rangeStart = first;
+        statsSubtitle.dataset.rangeEnd = last;
+        statsSubtitle.textContent = `${first} — ${last}`;
+      } else {
+        statsSubtitle.dataset.rangeMode = 'relative';
+        statsSubtitle.dataset.rangeDays = String(STATS_DAYS);
+        statsSubtitle.textContent = translate('statsRangeLastDays', 'Last {days} days', { days: STATS_DAYS });
+      }
     }
   };
 
@@ -390,6 +440,10 @@
     drawStatsGraph(points);
   };
 
+  const handleLanguageApplied = () => {
+    renderStatsChart(statsGraphState.data, { animate: false });
+  };
+
   const bindEvents = () => {
     if (statsCanvas) {
       statsCanvas.addEventListener('mousemove', handleStatsHover);
@@ -412,6 +466,7 @@
       loadRequestStats,
       exportRequestStats,
       clearStatsHover,
+      handleLanguageApplied,
       __initialized: true,
     };
     global.loadRequestStats = loadRequestStats;
