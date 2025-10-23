@@ -132,6 +132,41 @@ const translateText = (key, fallback, params) => {
   return fallback || '';
 };
 
+const normalizeServiceErrorKey = (value) => {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  if (!trimmed) return '';
+  const normalized = trimmed.replace(/[.:]+$/, '').toLowerCase();
+  if (normalized.startsWith('unsupported file extension')) {
+    return 'knowledgeServiceErrorUnsupportedExtension';
+  }
+  if (normalized.startsWith('worker timeout')) {
+    return 'knowledgeServiceErrorWorkerTimeout';
+  }
+  return '';
+};
+
+const translateServiceError = (value) => {
+  if (!value) return value;
+  const key = normalizeServiceErrorKey(value);
+  if (!key) return value;
+  return translateText(key, value);
+};
+
+const translateServiceReason = (value) => {
+  if (!value) return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) return value;
+  switch (normalized) {
+    case 'manual_button':
+      return translateText('knowledgeServiceReasonManualButton', 'Manual start');
+    case 'manual':
+      return translateText('knowledgeServiceReasonManual', 'Manual');
+    default:
+      return value;
+  }
+};
+
 const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
   if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
@@ -1773,39 +1808,59 @@ const updateIntelligentProcessingPrompt = async (payload) => {
 function renderKnowledgeServiceStatus(data) {
   if (!knowledgeServiceStatus) return;
   const parts = [];
-  const message = data?.message || (data?.enabled ? t('serviceStateOn') : t('serviceStateOff'));
+  const message = data?.message || (data?.enabled ? t('serviceStateOn', 'Service enabled') : t('serviceStateOff', 'Service disabled'));
   if (message) parts.push(message);
   if (typeof data?.enabled === 'boolean') {
-    parts.push(data.enabled ? t('serviceStateLabelOn') : t('serviceStateLabelOff'));
+    parts.push(data.enabled ? t('serviceStateLabelOn', 'Service: enabled') : t('serviceStateLabelOff', 'Service: disabled'));
   }
   if (typeof data?.mode === 'string') {
     const normalizedMode = data.mode === 'auto'
-      ? t('serviceModeAuto')
+      ? translateText('serviceModeAuto', 'Automatic')
       : data.mode === 'manual'
-        ? t('serviceModeManual')
+        ? translateText('serviceModeManual', 'Manual')
         : data.mode;
-    parts.push(t('serviceModeLabel', { value: normalizedMode }));
+    parts.push(translateText('serviceModeLabel', 'Mode: {value}', { value: normalizedMode }));
   }
   if (typeof data?.running === 'boolean') {
-    parts.push(data.running ? t('serviceStatusActive') : t('serviceStatusStopped'));
+    parts.push(
+      data.running
+        ? translateText('serviceStatusActive', 'Status: running')
+        : translateText('serviceStatusStopped', 'Status: stopped'),
+    );
   }
   if (typeof data?.last_queue === 'number') {
-    parts.push(t('knowledgeQueueLabel', { value: data.last_queue }));
+    parts.push(translateText('knowledgeQueueLabel', 'Queue: {value}', { value: data.last_queue }));
   }
   if (typeof data?.idle_seconds === 'number') {
-    parts.push(t('knowledgeIdleLabel', { seconds: Math.max(0, Math.round(data.idle_seconds)) }));
+    parts.push(
+      translateText('knowledgeIdleLabel', 'Idle: {seconds} s', {
+        seconds: Math.max(0, Math.round(data.idle_seconds)),
+      }),
+    );
   }
   if (data?.last_run_ts) {
-    parts.push(t('knowledgeLastRunLabel', { value: formatTimestamp(data.last_run_ts) }));
+    parts.push(
+      translateText('knowledgeLastRunLabel', 'Last run: {value}', {
+        value: formatTimestamp(data.last_run_ts),
+      }),
+    );
   }
-  if (data?.last_error) {
-    parts.push(t('knowledgeErrorLabel', { value: data.last_error }));
+  const translatedError = translateServiceError(data?.last_error);
+  if (translatedError) {
+    parts.push(translateText('knowledgeErrorLabel', 'Error: {value}', { value: translatedError }));
   }
-  if (data?.manual_reason && data.manual_reason !== 'manual') {
-    parts.push(t('knowledgeReasonLabel', { value: data.manual_reason }));
+  if (data?.manual_reason) {
+    const reasonText = translateServiceReason(data.manual_reason);
+    if (reasonText && data.manual_reason !== 'manual') {
+      parts.push(translateText('knowledgeReasonLabel', 'Reason: {value}', { value: reasonText }));
+    }
   }
   if (data?.updated_at) {
-    parts.push(t('knowledgeUpdatedLabel', { value: formatTimestamp(data.updated_at) }));
+    parts.push(
+      translateText('knowledgeUpdatedLabel', 'Updated: {value}', {
+        value: formatTimestamp(data.updated_at),
+      }),
+    );
   }
   knowledgeServiceStatus.textContent = parts.join(' • ') || '—';
 }

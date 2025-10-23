@@ -2561,6 +2561,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         "/admin",
         "/api/v1/admin",
         "/api/v1/backup",
+        "/api/v1/crawler",
         "/api/intelligent-processing",
     )
     # Exact method+path pairs that must be admin-protected even if their prefix is different
