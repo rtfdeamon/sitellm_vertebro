@@ -282,7 +282,16 @@ def update_vector_store():
             mongo_client, filter_query=filter_query
         ):
             logger.info("embedding", document=document.name)
-            vector_store.parse_document(document, data)
+            try:
+                vector_store.parse_document(document, data)
+            except ValueError as exc:
+                logger.warning(
+                    "embedding_skip_document",
+                    file_id=document.fileId,
+                    name=document.name,
+                    reason=str(exc),
+                )
+                continue
             processed += 1
             if document.ts is not None:
                 try:

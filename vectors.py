@@ -17,7 +17,12 @@ from qdrant_client.http import models as qmodels
 from PIL import Image
 
 from models import Document
-from knowledge.text import extract_doc_text, extract_xls_text, extract_xlsx_text
+from knowledge.text import (
+    extract_best_effort_text,
+    extract_doc_text,
+    extract_xls_text,
+    extract_xlsx_text,
+)
 
 
 class DocumentsParser:
@@ -125,7 +130,7 @@ class DocumentsParser:
     def _extract_text(self, document: Document, data: bytes) -> str:
         """Return concatenated textual content for ``document``."""
 
-        _, file_extension = os.path.splitext(document.name)
+        _, file_extension = os.path.splitext(document.name or "")
         file_extension = file_extension.lower()
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp:
@@ -133,13 +138,23 @@ class DocumentsParser:
             saved_file = Path(tmp.name)
 
         extra_path: Path | None = None
+        contents: list[str]
         try:
             loader, extra_path = self._select_loader(file_extension, saved_file)
             if loader is None:
-                raise ValueError(f"Unsupported file extension: {file_extension}")
-
-            pages = loader.load()
-            contents = [page.page_content.strip() for page in _ensure_iterable(pages)]
+                fallback_text = extract_best_effort_text(
+                    document.name or "",
+                    document.content_type,
+                    data,
+                )
+                if fallback_text.strip():
+                    contents = [fallback_text.strip()]
+                else:
+                    descriptor = file_extension or (document.content_type or "").lower()
+                    raise ValueError(f"Unsupported file extension: {descriptor}")
+            else:
+                pages = loader.load()
+                contents = [page.page_content.strip() for page in _ensure_iterable(pages)]
         finally:
             saved_file.unlink(missing_ok=True)
             if extra_path is not None:
