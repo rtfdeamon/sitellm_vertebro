@@ -33,6 +33,31 @@
     return;
   }
 
+  const formatTemplate = (template, params = {}) => {
+    if (typeof template !== 'string') return '';
+    return template.replace(/\{(\w+)\}/g, (_, token) => {
+      if (Object.prototype.hasOwnProperty.call(params, token)) {
+        const replacement = params[token];
+        return replacement === null || replacement === undefined ? '' : String(replacement);
+      }
+      return '';
+    });
+  };
+
+  const translate = (key, fallback = '', params = undefined) => {
+    if (typeof global.t === 'function') {
+      try {
+        return params ? global.t(key, params) : global.t(key);
+      } catch (error) {
+        console.warn('telegram_translate_failed', error);
+      }
+    }
+    if (fallback) {
+      return formatTemplate(fallback, params);
+    }
+    return key;
+  };
+
   const UPDATE_DELAY_MS = 2400;
 
   function projectName() {
@@ -54,20 +79,41 @@
 
   function buildInfo(status) {
     if (!status) {
-      return tl('Выберите проект, чтобы управлять Telegram ботом.');
+      return translate('integrationTelegramSelectProject', 'Select a project to manage the Telegram bot.');
     }
     const parts = [];
-    parts.push(status.token_set ? `Токен: ${status.token_preview || '••••'}` : tl('Токен не задан'));
-    parts.push(`Автозапуск: ${status.auto_start ? tl('включён') : tl('выключен')}`);
+    if (status.token_set) {
+      parts.push(
+        translate('integrationTokenPreview', 'Token: {value}', {
+          value: status.token_preview || '••••',
+        }),
+      );
+    } else {
+      parts.push(translate('integrationTokenNotSet', 'Token not set'));
+    }
+    parts.push(
+      translate('integrationAutoStart', 'Auto-start: {value}', {
+        value: translate(
+          status.auto_start ? 'integrationAutoStartEnabled' : 'integrationAutoStartDisabled',
+          status.auto_start ? 'Enabled' : 'Disabled',
+        ),
+      }),
+    );
     if (status.last_error) {
-      parts.push(`Последняя ошибка: ${status.last_error}`);
+      parts.push(
+        translate('integrationLastError', 'Last error: {value}', {
+          value: status.last_error,
+        }),
+      );
     }
     return parts.join(' · ');
   }
 
   function updatePlaceholder(status) {
     if (!tokenInput) return;
-    tokenInput.placeholder = status?.token_set ? tl('Токен сохранён') : tl('Введите токен');
+    tokenInput.placeholder = status?.token_set
+      ? translate('integrationTokenSavedPlaceholder', 'Token saved')
+      : translate('tokenPlaceholder', 'Enter token');
   }
 
   function updateButtons(status) {
@@ -88,7 +134,9 @@
       updatePlaceholder(null);
       return;
     }
-    statusLabel.textContent = status.running ? tl('Запущен') : tl('Остановлен');
+    statusLabel.textContent = status.running
+      ? translate('integrationStatusRunning', 'Running')
+      : translate('integrationStatusStopped', 'Stopped');
     if (autoStartInput) {
       autoStartInput.checked = !!status.auto_start;
     }
@@ -100,7 +148,7 @@
   function reset() {
     if (tokenInput) {
       tokenInput.value = '';
-      tokenInput.placeholder = tl('Введите токен');
+      tokenInput.placeholder = translate('tokenPlaceholder', 'Enter token');
     }
     if (messageLabel) {
       messageLabel.textContent = '';
@@ -125,7 +173,10 @@
     if (!project || !project.name) {
       applyStatus(null);
     } else if (!lastStatus) {
-      infoLabel.textContent = tl('Сохраните токен и запустите бота.');
+      infoLabel.textContent = translate(
+        'integrationTelegramSaveHint',
+        'Save the token and start the Telegram bot.',
+      );
       updatePlaceholder(null);
       updateButtons(null);
     }
@@ -155,7 +206,7 @@
       return;
     }
     try {
-      infoLabel.textContent = tl('Обновляем статус…');
+      infoLabel.textContent = translate('integrationStatusUpdating', 'Updating status…');
       const response = await global.fetch(`/api/v1/admin/projects/${encodeURIComponent(project)}/telegram`);
       if (!response.ok) {
         throw new Error(await extractError(response));
@@ -166,7 +217,7 @@
       if (tokenInput) tokenInput.value = '';
     } catch (error) {
       console.error('telegram_status_failed', error);
-      setMessage(error.message || tl('Ошибка статуса'), 4500);
+      setMessage(error.message || translate('integrationStatusError', 'Status error'), 4500);
       applyStatus(null);
     }
   }
@@ -174,7 +225,7 @@
   function ensureProjectSelected() {
     const name = projectName();
     if (!name) {
-      setMessage(tl('Выберите проект'), 3500);
+      setMessage(translate('projectsSelectProject', 'Select a project'), 3500);
       updateButtons(null);
       return null;
     }
@@ -186,7 +237,7 @@
     if (!project) return;
     busy = true;
     updateButtons(lastStatus);
-    setMessage(tl('Выполняю…'), 0);
+    setMessage(translate('integrationActionInProgress', 'Working…'), 0);
     try {
       const response = await global.fetch(
         `/api/v1/admin/projects/${encodeURIComponent(project)}${endpoint}`,
@@ -205,7 +256,7 @@
       if (tokenInput) tokenInput.value = '';
     } catch (error) {
       console.error('telegram_action_failed', error);
-      setMessage(error.message || tl('Ошибка действия'), 6000);
+      setMessage(error.message || translate('integrationActionFailed', 'Action failed'), 6000);
     } finally {
       busy = false;
       updateButtons(lastStatus);
@@ -218,7 +269,7 @@
         auto_start: autoStartInput ? !!autoStartInput.checked : false,
         token: tokenInput ? tokenInput.value : '',
       };
-      send('/telegram/config', payload, tl('Сохранено'));
+      send('/telegram/config', payload, translate('projectsSaved', 'Saved'));
     });
   }
 
@@ -231,7 +282,7 @@
       if (token) {
         payload.token = token;
       }
-      send('/telegram/start', payload, tl('Запущено'));
+      send('/telegram/start', payload, translate('integrationActionStarted', 'Started'));
     });
   }
 
@@ -240,14 +291,23 @@
       const payload = {
         auto_start: autoStartInput ? !!autoStartInput.checked : false,
       };
-      send('/telegram/stop', payload, tl('Остановлено'));
+      send('/telegram/stop', payload, translate('integrationActionStopped', 'Stopped'));
     });
+  }
+
+  function handleLanguageApplied() {
+    updatePlaceholder(lastStatus);
+    applyStatus(lastStatus);
+    if (!lastStatus) {
+      infoLabel.textContent = buildInfo(null);
+    }
   }
 
   registry.telegram = {
     reset,
     applyProject,
     load,
+    handleLanguageApplied,
   };
 
   reset();

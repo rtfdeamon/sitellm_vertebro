@@ -38,6 +38,11 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25);
 }
 
+.input-warning {
+  border-color: rgba(248, 113, 113, 0.8) !important;
+  box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.22);
+}
+
 .project-domain-input,
 #projectModalDomain {
   background: linear-gradient(135deg, rgba(96, 165, 250, 0.32), rgba(14, 165, 233, 0.18));

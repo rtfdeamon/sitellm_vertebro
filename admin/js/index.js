@@ -47,6 +47,14 @@ const knowledgeServiceEndpoints = [
   '/api/v1/admin/knowledge/service',
   '/api/v1/llm/admin/knowledge/service',
 ];
+
+if (knowledgeServicePrompt) {
+  knowledgeServicePrompt.addEventListener('input', () => {
+    knowledgeServicePrompt.dataset.isDefault = 'false';
+    knowledgeServicePrompt.dataset.defaultLocale = '';
+  });
+}
+let knowledgeServiceStateCache = null;
 const pollStatusProxy = (...args) => {
   const fn = typeof window.pollStatus === 'function' ? window.pollStatus : null;
   if (!fn) {
@@ -132,6 +140,19 @@ const translateText = (key, fallback, params) => {
   return fallback || '';
 };
 
+const KNOWLEDGE_DEFAULT_PROMPTS = {
+  ru: 'Ты — сервис интеллектуальной обработки базы знаний. Обрабатывай документы последовательно, разбивая каждый документ на части, которые помещаются в контекст модели. Для каждой части выполняй необходимые преобразования и обновляй содержимое по частям, чтобы итоговые изменения оставались.',
+  en: 'You are the knowledge base processing service. Process documents sequentially, splitting each document into parts that fit into the model context. For each part, perform the required transformations and update the content piece by piece so that the resulting changes persist.',
+};
+
+const getKnowledgeDefaultPrompt = (lang) => {
+  const key = typeof lang === 'string' ? lang.trim().toLowerCase() : '';
+  if (key && KNOWLEDGE_DEFAULT_PROMPTS[key]) {
+    return KNOWLEDGE_DEFAULT_PROMPTS[key];
+  }
+  return KNOWLEDGE_DEFAULT_PROMPTS.en;
+};
+
 const normalizeServiceErrorKey = (value) => {
   if (!value) return '';
   const trimmed = String(value).trim();
@@ -165,6 +186,25 @@ const translateServiceReason = (value) => {
     default:
       return value;
   }
+};
+
+const resolveKnowledgeStatusMessage = (data) => {
+  if (!data || typeof data !== 'object') {
+    return translateText('knowledgeStatusUnknown', 'Status unavailable');
+  }
+  if (data.running) {
+    return translateText('knowledgeProcessingRunning', 'Processing is running');
+  }
+  if (data.last_error) {
+    return translateText('knowledgeProcessingFailedShort', 'Processing finished with an error');
+  }
+  if (data.last_run_ts) {
+    return translateText('knowledgeProcessingSuccessShort', 'Processing finished successfully');
+  }
+  if (data.enabled) {
+    return translateText('knowledgeProcessingIdle', 'Processing idle');
+  }
+  return translateText('knowledgeProcessingDisabled', 'Processing disabled');
 };
 
 const setKnowledgeServiceControlsDisabled = (disabled) => {
@@ -273,6 +313,28 @@ function handleLanguageApplied() {
   }
   if (window.OllamaModule?.handleLanguageApplied) {
     window.OllamaModule.handleLanguageApplied();
+  }
+  if (window.StatsModule?.handleLanguageApplied) {
+    window.StatsModule.handleLanguageApplied();
+  }
+  if (knowledgeServicePrompt && knowledgeServicePrompt.dataset.isDefault === 'true') {
+    const lang = getCurrentLanguage();
+    knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(lang);
+    knowledgeServicePrompt.dataset.defaultLocale = lang;
+  }
+  if (knowledgeServiceStateCache) {
+    renderKnowledgeServiceStatus(knowledgeServiceStateCache);
+  }
+  if (window.ProjectIntegrations) {
+    Object.values(window.ProjectIntegrations).forEach((integration) => {
+      if (integration && typeof integration.handleLanguageApplied === 'function') {
+        try {
+          integration.handleLanguageApplied();
+        } catch (error) {
+          console.warn('integration_language_apply_failed', error);
+        }
+      }
+    });
   }
   if (summaryState.crawlerData) {
     const snapshot = {
@@ -766,6 +828,7 @@ const renderKnowledgeRow = (doc, category) => {
   const linkTd = document.createElement('td');
   if (doc.fileId || doc.downloadUrl || doc.url) {
     const a = document.createElement('a');
+    a.dataset.i18n = 'buttonDownload';
     a.textContent = t('buttonDownload');
     const href = doc.downloadUrl || doc.url || `/api/v1/admin/knowledge/documents/${encodeURIComponent(doc.fileId)}`;
     a.href = href;
@@ -781,10 +844,17 @@ const renderKnowledgeRow = (doc, category) => {
   const actionsTd = document.createElement('td');
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
-  editBtn.textContent = t('buttonEdit');
+  let editKey = 'buttonEdit';
+  editBtn.dataset.i18n = editKey;
+  editBtn.textContent = t(editKey);
   if (category !== 'text') {
-    editBtn.textContent = t('labelDescription');
+    editKey = 'labelDescription';
+    editBtn.dataset.i18n = editKey;
+    editBtn.textContent = t(editKey);
+    editBtn.dataset.i18nTitle = 'tooltipEditDescription';
     editBtn.title = t('tooltipEditDescription');
+  } else {
+    editBtn.removeAttribute('data-i18n-title');
   }
   editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
   actionsTd.appendChild(editBtn);
@@ -792,6 +862,7 @@ const renderKnowledgeRow = (doc, category) => {
   if (doc.fileId) {
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
+    deleteBtn.dataset.i18n = 'buttonDelete';
     deleteBtn.textContent = t('buttonDelete');
     deleteBtn.className = 'danger-btn';
     const docProject = (doc.project || doc.domain || currentProject || '').trim().toLowerCase();
@@ -1808,7 +1879,7 @@ const updateIntelligentProcessingPrompt = async (payload) => {
 function renderKnowledgeServiceStatus(data) {
   if (!knowledgeServiceStatus) return;
   const parts = [];
-  const message = data?.message || (data?.enabled ? t('serviceStateOn', 'Service enabled') : t('serviceStateOff', 'Service disabled'));
+  const message = resolveKnowledgeStatusMessage(data);
   if (message) parts.push(message);
   if (typeof data?.enabled === 'boolean') {
     parts.push(data.enabled ? t('serviceStateLabelOn', 'Service: enabled') : t('serviceStateLabelOff', 'Service: disabled'));
@@ -1950,6 +2021,7 @@ async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeO
     logReason = triggerPulse ? 'manual' : 'auto',
   } = options;
   if (!adminSession.is_super) {
+    knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUnavailable';
     knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
     setKnowledgeServiceControlsDisabled(true);
     if (showErrorToast) {
@@ -1957,6 +2029,7 @@ async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeO
     }
     return;
   }
+  knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceLoading';
   knowledgeServiceStatus.textContent = t('knowledgeServiceLoading');
   setKnowledgeServiceControlsDisabled(true);
   console.info('intelligent_processing_state_request', { reason: logReason, triggerPulse });
@@ -1969,14 +2042,32 @@ async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeO
         knowledgeServiceMode.value = modeValue;
       }
       if (knowledgeServicePrompt) {
-        knowledgeServicePrompt.value = typeof data.processing_prompt === 'string' ? data.processing_prompt : '';
+        const rawPrompt = typeof data.processing_prompt === 'string' ? data.processing_prompt.trim() : '';
+        const currentLang = getCurrentLanguage();
+        const matchedDefaultEntry = Object.entries(KNOWLEDGE_DEFAULT_PROMPTS).find(([, text]) => text === rawPrompt);
+        if (!rawPrompt) {
+          knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(currentLang);
+          knowledgeServicePrompt.dataset.isDefault = 'true';
+          knowledgeServicePrompt.dataset.defaultLocale = currentLang;
+        } else if (matchedDefaultEntry) {
+          knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(currentLang);
+          knowledgeServicePrompt.dataset.isDefault = 'true';
+          knowledgeServicePrompt.dataset.defaultLocale = currentLang;
+        } else {
+          knowledgeServicePrompt.value = rawPrompt;
+          knowledgeServicePrompt.dataset.isDefault = 'false';
+          knowledgeServicePrompt.dataset.defaultLocale = '';
+        }
       }
       renderKnowledgeServiceStatus(data);
       if (triggerPulse && knowledgeServiceCard) {
         pulseCard(knowledgeServiceCard);
       }
+      knowledgeServiceStateCache = data;
     } else {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceNoData';
       knowledgeServiceStatus.textContent = t('knowledgeServiceNoData');
+      knowledgeServiceStateCache = null;
     }
     console.info('intelligent_processing_state_success', { reason: logReason, legacy, triggerPulse });
     if (showSuccessToast) {
@@ -1985,13 +2076,16 @@ async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeO
   } catch (error) {
     if (error?.code === AUTH_CANCELLED_CODE) {
       console.info('intelligent_processing_state_cancelled', { reason: logReason });
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUnavailable';
       knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
       return;
     }
     console.error('intelligent_processing_state_error', { reason: logReason, error });
     if (error?.message === 'not_found') {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUpgrade';
       knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
     } else {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceFetchError';
       knowledgeServiceStatus.textContent = t('knowledgeServiceFetchError');
     }
     if (showErrorToast) {
@@ -2005,11 +2099,13 @@ async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeO
 async function saveKnowledgeServiceState() {
   if (!knowledgeServiceToggle) return;
   if (!adminSession.is_super) {
+    knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUnavailable';
     knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
     showToast(translateText('intelligentProcessingNoAccess', 'Only super administrators can manage processing settings'), 'error');
     console.warn('intelligent_processing_save_blocked', { reason: 'not_super_admin' });
     return;
   }
+  knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceSaving';
   knowledgeServiceStatus.textContent = t('knowledgeServiceSaving');
   setKnowledgeServiceControlsDisabled(true);
   console.info('intelligent_processing_save_attempt');
@@ -2024,6 +2120,7 @@ async function saveKnowledgeServiceState() {
       payload.processing_prompt = knowledgeServicePrompt.value;
     }
     const result = await updateIntelligentProcessingPrompt(payload);
+    knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceSaved';
     knowledgeServiceStatus.textContent = t('knowledgeServiceSaved');
     showToast(translateText('intelligentProcessingSaved', 'Processing prompt saved successfully'), 'success');
     console.info('intelligent_processing_save_success', { legacy: result?.legacy === true });
@@ -2031,13 +2128,16 @@ async function saveKnowledgeServiceState() {
   } catch (error) {
     if (error?.code === AUTH_CANCELLED_CODE) {
       console.info('intelligent_processing_save_cancelled');
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUnavailable';
       knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
       return;
     }
     console.error('intelligent_processing_save_failed', error);
     if (error?.message === 'not_found') {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUpgrade';
       knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
     } else {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceSaveError';
       knowledgeServiceStatus.textContent = t('knowledgeServiceSaveError');
     }
     showToast(translateText('intelligentProcessingSaveError', 'Failed to save processing prompt'), 'error');
@@ -2049,22 +2149,27 @@ async function saveKnowledgeServiceState() {
 async function runKnowledgeService() {
   if (!knowledgeServiceRun) return;
   if (!adminSession.is_super) return;
+  knowledgeServiceStatus.dataset.i18n = 'knowledgeProcessingStarting';
   knowledgeServiceStatus.textContent = t('knowledgeProcessingStarting');
   setKnowledgeServiceControlsDisabled(true);
   try {
     const payload = { reason: 'manual_button' };
     const result = await callKnowledgeService('POST', payload, '/run');
     if (result?.error) {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeProcessingFailed';
       knowledgeServiceStatus.textContent = t('knowledgeProcessingFailed');
     } else {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeProcessingDone';
       knowledgeServiceStatus.textContent = t('knowledgeProcessingDone');
     }
     await fetchKnowledgeServiceStatus(true);
   } catch (error) {
     console.error('knowledge_service_run_failed', error);
     if (error?.message === 'not_found') {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeServiceUpgrade';
       knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
     } else {
+      knowledgeServiceStatus.dataset.i18n = 'knowledgeProcessingStartError';
       knowledgeServiceStatus.textContent = t('knowledgeProcessingStartError');
     }
   } finally {
