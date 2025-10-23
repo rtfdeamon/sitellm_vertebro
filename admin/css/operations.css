@@ -123,6 +123,7 @@
 .crawler-logs-output {
   max-height: 200px;
   overflow-y: auto;
+  overflow-x: auto;
   background: rgba(15, 23, 42, 0.8);
   border-radius: 6px;
   padding: 10px;
@@ -131,6 +132,8 @@
   line-height: 1.5;
   color: #e2e8f0;
   user-select: text;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .crawler-actions {
