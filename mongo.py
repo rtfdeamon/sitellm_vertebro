@@ -373,6 +373,7 @@ class MongoClient:
             "updatedAt": now,
         }
         result = await self.db[self.voice_jobs_collection].insert_one(payload)
+        payload.pop("_id", None)
         payload["id"] = str(result.inserted_id)
         payload["status"] = status
         return VoiceTrainingJob(**payload)
