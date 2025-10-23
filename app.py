@@ -2557,7 +2557,12 @@ async def _fetch_qa_document(mongo_client: MongoClient, pair_id: str) -> dict | 
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
-    _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin", "/api/v1/backup")
+    _PROTECTED_PREFIXES = (
+        "/admin",
+        "/api/v1/admin",
+        "/api/v1/backup",
+        "/api/intelligent-processing",
+    )
     # Exact method+path pairs that must be admin-protected even if their prefix is different
     # Keep minimal and explicit to avoid over-protecting public APIs like crawler status.
     _PROTECTED_EXACT: set[tuple[str, str]] = {
@@ -3075,6 +3080,12 @@ KNOWLEDGE_SERVICE_KEY = "knowledge_service"
 
 class KnowledgeServiceRunRequest(BaseModel):
     reason: str | None = None
+
+
+class IntelligentProcessingPromptPayload(BaseModel):
+    enabled: bool | None = None
+    mode: Literal["auto", "manual"] | None = None
+    processing_prompt: str | None = None
 
 QA_SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xltx", ".xltm", ".csv"}
 
@@ -4506,6 +4517,46 @@ async def knowledge_service_run_alias(
     """Backward-compatible alias for manual knowledge service runs."""
 
     return await _knowledge_service_run_impl(request, payload)
+
+
+@app.get("/api/intelligent-processing/state", response_class=ORJSONResponse)
+async def intelligent_processing_state(request: Request) -> ORJSONResponse:
+    identity = _require_super_admin(request)
+    logger.info(
+        "intelligent_processing_state_requested",
+        username=identity.username,
+        is_super=identity.is_super,
+    )
+    return await _knowledge_service_status_impl(request)
+
+
+@app.post("/api/intelligent-processing/prompt", response_class=ORJSONResponse)
+async def intelligent_processing_save_prompt(
+    request: Request,
+    payload: IntelligentProcessingPromptPayload,
+) -> ORJSONResponse:
+    identity = _require_super_admin(request)
+    current = await request.state.mongo.get_setting(KNOWLEDGE_SERVICE_KEY) or {}
+    config = KnowledgeServiceConfig(
+        enabled=bool(payload.enabled)
+        if payload.enabled is not None
+        else bool(current.get("enabled", False)),
+        mode=payload.mode if payload.mode is not None else current.get("mode"),
+        processing_prompt=(
+            payload.processing_prompt
+            if payload.processing_prompt is not None
+            else current.get("processing_prompt")
+        ),
+    )
+    logger.info(
+        "intelligent_processing_prompt_update",
+        username=identity.username,
+        is_super=identity.is_super,
+        enabled=config.enabled,
+        mode=config.mode,
+        has_prompt=bool(config.processing_prompt),
+    )
+    return await _knowledge_service_update_impl(request, config)
 
 
 @llm_router.get("/admin/knowledge/service", response_class=ORJSONResponse)

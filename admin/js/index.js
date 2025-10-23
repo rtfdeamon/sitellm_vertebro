@@ -84,6 +84,53 @@ const formatTimestamp = indexUi.formatTimestamp || ((value) => {
 const pulseCard = indexUi.pulseCard || (() => {});
 let activeKnowledgeServiceEndpoint = null;
 const clusterWarning = document.getElementById('clusterWarning');
+let toastContainer = null;
+// Declare early to avoid any potential TDZ issues
+// Ensure the variable exists on the global object to prevent ReferenceError
+let kbDropZoneDefaultText = (window.kbDropZoneDefaultText ?? '');
+window.kbDropZoneDefaultText = kbDropZoneDefaultText;
+// Also resolve kbDropZone early to avoid any temporal dead zone when language applies
+const kbDropZone = document.getElementById('kbDropZone');
+kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
+window.kbDropZoneDefaultText = kbDropZoneDefaultText;
+
+const ensureToastContainer = () => {
+  if (toastContainer && document.body.contains(toastContainer)) {
+    return toastContainer;
+  }
+  const container = document.createElement('div');
+  container.className = 'toast-container';
+  document.body.appendChild(container);
+  toastContainer = container;
+  return container;
+};
+
+const showToast = (message, variant = 'info') => {
+  if (!message) return;
+  const container = ensureToastContainer();
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${variant}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.classList.add('visible');
+  });
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => {
+      if (toast.parentNode) {
+        toast.parentNode.removeChild(toast);
+      }
+    }, 220);
+  }, 3600);
+};
+
+const translateText = (key, fallback, params) => {
+  if (typeof t === 'function') {
+    return t(key, params);
+  }
+  return fallback || '';
+};
 
 const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
@@ -101,7 +148,12 @@ const AUTH_CANCELLED_CODE = 'ADMIN_AUTH_CANCELLED';
 const ADMIN_AUTH_HEADER_SESSION_KEY = 'admin_auth_header_v1';
 const ADMIN_AUTH_USER_STORAGE_KEY = 'admin_auth_user_v1';
 const ADMIN_BASE_KEY = window.location.origin.replace(/\/$/, '');
-const ADMIN_PROTECTED_PREFIXES = ['/api/v1/admin/', '/api/v1/backup/'];
+const ADMIN_PROTECTED_PREFIXES = [
+  '/api/v1/admin/',
+  '/api/v1/backup/',
+  '/api/v1/crawler/',
+  '/api/intelligent-processing/',
+];
 const ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX = '/api/v1/admin/knowledge/documents/';
 
 const {
@@ -171,7 +223,7 @@ const {
   authHint,
   authMessage,
   authError,
-  onLanguageApplied: handleLanguageApplied,
+  onLanguageApplied: () => setTimeout(handleLanguageApplied, 0),
 });
 
 function handleLanguageApplied() {
@@ -204,6 +256,7 @@ function handleLanguageApplied() {
   if (kbPriorityStatus) kbPriorityStatus.textContent = '';
   if (kbDropZone) {
     kbDropZoneDefaultText = t('dragFilesHint');
+    window.kbDropZoneDefaultText = kbDropZoneDefaultText;
     if (!kbDropZone.classList.contains('has-files')) {
       kbDropZone.textContent = kbDropZoneDefaultText;
     }
@@ -256,8 +309,6 @@ const kbAddForm = document.getElementById('kbAddForm');
 const kbNewNameInput = document.getElementById('kbNewName');
 const kbNewUrlInput = document.getElementById('kbNewUrl');
 const kbNewDescriptionInput = document.getElementById('kbNewDescription');
-const kbDropZone = document.getElementById('kbDropZone');
-let kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
 const kbNewFileInput = document.getElementById('kbNewFile');
 const kbNewContentInput = document.getElementById('kbNewContent');
 const kbAddStatus = document.getElementById('kbAddStatus');
@@ -1654,6 +1705,71 @@ function filterRecentLines(lines) {
   });
 }
 
+const INTELLIGENT_STATE_ENDPOINT = '/api/intelligent-processing/state';
+const INTELLIGENT_PROMPT_ENDPOINT = '/api/intelligent-processing/prompt';
+
+const fetchIntelligentProcessingState = async () => {
+  try {
+    const resp = await fetch(INTELLIGENT_STATE_ENDPOINT, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      credentials: 'same-origin',
+    });
+    if (resp.status === 404) {
+      const legacyData = await callKnowledgeService('GET');
+      return { data: legacyData, legacy: true };
+    }
+    if (!resp.ok) {
+      const err = new Error(`HTTP ${resp.status}`);
+      err.status = resp.status;
+      throw err;
+    }
+    const data = await resp.json();
+    return { data, legacy: false };
+  } catch (error) {
+    if (error?.status === 404 || error?.status === 401) {
+      const legacyData = await callKnowledgeService('GET');
+      return { data: legacyData, legacy: true };
+    }
+    throw error;
+  }
+};
+
+const updateIntelligentProcessingPrompt = async (payload) => {
+  try {
+    const resp = await fetch(INTELLIGENT_PROMPT_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload),
+    });
+    if (resp.status === 404) {
+      await callKnowledgeService('POST', payload);
+      return { data: null, legacy: true };
+    }
+    if (!resp.ok) {
+      const err = new Error(`HTTP ${resp.status}`);
+      err.status = resp.status;
+      throw err;
+    }
+    let data = null;
+    const contentType = resp.headers.get('Content-Type') || '';
+    if (contentType.includes('application/json')) {
+      data = await resp.json();
+    }
+    return { data, legacy: false };
+  } catch (error) {
+    if (error?.status === 404 || error?.status === 401) {
+      await callKnowledgeService('POST', payload);
+      return { data: null, legacy: true };
+    }
+    throw error;
+  }
+};
+
 function renderKnowledgeServiceStatus(data) {
   if (!knowledgeServiceStatus) return;
   const parts = [];
@@ -1755,17 +1871,42 @@ async function callKnowledgeService(method = 'GET', payload = null, pathSuffix =
   throw lastError || new Error('knowledge service unavailable');
 }
 
-async function fetchKnowledgeServiceStatus(triggerPulse = false) {
+async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeOptions = {}) {
   if (!knowledgeServiceToggle) return;
+  let triggerPulse = triggerPulseOrOptions;
+  let options = maybeOptions;
+  if (typeof triggerPulseOrOptions === 'object' && triggerPulseOrOptions !== null) {
+    options = triggerPulseOrOptions;
+    triggerPulse = Boolean(triggerPulseOrOptions.triggerPulse);
+  }
+  if (typeof triggerPulse !== 'boolean') {
+    triggerPulse = Boolean(triggerPulse);
+  }
+  if (!options || typeof options !== 'object') {
+    options = {};
+  }
+  const {
+    showSuccessToast = false,
+    successMessageKey = 'intelligentProcessingRefreshed',
+    successMessageFallback = 'Settings refreshed',
+    showErrorToast = triggerPulse,
+    errorMessageKey = 'intelligentProcessingRefreshError',
+    errorMessageFallback = 'Failed to refresh settings',
+    logReason = triggerPulse ? 'manual' : 'auto',
+  } = options;
   if (!adminSession.is_super) {
     knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
     setKnowledgeServiceControlsDisabled(true);
+    if (showErrorToast) {
+      showToast(translateText('intelligentProcessingNoAccess', 'Only super administrators can manage processing settings'), 'error');
+    }
     return;
   }
   knowledgeServiceStatus.textContent = t('knowledgeServiceLoading');
   setKnowledgeServiceControlsDisabled(true);
+  console.info('intelligent_processing_state_request', { reason: logReason, triggerPulse });
   try {
-    const data = await callKnowledgeService('GET');
+    const { data, legacy } = await fetchIntelligentProcessingState();
     if (data) {
       knowledgeServiceToggle.checked = !!data.enabled;
       if (knowledgeServiceMode) {
@@ -1782,12 +1923,24 @@ async function fetchKnowledgeServiceStatus(triggerPulse = false) {
     } else {
       knowledgeServiceStatus.textContent = t('knowledgeServiceNoData');
     }
+    console.info('intelligent_processing_state_success', { reason: logReason, legacy, triggerPulse });
+    if (showSuccessToast) {
+      showToast(translateText(successMessageKey, successMessageFallback), 'success');
+    }
   } catch (error) {
-    console.error('knowledge_service_status_failed', error);
+    if (error?.code === AUTH_CANCELLED_CODE) {
+      console.info('intelligent_processing_state_cancelled', { reason: logReason });
+      knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
+      return;
+    }
+    console.error('intelligent_processing_state_error', { reason: logReason, error });
     if (error?.message === 'not_found') {
       knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
     } else {
       knowledgeServiceStatus.textContent = t('knowledgeServiceFetchError');
+    }
+    if (showErrorToast) {
+      showToast(translateText(errorMessageKey, errorMessageFallback), 'error');
     }
   } finally {
     setKnowledgeServiceControlsDisabled(false);
@@ -1796,9 +1949,15 @@ async function fetchKnowledgeServiceStatus(triggerPulse = false) {
 
 async function saveKnowledgeServiceState() {
   if (!knowledgeServiceToggle) return;
-  if (!adminSession.is_super) return;
+  if (!adminSession.is_super) {
+    knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
+    showToast(translateText('intelligentProcessingNoAccess', 'Only super administrators can manage processing settings'), 'error');
+    console.warn('intelligent_processing_save_blocked', { reason: 'not_super_admin' });
+    return;
+  }
   knowledgeServiceStatus.textContent = t('knowledgeServiceSaving');
   setKnowledgeServiceControlsDisabled(true);
+  console.info('intelligent_processing_save_attempt');
   try {
     const payload = {
       enabled: knowledgeServiceToggle.checked,
@@ -1809,16 +1968,24 @@ async function saveKnowledgeServiceState() {
     if (knowledgeServicePrompt) {
       payload.processing_prompt = knowledgeServicePrompt.value;
     }
-    await callKnowledgeService('POST', payload);
+    const result = await updateIntelligentProcessingPrompt(payload);
     knowledgeServiceStatus.textContent = t('knowledgeServiceSaved');
+    showToast(translateText('intelligentProcessingSaved', 'Processing prompt saved successfully'), 'success');
+    console.info('intelligent_processing_save_success', { legacy: result?.legacy === true });
     await fetchKnowledgeServiceStatus(true);
   } catch (error) {
-    console.error('knowledge_service_save_failed', error);
+    if (error?.code === AUTH_CANCELLED_CODE) {
+      console.info('intelligent_processing_save_cancelled');
+      knowledgeServiceStatus.textContent = t('knowledgeServiceUnavailable');
+      return;
+    }
+    console.error('intelligent_processing_save_failed', error);
     if (error?.message === 'not_found') {
       knowledgeServiceStatus.textContent = t('knowledgeServiceUpgrade');
     } else {
       knowledgeServiceStatus.textContent = t('knowledgeServiceSaveError');
     }
+    showToast(translateText('intelligentProcessingSaveError', 'Failed to save processing prompt'), 'error');
   } finally {
     setKnowledgeServiceControlsDisabled(false);
   }
@@ -2123,7 +2290,19 @@ if (knowledgeServiceRun) {
   knowledgeServiceRun.addEventListener('click', runKnowledgeService);
 }
 if (knowledgeServiceRefresh) {
-  knowledgeServiceRefresh.addEventListener('click', () => fetchKnowledgeServiceStatus(true));
+  knowledgeServiceRefresh.addEventListener('click', () => {
+    console.info('intelligent_processing_refresh_clicked');
+    fetchKnowledgeServiceStatus({
+      triggerPulse: true,
+      showSuccessToast: true,
+      successMessageKey: 'intelligentProcessingRefreshed',
+      successMessageFallback: 'Settings refreshed',
+      showErrorToast: true,
+      errorMessageKey: 'intelligentProcessingRefreshError',
+      errorMessageFallback: 'Failed to refresh settings',
+      logReason: 'refresh_button',
+    });
+  });
 }
 if (feedbackRefreshBtn) {
   feedbackRefreshBtn.addEventListener('click', () => fetchFeedbackTasks());
