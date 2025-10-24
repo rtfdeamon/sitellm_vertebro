@@ -74,7 +74,7 @@
 }
 .qa-import { display: grid; gap: 12px; }
 .qa-upload { display: grid; gap: 6px; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); }
-.qa-upload input { background: rgba(15, 23, 42, 0.55); border: 1px dashed rgba(148, 163, 184, 0.35); border-radius: 12px; padding: 14px; color: var(--text-primary); }
+.qa-upload .file-control { margin-top: 2px; }
 .qa-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .qa-actions button { padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(17, 24, 39, 0.6); color: var(--text-primary); text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; }
 .qa-table textarea { width: 100%; min-height: 80px; resize: vertical; background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(148, 163, 184, 0.35); color: var(--text-primary); border-radius: 10px; font-family: inherit; padding: 8px 10px; }

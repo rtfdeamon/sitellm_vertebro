@@ -203,8 +203,52 @@
   align-items: center;
 }
 
-.voice-upload input[type="file"] {
-  flex: 1 1 240px;
+.file-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 100%;
+}
+
+.file-control input[type="file"] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.file-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(96, 165, 250, 0.45);
+  background: rgba(96, 165, 250, 0.15);
+  color: rgba(226, 232, 255, 0.95);
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
+.file-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(56, 189, 248, 0.25);
+}
+
+.file-button:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.file-label {
+  font-size: 13px;
+  color: rgba(203, 213, 225, 0.85);
+  min-width: 120px;
+  flex: 1 1 auto;
+  word-break: break-word;
 }
 
 .voice-upload-actions {

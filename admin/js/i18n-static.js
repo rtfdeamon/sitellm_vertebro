@@ -1662,6 +1662,18 @@
         ru: 'Дорожки не загружены.',
         match: ['Дорожки не загружены.'],
       },
+      fileSelectButton: {
+        en: 'Choose files',
+        ru: 'Выбрать файлы',
+      },
+      fileNoFileSelected: {
+        en: 'No files selected',
+        ru: 'Файлы не выбраны',
+      },
+      fileFilesSelected: {
+        en: '{count} files selected',
+        ru: '{count} файлов',
+      },
       noRecordsText: {
         en: 'No records yet.',
         ru: 'Пока нет записей.',
