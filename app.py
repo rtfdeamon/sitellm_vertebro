@@ -4255,14 +4255,13 @@ async def admin_update_knowledge_qa(
     if not question or not answer:
         raise HTTPException(status_code=400, detail="question_and_answer_required")
 
-    updates = {
-        "question": question,
-        "answer": answer,
-        "priority": payload.priority,
-    }
-
     try:
-        updated = await mongo_client.update_qa_pair(pair_id, updates)
+        updated = await mongo_client.update_qa_pair(
+            pair_id,
+            question=question,
+            answer=answer,
+            priority=payload.priority,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error("knowledge_qa_update_failed", pair_id=pair_id, project=project_scope, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to update QA pair") from exc
