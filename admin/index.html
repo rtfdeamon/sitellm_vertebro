@@ -106,7 +106,11 @@
                 <input type="text" id="kbNewDescription" data-i18n-placeholder="shortDescriptionPlaceholder" placeholder="Short description" style="width:100%;">
               </label>
               <label style="flex:1 1 220px;" data-i18n="labelFile">File
-                <input type="file" id="kbNewFile" multiple style="width:100%;">
+                <div class="file-control" style="margin-top:6px;">
+                  <label class="file-button" for="kbNewFile" data-i18n="fileSelectButton">Choose files</label>
+                  <span class="file-label" id="kbNewFileLabel" data-i18n="fileNoFileSelected">No files selected</span>
+                  <input type="file" id="kbNewFile" multiple>
+                </div>
               </label>
               <div id="kbDropZone" class="drop-zone" style="flex:1 1 100%;" data-i18n="dragFilesHint">
                 Drag files here or use the field above
@@ -177,7 +181,11 @@
               <form id="kbQaImportForm">
                 <label class="qa-upload">
                   <span data-i18n="knowledgeQaUploadHint">Excel file with columns “Question” and “Answer”</span>
-                  <input type="file" id="kbQaFile" accept=".xlsx,.xlsm,.xltx,.xltm,.csv" required>
+                  <div class="file-control">
+                    <label class="file-button" for="kbQaFile" data-i18n="fileSelectButton">Choose files</label>
+                    <span class="file-label" id="kbQaFileLabel" data-i18n="fileNoFileSelected">No files selected</span>
+                    <input type="file" id="kbQaFile" accept=".xlsx,.xlsm,.xltx,.xltm,.csv" required>
+                  </div>
                 </label>
                 <div class="qa-actions">
                   <button type="submit" data-i18n="buttonImport">Import</button>
@@ -490,7 +498,11 @@
         </div>
         <div class="voice-upload">
           <div class="voice-upload-row">
-            <input type="file" id="voiceSampleInput" accept="audio/*" capture="microphone" multiple>
+            <div class="file-control">
+              <label class="file-button" for="voiceSampleInput" data-i18n="fileSelectButton">Choose files</label>
+              <span class="file-label" id="voiceSampleLabel" data-i18n="fileNoFileSelected">No files selected</span>
+              <input type="file" id="voiceSampleInput" accept="audio/*" capture="microphone" multiple>
+            </div>
             <button type="button" id="voiceSampleUpload" data-i18n="voiceUploadButton">Upload clips</button>
           </div>
           <div class="voice-upload-actions">

@@ -40,6 +40,7 @@
     recordButton: doc.getElementById('voiceRecordBtn'),
     recordStatus: doc.getElementById('voiceRecordStatus'),
     jobsContainer: doc.getElementById('voiceJobsContainer'),
+    fileLabel: doc.getElementById('voiceSampleLabel'),
   };
 
   const hasUi = Object.values(elements).some(Boolean);
@@ -87,6 +88,23 @@
       : translate('voiceRecordButton', 'Record sample')
   );
 
+  const updateFileSelectionLabel = () => {
+    if (!elements.fileLabel) return;
+    const files = elements.fileInput?.files;
+    if (!files || !files.length) {
+      elements.fileLabel.dataset.i18n = 'fileNoFileSelected';
+      elements.fileLabel.textContent = translate('fileNoFileSelected', 'No files selected');
+      return;
+    }
+    if (files.length === 1) {
+      delete elements.fileLabel.dataset.i18n;
+      elements.fileLabel.textContent = files[0].name;
+      return;
+    }
+    elements.fileLabel.dataset.i18n = 'fileFilesSelected';
+    elements.fileLabel.textContent = translate('fileFilesSelected', '{count} files selected', { count: files.length });
+  };
+
   const refreshVoiceTrainingState = () => {
     const currentProject = (global.currentProject || '').trim();
     const activeJob = state.jobPending || state.jobs.some((job) => VOICE_ACTIVE_STATUSES.has(String(job.status || '').toLowerCase()));
@@ -97,6 +115,9 @@
     }
     if (elements.fileInput) {
       elements.fileInput.disabled = !currentProject || state.recorder.active;
+      if (!currentProject) {
+        updateFileSelectionLabel();
+      }
     }
     if (elements.recordButton) {
       elements.recordButton.disabled = !MEDIA_RECORDER_SUPPORTED || !currentProject || activeJob || state.recorder.uploading;
@@ -105,15 +126,16 @@
     if (elements.trainButton) {
       elements.trainButton.disabled = !currentProject || activeJob || !enoughSamples;
     }
-  if (elements.trainStatus) {
-    if (activeJob) {
-      elements.trainStatus.textContent = translate('voiceTrainingAlreadyRunning', 'Training is already running');
-    } else if (!enoughSamples && state.samples.length > 0) {
-      elements.trainStatus.textContent = translate('voiceAddMoreSamples', 'Add more samples');
-    } else if ([translate('voiceTrainingAlreadyRunning', 'Training is already running'), translate('voiceAddMoreSamples', 'Add more samples')].includes(elements.trainStatus.textContent)) {
-      elements.trainStatus.textContent = '—';
+    if (elements.trainStatus) {
+      if (activeJob) {
+        elements.trainStatus.textContent = translate('voiceTrainingAlreadyRunning', 'Training is already running');
+      } else if (!enoughSamples && state.samples.length > 0) {
+        elements.trainStatus.textContent = translate('voiceAddMoreSamples', 'Add more samples');
+      } else if ([translate('voiceTrainingAlreadyRunning', 'Training is already running'), translate('voiceAddMoreSamples', 'Add more samples')].includes(elements.trainStatus.textContent)) {
+        elements.trainStatus.textContent = '—';
+      }
     }
-  }
+    updateFileSelectionLabel();
   };
 
   const cleanupRecorderStream = () => {
@@ -166,6 +188,7 @@
       elements.jobsContainer.innerHTML = '';
     }
     refreshVoiceTrainingState();
+    updateFileSelectionLabel();
   };
 
   const uploadRecordedBlob = async (blob, filename) => {
@@ -368,6 +391,7 @@
     if (!state.jobs.length) {
       const placeholder = doc.createElement('div');
       placeholder.className = 'muted';
+      placeholder.dataset.i18n = 'voiceHistoryEmpty';
       placeholder.textContent = translate('voiceHistoryEmpty', 'Training history will appear after the first run.');
       elements.jobsContainer.appendChild(placeholder);
       refreshVoiceTrainingState();
@@ -457,6 +481,7 @@
       const data = await response.json();
       renderVoiceSamples(data.samples || []);
       elements.fileInput.value = '';
+      updateFileSelectionLabel();
       if (elements.uploadStatus) elements.uploadStatus.textContent = translate('voiceDone', 'Done');
     } catch (error) {
       console.error('voice_upload_failed', error);
@@ -539,6 +564,13 @@
     if (elements.recordButton) {
       elements.recordButton.textContent = translateRecordLabel(state.recorder.active);
     }
+    if (elements.jobsContainer) {
+      const placeholder = elements.jobsContainer.querySelector('[data-i18n="voiceHistoryEmpty"]');
+      if (placeholder) {
+        placeholder.textContent = translate('voiceHistoryEmpty', 'Training history will appear after the first run.');
+      }
+    }
+    updateFileSelectionLabel();
     refreshVoiceTrainingState();
   };
 
@@ -552,6 +584,9 @@
         }
         uploadVoiceSamples(project);
       });
+    }
+    if (elements.fileInput) {
+      elements.fileInput.addEventListener('change', updateFileSelectionLabel);
     }
     if (elements.recordButton) {
       if (!MEDIA_RECORDER_SUPPORTED) {
@@ -590,6 +625,7 @@
   resetVoiceTrainingUi();
   bindEvents();
   refreshVoiceTrainingState();
+  updateFileSelectionLabel();
 
   global.VoiceModule = {
     refresh: refreshVoiceTraining,

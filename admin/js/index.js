@@ -207,6 +207,28 @@ const resolveKnowledgeStatusMessage = (data) => {
   return translateText('knowledgeProcessingDisabled', 'Processing disabled');
 };
 
+const updateFileInputLabel = (input, label, filesOverride) => {
+  if (!label) return;
+  let files = [];
+  if (filesOverride && typeof filesOverride.length === 'number') {
+    files = Array.from(filesOverride);
+  } else if (input?.files) {
+    files = Array.from(input.files);
+  }
+  if (!files.length) {
+    label.dataset.i18n = 'fileNoFileSelected';
+    label.textContent = t('fileNoFileSelected');
+    return;
+  }
+  if (files.length === 1) {
+    delete label.dataset.i18n;
+    label.textContent = files[0].name;
+    return;
+  }
+  label.dataset.i18n = 'fileFilesSelected';
+  label.textContent = t('fileFilesSelected', { count: files.length });
+};
+
 const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
   if (knowledgeServiceApply) knowledgeServiceApply.disabled = disabled;
@@ -325,6 +347,8 @@ function handleLanguageApplied() {
   if (knowledgeServiceStateCache) {
     renderKnowledgeServiceStatus(knowledgeServiceStateCache);
   }
+  updateFileInputLabel(kbNewFileInput, kbNewFileLabel);
+  updateFileInputLabel(kbQaFileInput, kbQaFileLabel);
   if (window.ProjectIntegrations) {
     Object.values(window.ProjectIntegrations).forEach((integration) => {
       if (integration && typeof integration.handleLanguageApplied === 'function') {
@@ -407,6 +431,7 @@ const kbNewNameInput = document.getElementById('kbNewName');
 const kbNewUrlInput = document.getElementById('kbNewUrl');
 const kbNewDescriptionInput = document.getElementById('kbNewDescription');
 const kbNewFileInput = document.getElementById('kbNewFile');
+const kbNewFileLabel = document.getElementById('kbNewFileLabel');
 const kbNewContentInput = document.getElementById('kbNewContent');
 const kbAddStatus = document.getElementById('kbAddStatus');
 const kbResetFormBtn = document.getElementById('kbResetForm');
@@ -427,6 +452,7 @@ const kbCountQa = document.getElementById('kbCountQa');
 const kbQaStatus = document.getElementById('kbQaStatus');
 const kbQaImportForm = document.getElementById('kbQaImportForm');
 const kbQaFileInput = document.getElementById('kbQaFile');
+const kbQaFileLabel = document.getElementById('kbQaFileLabel');
 const kbQaAddRowBtn = document.getElementById('kbQaAddRow');
 const kbPriorityList = document.getElementById('kbPriorityList');
 const kbPrioritySave = document.getElementById('kbPrioritySave');
@@ -1386,9 +1412,25 @@ if (kbUnansweredClearBtn) {
 if (kbNewFileInput) {
   kbNewFileInput.addEventListener('change', () => {
     dropFilesBuffer = [];
+    updateFileInputLabel(kbNewFileInput, kbNewFileLabel);
     updateDropZonePreview(kbNewFileInput.files);
   });
 }
+
+if (kbQaFileInput) {
+  kbQaFileInput.addEventListener('change', () => {
+    updateFileInputLabel(kbQaFileInput, kbQaFileLabel);
+  });
+}
+
+if (kbQaImportForm) {
+  kbQaImportForm.addEventListener('reset', () => {
+    updateFileInputLabel(kbQaFileInput, kbQaFileLabel, []);
+  });
+}
+
+updateFileInputLabel(kbNewFileInput, kbNewFileLabel);
+updateFileInputLabel(kbQaFileInput, kbQaFileLabel);
 
 if (kbDropZone) {
   ['dragenter', 'dragover'].forEach((eventName) => {
@@ -1420,6 +1462,7 @@ if (kbDropZone) {
         dropFilesBuffer.forEach((file) => dt.items.add(file));
         kbNewFileInput.files = dt.files;
         dropFilesBuffer = [];
+        updateFileInputLabel(kbNewFileInput, kbNewFileLabel);
       } catch {
         /* ignore fallback buffer */
       }
@@ -1427,6 +1470,9 @@ if (kbDropZone) {
     const source = (kbNewFileInput && kbNewFileInput.files && kbNewFileInput.files.length)
       ? kbNewFileInput.files
       : dropFilesBuffer;
+    if (!kbNewFileInput || !kbNewFileInput.files?.length) {
+      updateFileInputLabel(null, kbNewFileLabel, source);
+    }
     updateDropZonePreview(source);
   });
 }
@@ -1738,6 +1784,7 @@ function resetKnowledgeForm() {
   if (kbNewFileInput) {
     kbNewFileInput.value = '';
   }
+  updateFileInputLabel(kbNewFileInput, kbNewFileLabel, []);
   updateDropZonePreview([]);
   if (kbDropZone) {
     kbDropZone.classList.remove('has-files', 'drag-over');
