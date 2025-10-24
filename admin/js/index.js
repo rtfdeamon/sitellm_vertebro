@@ -1057,6 +1057,27 @@ const renderKnowledgeDocuments = (documents) => {
   });
 };
 
+function resetKnowledgeSelection() {
+  if (kbProjectInput) {
+    kbProjectInput.value = '';
+  }
+  knowledgeDocumentsCache = [];
+  renderKnowledgeDocuments([]);
+  knowledgeInfoSnapshot = null;
+  knowledgeProjectSnapshot = null;
+  renderKnowledgeSummaryFromSnapshot();
+  renderKnowledgePriority([]);
+  renderKnowledgeQa([]);
+  if (kbQaStatus) kbQaStatus.textContent = '';
+  if (kbCountQa) kbCountQa.textContent = '0';
+  knowledgeUnansweredItems = [];
+  renderUnansweredQuestions([]);
+  setUnansweredVisibility(false);
+  return true;
+}
+
+window.resetKnowledgeSelection = resetKnowledgeSelection;
+
 const renderKnowledgeQa = (items) => {
   qaPairsCache = Array.isArray(items) ? items.slice() : [];
   if (!kbTableQa) return;
@@ -1887,7 +1908,7 @@ if (kbQaImportForm) {
   kbQaImportForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!kbQaFileInput || !kbQaFileInput.files?.length) {
-      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportNoFile', 'Choose a file to import.');
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportNoFile', 'Choose a CSV or Excel file to import.');
       return;
     }
     const projectKey = getKnowledgeProjectKey();
@@ -1897,54 +1918,49 @@ if (kbQaImportForm) {
     }
     const [file] = kbQaFileInput.files;
     const name = (file?.name || '').toLowerCase();
-    if (!name.endsWith('.csv')) {
-      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportUnsupported', 'Only CSV import supported at the moment.');
+    const supportedExtensions = ['.csv', '.xlsx', '.xlsm', '.xltx', '.xltm'];
+    const extensionAllowed = supportedExtensions.some((ext) => name.endsWith(ext));
+    if (!extensionAllowed) {
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportUnsupported', 'Unsupported file type. Upload CSV or Excel (.xlsx).');
       return;
     }
     if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImporting', 'Importing…');
     try {
-      const text = await file.text();
-      const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      if (lines.length < 2) {
-        if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportEmpty', 'File does not contain data.');
-        return;
+      const formData = new FormData();
+      formData.set('project', projectKey);
+      formData.set('file', file, file.name || 'qa-upload');
+      const resp = await fetchWithAdminAuth('/api/v1/admin/knowledge/qa/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!resp.ok) {
+        throw new Error(await extractResponseError(resp));
       }
-      const delimiter = lines[0].includes(';') && !lines[0].includes(',') ? ';' : ',';
-      const headers = lines[0].split(delimiter).map((cell) => cell.trim().replace(/^"|"$/g, '').toLowerCase());
-      const questionIndex = headers.findIndex((value) => value.includes('question') || value === 'q');
-      const answerIndex = headers.findIndex((value) => value.includes('answer') || value === 'a');
-      const priorityIndex = headers.findIndex((value) => value.includes('priority'));
-      if (questionIndex === -1 || answerIndex === -1) {
-        if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportMissingColumns', 'Columns “Question” and “Answer” are required.');
-        return;
-      }
-      let imported = 0;
-      let failed = 0;
-      for (let i = 1; i < lines.length; i += 1) {
-        const rawCells = lines[i].split(delimiter).map((cell) => cell.replace(/^"|"$/g, '').trim());
-        const question = rawCells[questionIndex] || '';
-        const answer = rawCells[answerIndex] || '';
-        if (!question || !answer) {
-          failed += 1;
-          continue;
-        }
-        const priority = priorityIndex >= 0 ? Number(rawCells[priorityIndex] || 0) : 0;
-        try {
-          await saveQaPair({ question, answer, priority });
-          imported += 1;
-        } catch (error) {
-          console.error('knowledge_qa_import_pair_failed', { line: i + 1, error });
-          failed += 1;
-        }
-      }
+      const data = await resp.json().catch(() => ({}));
+      const inserted = Number.isFinite(Number(data?.inserted)) ? Number(data.inserted) : 0;
+      const updated = Number.isFinite(Number(data?.updated)) ? Number(data.updated) : 0;
+      const skipped = Number.isFinite(Number(data?.skipped)) ? Number(data.skipped) : 0;
+      const imported = inserted + updated;
       await loadKnowledgeQa(projectKey);
+      const summary = translateText(
+        'knowledgeQaImportSummary',
+        'Imported: {imported}, updated: {updated}, skipped: {skipped}',
+        { imported, updated, skipped },
+      );
       if (kbQaStatus) {
-        kbQaStatus.textContent = translateText('knowledgeQaImportSummary', 'Imported: {imported}, skipped: {failed}', { imported, failed });
+        kbQaStatus.textContent = summary;
       }
+      showToast(summary, 'success');
       if (kbQaImportForm) kbQaImportForm.reset();
     } catch (error) {
       console.error('knowledge_qa_import_failed', error);
-      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportError', 'Failed to import file.');
+      const message = translateText(
+        'knowledgeQaImportError',
+        'Failed to import file: {error}',
+        { error: getErrorMessage(error) },
+      );
+      if (kbQaStatus) kbQaStatus.textContent = message;
+      showToast(message, 'error');
     }
   });
 }

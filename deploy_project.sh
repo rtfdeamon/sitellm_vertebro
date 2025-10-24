@@ -640,11 +640,37 @@ fi
 VAL_OLLAMA_BASE=$(awk -F= '/^OLLAMA_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
 VAL_MODEL_BASE=$(awk -F= '/^MODEL_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
 
-# Treat non-empty as configured
-LOCAL_LLM_ENABLED=true
-if [ -n "${VAL_MODEL_BASE}" ] || [ -n "${VAL_OLLAMA_BASE}" ]; then
-  LOCAL_LLM_ENABLED=false
+# Respect explicit LOCAL_LLM_ENABLED from env; otherwise derive a default.
+LOCAL_LLM_ENABLED_RAW="${LOCAL_LLM_ENABLED:-}"
+if [ -z "$LOCAL_LLM_ENABLED_RAW" ] && [ -f .env ]; then
+  LOCAL_LLM_ENABLED_RAW=$(awk -F= '/^LOCAL_LLM_ENABLED=/{print $2}' .env 2>/dev/null | tail -n1 || true)
 fi
+
+if [ -n "$LOCAL_LLM_ENABLED_RAW" ]; then
+  if [ "$(normalize_bool "$LOCAL_LLM_ENABLED_RAW")" = "1" ]; then
+    LOCAL_LLM_ENABLED="true"
+  else
+    LOCAL_LLM_ENABLED="false"
+  fi
+else
+  LOCAL_LLM_ENABLED="true"
+  if [ -n "${VAL_MODEL_BASE}" ] || [ -n "${VAL_OLLAMA_BASE}" ]; then
+    LOCAL_LLM_ENABLED="false"
+  fi
+fi
+
+if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
+  AUTOSTART_LOCAL_OLLAMA="1"
+  update_env_var RUN_LOCAL_AUTOSTART_OLLAMA "$AUTOSTART_LOCAL_OLLAMA"
+  update_env_var COMPOSE_PROFILES "local-ollama"
+  if [ "$VAL_OLLAMA_BASE" != "http://ollama:11434" ]; then
+    VAL_OLLAMA_BASE="http://ollama:11434"
+    update_env_var OLLAMA_BASE_URL "$VAL_OLLAMA_BASE"
+  fi
+else
+  update_env_var COMPOSE_PROFILES ""
+fi
+
 update_env_var LOCAL_LLM_ENABLED "${LOCAL_LLM_ENABLED}"
 USE_GPU=false
 
@@ -735,10 +761,7 @@ done
 
 # Enable compose profiles only when local LLM is enabled
 PROFILE_ARGS=()
-if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
-  PROFILE_ARGS+=(--profile local-llm)
-fi
-if [ "$AUTOSTART_LOCAL_OLLAMA" = "1" ]; then
+if [ "${LOCAL_LLM_ENABLED}" = "true" ] || [ "$AUTOSTART_LOCAL_OLLAMA" = "1" ]; then
   PROFILE_ARGS+=(--profile local-ollama)
 fi
 
