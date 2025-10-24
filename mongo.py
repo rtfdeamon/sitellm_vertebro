@@ -962,18 +962,59 @@ class MongoClient:
 
         results: list[dict[str, object]] = []
         async for doc in cursor:
-            results.append(
-                {
-                    "id": str(doc.get("_id")),
-                    "question": doc.get("question", ""),
-                    "answer": doc.get("answer", ""),
-                    "priority": int(doc.get("priority", 0)),
-                    "project": doc.get("project"),
-                    "score": doc.get("score"),
-                    "updated_at": doc.get("updated_at"),
-                }
+                results.append(
+                    {
+                        "id": str(doc.get("_id")),
+                        "question": doc.get("question", ""),
+                        "answer": doc.get("answer", ""),
+                        "priority": int(doc.get("priority", 0)),
+                        "project": doc.get("project"),
+                        "score": doc.get("score"),
+                        "updated_at": doc.get("updated_at"),
+                    }
+                )
+
+        if results:
+            return results[:limit]
+
+        # Fallback: perform lightweight similarity scoring when text index misses.
+        try:
+            cursor = (
+                self.db[self.qa_collection]
+                .find(
+                    filter_query,
+                    {
+                        "_id": True,
+                        "question": True,
+                        "answer": True,
+                        "priority": True,
+                        "project": True,
+                        "updated_at": True,
+                    },
+                )
+                .sort([("priority", -1), ("updated_at", -1)])
+                .limit(200)
             )
-        return results
+            candidates = [self._serialize_qa(doc) async for doc in cursor]
+        except Exception as exc:
+            logger.debug("mongo_qa_similarity_fallback_failed", project=project, error=str(exc))
+            return []
+
+        if not candidates:
+            return []
+
+        scored: list[dict[str, object]] = []
+        cleaned_lower = cleaned.lower()
+        for doc in candidates:
+            question_text = str(doc.get("question") or "")
+            ratio = SequenceMatcher(None, question_text.lower(), cleaned_lower).ratio()
+            if ratio < 0.35:
+                continue
+            enriched = doc | {"score": ratio}
+            scored.append(enriched)
+
+        scored.sort(key=lambda item: (item.get("score") or 0, item.get("priority") or 0), reverse=True)
+        return scored[:limit]
 
     async def record_unanswered_question(
         self,
@@ -2089,48 +2130,6 @@ class MongoClient:
             bulk.execute()
         except Exception as exc:
             logger.debug("mongo_qa_reorder_failed", project=project, error=str(exc))
-
-    async def search_qa_pairs(self, project: str | None, query: str, *, limit: int = 4) -> list[dict]:
-        query = (query or "").strip()
-        if not query:
-            return []
-        filter_query: dict[str, object] = {}
-        if project:
-            filter_query["project"] = project
-        try:
-            cursor = (
-                self.db[self.qa_collection]
-                .find({**filter_query, "$text": {"$search": query}}, {"_id": True, "question": True, "answer": True, "priority": True, "project": True, "score": {"$meta": "textScore"}})
-                .sort([("priority", -1), ("score", -1)])
-                .limit(limit * 2)
-            )
-            results = [self._serialize_qa(doc) | {"score": doc.get("score") or 0} async for doc in cursor]
-        except Exception:
-            results = []
-        if not results:
-            # fallback: simple similarity check
-            try:
-                cursor = (
-                    self.db[self.qa_collection]
-                    .find(filter_query, {"_id": True, "question": True, "answer": True, "priority": True, "project": True})
-                    .sort("priority", -1)
-                    .limit(200)
-                )
-                all_docs = [self._serialize_qa(doc) async for doc in cursor]
-            except Exception:
-                all_docs = []
-            scored = []
-            for doc in all_docs:
-                question = doc.get("question") or ""
-                ratio = SequenceMatcher(None, question.lower(), query.lower()).ratio()
-                if ratio < 0.35:
-                    continue
-                doc["score"] = ratio
-                scored.append(doc)
-            results = sorted(scored, key=lambda d: (d.get("priority", 0), d.get("score", 0)), reverse=True)[: limit]
-        else:
-            results = results[:limit]
-        return results
 
     async def log_unanswered_question(self, *, project: str | None, question: str, channel: str | None, session_id: str | None) -> None:
         question = (question or "").strip()
