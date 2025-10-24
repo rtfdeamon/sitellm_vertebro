@@ -629,6 +629,67 @@ class MongoClient:
             "removed_ids": removed,
         }
 
+    async def delete_documents(
+        self,
+        documents_collection: str,
+        project: str | None = None,
+    ) -> dict[str, object]:
+        """Remove all documents (and GridFS payloads) optionally scoped to ``project``."""
+
+        filter_query: dict[str, object] = {}
+        if project:
+            filter_query["project"] = project
+
+        total = 0
+        removed_ids: list[str] = []
+        try:
+            cursor = self.db[documents_collection].find(filter_query, {"_id": False, "fileId": 1})
+            async for doc in cursor:
+                total += 1
+                file_id = doc.get("fileId")
+                if isinstance(file_id, str) and file_id:
+                    removed_ids.append(file_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "mongo_list_documents_for_delete_failed",
+                collection=documents_collection,
+                project=project,
+                error=str(exc),
+            )
+            raise
+
+        try:
+            delete_result = await self.db[documents_collection].delete_many(filter_query)
+            removed_metadata = int(delete_result.deleted_count)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "mongo_clear_documents_failed",
+                collection=documents_collection,
+                project=project,
+                error=str(exc),
+            )
+            raise
+
+        removed_from_gridfs = 0
+        seen_ids: set[str] = set()
+        for file_id in removed_ids:
+            if file_id in seen_ids:
+                continue
+            seen_ids.add(file_id)
+            try:
+                await self.gridfs.delete(ObjectId(file_id))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("gridfs_bulk_delete_failed", file_id=file_id, error=str(exc))
+            else:
+                removed_from_gridfs += 1
+
+        return {
+            "checked": total,
+            "removed": removed_metadata,
+            "gridfs_removed": removed_from_gridfs,
+            "removed_ids": removed_ids,
+        }
+
     async def append_session_message(
         self,
         collection: str,

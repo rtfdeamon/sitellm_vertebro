@@ -135,9 +135,18 @@ const showToast = (message, variant = 'info') => {
 
 const translateText = (key, fallback, params) => {
   if (typeof t === 'function') {
-    return t(key, params);
+    const result = t(key, params);
+    if (result && result !== key) {
+      return result;
+    }
   }
-  return fallback || '';
+  if (typeof fallback === 'string' && fallback) {
+    return fallback;
+  }
+  if (typeof key === 'string') {
+    return key;
+  }
+  return '';
 };
 
 const KNOWLEDGE_DEFAULT_PROMPTS = {
@@ -228,6 +237,50 @@ const updateFileInputLabel = (input, label, filesOverride) => {
   label.dataset.i18n = 'fileFilesSelected';
   label.textContent = t('fileFilesSelected', { count: files.length });
 };
+
+const translateOr = (key, fallback, params) => translateText(key, fallback, params);
+
+async function fetchWithAdminAuth(url, options = {}, { reauthenticate = true } = {}) {
+  const baseHeaders = new Headers(options.headers || {});
+  const maxAttempts = reauthenticate ? 2 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const headers = new Headers(baseHeaders);
+    try {
+      const token =
+        (typeof AdminAuth?.getAuthHeaderForBase === 'function' && AdminAuth.getAuthHeaderForBase(ADMIN_BASE_KEY)) ||
+        null;
+      if (token && !headers.has('Authorization')) {
+        headers.set('Authorization', token);
+      }
+    } catch (error) {
+      console.warn('admin_auth_header_unavailable', error);
+    }
+    const response = await fetch(url, {
+      ...options,
+      headers,
+      credentials: options.credentials ?? 'same-origin',
+    });
+    if (response.status !== 401 || !reauthenticate || attempt === maxAttempts - 1) {
+      return response;
+    }
+    try {
+      if (typeof clearAuthHeaderForBase === 'function') {
+        clearAuthHeaderForBase(ADMIN_BASE_KEY);
+      }
+    } catch (error) {
+      console.warn('admin_auth_header_clear_failed', error);
+    }
+    if (typeof requestAdminAuth === 'function') {
+      const authenticated = await requestAdminAuth();
+      if (!authenticated) {
+        return response;
+      }
+      continue;
+    }
+    return response;
+  }
+  throw new Error('fetchWithAdminAuth reached unexpected state');
+}
 
 const setKnowledgeServiceControlsDisabled = (disabled) => {
   if (knowledgeServiceToggle) knowledgeServiceToggle.disabled = disabled;
@@ -1003,6 +1056,82 @@ const renderKnowledgeDocuments = (documents) => {
     }
   });
 };
+
+function resetKnowledgeSelection() {
+  if (kbProjectInput) {
+    kbProjectInput.value = '';
+  }
+  knowledgeDocumentsCache = [];
+  renderKnowledgeDocuments([]);
+  knowledgeInfoSnapshot = null;
+  knowledgeProjectSnapshot = null;
+  renderKnowledgeSummaryFromSnapshot();
+  renderKnowledgePriority([]);
+  renderKnowledgeQa([]);
+  if (kbQaStatus) kbQaStatus.textContent = '';
+  if (kbCountQa) kbCountQa.textContent = '0';
+  knowledgeUnansweredItems = [];
+  renderUnansweredQuestions([]);
+  setUnansweredVisibility(false);
+  return true;
+}
+
+window.resetKnowledgeSelection = resetKnowledgeSelection;
+
+const renderKnowledgeQa = (items) => {
+  qaPairsCache = Array.isArray(items) ? items.slice() : [];
+  if (!kbTableQa) return;
+  kbTableQa.innerHTML = '';
+
+  if (!qaPairsCache.length) {
+    const row = document.createElement('tr');
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = 4;
+    emptyCell.className = 'muted';
+    emptyCell.textContent = translateOr('knowledgeQaEmpty', 'No Q&A pairs yet.');
+    row.appendChild(emptyCell);
+    kbTableQa.appendChild(row);
+    if (kbCountQa) kbCountQa.textContent = '0';
+    return;
+  }
+
+  qaPairsCache.forEach((pair) => {
+    const row = document.createElement('tr');
+    row.dataset.qaId = pair.id;
+
+    const questionCell = document.createElement('td');
+    questionCell.textContent = (pair.question || '').trim() || '—';
+
+    const answerCell = document.createElement('td');
+    answerCell.textContent = (pair.answer || '').trim() || '—';
+
+    const priorityCell = document.createElement('td');
+    priorityCell.className = 'nowrap';
+    const priorityValue = Number.isFinite(Number(pair.priority)) ? Number(pair.priority) : 0;
+    priorityCell.textContent = String(priorityValue);
+
+    const actionsCell = document.createElement('td');
+    actionsCell.className = 'nowrap qa-actions';
+
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'ghost';
+    editButton.textContent = t('buttonEdit');
+    editButton.addEventListener('click', () => editQaPair(pair.id));
+
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'ghost danger';
+    deleteButton.textContent = t('buttonDelete');
+    deleteButton.addEventListener('click', () => deleteQaPair(pair.id));
+
+    actionsCell.append(editButton, deleteButton);
+    row.append(questionCell, answerCell, priorityCell, actionsCell);
+    kbTableQa.appendChild(row);
+  });
+
+  if (kbCountQa) kbCountQa.textContent = String(qaPairsCache.length);
+};
 const getUnansweredTimestampText = (item) => {
   if (!item) return '—';
   const raw =
@@ -1174,6 +1303,7 @@ async function loadKnowledge(projectName) {
     }
   }
   const unansweredPromise = loadUnansweredQuestions(targetProject);
+  const qaPromise = loadKnowledgeQa(targetProject);
   try {
     const params = new URLSearchParams();
     if (targetProject) params.set('project', targetProject);
@@ -1228,6 +1358,131 @@ async function loadKnowledge(projectName) {
     await unansweredPromise;
   } catch {
     // already logged inside loadUnansweredQuestions
+  }
+  try {
+    await qaPromise;
+  } catch {
+    // already logged inside loadKnowledgeQa
+  }
+}
+
+async function loadKnowledgeQa(projectName) {
+  if (!kbTableQa || knowledgeQaUnavailable) return;
+  const params = new URLSearchParams();
+  const projectKey =
+    typeof projectName === 'string' && projectName.trim()
+      ? normalizeProjectName(projectName)
+      : getKnowledgeProjectKey();
+  if (projectKey) params.set('project', projectKey);
+  const limitValue = Math.min(1000, Math.max(10, Number(kbLimitInput?.value) || 500));
+  params.set('limit', String(limitValue));
+  const query = params.toString();
+  const url = query ? `/api/v1/admin/knowledge/qa?${query}` : '/api/v1/admin/knowledge/qa';
+  if (kbQaStatus) kbQaStatus.textContent = translateOr('loadingEllipsis', 'Loading…');
+  try {
+    const resp = await fetch(url);
+    if (resp.status === 404) {
+      knowledgeQaUnavailable = true;
+      renderKnowledgeQa([]);
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaUnavailable', 'FAQ manager unavailable');
+      return;
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    renderKnowledgeQa(items);
+    if (kbQaStatus) kbQaStatus.textContent = items.length ? '' : translateOr('knowledgeQaEmpty', 'No Q&A pairs yet.');
+    if (kbCountQa) kbCountQa.textContent = String(items.length);
+  } catch (error) {
+    console.error('knowledge_qa_load_failed', error);
+    renderKnowledgeQa([]);
+    if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaLoadError', 'Failed to load FAQ.');
+  }
+}
+
+async function saveQaPair({ id = null, question, answer, priority }) {
+  const payload = {
+    question: question.trim(),
+    answer: answer.trim(),
+    priority: Number.isFinite(Number(priority)) ? Number(priority) : 0,
+  };
+  const params = new URLSearchParams();
+  const projectKey = getKnowledgeProjectKey();
+  if (projectKey) params.set('project', projectKey);
+  const baseUrl = '/api/v1/admin/knowledge/qa';
+  const url = id ? `${baseUrl}/${id}` : baseUrl;
+  const method = id ? 'PUT' : 'POST';
+  const response = await fetch(
+    params.size ? `${url}?${params.toString()}` : url,
+    {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(detail?.detail || `HTTP ${response.status}`);
+  }
+}
+
+async function editQaPair(pairId) {
+  const pair = qaPairsCache.find((item) => item.id === pairId);
+  if (!pair) return;
+  const question = window.prompt(translateOr('knowledgeQaEditQuestion', 'Edit question'), pair.question || '');
+  if (question === null) return;
+  const answer = window.prompt(translateOr('knowledgeQaEditAnswer', 'Edit answer'), pair.answer || '');
+  if (answer === null) return;
+  const priorityInput = window.prompt(
+    translateOr('knowledgeQaEditPriority', 'Set priority (higher value shows first)'),
+    String(Number.isFinite(Number(pair.priority)) ? Number(pair.priority) : 0),
+  );
+  if (priorityInput === null) return;
+  if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaSaving', 'Saving…');
+  try {
+    await saveQaPair({
+      id: pairId,
+      question,
+      answer,
+      priority: Number(priorityInput),
+    });
+    const successMessage = translateOr('knowledgeQaSaved', 'Changes saved');
+    if (kbQaStatus) kbQaStatus.textContent = successMessage;
+    await loadKnowledgeQa(getKnowledgeProjectKey());
+  } catch (error) {
+    console.error('knowledge_qa_update_failed', error);
+    if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaSaveError', 'Failed to save');
+  } finally {
+    const expected = kbQaStatus ? kbQaStatus.textContent : '';
+    setTimeout(() => {
+      if (kbQaStatus && kbQaStatus.textContent === expected) {
+        kbQaStatus.textContent = '';
+      }
+    }, 2500);
+  }
+}
+
+async function deleteQaPair(pairId) {
+  const pair = qaPairsCache.find((item) => item.id === pairId);
+  const questionPreview = pair?.question ? pair.question.slice(0, 120) : '';
+  const confirmBase = translateOr('knowledgeQaDeleteConfirm', 'Delete this pair?');
+  const confirmMessage = questionPreview ? `${confirmBase}\n\n${questionPreview}` : confirmBase;
+  if (!window.confirm(confirmMessage)) return;
+  if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaDeleting', 'Deleting…');
+  try {
+    const resp = await fetch(`/api/v1/admin/knowledge/qa/${pairId}`, { method: 'DELETE' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    await loadKnowledgeQa(getKnowledgeProjectKey());
+    const deletedMsg = translateOr('knowledgeQaDeleted', 'Pair deleted');
+    if (kbQaStatus) kbQaStatus.textContent = deletedMsg;
+    setTimeout(() => {
+      if (kbQaStatus && kbQaStatus.textContent === deletedMsg) {
+        kbQaStatus.textContent = '';
+      }
+    }, 2500);
+  } catch (error) {
+    console.error('knowledge_qa_delete_failed', error);
+    if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaDeleteError', 'Failed to delete pair');
   }
 }
 
@@ -1484,6 +1739,13 @@ if (kbResetFormBtn) {
   });
 }
 
+if (kbClearBtn) {
+  kbClearBtn.addEventListener('click', async (event) => {
+    event.preventDefault();
+    await clearKnowledgeBase();
+  });
+}
+
 if (kbReloadProjectsBtn) {
   kbReloadProjectsBtn.addEventListener('click', (event) => {
     event.preventDefault();
@@ -1598,6 +1860,107 @@ if (kbAddForm) {
         hideKnowledgeThinking();
       }
       setKnowledgeFormButtonsDisabled(false);
+    }
+  });
+}
+
+if (kbQaAddRowBtn) {
+  kbQaAddRowBtn.addEventListener('click', async () => {
+    const projectKey = getKnowledgeProjectKey();
+    if (!projectKey) {
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaProjectMissing', 'Select a project first.');
+      return;
+    }
+    const question = window.prompt(translateOr('knowledgeQaNewQuestion', 'Enter question'));
+    if (question === null || !question.trim()) {
+      return;
+    }
+    const answer = window.prompt(translateOr('knowledgeQaNewAnswer', 'Enter answer'));
+    if (answer === null || !answer.trim()) {
+      return;
+    }
+    const priorityInput = window.prompt(
+      translateOr('knowledgeQaNewPriority', 'Priority (optional, default 0)'),
+      '0',
+    );
+    const priority = priorityInput === null || priorityInput === '' ? 0 : Number(priorityInput);
+    if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaSaving', 'Saving…');
+    try {
+      await saveQaPair({ question, answer, priority });
+      const successMessage = translateOr('knowledgeQaSaved', 'Changes saved');
+      if (kbQaStatus) kbQaStatus.textContent = successMessage;
+      await loadKnowledgeQa(projectKey);
+    } catch (error) {
+      console.error('knowledge_qa_create_failed', error);
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaSaveError', 'Failed to save');
+    } finally {
+      const expected = kbQaStatus ? kbQaStatus.textContent : '';
+      setTimeout(() => {
+        if (kbQaStatus && kbQaStatus.textContent === expected) {
+          kbQaStatus.textContent = '';
+        }
+      }, 2500);
+    }
+  });
+}
+
+if (kbQaImportForm) {
+  kbQaImportForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!kbQaFileInput || !kbQaFileInput.files?.length) {
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportNoFile', 'Choose a CSV or Excel file to import.');
+      return;
+    }
+    const projectKey = getKnowledgeProjectKey();
+    if (!projectKey) {
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaProjectMissing', 'Select a project first.');
+      return;
+    }
+    const [file] = kbQaFileInput.files;
+    const name = (file?.name || '').toLowerCase();
+    const supportedExtensions = ['.csv', '.xlsx', '.xlsm', '.xltx', '.xltm'];
+    const extensionAllowed = supportedExtensions.some((ext) => name.endsWith(ext));
+    if (!extensionAllowed) {
+      if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImportUnsupported', 'Unsupported file type. Upload CSV or Excel (.xlsx).');
+      return;
+    }
+    if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaImporting', 'Importing…');
+    try {
+      const formData = new FormData();
+      formData.set('project', projectKey);
+      formData.set('file', file, file.name || 'qa-upload');
+      const resp = await fetchWithAdminAuth('/api/v1/admin/knowledge/qa/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!resp.ok) {
+        throw new Error(await extractResponseError(resp));
+      }
+      const data = await resp.json().catch(() => ({}));
+      const inserted = Number.isFinite(Number(data?.inserted)) ? Number(data.inserted) : 0;
+      const updated = Number.isFinite(Number(data?.updated)) ? Number(data.updated) : 0;
+      const skipped = Number.isFinite(Number(data?.skipped)) ? Number(data.skipped) : 0;
+      const imported = inserted + updated;
+      await loadKnowledgeQa(projectKey);
+      const summary = translateText(
+        'knowledgeQaImportSummary',
+        'Imported: {imported}, updated: {updated}, skipped: {skipped}',
+        { imported, updated, skipped },
+      );
+      if (kbQaStatus) {
+        kbQaStatus.textContent = summary;
+      }
+      showToast(summary, 'success');
+      if (kbQaImportForm) kbQaImportForm.reset();
+    } catch (error) {
+      console.error('knowledge_qa_import_failed', error);
+      const message = translateText(
+        'knowledgeQaImportError',
+        'Failed to import file: {error}',
+        { error: getErrorMessage(error) },
+      );
+      if (kbQaStatus) kbQaStatus.textContent = message;
+      showToast(message, 'error');
     }
   });
 }
@@ -1774,6 +2137,76 @@ async function createKnowledgeTextDocument({ project, name, description, url, co
     throw new Error(await extractResponseError(resp));
   }
   return resp.json().catch(() => ({}));
+}
+
+async function deleteKnowledgeDocument(fileId, project) {
+  if (!fileId) return;
+  const confirmText = translateOr('knowledgeDeleteConfirm', 'Delete this document?');
+  if (!window.confirm(confirmText)) {
+    return;
+  }
+
+  const projectKey = project || getKnowledgeProjectKey();
+  const params = new URLSearchParams();
+  if (projectKey) params.set('project', projectKey);
+  const query = params.toString();
+  const url = query
+    ? `/api/v1/admin/knowledge/${encodeURIComponent(fileId)}?${query}`
+    : `/api/v1/admin/knowledge/${encodeURIComponent(fileId)}`;
+
+  try {
+    const resp = await fetchWithAdminAuth(url, { method: 'DELETE' });
+    if (!resp.ok) {
+      throw new Error(await extractResponseError(resp));
+    }
+    showToast(translateOr('knowledgeDeleteSuccess', 'Document deleted'), 'success');
+    await loadKnowledge(projectKey);
+  } catch (error) {
+    console.error('knowledge_delete_failed', error);
+    showToast(
+      translateText('knowledgeDeleteError', 'Failed to delete document: {error}', { error: getErrorMessage(error) }),
+      'error',
+    );
+  }
+}
+
+window.deleteKnowledgeDocument = deleteKnowledgeDocument;
+
+async function clearKnowledgeBase(project) {
+  const projectKey = project || getKnowledgeProjectKey();
+  const confirmText = projectKey
+    ? translateText('knowledgeClearConfirmProject', 'Delete all knowledge for project "{project}"?', { project: projectKey })
+    : translateOr('knowledgeClearConfirm', 'Delete all knowledge?');
+  if (!window.confirm(confirmText)) {
+    return;
+  }
+  if (kbClearStatus) kbClearStatus.textContent = translateOr('knowledgeClearProcessing', 'Clearing…');
+  if (kbClearBtn) kbClearBtn.disabled = true;
+  try {
+    const params = new URLSearchParams();
+    if (projectKey) params.set('project', projectKey);
+    const query = params.toString();
+    const url = query ? `/api/v1/admin/knowledge?${query}` : '/api/v1/admin/knowledge';
+    const resp = await fetchWithAdminAuth(url, { method: 'DELETE' });
+    if (!resp.ok) {
+      throw new Error(await extractResponseError(resp));
+    }
+    const data = await resp.json().catch(() => ({}));
+    const removed = Number.isFinite(Number(data?.removed)) ? Number(data.removed) : null;
+    const successText = removed !== null
+      ? translateText('knowledgeClearSuccessWithCount', 'Removed {count} items', { count: removed })
+      : translateOr('knowledgeClearSuccess', 'Knowledge cleared');
+    if (kbClearStatus) kbClearStatus.textContent = successText;
+    showToast(successText, 'success');
+    await loadKnowledge(projectKey);
+  } catch (error) {
+    console.error('knowledge_clear_failed', error);
+    const message = translateText('knowledgeClearError', 'Failed to clear knowledge: {error}', { error: getErrorMessage(error) });
+    if (kbClearStatus) kbClearStatus.textContent = message;
+    showToast(message, 'error');
+  } finally {
+    if (kbClearBtn) kbClearBtn.disabled = false;
+  }
 }
 
 function resetKnowledgeForm() {

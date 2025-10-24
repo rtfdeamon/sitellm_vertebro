@@ -110,6 +110,19 @@ const safeNormalizeProjectName = (value) => {
 };
 let mainPromptAiHandler = null;
 
+const syncProjectDangerZone = (projectKey) => {
+  const canManage = Boolean(window.adminSession?.can_manage_projects);
+  const hasProject = Boolean(projectKey);
+  if (projectDangerZone) {
+    projectDangerZone.classList.toggle('show', canManage && hasProject);
+  }
+  if (projectDeleteBtn) {
+    projectDeleteBtn.disabled = !(canManage && hasProject);
+  }
+};
+
+syncProjectDangerZone(window.currentProject || '');
+
 const PROMPT_AI_ROLES = [
   {
     value: 'friendly_expert',
@@ -550,6 +563,7 @@ async function fetchProjectStorage() {
 }
 
 function updateProjectDeleteInfo(projectKey) {
+  syncProjectDangerZone(projectKey);
   if (!projectDeleteInfo) return;
   if (!projectKey) {
     projectDeleteInfo.textContent = t('projectsSelectForStorage');
@@ -917,9 +931,6 @@ if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
   projectSelect.value = currentProject;
   updateProjectInputs();
   projectPromptSaveBtn.disabled = !project;
-  if (projectDeleteBtn) {
-    projectDeleteBtn.disabled = !project;
-  }
   updateProjectDeleteInfo(currentProject);
   refreshProjectWidgetUI();
   useIntegration('telegram')?.load?.(currentProject);
@@ -1278,6 +1289,10 @@ if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
     const payload = await resp.json().catch(() => ({}));
     delete projectsCache[toDelete];
     currentProject = '';
+    window.currentProject = '';
+    if (typeof window.resetKnowledgeSelection === 'function') {
+      window.resetKnowledgeSelection();
+    }
     await fetchProjects();
     await loadProjectsList();
     await fetchProjectStorage();
@@ -1295,7 +1310,9 @@ if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
       parts.length ? t('projectsRemovedSummary', { value: parts.join(', ') }) : t('projectsDeleted'),
       4000,
     );
-    applySessionPermissions();
+    if (typeof window.applySessionPermissions === 'function') {
+      window.applySessionPermissions();
+    }
     updateProjectDeleteInfo(currentProject);
   } catch (error) {
     console.error(error);

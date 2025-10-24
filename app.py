@@ -3115,22 +3115,27 @@ class KnowledgeUnansweredClear(BaseModel):
     project: str | None = None
 
 
-def _detect_qa_columns(header: list[str]) -> tuple[int, int]:
+def _detect_qa_columns(header: list[str]) -> tuple[int, int, int]:
     question_idx = -1
     answer_idx = -1
+    priority_idx = -1
     for idx, title in enumerate(header):
         lowered = title.lower()
         if question_idx == -1 and any(token in lowered for token in ("вопрос", "question", "q:")):
             question_idx = idx
         if answer_idx == -1 and any(token in lowered for token in ("ответ", "answer", "a:")):
             answer_idx = idx
+        if priority_idx == -1 and any(token in lowered for token in ("priority", "приоритет", "prio")):
+            priority_idx = idx
     if question_idx == -1 and len(header) >= 1:
         question_idx = 0
     if answer_idx == -1 and len(header) >= 2:
         answer_idx = 1
     if question_idx == answer_idx:
         answer_idx = answer_idx + 1 if answer_idx + 1 < len(header) else -1
-    return question_idx, answer_idx
+    if priority_idx == question_idx or priority_idx == answer_idx:
+        priority_idx = -1
+    return question_idx, answer_idx, priority_idx
 
 
 async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
@@ -3166,10 +3171,12 @@ async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
     header = rows[0]
     has_header = any(cell for cell in header)
     if has_header:
-        q_idx, a_idx = _detect_qa_columns(header)
+        q_idx, a_idx, p_idx = _detect_qa_columns(header)
         data_rows = rows[1:]
     else:
-        q_idx, a_idx = 0, 1 if len(header) > 1 else -1
+        q_idx = 0
+        a_idx = 1 if len(header) > 1 else -1
+        p_idx = 2 if len(header) > 2 else -1
         data_rows = rows
 
     pairs: list[dict[str, str]] = []
@@ -3180,7 +3187,15 @@ async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
         answer = (row[a_idx] or "").strip() if 0 <= a_idx < len(row) else ""
         if not question or not answer:
             continue
-        pairs.append({"question": question, "answer": answer})
+        priority_value: str | None = None
+        if 0 <= p_idx < len(row):
+            priority_cell = (row[p_idx] or "").strip()
+            if priority_cell != "":
+                priority_value = priority_cell
+        if priority_value is not None:
+            pairs.append({"question": question, "answer": answer, "priority": priority_value})
+        else:
+            pairs.append({"question": question, "answer": answer})
     return pairs
 
 
@@ -4206,6 +4221,90 @@ async def admin_list_knowledge_qa(
     )
 
 
+@app.post("/api/v1/admin/knowledge/qa/upload", response_class=ORJSONResponse, status_code=201)
+async def admin_import_knowledge_qa_file(
+    request: Request,
+    project: str = Form(...),
+    file: UploadFile = File(...),
+    refine: str | None = Form(None),
+) -> ORJSONResponse:
+    project_name, project_model, mongo_client, _ = await _get_project_context(request, project)
+
+    try:
+        pairs = await _read_qa_upload(file)
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("knowledge_qa_import_parse_failed", project=project_name, error=str(exc))
+        raise HTTPException(status_code=400, detail="Failed to read QA file") from exc
+
+    if not pairs:
+        return ORJSONResponse(
+            {"inserted": 0, "updated": 0, "skipped": 0, "total": 0, "project": project_name},
+            status_code=201,
+        )
+
+    refine_flag = False
+    if refine is not None:
+        refine_flag = str(refine).strip().lower() in {"1", "true", "yes", "on"}
+
+    if refine_flag:
+        try:
+            pairs = await _refine_qa_with_llm(pairs, project_model=project_model)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("knowledge_qa_import_refine_failed", project=project_name, error=str(exc))
+
+    normalized: list[dict[str, object]] = []
+    skipped = 0
+    for pair in pairs:
+        question = str(pair.get("question") or "").strip()
+        answer = str(pair.get("answer") or "").strip()
+        if not question or not answer:
+            skipped += 1
+            continue
+        priority_value = 0
+        if "priority" in pair and pair.get("priority") not in (None, ""):
+            raw_priority = str(pair.get("priority")).replace(",", ".").strip()
+            try:
+                priority_value = int(float(raw_priority))
+            except Exception:
+                priority_value = 0
+        normalized.append(
+            {
+                "question": question,
+                "answer": answer,
+                "priority": priority_value,
+            }
+        )
+
+    if not normalized:
+        return ORJSONResponse(
+            {
+                "inserted": 0,
+                "updated": 0,
+                "skipped": skipped or len(pairs),
+                "total": len(pairs),
+                "project": project_name,
+            },
+            status_code=201,
+        )
+
+    try:
+        result = await mongo_client.insert_qa_pairs(project_name, normalized)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("knowledge_qa_import_failed", project=project_name, error=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to import QA pairs") from exc
+
+    summary: dict[str, object] = {
+        "inserted": int(result.get("inserted", 0)),
+        "updated": int(result.get("updated", 0)),
+        "skipped": skipped,
+        "total": len(pairs),
+        "project": project_name,
+    }
+    return ORJSONResponse(summary, status_code=201)
+
+
 @app.post("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse, status_code=201)
 async def admin_create_knowledge_qa(
     request: Request,
@@ -4255,14 +4354,13 @@ async def admin_update_knowledge_qa(
     if not question or not answer:
         raise HTTPException(status_code=400, detail="question_and_answer_required")
 
-    updates = {
-        "question": question,
-        "answer": answer,
-        "priority": payload.priority,
-    }
-
     try:
-        updated = await mongo_client.update_qa_pair(pair_id, updates)
+        updated = await mongo_client.update_qa_pair(
+            pair_id,
+            question=question,
+            answer=answer,
+            priority=payload.priority,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error("knowledge_qa_update_failed", pair_id=pair_id, project=project_scope, error=str(exc))
         raise HTTPException(status_code=500, detail="Failed to update QA pair") from exc
