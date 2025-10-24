@@ -32,6 +32,7 @@
     'top-right': 'sitellm-anchor-top-right',
     'top-left': 'sitellm-anchor-top-left',
   };
+
   const ORIENTATION_CLASSES = Object.values(ORIENTATION_CLASS_MAP);
 
   function registerInstance(instance) {
@@ -78,7 +79,72 @@
     }
   }
 
-  const CHARACTER_PRESETS = {
+  class CharacterPreset {
+    constructor({ id, label, description, svg }) {
+      this.id = id;
+      this.label = label;
+      this.description = description;
+      this.svg = svg;
+    }
+
+    renderMarkup() {
+      return this.svg;
+    }
+
+    getDisplayName(fallback) {
+      return this.label || fallback || '';
+    }
+  }
+
+  class FlatCharacterPreset extends CharacterPreset {
+    constructor(options) {
+      super(options);
+      this.style = 'flat';
+    }
+  }
+
+  class ThreeDCharacterPreset extends CharacterPreset {
+    constructor(options) {
+      super(options);
+      this.style = '3d';
+    }
+  }
+
+  class CharacterLibrary {
+    constructor() {
+      this._items = new Map();
+    }
+
+    register(preset) {
+      if (!(preset instanceof CharacterPreset)) {
+        throw new TypeError('preset must inherit from CharacterPreset');
+      }
+      this._items.set(preset.id, preset);
+      return this;
+    }
+
+    get(id) {
+      return this._items.get(id) || null;
+    }
+
+    has(id) {
+      return this._items.has(id);
+    }
+
+    keys() {
+      return Array.from(this._items.keys());
+    }
+
+    values() {
+      return Array.from(this._items.values());
+    }
+
+    entries() {
+      return Array.from(this._items.entries());
+    }
+  }
+
+  const CHARACTER_DEFINITIONS = {
     nova: {
       label: 'Nova',
       description: 'Empathic product specialist',
@@ -321,7 +387,79 @@
           <path d="M66 128c6 4 18 4 24 0-4 6-10 8-12 8s-8-2-12-8z" fill="#f5c4b4" />
         </svg>`
     },
+    ivan: {
+      label: 'Ivan Ivanych',
+      description: 'Seasoned 3D mentor with steady voice',
+      svg: `<?xml version="1.0" encoding="UTF-8"?>
+        <svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Ivan Ivanych 3D animated avatar">
+          <defs>
+            <radialGradient id="ivan_bg" cx="48%" cy="30%" r="68%">
+              <stop offset="0%" stop-color="#f0f6ff" stop-opacity="0.96" />
+              <stop offset="55%" stop-color="#d9e6ff" stop-opacity="0.42" />
+              <stop offset="100%" stop-color="#91b7ff" stop-opacity="0.18" />
+            </radialGradient>
+            <linearGradient id="ivan_skin" x1="48%" y1="18%" x2="52%" y2="92%">
+              <stop offset="0%" stop-color="#ffe4cc" />
+              <stop offset="55%" stop-color="#efc1a0" />
+              <stop offset="100%" stop-color="#d8a27d" />
+            </linearGradient>
+            <linearGradient id="ivan_hair" x1="18%" y1="10%" x2="82%" y2="94%">
+              <stop offset="0%" stop-color="#272c35" />
+              <stop offset="100%" stop-color="#0f1218" />
+            </linearGradient>
+            <linearGradient id="ivan_suit" x1="40%" y1="0%" x2="60%" y2="100%">
+              <stop offset="0%" stop-color="#22314d" />
+              <stop offset="60%" stop-color="#1a2740" />
+              <stop offset="100%" stop-color="#111a2f" />
+            </linearGradient>
+            <linearGradient id="ivan_shirt" x1="48%" y1="20%" x2="52%" y2="90%">
+              <stop offset="0%" stop-color="#f5f8ff" />
+              <stop offset="100%" stop-color="#d6deef" />
+            </linearGradient>
+            <linearGradient id="ivan_tie" x1="50%" y1="0%" x2="50%" y2="100%">
+              <stop offset="0%" stop-color="#b6362f" />
+              <stop offset="100%" stop-color="#7d1f1e" />
+            </linearGradient>
+            <linearGradient id="ivan_moustache" x1="20%" y1="0%" x2="80%" y2="100%">
+              <stop offset="0%" stop-color="#3e2c1f" />
+              <stop offset="100%" stop-color="#2b1c14" />
+            </linearGradient>
+            <linearGradient id="ivan_lips" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stop-color="#b05d4c" />
+              <stop offset="100%" stop-color="#884133" />
+            </linearGradient>
+          </defs>
+          <circle cx="80" cy="80" r="74" fill="url(#ivan_bg)" />
+          <path d="M28 98c6-34 24-56 55-60 28-4 48 10 58 34 6 14 8 28 3 40-9 28-30 44-61 44s-52-16-61-44c-3-10-2-24 6-38z" fill="url(#ivan_hair)" />
+          <circle cx="80" cy="96" r="44" fill="url(#ivan_skin)" />
+          <path d="M48 94c12-12 24-18 32-18s20 6 32 18c-8 26-20 36-32 36s-24-10-32-36z" fill="#ebc6a7" opacity="0.6" />
+          <path d="M50 82c9-20 28-28 46-22 12 4 20 10 26 20-10-30-26-40-46-40s-36 12-46 42z" fill="#101621" opacity="0.9" />
+          <path d="M40 132c6-18 18-30 40-30s34 12 40 30c-8 10-24 18-40 18s-32-8-40-18z" fill="url(#ivan_suit)" />
+          <path d="M68 118c4 12 12 18 12 18s8-6 12-18l-12-6z" fill="url(#ivan_shirt)" />
+          <path d="M76 120l4-8 4 8-4 18z" fill="url(#ivan_tie)" />
+          <path d="M54 112c8-6 16-8 26-8s18 2 26 8c-6 6-18 10-26 10s-20-4-26-10z" fill="url(#ivan_moustache)" />
+          <path d="M56 100c6-4 12-4 18-2" stroke="#2c1f18" stroke-width="2.4" stroke-linecap="round" opacity="0.45" />
+          <path d="M104 100c-6-4-12-4-18-2" stroke="#2c1f18" stroke-width="2.4" stroke-linecap="round" opacity="0.45" />
+          <path class="avatar-eye" d="M56 100c6-4 14-4 20 0 3 2 0 6-3 6H59c-4 0-7-4-3-6z" fill="#fff" />
+          <circle class="avatar-eye" cx="66" cy="103" r="4.2" fill="#1d2536" />
+          <path class="avatar-eye" d="M104 100c-6-4-14-4-20 0-3 2 0 6 3 6h14c4 0 7-4 3-6z" fill="#fff" />
+          <circle class="avatar-eye" cx="94" cy="103" r="4.2" fill="#1d2536" />
+          <path d="M60 88c8-6 20-6 28 0" stroke="#2f1d1a" stroke-width="2.2" stroke-linecap="round" opacity="0.5" />
+          <path class="avatar-mouth" d="M64 128c8 8 24 8 32 0 1-3-1-5-4-5H68c-3 0-5 2-4 5z" fill="url(#ivan_lips)" />
+          <path d="M70 130c6 4 18 4 24 0-6 6-11 10-12 10s-6-4-12-10z" fill="#f0c3a4" />
+          <path d="M48 72c12-22 52-22 64 0-14-10-22-12-32-12s-18 2-32 12z" fill="#172030" opacity="0.55" />
+          <path d="M52 144c10 6 20 8 28 8s18-2 28-8c-4 8-18 14-28 14s-24-6-28-14z" fill="#0d1424" opacity="0.4" />
+        </svg>`
+    },
   };
+
+  const CHARACTER_LIBRARY = new CharacterLibrary();
+
+  Object.entries(CHARACTER_DEFINITIONS).forEach(([id, definition]) => {
+    const ctor = id === 'ivan' ? ThreeDCharacterPreset : FlatCharacterPreset;
+    const preset = new ctor({ id, ...definition });
+    CHARACTER_LIBRARY.register(preset);
+  });
 
   const MODE_TEXT = 'text';
   const MODE_VOICE = 'voice';
@@ -1511,7 +1649,7 @@
     const avatarCharacterRaw = (script.dataset.avatarCharacter || script.dataset.character || '').trim().toLowerCase();
     const avatarImage = (script.dataset.avatarImage || '').trim();
     const avatarAnimatedFlag = script.dataset.avatarAnimated === '1';
-    const hasCustomCharacter = Boolean(avatarCharacterRaw && CHARACTER_PRESETS[avatarCharacterRaw]);
+    const hasCustomCharacter = CHARACTER_LIBRARY.has(avatarCharacterRaw);
     const interactionModeRaw = (script.dataset.mode || script.dataset.interactionMode || '').trim().toLowerCase();
     const allowedModes = [MODE_TEXT, MODE_VOICE, MODE_AVATAR];
     let interactionMode = allowedModes.includes(interactionModeRaw) ? interactionModeRaw : '';
@@ -1521,15 +1659,16 @@
     const modeSupportsVoice = interactionMode !== MODE_TEXT;
     const modeSupportsAvatar = interactionMode === MODE_AVATAR || avatarAnimatedFlag || !!avatarImage || hasCustomCharacter;
     const datasetFallbackCharacter = (script.dataset.avatarDefault || '').trim().toLowerCase();
-    const fallbackCharacter = datasetFallbackCharacter && CHARACTER_PRESETS[datasetFallbackCharacter]
+    const fallbackCharacter = CHARACTER_LIBRARY.has(datasetFallbackCharacter)
       ? datasetFallbackCharacter
-      : (interactionMode === MODE_AVATAR && CHARACTER_PRESETS.luna ? 'luna' : 'nova');
+      : (interactionMode === MODE_AVATAR && CHARACTER_LIBRARY.has('luna') ? 'luna' : 'nova');
     const characterKey = hasCustomCharacter ? avatarCharacterRaw : (modeSupportsAvatar ? fallbackCharacter : '');
     const wantsAnimatedAvatar = modeSupportsAvatar;
-    if (!script.dataset.avatarName && characterKey && CHARACTER_PRESETS[characterKey]?.label) {
-      avatarName = CHARACTER_PRESETS[characterKey].label;
+    const characterPreset = characterKey ? CHARACTER_LIBRARY.get(characterKey) : null;
+    if (!script.dataset.avatarName && characterPreset?.label) {
+      avatarName = characterPreset.label;
     }
-    const avatarAlt = script.dataset.avatarAlt || (characterKey && CHARACTER_PRESETS[characterKey]?.label) || 'AI avatar';
+    const avatarAlt = script.dataset.avatarAlt || characterPreset?.label || 'AI avatar';
     const headline = script.dataset.headline || 'AI Consultant';
     const subheadline = script.dataset.subtitle || 'Talk to me using your voice';
 
@@ -1601,11 +1740,18 @@
         const safeSrc = escapeAttribute(avatarImage);
         const safeAlt = escapeAttribute(avatarAlt);
         wrapper.innerHTML = `<img src="${safeSrc}" alt="${safeAlt}" loading="lazy" decoding="async">`;
+        avatar.dataset.characterStyle = 'image';
         ensureCharacterBadge(avatarName);
       } else {
-        const preset = CHARACTER_PRESETS[characterKey] || CHARACTER_PRESETS.nova;
-        wrapper.innerHTML = preset.svg;
-        ensureCharacterBadge(preset.label || avatarName);
+        const preset = CHARACTER_LIBRARY.get(characterKey) || CHARACTER_LIBRARY.get('nova');
+        if (preset) {
+          avatar.dataset.characterStyle = preset.style || 'flat';
+          wrapper.innerHTML = preset.renderMarkup();
+          ensureCharacterBadge(preset.getDisplayName(avatarName));
+        } else {
+          delete avatar.dataset.characterStyle;
+          ensureCharacterBadge(avatarName);
+        }
       }
       avatar.insertBefore(wrapper, micVisual);
       updateAvatarTalkingState();
@@ -3395,10 +3541,11 @@
 
   Object.assign(globalRoot, {
     version: CURRENT_VERSION,
-    characters: Object.keys(CHARACTER_PRESETS),
+    characters: CHARACTER_LIBRARY.keys(),
     getCharacterPreset(key) {
-      return CHARACTER_PRESETS[key] || null;
+      return CHARACTER_LIBRARY.get(key);
     },
+    library: CHARACTER_LIBRARY,
     instances: instanceRegistry,
     registerInstance,
     unregisterInstance,

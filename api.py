@@ -3,19 +3,14 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import copy
-import subprocess
-import sys
 import os
-import signal
 import time
 import re
 import urllib.parse as urlparse
-from typing import Any, Sequence
+from typing import Any
 from uuid import uuid4
-from datetime import datetime, date
-import base64
+from datetime import datetime
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Form
 try:
@@ -82,6 +77,9 @@ from integrations.mail import (
     send_mail,
     summarize_messages,
 )
+from app_modules.services.reading import ReadingService, READING_PREVIEW_LIMIT
+from app_modules.services.crawler import CrawlerService
+from app_modules.services.voice import VoiceService
 
 logger = structlog.get_logger(__name__)
 app_settings = get_app_settings()
@@ -99,53 +97,6 @@ READING_MODE_PROMPT = (
     " После каждой страницы делай короткий вывод и ожидай команду пользователя (например, 'далее' или вопрос)."
     " Если пользователь просит перейти к другой части, вежливо уточняй нужную страницу или главу."
 )
-
-READING_COLLECTION_NAME = os.getenv("MONGO_READING_COLLECTION", "reading_pages")
-READING_PAGE_MAX_LIMIT = 20
-READING_PREVIEW_LIMIT = min(5, READING_PAGE_MAX_LIMIT)
-READING_PREVIEW_MAX_SEGMENTS_PER_PAGE = 12
-READING_PREVIEW_MAX_IMAGES_PER_PAGE = 6
-READING_PREVIEW_SEGMENT_CHAR_LIMIT = 1800
-READING_PREVIEW_TEXT_CHAR_LIMIT = 3500
-READING_PREVIEW_TOTAL_CHAR_LIMIT = 20000
-READING_PREVIEW_HTML_CHAR_LIMIT = 5000
-
-try:  # pragma: no cover - optional when Celery/kombu unavailable in tests
-    from celery.exceptions import CeleryError
-except Exception:  # noqa: BLE001 - fallback for minimal test stubs
-    class CeleryError(Exception):  # type: ignore[override]
-        """Fallback Celery error type used when Celery is not installed."""
-
-
-try:  # pragma: no cover - optional when kombu is not installed
-    from kombu.exceptions import OperationalError as KombuOperationalError
-except Exception:  # noqa: BLE001 - fallback for minimal test stubs
-    class KombuOperationalError(Exception):  # type: ignore[override]
-        """Fallback kombu operational error when kombu is absent."""
-
-
-VOICE_ALLOWED_CONTENT_TYPES = {
-    "audio/mpeg",
-    "audio/mp3",
-    "audio/wav",
-    "audio/x-wav",
-    "audio/flac",
-    "audio/x-flac",
-    "audio/ogg",
-    "audio/webm",
-    "audio/aac",
-    "audio/m4a",
-}
-VOICE_MAX_SAMPLE_BYTES = int(os.getenv("VOICE_SAMPLE_MAX_BYTES", str(25 * 1024 * 1024)))
-VOICE_MIN_SAMPLE_COUNT = int(os.getenv("VOICE_MIN_SAMPLE_COUNT", "3"))
-VOICE_QUEUE_ERRORS: tuple[type[BaseException], ...] = (
-    CeleryError,
-    KombuOperationalError,
-    ConnectionError,
-    TimeoutError,
-)
-VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "5"))
-VOICE_JOB_STALE_TIMEOUT = float(os.getenv("VOICE_JOB_STALE_TIMEOUT", "20"))
 
 SOURCE_REQUEST_KEYWORDS = (
     "источ",
@@ -296,6 +247,24 @@ voice_router = APIRouter(
     tags=["voice"],
 )
 
+crawler_service = CrawlerService(
+    normalize_project=_normalize_project,
+    mongo_uri=getattr(backend_settings, "mongo_uri", None),
+    status_provider=status_dict,
+    note_provider=get_crawler_note,
+    clear_state=clear_crawler_state,
+    deduplicate_urls=deduplicate_recent_urls,
+)
+
+
+voice_service = VoiceService(
+    normalize_project=_normalize_project,
+    get_mongo_client=_get_mongo_client,
+    voice_train_task=voice_train_model,
+    worker_mongo_client=worker_mongo_client,
+    worker_settings=worker_settings,
+)
+
 
 def _normalize_priority_order(order: list[str] | None) -> list[str]:
     sanitized: list[str] = []
@@ -404,13 +373,21 @@ class VoiceSamplesResponse(BaseModel):
 
 class VoiceJobsResponse(BaseModel):
     jobs: list[VoiceTrainingJob]
-
-
 def _log_debug_event(message: str, **kwargs) -> None:
     if app_settings.debug:
         logger.info(message, **kwargs)
     else:
         logger.debug(message, **kwargs)
+
+
+def _truncate_text(text: str, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    truncated = cleaned[:limit].rsplit(" ", 1)[0].strip()
+    if not truncated:
+        truncated = cleaned[:limit]
+    return truncated.rstrip(". ") + "…"
 
 
 def _extract_payload_text(payload: Any) -> str:
@@ -541,141 +518,10 @@ def _build_download_url(request: Request, file_id: str) -> str:
         return f"{base}/api/v1/admin/knowledge/documents/{file_id}"
 
 
-def _truncate_text(value: Any, limit: int = _KNOWLEDGE_SNIPPET_CHARS) -> str | None:
-    if limit <= 0:
-        return None
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip()
-    if not cleaned:
-        return None
-    if len(cleaned) <= limit:
-        return cleaned
-    slice_limit = max(1, limit - 3)
-    truncated = cleaned[:slice_limit].rstrip()
-    if not truncated:
-        truncated = cleaned[:slice_limit]
-    return f"{truncated}..."
-
-
-def _json_safe(value: Any) -> Any:
-    """Recursively convert data into JSON-serialisable primitives."""
-
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, (bytes, bytearray)):
-        return base64.b64encode(value).decode("ascii")
-    if isinstance(value, dict):
-        return {k: _json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return [_json_safe(item) for item in value]
-    return value
-
-
-def _serialize_reading_pages(
-    request: Request,
-    pages: Sequence[ReadingPage],
-) -> list[dict[str, Any]]:
-    serialized: list[dict[str, Any]] = []
-    remaining_chars = READING_PREVIEW_TOTAL_CHAR_LIMIT
-    for page in pages:
-        if remaining_chars <= 0:
-            break
-
-        payload = page.model_dump(by_alias=True)
-
-        raw_segments = payload.get("segments") if isinstance(payload.get("segments"), list) else []
-        segments_payload: list[dict[str, Any]] = []
-        if raw_segments:
-            for raw_segment in raw_segments:
-                if remaining_chars <= 0:
-                    break
-                if len(segments_payload) >= READING_PREVIEW_MAX_SEGMENTS_PER_PAGE:
-                    break
-                if not isinstance(raw_segment, dict):
-                    continue
-                text_value = raw_segment.get("text")
-                max_chars = min(READING_PREVIEW_SEGMENT_CHAR_LIMIT, remaining_chars)
-                truncated_text = _truncate_text(text_value, max_chars)
-                if not truncated_text:
-                    continue
-                segment_entry = dict(raw_segment)
-                segment_entry["text"] = truncated_text
-                segment_entry["chars"] = len(truncated_text)
-                segments_payload.append(segment_entry)
-                remaining_chars = max(0, remaining_chars - len(truncated_text))
-            payload["segments"] = segments_payload
-        else:
-            payload["segments"] = []
-
-        if segments_payload:
-            payload.pop("text", None)
-        else:
-            max_chars = min(READING_PREVIEW_TEXT_CHAR_LIMIT, remaining_chars)
-            truncated_page_text = _truncate_text(payload.get("text"), max_chars)
-            if truncated_page_text:
-                payload["text"] = truncated_page_text
-                remaining_chars = max(0, remaining_chars - len(truncated_page_text))
-            else:
-                payload.pop("text", None)
-
-        html_value = payload.get("html")
-        if html_value:
-            truncated_html = _truncate_text(html_value, READING_PREVIEW_HTML_CHAR_LIMIT)
-            if truncated_html:
-                payload["html"] = truncated_html
-                remaining_chars = max(0, remaining_chars - len(truncated_html))
-            else:
-                payload.pop("html", None)
-
-        images_payload: list[dict[str, Any]] = []
-        for image in page.images:
-            if len(images_payload) >= READING_PREVIEW_MAX_IMAGES_PER_PAGE:
-                break
-            source_url = getattr(image, "url", None)
-            file_id = getattr(image, "file_id", None)
-            image_entry: dict[str, Any] = {}
-            if file_id:
-                image_entry["url"] = _build_download_url(request, file_id)
-                if source_url:
-                    image_entry["source"] = source_url
-            elif source_url:
-                image_entry["url"] = source_url
-                image_entry["source"] = source_url
-            else:
-                continue
-            caption = getattr(image, "caption", None)
-            if caption:
-                truncated_caption = _truncate_text(caption, 240)
-                if truncated_caption:
-                    image_entry["caption"] = truncated_caption
-            images_payload.append(image_entry)
-        payload["images"] = images_payload
-        payload["segmentCount"] = len(segments_payload)
-        payload["imageCount"] = len(images_payload)
-
-        serialized.append(_json_safe(payload))
-    return serialized
-
-
-def _collect_reading_items(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    items: list[dict[str, Any]] = []
-    for snippet in snippets:
-        reading = snippet.get("reading")
-        if not isinstance(reading, dict):
-            continue
-        pages = reading.get("pages")
-        if not pages:
-            continue
-        entry = {
-            "id": snippet.get("id"),
-            "name": snippet.get("name"),
-            "source": snippet.get("source"),
-            **{k: v for k, v in reading.items() if k != "pages"},
-            "pages": pages,
-        }
-        items.append(_json_safe(entry))
-    return items[:3]
+reading_service = ReadingService(
+    normalize_project=_normalize_project,
+    build_download_url=_build_download_url,
+)
 
 
 def _question_requests_sources(question: str) -> bool:
@@ -779,96 +625,6 @@ def _collect_attachments(snippets: list[dict[str, Any]]) -> list[dict[str, Any]]
         seen.add(key)
         attachments.append(att)
     return attachments
-
-
-async def _build_reading_preview(
-    request: Request,
-    mongo_client: MongoClient,
-    project: str | None,
-    doc: Document,
-    *,
-    limit: int = READING_PREVIEW_LIMIT,
-) -> dict[str, Any] | None:
-    project_name = (doc.project or project or "").strip()
-    if not project_name:
-        return None
-
-    reading_collection = getattr(request.state, "reading_collection", READING_COLLECTION_NAME)
-
-    doc_order = None
-    if doc.url:
-        try:
-            page_matches = await mongo_client.get_reading_pages(
-                reading_collection,
-                project_name,
-                limit=1,
-                offset=0,
-                url=doc.url,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "knowledge_reading_page_lookup_failed",
-                project=project_name,
-                url=doc.url,
-                error=str(exc),
-            )
-            page_matches = []
-        if page_matches:
-            doc_order = page_matches[0].order
-
-    try:
-        total_pages = await mongo_client.count_reading_pages(reading_collection, project_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "knowledge_reading_total_failed",
-            project=project_name,
-            error=str(exc),
-        )
-        total_pages = 0
-
-    if total_pages <= 0 and doc_order is None:
-        return None
-
-    offset = 0
-    if isinstance(doc_order, int) and doc_order > 0:
-        offset = max(0, doc_order - 1)
-        if total_pages:
-            offset = min(offset, max(0, total_pages - limit))
-    try:
-        pages = await mongo_client.get_reading_pages(
-            reading_collection,
-            project_name,
-            limit=limit,
-            offset=offset,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "knowledge_reading_preview_failed",
-            project=project_name,
-            offset=offset,
-            error=str(exc),
-        )
-        pages = []
-
-    if not pages:
-        return None
-
-    serialized_pages = _serialize_reading_pages(request, pages)
-    has_more = total_pages > offset + len(serialized_pages)
-    initial_index = 0
-    if isinstance(doc_order, int) and doc_order > 0:
-        initial_index = max(0, min(len(serialized_pages) - 1, doc_order - 1 - offset))
-
-    preview = {
-        "pages": serialized_pages,
-        "project": project_name,
-        "total": total_pages,
-        "has_more": has_more,
-        "startOffset": offset,
-        "initialIndex": initial_index,
-        "initialUrl": doc.url,
-    }
-    return _json_safe(preview)
 
 
 async def _collect_knowledge_snippets(
@@ -1036,7 +792,13 @@ async def _collect_knowledge_snippets(
                 item["attachment"] = attachment_meta
             if getattr(doc, "reading_mode", False) and mongo_client and hasattr(mongo_client, "get_reading_pages"):
                 try:
-                    reading_preview = await _build_reading_preview(request, mongo_client, project, doc)
+                    reading_preview = await reading_service.build_reading_preview(
+                        request,
+                        mongo_client,
+                        project,
+                        doc,
+                        limit=READING_PREVIEW_LIMIT,
+                    )
                 except Exception as exc:  # noqa: BLE001
                     logger.debug(
                         "knowledge_reading_preview_error",
@@ -1693,7 +1455,7 @@ def _compose_knowledge_message(snippets: list[dict[str, Any]]) -> str:
     has_attachments = any(bool(item.get("attachment")) for item in snippets)
     for idx, item in enumerate(snippets, 1):
         name = item.get("name") or f"Источник {idx}"
-        snippet_text = _truncate_text(item.get("text", ""), _KNOWLEDGE_SNIPPET_CHARS) or ""
+        snippet_text = _truncate_text(item.get("text", ""))
         attachment = item.get("attachment")
         url = item.get("url")
         if attachment:
@@ -2073,7 +1835,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
 
     reading_mode = request.query_params.get("reading") == "1"
     if not reading_mode:
-        reading_mode = bool(_collect_reading_items(knowledge_snippets))
+        reading_mode = bool(reading_service.collect_reading_items(knowledge_snippets))
     if reading_mode:
         system_messages.append({"role": "system", "content": READING_MODE_PROMPT})
 
@@ -2128,7 +1890,7 @@ async def ask_llm(request: Request, llm_request: LLMRequest) -> ORJSONResponse:
         attachments=[Attachment(**att) for att in attachments_payload],
         emotions_enabled=emotions_enabled,
     )
-    reading_items = _collect_reading_items(knowledge_snippets)
+    reading_items = reading_service.collect_reading_items(knowledge_snippets)
 
     meta_payload: dict[str, Any] = {
         "emotions_enabled": emotions_enabled,
@@ -2512,7 +2274,7 @@ async def chat(
         )
 
     emotion_instruction = EMOTION_ON_PROMPT if emotions_enabled else EMOTION_OFF_PROMPT
-    if not reading_mode and _collect_reading_items(knowledge_snippets):
+    if not reading_mode and reading_service.collect_reading_items(knowledge_snippets):
         reading_mode = True
     system_prompts: list[str] = []
     if reading_mode:
@@ -2564,7 +2326,7 @@ async def chat(
         }
         for entry in knowledge_snippets[:3]
     ]
-    reading_items_stream = _collect_reading_items(knowledge_snippets)
+    reading_items_stream = reading_service.collect_reading_items(knowledge_snippets)
     _log_debug_event(
         "llm_prompt_compiled_stream",
         project=project_name,
@@ -2840,126 +2602,20 @@ class CrawlRequest(BaseModel):
     collect_books: bool | None = None
 
 
-def _spawn_crawler(
-    start_url: str,
-    max_pages: int,
-    max_depth: int,
-    *,
-    project: str | None,
-    domain: str | None,
-    mongo_uri: str | None,
-    collect_medex: bool | None,
-    collect_books: bool | None,
-) -> None:
-    base_dir = Path(__file__).resolve().parent
-    script = base_dir / "crawler" / "run_crawl.py"
-    cmd = [
-        sys.executable,
-        str(script),
-        "--url",
-        start_url,
-        "--max-pages",
-        str(max_pages),
-        "--max-depth",
-        str(max_depth),
-    ]
-    if project:
-        cmd.extend(["--project", project])
-    if domain:
-        cmd.extend(["--domain", domain])
-    if mongo_uri:
-        cmd.extend(["--mongo-uri", mongo_uri])
-    if collect_medex is True:
-        cmd.append("--collect-medex")
-    elif collect_medex is False:
-        cmd.append("--no-collect-medex")
-    if collect_books is True:
-        cmd.append("--collect-books")
-    elif collect_books is False:
-        cmd.append("--no-collect-books")
-    env = os.environ.copy()
-    python_paths = [str(base_dir)]
-    existing_py_path = env.get("PYTHONPATH")
-    if existing_py_path:
-        python_paths.append(existing_py_path)
-    env["PYTHONPATH"] = os.pathsep.join(python_paths)
-    proc = subprocess.Popen(cmd, cwd=str(base_dir), env=env)
-    try:
-        (Path("/tmp") / "crawler.pid").write_text(str(proc.pid), encoding="utf-8")
-    except Exception:
-        pass
-
-
 @crawler_router.post("/run", status_code=202)
 async def run_crawler(
     req: CrawlRequest, background_tasks: BackgroundTasks, request: Request
 ) -> dict[str, str]:
     """Start the crawler in a background task."""
 
-    parsed_host = urlparse.urlsplit(req.start_url).netloc
-    allowed_domain = (req.domain or parsed_host or "").lower()
-    project_name = _normalize_project(req.project) or _normalize_project(allowed_domain)
-    if not project_name:
-        raise HTTPException(status_code=400, detail="project is required")
-
-    project = await request.state.mongo.get_project(project_name)
-    if project is None:
-        project = await request.state.mongo.upsert_project(
-            Project(name=project_name, domain=allowed_domain or None)
-        )
-
-    background_tasks.add_task(
-        _spawn_crawler,
-        req.start_url,
-        req.max_pages,
-        req.max_depth,
-        project=project_name,
-        domain=allowed_domain or None,
-        mongo_uri=backend_settings.mongo_uri,
-        collect_medex=req.collect_medex,
-        collect_books=req.collect_books,
-    )
-    return {
-        "status": "started",
-        "project": project_name,
-        "domain": allowed_domain or None,
-    }
+    return await crawler_service.queue_run(request, req, background_tasks)
 
 
 @crawler_router.get("/status")
 async def crawler_status(project: str | None = None) -> dict[str, object]:
     """Return current crawler and database status."""
 
-    project_label = _normalize_project(project)
-    data = status_dict(project_label)
-    crawler = data.get("crawler") or {}
-    note = get_crawler_note(project_label)
-    if note:
-        data["notes"] = note
-    data.update(
-        {
-            "queued": crawler.get("queued", 0),
-            "in_progress": crawler.get("in_progress", 0),
-            "done": crawler.get("done", 0),
-            "failed": crawler.get("failed", 0),
-            "remaining": crawler.get("remaining", max(0, crawler.get("queued", 0) + crawler.get("in_progress", 0))),
-            "recent_urls": crawler.get("recent_urls") or [],
-            "last_url": crawler.get("last_url"),
-        }
-    )
-    logger.info(
-        "crawler_status_snapshot",
-        project=project_label,
-        ok=data.get("ok"),
-        queued=data.get("queued"),
-        in_progress=data.get("in_progress"),
-        done=data.get("done"),
-        failed=data.get("failed"),
-        remaining=data.get("remaining"),
-        last_url=data.get("last_url"),
-        notes=data.get("notes"),
-    )
-    return data
+    return crawler_service.status(project)
 
 
 @crawler_router.post("/reset", status_code=202)
@@ -2967,9 +2623,7 @@ async def crawler_reset(request: Request, project: str | None = None) -> dict[st
     """Reset crawler counters and recent URLs for the given project."""
 
     _require_super_admin(request)
-    project_label = _normalize_project(project)
-    removed = clear_crawler_state(project_label)
-    return {"status": "reset", "project": project_label, "purged_jobs": removed}
+    return crawler_service.reset(project)
 
 
 @crawler_router.post("/deduplicate", status_code=200)
@@ -2977,26 +2631,13 @@ async def crawler_deduplicate(request: Request, project: str | None = None) -> d
     """Deduplicate the recent URL list for the crawler."""
 
     _require_super_admin(request)
-    project_label = _normalize_project(project)
-    removed = deduplicate_recent_urls(project_label)
-    return {"status": "deduplicated", "removed": removed, "project": project_label}
+    return crawler_service.deduplicate(project)
 
 
 @crawler_router.post("/stop", status_code=202)
 async def stop_crawler() -> dict[str, str]:
     """Attempt to stop the last started crawler process by PID file."""
-    pid_path = Path("/tmp") / "crawler.pid"
-    try:
-        pid = int(pid_path.read_text(encoding="utf-8").strip())
-    except Exception:
-        return {"status": "unknown"}
-    try:
-        os.kill(pid, signal.SIGTERM)
-        return {"status": "stopping", "pid": pid}
-    except ProcessLookupError:
-        return {"status": "not_running"}
-    except Exception:
-        return {"status": "error"}
+    return crawler_service.stop()
 
 
 @reading_router.get("/pages", response_model=ReadingPagesResponse)
@@ -3010,145 +2651,29 @@ async def reading_pages(
 ) -> ORJSONResponse:
     """Return book-reading payload for the requested project."""
 
-    project_name = _normalize_project(project)
-    if not project_name:
-        raise HTTPException(status_code=400, detail="project_required")
-
-    safe_limit = max(1, min(limit, READING_PAGE_MAX_LIMIT))
-    safe_offset = max(0, offset)
-    include_html_flag = bool(include_html) if include_html is not None else False
-
     mongo_client = _get_mongo_client(request)
-    collection = getattr(request.state, "reading_collection", READING_COLLECTION_NAME)
-    pages = await mongo_client.get_reading_pages(
-        collection,
-        project_name,
-        limit=safe_limit,
-        offset=safe_offset,
+    payload = await reading_service.get_pages(
+        request,
+        mongo_client,
+        project,
+        limit=limit,
+        offset=offset,
         url=url,
+        include_html=include_html,
     )
-
-    if not include_html_flag:
-        for page in pages:
-            page.html = None
-
-    if url:
-        total = 1 if pages else 0
-    else:
-        total = await mongo_client.count_reading_pages(collection, project_name)
-
-    has_more = safe_offset + len(pages) < total
-
     response = ReadingPagesResponse(
-        pages=pages,
-        total=total,
-        limit=safe_limit,
-        offset=safe_offset,
-        has_more=has_more,
+        pages=payload["pages"],
+        total=payload["total"],
+        limit=payload["limit"],
+        offset=payload["offset"],
+        has_more=payload["has_more"],
     )
     return ORJSONResponse(response.model_dump(by_alias=True))
 
 
-def _validate_voice_project(project: str | None) -> str:
-    project_name = _normalize_project(project)
-    if not project_name:
-        raise HTTPException(status_code=400, detail="project_required")
-    return project_name
-
-
-def _queue_voice_training_job(job_id: str) -> bool:
-    try:
-        voice_train_model.delay(job_id)
-        return True
-    except VOICE_QUEUE_ERRORS as exc:
-        logger.warning("voice_training_enqueue_failed", job_id=job_id, error=str(exc))
-        return False
-
-
-async def _run_voice_job_inline(job_id: str, mongo_client: MongoClient) -> None:
-    stages = [
-        (VoiceTrainingStatus.preparing, 0.1, "Готовим набор примеров", 0.6),
-        (VoiceTrainingStatus.training, 0.65, "Обучаем голосовую модель", 1.2),
-        (VoiceTrainingStatus.validating, 0.9, "Проверяем результат", 0.8),
-    ]
-    try:
-        started_at = time.time()
-        await mongo_client.update_voice_training_job(
-            job_id,
-            status=VoiceTrainingStatus.preparing,
-            progress=0.05,
-            message="Запускаем обучение",
-            started_at=started_at,
-        )
-        for status, progress, message, delay in stages:
-            await asyncio.sleep(delay)
-            await mongo_client.update_voice_training_job(
-                job_id,
-                status=status,
-                progress=progress,
-                message=message,
-            )
-        await asyncio.sleep(0.6)
-        await mongo_client.update_voice_training_job(
-            job_id,
-            status=VoiceTrainingStatus.completed,
-            progress=1.0,
-            message="Голосовой профиль готов",
-            finished_at=time.time(),
-        )
-        logger.info("voice_training_inline_completed", job_id=job_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("voice_training_inline_failed", job_id=job_id, error=str(exc))
-        await mongo_client.update_voice_training_job(
-            job_id,
-            status=VoiceTrainingStatus.failed,
-            progress=0.0,
-            message="Ошибка при обучении",
-            finished_at=time.time(),
-        )
-
-
-async def _voice_job_watchdog(job_id: str, project: str, mongo_client: MongoClient) -> None:
-    await asyncio.sleep(max(1.0, VOICE_JOB_STALE_TIMEOUT))
-    try:
-        jobs = await mongo_client.list_voice_training_jobs(project, limit=1)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("voice_training_watchdog_fetch_error", job_id=job_id, project=project, error=str(exc))
-        return
-    if not jobs:
-        return
-    job = jobs[0]
-    if job.id != job_id:
-        return
-    if job.status == VoiceTrainingStatus.queued:
-        logger.warning("voice_training_watchdog_inline", job_id=job_id, project=project)
-        await _run_voice_job_inline(job_id, mongo_client)
-
-
-def _validate_voice_payload(
-    filename: str | None,
-    content_type: str | None,
-    payload: bytes,
-) -> tuple[str, str | None, bytes]:
-    safe_name = Path(filename or "sample").name
-    if len(payload) == 0:
-        raise HTTPException(status_code=400, detail="empty_sample")
-    if len(payload) > VOICE_MAX_SAMPLE_BYTES:
-        raise HTTPException(status_code=413, detail="sample_too_large")
-    lowered = (content_type or "").lower() or None
-    if lowered and lowered in VOICE_ALLOWED_CONTENT_TYPES:
-        return safe_name, lowered, payload
-    suffix = Path(safe_name).suffix.lower()
-    if suffix in {".mp3", ".wav", ".flac", ".ogg", ".webm", ".m4a", ".aac"}:
-        return safe_name, lowered, payload
-    raise HTTPException(status_code=415, detail="unsupported_content_type")
-
-
 @voice_router.get("/samples", response_model=VoiceSamplesResponse)
 async def voice_samples(request: Request, project: str | None = None) -> ORJSONResponse:
-    project_name = _validate_voice_project(project)
-    mongo_client = _get_mongo_client(request)
-    samples = await mongo_client.list_voice_samples(project_name)
+    samples = await voice_service.list_samples(request, project)
     return ORJSONResponse(VoiceSamplesResponse(samples=samples).model_dump(by_alias=True))
 
 
@@ -3158,24 +2683,7 @@ async def upload_voice_samples(
     project: str = Form(...),
     files: list[UploadFile] = File(...),
 ) -> ORJSONResponse:
-    project_name = _validate_voice_project(project)
-    if not files:
-        raise HTTPException(status_code=400, detail="files_required")
-
-    mongo_client = _get_mongo_client(request)
-    accepted: list[VoiceSample] = []
-    for file in files:
-        payload = await file.read()
-        filename, content_type, payload = _validate_voice_payload(file.filename, file.content_type, payload)
-        sample = await mongo_client.add_voice_sample(project_name, filename, payload, content_type)
-        accepted.append(sample)
-        await file.close()
-    logger.info(
-        "voice_samples_uploaded",
-        project=project_name,
-        uploaded=len(accepted),
-    )
-    samples = await mongo_client.list_voice_samples(project_name)
+    samples = await voice_service.upload_samples(request, project, files)
     return ORJSONResponse(VoiceSamplesResponse(samples=samples).model_dump(by_alias=True))
 
 
@@ -3185,121 +2693,27 @@ async def delete_voice_sample(
     sample_id: str,
     project: str | None = None,
 ) -> ORJSONResponse:
-    project_name = _validate_voice_project(project)
-    mongo_client = _get_mongo_client(request)
-    removed = await mongo_client.delete_voice_sample(project_name, sample_id)
-    if not removed:
-        raise HTTPException(status_code=404, detail="sample_not_found")
-    samples = await mongo_client.list_voice_samples(project_name)
+    samples = await voice_service.delete_sample(request, sample_id, project)
     return ORJSONResponse(VoiceSamplesResponse(samples=samples).model_dump(by_alias=True))
 
 
 @voice_router.get("/jobs", response_model=VoiceJobsResponse)
 async def voice_jobs(request: Request, project: str | None = None, limit: int = 10) -> ORJSONResponse:
-    project_name = _validate_voice_project(project)
-    safe_limit = max(1, min(limit, 25))
-    mongo_client = _get_mongo_client(request)
-    jobs = await mongo_client.list_voice_training_jobs(project_name, limit=safe_limit)
+    jobs = await voice_service.list_jobs(request, project, limit)
     return ORJSONResponse(VoiceJobsResponse(jobs=jobs).model_dump(by_alias=True))
 
 
 @voice_router.get("/status")
 async def voice_training_status(request: Request, project: str | None = None) -> ORJSONResponse:
-    project_name = _validate_voice_project(project)
-    mongo_client = _get_mongo_client(request)
-    jobs = await mongo_client.list_voice_training_jobs(project_name, limit=1)
-    job = jobs[0] if jobs else None
+    job = await voice_service.get_status(request, project)
     payload = job.model_dump(by_alias=True) if job else None
     return ORJSONResponse({"job": payload})
 
 
 @voice_router.post("/train")
 async def start_voice_training(request: Request, project: str = Form(...)) -> ORJSONResponse:
-    project_name = _validate_voice_project(project)
-    mongo_client = _get_mongo_client(request)
-    samples = await mongo_client.list_voice_samples(project_name)
-    if len(samples) < VOICE_MIN_SAMPLE_COUNT:
-        raise HTTPException(
-            status_code=400,
-            detail=f"not_enough_samples:{len(samples)}/{VOICE_MIN_SAMPLE_COUNT}",
-        )
-
-    existing_jobs = await mongo_client.list_voice_training_jobs(project_name, limit=1)
-    if existing_jobs:
-        existing_job = existing_jobs[0]
-        if existing_job.status in {
-            VoiceTrainingStatus.queued,
-            VoiceTrainingStatus.preparing,
-            VoiceTrainingStatus.training,
-            VoiceTrainingStatus.validating,
-        }:
-            payload = existing_job.model_dump(by_alias=True)
-            updated_at = payload.get("updatedAt") or payload.get("updated_at")
-            if updated_at is None:
-                updated_at = existing_job.created_at or time.time()
-            try:
-                updated_at_value = float(updated_at)
-            except (TypeError, ValueError):
-                updated_at_value = time.time()
-
-            age = time.time() - updated_at_value
-            if age >= VOICE_JOB_STALE_TIMEOUT:
-                logger.warning(
-                    "voice_training_job_stale",
-                    project=project_name,
-                    job_id=existing_job.id,
-                    status=existing_job.status.value,
-                    age=age,
-                )
-                updated_job = await mongo_client.update_voice_training_job(
-                    existing_job.id,
-                    status=VoiceTrainingStatus.queued,
-                    progress=existing_job.progress or 0.0,
-                    message="Перезапускаем обучение",
-                )
-                if updated_job:
-                    payload = updated_job.model_dump(by_alias=True)
-                requeued = False
-                if worker_mongo_client is not None and worker_settings is not None:
-                    requeued = _queue_voice_training_job(existing_job.id)
-                if requeued:
-                    asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
-                else:
-                    asyncio.create_task(_run_voice_job_inline(existing_job.id, mongo_client))
-                return ORJSONResponse(
-                    {"job": payload, "resumed": True, "detail": "job_resumed"},
-                    status_code=202,
-                )
-
-            if existing_job.status == VoiceTrainingStatus.queued:
-                asyncio.create_task(_voice_job_watchdog(existing_job.id, project_name, mongo_client))
-
-            logger.info(
-                "voice_training_job_active",
-                project=project_name,
-                job_id=existing_job.id,
-                status=existing_job.status.value,
-            )
-            return ORJSONResponse(
-                {"job": payload, "resumed": False, "detail": "job_in_progress"},
-                status_code=202,
-            )
-
-    job = await mongo_client.create_voice_training_job(project_name)
-    queued = False
-    if worker_mongo_client is not None and worker_settings is not None:
-        queued = _queue_voice_training_job(job.id)
-    if queued:
-        asyncio.create_task(_voice_job_watchdog(job.id, project_name, mongo_client))
-    else:
-        asyncio.create_task(_run_voice_job_inline(job.id, mongo_client))
-    logger.info(
-        "voice_training_queued",
-        project=project_name,
-        job_id=job.id,
-        transport="celery" if queued else "inline",
-    )
-    return ORJSONResponse({"job": job.model_dump(by_alias=True), "detail": "job_queued"}, status_code=202)
+    payload, status_code = await voice_service.start_training(request, project)
+    return ORJSONResponse(payload, status_code=status_code)
 
 
 @llm_router.get("/info")
