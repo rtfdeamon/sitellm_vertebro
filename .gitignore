@@ -8,6 +8,12 @@ __pycache__/
 # Python environment files
 .env
 
+# Python package metadata
+*.egg-info/
+
+# Node.js dependencies
+node_modules/
+
 # Editors
 .idea/
 .vscode/
