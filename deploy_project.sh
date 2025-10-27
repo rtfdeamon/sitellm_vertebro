@@ -554,7 +554,62 @@ update_env_var HOST_MONGO_PORT "$MONGO_PORT_HOST"
 update_env_var HOST_REDIS_PORT "$REDIS_PORT_HOST"
 update_env_var HOST_QDRANT_HTTP_PORT "$QDRANT_HTTP_HOST"
 update_env_var HOST_QDRANT_GRPC_PORT "$QDRANT_GRPC_HOST"
-update_env_var OLLAMA_BASE_URL "${OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+
+normalize_bool() {
+  local val="${1:-}"
+  val=$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]')
+  case "$val" in
+    1|true|yes|on)
+      echo "1"
+      ;;
+    *)
+      echo "0"
+      ;;
+  esac
+}
+
+LOCAL_LLM_RAW="${LOCAL_LLM_ENABLED:-}"
+if [ -z "$LOCAL_LLM_RAW" ] && [ -f .env ]; then
+  LOCAL_LLM_RAW=$(awk -F= '/^LOCAL_LLM_ENABLED=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+fi
+
+VAL_OLLAMA_BASE=$(awk -F= '/^OLLAMA_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+VAL_MODEL_BASE=$(awk -F= '/^MODEL_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
+if [ -n "${OLLAMA_BASE_URL:-}" ]; then
+  VAL_OLLAMA_BASE="${OLLAMA_BASE_URL}"
+fi
+if [ -n "${MODEL_BASE_URL:-}" ]; then
+  VAL_MODEL_BASE="${MODEL_BASE_URL}"
+fi
+
+LOCAL_LLM_DEFAULT="1"
+if [ -n "$VAL_MODEL_BASE" ] || [ -n "$VAL_OLLAMA_BASE" ]; then
+  LOCAL_LLM_DEFAULT="0"
+fi
+
+if [ -n "$LOCAL_LLM_RAW" ]; then
+  LOCAL_LLM_BOOL=$(normalize_bool "$LOCAL_LLM_RAW")
+else
+  LOCAL_LLM_BOOL="$LOCAL_LLM_DEFAULT"
+fi
+
+if [ "$LOCAL_LLM_BOOL" = "1" ]; then
+  LOCAL_LLM_ENABLED="true"
+else
+  LOCAL_LLM_ENABLED="false"
+fi
+update_env_var LOCAL_LLM_ENABLED "$LOCAL_LLM_ENABLED"
+
+DEFAULT_OLLAMA_BASE_URL="http://host.docker.internal:11434"
+if [ "$LOCAL_LLM_ENABLED" = "true" ]; then
+  update_env_var OLLAMA_BASE_URL "http://ollama:11434"
+else
+  if [ -n "$VAL_OLLAMA_BASE" ] && [ "$VAL_OLLAMA_BASE" != "http://ollama:11434" ]; then
+    update_env_var OLLAMA_BASE_URL "$VAL_OLLAMA_BASE"
+  else
+    update_env_var OLLAMA_BASE_URL "$DEFAULT_OLLAMA_BASE_URL"
+  fi
+fi
 
 TLS_ENABLED_RAW=${APP_ENABLE_TLS:-}
 if [ -z "$TLS_ENABLED_RAW" ] && [ -f .env ]; then
@@ -586,22 +641,8 @@ else
   update_env_var APP_SSL_KEY ""
 fi
 
-# ---------------------------------------------------------------------------
-# Decide whether local LLM (llama-cpp/torch) is needed
-# If an external model backend is configured (MODEL_BASE_URL) or Ollama base
-# is set, disable local LLM and force CPU build to avoid NVIDIA/CUDA drivers.
-# ---------------------------------------------------------------------------
-
-# Read values back from .env (tolerate missing)
-VAL_OLLAMA_BASE=$(awk -F= '/^OLLAMA_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
-VAL_MODEL_BASE=$(awk -F= '/^MODEL_BASE_URL=/{print $2}' .env 2>/dev/null | tail -n1 || true)
-
-# Treat non-empty as configured
-LOCAL_LLM_ENABLED=true
-if [ -n "${VAL_MODEL_BASE}" ] || [ -n "${VAL_OLLAMA_BASE}" ]; then
-  LOCAL_LLM_ENABLED=false
-fi
-update_env_var LOCAL_LLM_ENABLED "${LOCAL_LLM_ENABLED}"
+# Decide whether local LLM resources should be used (default to auto-detect
+# when user has not explicitly set LOCAL_LLM_ENABLED).
 USE_GPU=false
 
 timestamp=$(date +%Y%m%d%H%M%S)
@@ -679,7 +720,7 @@ update_env_var STATEFUL_VERSION "$STATEFUL_VERSION"
 printf '[i] Component versions: backend=%s telegram=%s stateful=%s\n' "$BACKEND_VERSION" "$TELEGRAM_VERSION" "$STATEFUL_VERSION"
 
 printf '[+] Building images sequentially...\n'
-SERVICES=(app telegram-bot)
+SERVICES=(app telegram-bot celery_worker celery_beat)
 for svc in "${SERVICES[@]}"; do
   if ! "${COMPOSE_CMD[@]}" build --pull "$svc"; then
     printf '[!] Failed to build %s\n' "$svc"
@@ -687,17 +728,19 @@ for svc in "${SERVICES[@]}"; do
   fi
 done
 
-# Enable compose profiles only when local LLM is enabled
+# Enable compose profiles only when local LLM/Ollama is enabled
 PROFILE_ARGS=()
 if [ "${LOCAL_LLM_ENABLED}" = "true" ]; then
   PROFILE_ARGS+=(--profile local-llm)
+  PROFILE_ARGS+=(--profile local-ollama)
 fi
 
+UP_CMD=("${COMPOSE_CMD[@]}")
 if [ ${#PROFILE_ARGS[@]} -gt 0 ]; then
-  "${COMPOSE_CMD[@]}" up -d "${PROFILE_ARGS[@]}"
-else
-  "${COMPOSE_CMD[@]}" up -d
+  UP_CMD+=("${PROFILE_ARGS[@]}")
 fi
+UP_CMD+=("up" "-d" "--force-recreate" "--build")
+"${UP_CMD[@]}"
 printf '[✓] Containers running\n'
 
 printf '[+] Verifying Mongo connectivity...\n'
