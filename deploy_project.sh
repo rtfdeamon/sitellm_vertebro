@@ -455,17 +455,11 @@ esac
 touch .env
 update_env_var() {
   local key="$1" val="$2"
-  local esc_val
-  esc_val=$(printf '%s' "$val" | sed 's/[\\/&]/\\&/g')
   if grep -q "^${key}=" .env 2>/dev/null; then
-    if sed --version >/dev/null 2>&1; then
-      sed -i -e "s/^${key}=.*/${key}=${esc_val}/" .env
-    else
-      sed -i '' -e "s/^${key}=.*/${key}=${esc_val}/" .env
-    fi
-  else
-    echo "${key}=${val}" >> .env
+    printf '[i] %s already set in .env; keeping existing value.\n' "$key"
+    return
   fi
+  printf '%s=%s\n' "$key" "$val" >> .env
 }
 
 ensure_self_signed_cert() {
@@ -490,7 +484,7 @@ update_env_var QDRANT_URL "$QDRANT_URL"
 if [ -n "$QDRANT_PLATFORM" ]; then
   update_env_var QDRANT_PLATFORM "$QDRANT_PLATFORM"
 fi
-update_env_var EMB_MODEL_NAME "sentence-transformers/sbert_large_nlu_ru"
+update_env_var EMB_MODEL_NAME "ai-forever/sbert_large_nlu_ru"
 update_env_var RERANK_MODEL_NAME "sbert_cross_ru"
 update_env_var MONGO_HOST "$MONGO_HOST"
 update_env_var MONGO_PORT "$MONGO_PORT"

@@ -1,13 +1,15 @@
-"""Celery worker tasks for updating the Redis vector store and voice models."""
+"""Celery worker tasks for updating the Qdrant vector store, backups, and voice models."""
 
 import asyncio
 import os
 import re
+import threading
 import time
-from collections.abc import Generator
+from collections.abc import Awaitable, Generator
+from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict
+from typing import Any, Dict
 from urllib.parse import quote_plus
 
 from bson import ObjectId
@@ -31,7 +33,12 @@ from models import BackupOperation, BackupStatus, Document, VoiceTrainingStatus
 from mongo import MongoClient as AsyncMongoClient
 from settings import Settings
 from vectors import DocumentsParser
-from yallm import YaLLMEmbeddings
+from backend.ollama_cluster import init_cluster
+from backend.settings import settings as backend_settings
+try:
+    from langchain_huggingface import HuggingFaceEmbeddings
+except ImportError:  # pragma: no cover - legacy fallback
+    from langchain_community.embeddings import HuggingFaceEmbeddings  # type: ignore[no-redef]
 from core.status import status_dict
 from observability.logging import configure_logging
 
@@ -42,6 +49,156 @@ configure_logging()
 settings = Settings()
 
 logger = structlog.get_logger(__name__)
+
+_ASYNC_LOOP: asyncio.AbstractEventLoop | None = None
+_ASYNC_THREAD: threading.Thread | None = None
+_ASYNC_THREAD_LOCK = threading.Lock()
+
+try:
+    LLM_GENERATION_TIMEOUT = float(os.getenv("LLM_GENERATION_TIMEOUT", "300"))
+except (TypeError, ValueError):
+    LLM_GENERATION_TIMEOUT = 300.0
+
+
+def _loop_runner(loop: asyncio.AbstractEventLoop) -> None:
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+
+def _ensure_async_loop() -> None:
+    """Ensure the dedicated asyncio loop thread is running (handles prefork resets)."""
+
+    global _ASYNC_LOOP, _ASYNC_THREAD, _cluster_init_future, _cluster_mongo_client
+    with _ASYNC_THREAD_LOCK:
+        if _ASYNC_THREAD and _ASYNC_THREAD.is_alive() and _ASYNC_LOOP is not None:
+            return
+        previous_future = _cluster_init_future
+        if previous_future is not None:
+            try:
+                previous_future.cancel()
+            except Exception:  # noqa: BLE001
+                pass
+            _cluster_init_future = None
+        _cluster_mongo_client = None
+        _ASYNC_LOOP = asyncio.new_event_loop()
+        _ASYNC_THREAD = threading.Thread(
+            target=_loop_runner,
+            args=(_ASYNC_LOOP,),
+            name="worker-async-loop",
+            daemon=True,
+        )
+        _ASYNC_THREAD.start()
+
+
+_cluster_init_lock = threading.Lock()
+_cluster_init_future: Future | None = None
+_cluster_mongo_client: AsyncMongoClient | None = None
+
+_ensure_async_loop()
+
+
+async def _initialize_cluster(default_base: str | None) -> None:
+    """Create Mongo client on the loop thread and initialise the Ollama cluster."""
+
+    global _cluster_mongo_client
+    logger.info("ollama_cluster_init_start", default_base=default_base)
+    if _cluster_mongo_client is None:
+        _cluster_mongo_client = _create_async_mongo()
+    await init_cluster(_cluster_mongo_client, default_base=default_base)
+    logger.info("ollama_cluster_init_complete")
+
+
+def run_async(coro: Awaitable[Any], *, timeout: float | None = None) -> Any:
+    """Execute ``coro`` on the worker background loop and return its result."""
+
+    _ensure_async_loop()
+    if _ASYNC_LOOP is None:
+        raise RuntimeError("async loop unavailable")
+    future = asyncio.run_coroutine_threadsafe(coro, _ASYNC_LOOP)
+    if timeout is None:
+        timeout = LLM_GENERATION_TIMEOUT
+    try:
+        return future.result(timeout=timeout)
+    except FutureTimeoutError as exc:
+        future.cancel()
+        logger.warning(
+            "run_async_timeout",
+            timeout=timeout,
+            coroutine=getattr(coro, "__qualname__", type(coro).__name__),
+        )
+        raise
+
+
+def ensure_ollama_cluster_ready() -> bool:
+    """Initialize the Ollama cluster manager if it is not ready yet."""
+
+    global _cluster_init_future, _cluster_mongo_client
+    logger.info("ollama_cluster_ready_check")
+    _ensure_async_loop()
+    with _cluster_init_lock:
+        if _cluster_init_future and not _cluster_init_future.done():
+            logger.info("ollama_cluster_init_inflight")
+            future = _cluster_init_future
+        else:
+            if _cluster_init_future and _cluster_init_future.done():
+                try:
+                    _cluster_init_future.result()
+                    return True
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("ollama_cluster_previous_init_failed", error=str(exc))
+            default_base = _resolve_ollama_default_base()
+            logger.info("ollama_cluster_init_schedule", default_base=default_base)
+            future = asyncio.run_coroutine_threadsafe(
+                _initialize_cluster(default_base),
+                _ASYNC_LOOP,
+            )
+            _cluster_init_future = future
+
+    try:
+        future.result()
+        logger.info("ollama_cluster_ready")
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ollama_cluster_init_failed", error=str(exc))
+        return False
+
+
+def _resolve_ollama_default_base() -> str | None:
+    """Return the configured Ollama base URL.
+
+    Prefers the immediate environment (used by Celery) and falls back to the
+    backend settings module for compatibility with older deployments.
+    """
+
+    if _has_stored_ollama_servers():
+        logger.info("ollama_cluster_stored_servers_present")
+        return None
+
+    env_value = os.getenv("OLLAMA_BASE_URL")
+    if env_value and str(env_value).strip():
+        return str(env_value).strip()
+    setting_value = getattr(backend_settings, "ollama_base_url", None)
+    if setting_value and str(setting_value).strip():
+        return str(setting_value).strip()
+    return None
+
+
+def _has_stored_ollama_servers() -> bool:
+    """Return True when Mongo already holds at least one Ollama server entry."""
+
+    client: SyncMongoClient | None = None
+    try:
+        client = get_mongo_client()
+        db = client[settings.mongo.database]
+        collection_name = os.getenv("MONGO_OLLAMA_SERVERS", "ollama_servers")
+        result = db[collection_name].find_one({}, {"_id": False, "base_url": 1})
+        return bool(result)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ollama_cluster_stored_servers_check_failed", error=str(exc))
+        return False
+    finally:
+        if client is not None:
+            client.close()
 
 VOICE_MIN_SAMPLE_COUNT = int(os.getenv("VOICE_MIN_SAMPLE_COUNT", "3"))
 
@@ -126,8 +283,22 @@ def update_vector_store():
             mongo_client, filter_query=filter_query
         ):
             logger.info("embedding", document=document.name)
-            vector_store.parse_document(document.name, document.fileId, data)
-            processed += 1
+            try:
+                vector_store.parse_document(document, data)
+            except ValueError as exc:
+                logger.warning(
+                    "vector_store_document_skipped",
+                    document=document.name,
+                    error=str(exc),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "vector_store_document_failed",
+                    document=document.name,
+                    error=str(exc),
+                )
+            else:
+                processed += 1
             if document.ts is not None:
                 try:
                     latest_ts = max(latest_ts, float(document.ts))
@@ -152,6 +323,10 @@ def update_vector_store():
         )
     finally:
         mongo_client.close()
+        try:
+            vector_store.close()
+        except Exception:  # pragma: no cover - best effort cleanup
+            pass
         del vector_store
 
 
@@ -199,23 +374,22 @@ def get_mongo_client() -> SyncMongoClient:
     return SyncMongoClient(url)
 
 
-def get_document_parser() -> DocumentsParser:
-    """Construct a ``DocumentsParser`` using YaLLM embeddings.
+def _build_embeddings_model() -> HuggingFaceEmbeddings:
+    """Return the embeddings implementation based on configuration."""
 
-    The parser is configured to store vectors in Redis using the parameters
-    defined in :class:`Settings`.
-    """
+    model_name = os.getenv("EMB_MODEL_NAME") or settings.emb_model_name
+    logger.info("using huggingface embeddings", model=model_name)
+    return HuggingFaceEmbeddings(model_name=model_name)
+
+
+def get_document_parser() -> DocumentsParser:
+    """Construct a ``DocumentsParser`` with the configured embeddings backend."""
+
     logger.info("create document parser")
-    embeddings = YaLLMEmbeddings()
-    return DocumentsParser(
-        embeddings.get_embeddings_model(),
-        settings.redis.vector,
-        settings.redis.host,
-        settings.redis.port,
-        0,
-        settings.redis.password,
-        settings.redis.secure,
-    )
+    embeddings = _build_embeddings_model()
+    collection = os.getenv("QDRANT_COLLECTION") or settings.qdrant_collection
+    qdrant_url = os.getenv("QDRANT_URL") or str(settings.qdrant_url)
+    return DocumentsParser(embeddings, collection, qdrant_url)
 
 
 def _create_async_mongo() -> AsyncMongoClient:
@@ -305,6 +479,7 @@ def prune_knowledge_collection(db, collection) -> dict[str, int]:
                 "content_hash": 1,
                 "description": 1,
                 "project": 1,
+                "autoDescriptionPending": 1,
             },
         )
         for doc in cursor:
@@ -329,7 +504,7 @@ def prune_knowledge_collection(db, collection) -> dict[str, int]:
             else:
                 skip_low_value = True
 
-            if skip_low_value:
+            if skip_low_value and not bool(doc.get("autoDescriptionPending")):
                 _delete_document(collection, gridfs, file_id)
                 low_value += 1
                 removed += 1
@@ -350,6 +525,7 @@ def on_startup(*args, **kwargs):
     worker process is ready to accept tasks.
     """
     logger.info("worker ready")
+    ensure_ollama_cluster_ready()
     update_vector_store()
 
 
