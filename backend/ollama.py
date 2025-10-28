@@ -69,69 +69,56 @@ def _parse_size(value: str | int | float | None) -> int:
 
 
 def ollama_available() -> bool:
-    return shutil.which("ollama") is not None
+    """Check if Ollama service is available via HTTP API."""
+    import httpx
+    from backend.settings import settings as base_settings
+
+    ollama_url = getattr(base_settings, "ollama_base_url", "http://ollama:11434")
+    try:
+        response = httpx.get(f"{ollama_url}/api/version", timeout=2.0)
+        return response.status_code == 200
+    except Exception:
+        return False
 
 
 def list_installed_models() -> list[OllamaModel]:
+    """Get list of installed Ollama models via HTTP API."""
     if not ollama_available():
         return []
 
+    import httpx
+    from backend.settings import settings as base_settings
+
+    ollama_url = getattr(base_settings, "ollama_base_url", "http://ollama:11434")
+
     try:
-        proc = subprocess.run(
-            ["ollama", "list", "--json"],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception:
-        return []
+        response = httpx.get(f"{ollama_url}/api/tags", timeout=5.0)
+        if response.status_code != 200:
+            return []
 
-    output = (proc.stdout or "").strip()
-    if not output:
-        return []
+        data = response.json()
+        models_list = data.get("models", [])
 
-    models: list[OllamaModel] = []
-    for line in output.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        payload: dict[str, Any] | None = None
-        if line.startswith("{") and line.endswith("}"):
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                payload = None
-        if payload is None:
-            # fallback for tabtable output, expect columns: name size modified
-            parts = [part for part in line.split() if part]
-            if not parts:
+        models: list[OllamaModel] = []
+        for model_data in models_list:
+            name = str(model_data.get("name") or model_data.get("model") or "").strip()
+            if not name:
                 continue
-            name = parts[0]
-            size = _parse_size(parts[1]) if len(parts) > 1 else 0
+
+            size_bytes = _parse_size(model_data.get("size"))
             models.append(
                 OllamaModel(
                     name=name,
-                    size_bytes=size,
-                    size_human=_to_human_size(size),
-                    modified_at=None,
+                    size_bytes=size_bytes,
+                    size_human=_to_human_size(size_bytes),
+                    modified_at=model_data.get("modified_at"),
+                    digest=model_data.get("digest"),
                 )
             )
-            continue
-        name = str(payload.get("name") or payload.get("model") or "").strip()
-        if not name:
-            continue
-        size_bytes = _parse_size(payload.get("size"))
-        models.append(
-            OllamaModel(
-                name=name,
-                size_bytes=size_bytes,
-                size_human=_to_human_size(size_bytes),
-                modified_at=payload.get("modified_at"),
-                digest=payload.get("digest"),
-            )
-        )
-    return models
+
+        return models
+    except Exception:
+        return []
 
 
 def installed_model_names() -> list[str]:

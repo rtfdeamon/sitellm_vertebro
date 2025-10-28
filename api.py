@@ -127,6 +127,28 @@ def _get_mongo_client(request: Request) -> MongoClient:
     return mongo_client
 
 
+# Import authentication functions from app.py to avoid circular imports
+def _get_admin_identity(request: Request):
+    """Get admin identity from request state (set by BasicAuthMiddleware in app.py)."""
+    return getattr(request.state, "admin", None)
+
+
+def _require_admin(request: Request):
+    """Require admin authentication."""
+    identity = _get_admin_identity(request)
+    if identity is None:
+        raise HTTPException(status_code=401, detail="Admin authentication required")
+    return identity
+
+
+def _require_super_admin(request: Request):
+    """Require super admin privileges."""
+    identity = _require_admin(request)
+    if not getattr(identity, "is_super", False):
+        raise HTTPException(status_code=403, detail="Super admin privileges required")
+    return identity
+
+
 def _resolve_session_identifiers(
     request: Request,
     project: str | None,
@@ -2327,7 +2349,7 @@ async def chat(
         for entry in knowledge_snippets[:3]
     ]
     reading_items_stream = reading_service.collect_reading_items(knowledge_snippets)
-    _log_debug_event(
+    logger.info(
         "llm_prompt_compiled_stream",
         project=project_name,
         emotions=emotions_enabled,

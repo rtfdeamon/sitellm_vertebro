@@ -738,6 +738,9 @@
       border: 1px solid rgba(96, 165, 250, 0.32);
       border-radius: 10px;
       padding: 12px;
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     .crawler-logs.visible {
@@ -761,6 +764,7 @@
     .crawler-logs-output {
       max-height: 200px;
       overflow-y: auto;
+      overflow-x: auto;
       background: rgba(15, 23, 42, 0.8);
       border-radius: 6px;
       padding: 10px;
@@ -769,6 +773,9 @@
       line-height: 1.5;
       color: #e2e8f0;
       user-select: text;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-wrap: break-word;
     }
 
     .crawler-actions {
@@ -1211,13 +1218,20 @@
     .stats-graph {
       position: relative;
       width: 100%;
-      height: 220px;
+      min-height: 220px;
+      height: auto;
       border: 1px solid rgba(148, 163, 184, 0.18);
       border-radius: 14px;
       background: rgba(15, 23, 42, 0.4);
-      overflow: hidden;
+      overflow: visible;
+      box-sizing: border-box;
     }
-    .stats-graph canvas { width: 100%; height: 100%; display: block; }
+    .stats-graph canvas {
+      width: 100%;
+      height: 220px;
+      display: block;
+      max-width: 100%;
+    }
     .stats-empty {
       position: absolute;
       inset: 0;
@@ -3239,6 +3253,21 @@
         pollStatus();
       }
       updateProjectSummary();
+
+      // Re-render knowledge priority with new translations
+      renderKnowledgePriority(knowledgePriorityOrder);
+
+      // Update drop zone text if no files selected
+      if (kbDropZone && !kbDropZone.classList.contains('has-files')) {
+        kbDropZone.textContent = i18n.t('textDragFilesHere');
+      }
+
+      // Re-render Ollama catalog with new translations
+      if (adminSession.is_super && OLLAMA_CATALOG) {
+        renderOllamaInstalledList(OLLAMA_CATALOG.installed);
+        renderOllamaPopularList(OLLAMA_CATALOG.popular, OLLAMA_CATALOG.jobs);
+        renderOllamaJobs(OLLAMA_CATALOG.jobs);
+      }
     }
 
     // Language selector event listener
@@ -3341,7 +3370,7 @@
       crawlerLogsCopy.addEventListener('click', async () => {
         const text = crawlerLogsOutput?.textContent || '';
         if (!text.trim()) {
-          setCrawlerActionStatus(t('crawlerActionNoData'), 2000);
+          setCrawlerActionStatus(i18n.t('crawlerActionNoData'), 2000);
           return;
         }
         try {
@@ -3358,10 +3387,10 @@
             selection.removeAllRanges();
           if (!legacyOk) throw new Error('exec_command_failed');
         }
-        setCrawlerActionStatus(t('logCopySuccess'), 2000);
+        setCrawlerActionStatus(i18n.t('logCopySuccess'), 2000);
       } catch (error) {
         console.error('crawler_logs_copy_failed', error);
-        setCrawlerActionStatus(t('logCopyError'), 3000);
+        setCrawlerActionStatus(i18n.t('logCopyError'), 3000);
       }
       });
     }
@@ -3864,7 +3893,6 @@
     const kbClearBtn = document.getElementById('kbClearKnowledge');
     const kbClearStatus = document.getElementById('kbClearStatus');
     const kbDropZone = document.getElementById('kbDropZone');
-    const kbDropZoneDefaultText = kbDropZone ? kbDropZone.textContent.trim() : '';
     const kbNewFileInput = document.getElementById('kbNewFile');
     const kbThinkingOverlay = document.getElementById('kbThinkingOverlay');
     const kbThinkingCaption = document.getElementById('kbThinkingCaption');
@@ -4308,7 +4336,7 @@
       if (!kbDropZone) return;
       const files = Array.from(fileList || []).filter(Boolean);
       if (!files.length) {
-        kbDropZone.textContent = kbDropZoneDefaultText || i18n.t('textDragFilesHere');
+        kbDropZone.textContent = i18n.t('textDragFilesHere');
         kbDropZone.classList.remove('has-files');
         return;
       }
@@ -5502,6 +5530,7 @@
     }
 
     function setSummaryPrompt(text, docs, meta) {
+      if (!summaryPromptEl || !summaryPromptDocs) return;
       const display = text || i18n.t('labelRequestHistoryWillAppear');
       const docsList = Array.isArray(docs) ? docs.join('|') : '';
       const signature = `${display}::${docsList}::${meta || ''}`;
@@ -5526,7 +5555,7 @@
         metaEl.textContent = meta;
         summaryPromptDocs.appendChild(metaEl);
       }
-      pulseCard(summaryLLMCard);
+      if (summaryLLMCard) pulseCard(summaryLLMCard);
     }
 
     function updateProjectSummary() {
@@ -6334,6 +6363,10 @@
           default_model: data.default_model || null,
         };
         OLLAMA_INSTALLED_SET = new Set(OLLAMA_CATALOG.installed.map((item) => item.name).filter(Boolean));
+        OLLAMA_CATALOG.popular = OLLAMA_CATALOG.popular.map(item => ({
+          ...item,
+          installed: OLLAMA_INSTALLED_SET.has(item.name)
+        }));
         if (ollamaAvailability) {
           ollamaAvailability.textContent = OLLAMA_CATALOG.available
             ? i18n.t('messageOllamaAvailable')
@@ -6359,19 +6392,38 @@
     }
 
     async function startOllamaInstall(model) {
-      if (!model || !adminSession.is_super) return;
+      if (!model) return;
+      if (!adminSession.is_super) {
+        if (ollamaJobsList) {
+          const row = document.createElement('div');
+          row.className = 'ollama-job error';
+          row.textContent = i18n.t('errorPermissionDenied') || 'Permission denied: Super admin access required';
+          ollamaJobsList.prepend(row);
+        }
+        return;
+      }
       try {
         const resp = await fetch('/api/v1/admin/ollama/install', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
           body: JSON.stringify({ model }),
         });
         if (!resp.ok) {
           const text = await resp.text();
+          console.error('ollama_install_request_failed', 'Status:', resp.status, 'Response:', text, 'Model:', model);
           throw new Error(text || `HTTP ${resp.status}`);
         }
+        const data = await resp.json();
+        console.log('ollama_install_started', 'Model:', model, 'Response:', data);
+        if (ollamaJobsList) {
+          const row = document.createElement('div');
+          row.className = 'ollama-job pending';
+          row.textContent = `${i18n.t('messageInstallationStarted') || 'Installation started'}: ${model}`;
+          ollamaJobsList.prepend(row);
+        }
       } catch (error) {
-        console.error('ollama_install_failed', error);
+        console.error('ollama_install_failed', 'Error:', error, 'Model:', model);
         if (ollamaJobsList) {
           const row = document.createElement('div');
           row.className = 'ollama-job error';
@@ -6488,22 +6540,28 @@
 
     async function performCrawlerAction(path, successMessage) {
       if (!currentProject) {
-        setCrawlerActionStatus(t('crawlerSelectProject'), 2500);
+        setCrawlerActionStatus(i18n.t('crawlerSelectProject'), 2500);
         return;
       }
-      setCrawlerActionStatus(t('crawlerActionProcessing'), 0);
+      setCrawlerActionStatus(i18n.t('crawlerActionProcessing'), 0);
       try {
-        const resp = await fetch(buildCrawlerActionUrl(path), { method: 'POST' });
+        const resp = await fetch(buildCrawlerActionUrl(path), {
+          method: 'POST',
+          credentials: 'include'
+        });
         if (!resp.ok) {
           const text = await resp.text().catch(() => '');
-          throw new Error(text || `HTTP ${resp.status}`);
+          const errorMsg = text || `HTTP ${resp.status}`;
+          console.error('crawler_action_failed', 'Error:', errorMsg, 'Status:', resp.status, 'Path:', path);
+          setCrawlerActionStatus(`${i18n.t('crawlerActionExecuteError')}: ${errorMsg}`, 5000);
+          return;
         }
         setCrawlerActionStatus(successMessage, 2000);
         await pollStatus();
         await refreshCrawlerLogs(true);
       } catch (error) {
-        console.error('crawler_action_failed', error);
-        setCrawlerActionStatus(t('crawlerActionExecuteError'), 3000);
+        console.error('crawler_action_failed', 'Error:', error);
+        setCrawlerActionStatus(`${i18n.t('crawlerActionExecuteError')}: ${error.message || 'Unknown error'}`, 5000);
       }
     }
 
@@ -6713,15 +6771,26 @@
     }
 
     async function pollLogs(){
-      const lim = Number(document.getElementById('logLimit').value || 200);
+      const logLimitEl = document.getElementById('logLimit');
+      const lim = Number(logLimitEl?.value || 200);
       try{
         const r = await fetch(`/api/v1/admin/logs?limit=${lim}`);
-        if(!r.ok) return;
+        if(!r.ok) {
+          console.error('Failed to fetch logs:', r.status, r.statusText);
+          return;
+        }
         const j = await r.json();
         const lines = filterRecentLines((j && j.lines) || []);
         const pre = document.getElementById('logs');
+        if (!pre) {
+          console.error('Logs element not found in DOM');
+          return;
+        }
         pre.textContent = lines.join('\n');
-        document.getElementById('logInfo').textContent = i18n.t('infoLinesAndDays', { lines: lines.length, days: 7 });
+        const logInfoEl = document.getElementById('logInfo');
+        if (logInfoEl) {
+          logInfoEl.textContent = i18n.t('infoLinesAndDays', { lines: lines.length, days: 7 });
+        }
         // auto-scroll to bottom
         pre.scrollTop = pre.scrollHeight;
         const promptEl = document.getElementById('promptLogs');
@@ -6767,7 +6836,9 @@
             setSummaryPrompt(latestMatch.text, latestMatch.docs, latestMatch.meta);
           }
         }
-      }catch(e){}
+      }catch(e){
+        console.error('Error in pollLogs():', e);
+      }
     }
 
     function tick(){
@@ -9074,7 +9145,7 @@
           i18n.t('metaStorage', { texts: formatBytesOptional(textBytes), files: formatBytesOptional(fileBytes), contexts: formatBytesOptional(ctxBytes), redis: formatBytesOptional(redisBytes) })
         );
       }
-      setSummaryProject(project?.title || project?.name || normalized || '—', metaBits.join('\n') || 'No Project Selected');
+      setSummaryProject(project?.title || project?.name || normalized || '—', metaBits.join('\n') || i18n.t('labelNoProjectSelected'));
       setSummaryPrompt('', [], project ? i18n.t('messageWaitingForModelActivity') : i18n.t('messageSelectProjectToSeeActivity'));
       if (project && project.domain && startUrlInput && !startUrlManual) {
         const normalizedDomain = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
@@ -9494,9 +9565,16 @@
       crawlerDedupBtn.addEventListener('click', () => performCrawlerAction('/deduplicate', i18n.t('messageDuplicatesRemoved')));
     }
     if (ollamaRefreshBtn) {
-      ollamaRefreshBtn.addEventListener('click', () => {
-        refreshOllamaCatalog(true);
-        refreshOllamaServers();
+      ollamaRefreshBtn.addEventListener('click', async () => {
+        try {
+          await refreshOllamaCatalog(true);
+          await refreshOllamaServers();
+        } catch (error) {
+          console.error('Manual refresh failed:', error);
+          if (ollamaAvailability) {
+            ollamaAvailability.textContent = i18n.t('errorRefreshFailed') || 'Refresh failed';
+          }
+        }
       });
     }
     if (ollamaServersRefreshBtn) {

@@ -321,7 +321,7 @@
     "buttonSaveSave": "Сохранить",
     "confirmDeleteProject": "Удалить проект {project}?",
     "labelBitrix": "Bitrix24",
-    "labelLlmPrompts": "LLM Prompts",
+    "labelLlmPrompts": "Промпты LLM",
     "labelLogsLast": "Логи (последние 200)",
     "reloadProjects": "Обновить проекты",
     "saveButton": "Сохранить",
@@ -660,6 +660,13 @@
     "unitKB": "КБ",
     "unitMB": "МБ",
     "unitGB": "ГБ",
-    "unitTB": "ТБ"
+    "unitTB": "ТБ",
+    "statusCrawlerActive": "Активно: {active} · В очереди: {queued}",
+    "infoDone": "Готово: {count}",
+    "infoErrors": "Ошибок: {count}",
+    "infoLastUrl": "Последний URL: {url}",
+    "infoLastRun": "Последний запуск: {time}",
+    "infoSystem": "Система: {system}",
+    "messageInstallationStarted": "Установка запущена"
   }
 }

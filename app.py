@@ -10,6 +10,7 @@ import random
 from datetime import datetime, timezone, timedelta
 import csv
 import io
+import json
 import base64
 import hashlib
 import hmac
@@ -463,88 +464,115 @@ async def _run_ollama_install(model: str) -> None:
         job.setdefault("stderr", [])
         job["started_at"] = job.get("started_at") or time.time()
 
-    if not ollama_available():
-        async with OLLAMA_INSTALL_LOCK:
-            job = OLLAMA_INSTALL_JOBS.get(model)
-            if job is not None:
-                job["status"] = "error"
-                job["error"] = "Ollama недоступна на сервере"
-                job["finished_at"] = time.time()
-        return
+    # Use Ollama HTTP API instead of CLI command
+    import httpx
 
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "ollama",
-            "pull",
-            model,
-            stdout=asyncio_subprocess.PIPE,
-            stderr=asyncio_subprocess.PIPE,
-        )
-    except FileNotFoundError:
-        async with OLLAMA_INSTALL_LOCK:
-            job = OLLAMA_INSTALL_JOBS.get(model)
-            if job is not None:
-                job["status"] = "error"
-                job["error"] = "Команда `ollama` не найдена"
-                job["finished_at"] = time.time()
-        return
-    except Exception as exc:  # noqa: BLE001
-        async with OLLAMA_INSTALL_LOCK:
-            job = OLLAMA_INSTALL_JOBS.get(model)
-            if job is not None:
-                job["status"] = "error"
-                job["error"] = str(exc)
-                job["finished_at"] = time.time()
-        return
+    # Primary and fallback Ollama servers
+    primary_url = getattr(base_settings, "ollama_base_url", "http://ollama:11434")
+    fallback_urls = [
+        os.getenv("OLLAMA_FALLBACK_URL_1", "http://host.docker.internal:11434"),
+        os.getenv("OLLAMA_FALLBACK_URL_2", "http://localhost:11434"),
+    ]
+    ollama_urls = [primary_url] + [url for url in fallback_urls if url and url != primary_url]
 
+    last_error = None
+
+    for attempt_num, ollama_url in enumerate(ollama_urls, 1):
+        try:
+            pull_url = f"{ollama_url}/api/pull"
+
+            async with OLLAMA_INSTALL_LOCK:
+                job = OLLAMA_INSTALL_JOBS.get(model)
+                if job is not None:
+                    _append_limited(job.setdefault("log", []), f"Попытка {attempt_num}/{len(ollama_urls)}: {ollama_url}")
+
+            logger.info("ollama_install_attempt", model=model, url=ollama_url, attempt=attempt_num)
+
+            async with httpx.AsyncClient(timeout=600.0) as client:
+                async with client.stream(
+                    "POST",
+                    pull_url,
+                    json={"name": model, "stream": True},
+                ) as response:
+                    if response.status_code != 200:
+                        error_text = await response.aread()
+                        error_msg = f"HTTP {response.status_code}: {error_text.decode('utf-8', errors='ignore')}"
+                        last_error = error_msg
+                        logger.warning("ollama_install_failed_attempt", model=model, url=ollama_url, error=error_msg)
+
+                        async with OLLAMA_INSTALL_LOCK:
+                            job = OLLAMA_INSTALL_JOBS.get(model)
+                            if job is not None:
+                                _append_limited(job.setdefault("log", []), f"Ошибка: {error_msg}")
+
+                        # Try next fallback server
+                        continue
+
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+
+                        try:
+                            data = json.loads(line)
+                            status_msg = data.get("status", "")
+
+                            async with OLLAMA_INSTALL_LOCK:
+                                job = OLLAMA_INSTALL_JOBS.get(model)
+                                if job is None:
+                                    break
+
+                                buffer = job.setdefault("log", [])
+                                _append_limited(buffer, status_msg)
+                                job["last_line"] = status_msg
+
+                                # Extract progress from status message
+                                if "total" in data and "completed" in data:
+                                    total = data.get("total", 1)
+                                    completed = data.get("completed", 0)
+                                    if total > 0:
+                                        job["progress"] = min(100.0, (completed / total) * 100.0)
+
+                                # Check if download is complete
+                                if status_msg and "success" in status_msg.lower():
+                                    job["progress"] = 100.0
+
+                        except json.JSONDecodeError:
+                            continue
+
+                    # Mark as completed - успешно скачали
+                    async with OLLAMA_INSTALL_LOCK:
+                        job = OLLAMA_INSTALL_JOBS.get(model)
+                        if job is not None:
+                            job["finished_at"] = time.time()
+                            job["status"] = "success"
+                            job["progress"] = 100.0
+                            job.setdefault("log", [])
+                            _append_limited(job["log"], f"Установка завершена (сервер: {ollama_url})", limit=60)
+
+                    logger.info("ollama_install_success", model=model, url=ollama_url)
+                    return  # Успех - выходим из функции
+
+        except Exception as exc:
+            last_error = str(exc)
+            logger.warning("ollama_install_exception", model=model, url=ollama_url, error=str(exc))
+
+            async with OLLAMA_INSTALL_LOCK:
+                job = OLLAMA_INSTALL_JOBS.get(model)
+                if job is not None:
+                    _append_limited(job.setdefault("log", []), f"Исключение: {str(exc)}")
+
+            # Try next fallback server
+            continue
+
+    # Все серверы попробованы - ошибка
     async with OLLAMA_INSTALL_LOCK:
         job = OLLAMA_INSTALL_JOBS.get(model)
         if job is not None:
-            job["pid"] = proc.pid
-
-    async def _consume(stream, key: str) -> None:
-        while True:
-            line = await stream.readline()
-            if not line:
-                break
-            text = line.decode("utf-8", errors="ignore").strip()
-            if not text:
-                continue
-            async with OLLAMA_INSTALL_LOCK:
-                job = OLLAMA_INSTALL_JOBS.get(model)
-                if job is None:
-                    continue
-                buffer = job.setdefault(key, [])
-                _append_limited(buffer, text)
-                if key == "log":
-                    job["last_line"] = text
-                    progress = _extract_progress(text)
-                    if progress is not None:
-                        job["progress"] = progress
-
-    await asyncio.gather(
-        _consume(proc.stdout, "log"),
-        _consume(proc.stderr, "stderr"),
-    )
-
-    returncode = await proc.wait()
-    async with OLLAMA_INSTALL_LOCK:
-        job = OLLAMA_INSTALL_JOBS.get(model)
-        if job is None:
-            return
-        job["finished_at"] = time.time()
-        if returncode == 0:
-            job["status"] = "success"
-            job["progress"] = 100.0
-            job.setdefault("log", [])
-            _append_limited(job["log"], "Установка завершена", limit=60)
-        else:
             job["status"] = "error"
-            job.setdefault("stderr", [])
-            if job.get("stderr"):
-                job["error"] = job["stderr"][-1]
-            else:
-                job["error"] = f"ollama pull завершился с кодом {returncode}"
+            job["error"] = f"Не удалось установить модель. Последняя ошибка: {last_error or 'Unknown'}"
+            job["finished_at"] = time.time()
+
+    logger.error("ollama_install_all_failed", model=model, last_error=last_error)
 
 
 async def _schedule_ollama_install(model: str) -> Dict[str, Any]:
@@ -2359,7 +2387,7 @@ async def _fetch_qa_document(mongo_client: MongoClient, pair_id: str) -> dict | 
 
 
 class BasicAuthMiddleware(BaseHTTPMiddleware):
-    _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin")
+    _PROTECTED_PREFIXES = ("/admin", "/api/v1/admin", "/api/v1/crawler")
 
     async def _authenticate(self, request: Request, username: str, password: str) -> AdminIdentity | None:
         normalized_username = username.strip().lower()
