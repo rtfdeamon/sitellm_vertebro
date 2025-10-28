@@ -660,6 +660,13 @@
     "unitKB": "KB",
     "unitMB": "MB",
     "unitGB": "GB",
-    "unitTB": "TB"
+    "unitTB": "TB",
+    "statusCrawlerActive": "Active: {active} · Queued: {queued}",
+    "infoDone": "Done: {count}",
+    "infoErrors": "Errors: {count}",
+    "infoLastUrl": "Last URL: {url}",
+    "infoLastRun": "Last run: {time}",
+    "infoSystem": "System: {system}",
+    "messageInstallationStarted": "Installation started"
   }
 }
