@@ -3818,6 +3818,7 @@
     let OLLAMA_CATALOG = { available: false, installed: [], popular: [], jobs: {}, default_model: null };
     let OLLAMA_INSTALLED_SET = new Set();
     let ollamaPollTimer = null;
+    let ollamaWasRunning = false;
     let OLLAMA_SERVERS = [];
     let qaPairsCache = [];
     let knowledgePriorityOrder = [];
@@ -6380,9 +6381,13 @@
           clearTimeout(ollamaPollTimer);
           ollamaPollTimer = null;
         }
-        if (hasRunning) {
+        // If tasks were running but now finished, schedule one final refresh to update catalog
+        if (ollamaWasRunning && !hasRunning) {
+          ollamaPollTimer = setTimeout(() => refreshOllamaCatalog(true), 2000);
+        } else if (hasRunning) {
           ollamaPollTimer = setTimeout(() => refreshOllamaCatalog(true), 4000);
         }
+        ollamaWasRunning = hasRunning;
       } catch (error) {
         console.error('ollama_catalog_failed', error);
         if (ollamaAvailability) {
