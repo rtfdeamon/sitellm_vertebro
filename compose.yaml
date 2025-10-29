@@ -43,8 +43,12 @@ services:
       - "no"
       - "--requirepass"
       - "${REDIS_PASSWORD}"
+      - "--dir"
+      - "/bitnami/redis/data"
     ports:
       - "${HOST_REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/bitnami/redis/data
     healthcheck:
       <<: *health_defaults
       test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping"]
@@ -214,3 +218,4 @@ volumes:
   mongo_data:
   qdrant_data:
   ollama_data:
+  redis_data:

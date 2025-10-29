@@ -1,44 +1,9 @@
-/**
- * Test setup file for admin panel tests
- * This file runs before all tests
- */
+import { beforeEach } from 'vitest';
 
-// Mock localStorage
-global.localStorage = {
-  store: {},
-  getItem(key) {
-    return this.store[key] || null;
-  },
-  setItem(key, value) {
-    this.store[key] = String(value);
-  },
-  removeItem(key) {
-    delete this.store[key];
-  },
-  clear() {
-    this.store = {};
-  }
-};
-
-// Mock sessionStorage
-global.sessionStorage = {
-  store: {},
-  getItem(key) {
-    return this.store[key] || null;
-  },
-  setItem(key, value) {
-    this.store[key] = String(value);
-  },
-  removeItem(key) {
-    delete this.store[key];
-  },
-  clear() {
-    this.store = {};
-  }
-};
-
-// Reset storage before each test
+// Сбрасываем DOM и хранилища перед каждым тестом
 beforeEach(() => {
-  localStorage.clear();
-  sessionStorage.clear();
+  document.body.innerHTML = '';
+  document.head.innerHTML = '';
+  window.localStorage?.clear?.();
+  window.sessionStorage?.clear?.();
 });

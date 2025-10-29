@@ -23,6 +23,7 @@ import sys
 import time
 import urllib.parse as urlparse
 from typing import Any, AsyncIterator, Callable, Iterable, List, Optional, Set, Tuple
+from pathlib import Path
 
 import httpx
 import requests
@@ -46,6 +47,7 @@ from knowledge.summary import (
 )
 from knowledge.text import extract_best_effort_text, extract_doc_text, extract_docx_text
 from models import Project
+from knowledge.tasks import queue_auto_description
 
 from observability.logging import configure_logging
 from settings import MongoSettings
@@ -169,6 +171,24 @@ XLS_MIME_TYPES = {
 }
 MAX_IMAGE_DIMENSION = int(os.getenv("CRAWL_IMAGE_MAX_DIM", "1280"))
 IMAGE_JPEG_QUALITY = int(os.getenv("CRAWL_IMAGE_JPEG_QUALITY", "85"))
+_image_host_whitelist = os.getenv("CRAWL_IMAGE_ALLOWED_HOSTS", "")
+IMAGE_ALLOWED_HOST_SUFFIXES: set[str] = set()
+for _raw_host in _image_host_whitelist.split(","):
+    candidate = _raw_host.strip()
+    if not candidate:
+        continue
+    parsed = urlparse.urlsplit(candidate.lower())
+    host = parsed.hostname or candidate.lower()
+    if not host:
+        continue
+    if host.startswith("//"):
+        host = host[2:]
+    if "/" in host:
+        host = host.split("/", 1)[0]
+    if ":" in host:
+        host = host.split(":", 1)[0]
+    if host:
+        IMAGE_ALLOWED_HOST_SUFFIXES.add(host)
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 _redis_url = os.getenv("REDIS_URL")
 if _redis_url:
@@ -200,6 +220,45 @@ def _set(key: str, value, project: str | None = None):
         r.set(_redis_key(key, project), value)
     except Exception:
         pass
+
+
+def _is_allowed_image_host(host: str, base_domain: str | None) -> bool:
+    """Return True if ``host`` is permitted for image downloads."""
+
+    normalized_host = (host or "").strip().lower()
+    if not normalized_host:
+        return False
+
+    if base_domain:
+        normalized_base = base_domain.strip().lower()
+        if normalized_base:
+            parsed = urlparse.urlsplit(normalized_base)
+            if parsed.hostname:
+                normalized_base = parsed.hostname.lower()
+            elif ":" in normalized_base:
+                normalized_base = normalized_base.split(":", 1)[0]
+            normalized_base = normalized_base.strip(".")
+            base_variants: set[str] = set()
+            if normalized_base:
+                base_variants.add(normalized_base)
+                if normalized_base.startswith("www."):
+                    base_variants.add(normalized_base[4:])
+                else:
+                    base_variants.add(f"www.{normalized_base}")
+            for candidate in base_variants:
+                if not candidate:
+                    continue
+                if normalized_host == candidate:
+                    return True
+                if normalized_host.endswith(f".{candidate}"):
+                    return True
+
+    if IMAGE_ALLOWED_HOST_SUFFIXES:
+        for suffix in IMAGE_ALLOWED_HOST_SUFFIXES:
+            if normalized_host == suffix or normalized_host.endswith(f".{suffix}"):
+                return True
+
+    return base_domain is None
 
 
 def _delete(key: str, project: str | None = None):
@@ -581,6 +640,18 @@ def extract_image_links(
     found: list[dict[str, str]] = []
     seen: set[str] = set()
 
+    def _infer_alt_from_url(url: str) -> str:
+        try:
+            parsed = urlparse.urlsplit(url)
+        except Exception:
+            return ""
+        name = Path(parsed.path or "").name
+        if not name:
+            return ""
+        stem = Path(name).stem
+        cleaned = stem.replace("-", " ").replace("_", " ").strip()
+        return cleaned
+
     def _push(raw_url: str | None, alt_text: str | None = None) -> None:
         if not raw_url:
             return
@@ -595,7 +666,9 @@ def extract_image_links(
             return
         alt_clean = (alt_text or "").strip()
         if require_alt and not alt_clean:
-            return
+            alt_clean = _infer_alt_from_url(absolute)
+            if not alt_clean:
+                return
         entry: dict[str, str] = {"url": absolute}
         if alt_clean:
             entry["alt"] = alt_clean
@@ -604,7 +677,7 @@ def extract_image_links(
 
     def _iter_src_candidates(img_tag: Any) -> list[str]:
         candidates: list[str] = []
-        for attr in (
+        direct_attrs = (
             "src",
             "data-src",
             "data-original",
@@ -614,10 +687,29 @@ def extract_image_links(
             "data-small",
             "data-medium",
             "data-large",
-        ):
+            "data-srcset",
+            "data-lazy-srcset",
+            "data-original-src",
+            "data-default-src",
+            "srcset",
+        )
+        for attr in direct_attrs:
+            if attr == "srcset":
+                continue
             value = img_tag.get(attr)
             if isinstance(value, str):
                 trimmed = value.strip()
+                if trimmed:
+                    candidates.append(trimmed)
+        # Fallback: scan arbitrary attributes ending in "-src" or "-srcset"
+        for attr_name, attr_value in img_tag.attrs.items():
+            if attr_name in direct_attrs:
+                continue
+            if not isinstance(attr_value, str):
+                continue
+            normalized = attr_name.lower()
+            if normalized.endswith(("src", "srcset", "image")) or "data-src" in normalized:
+                trimmed = attr_value.strip()
                 if trimmed:
                     candidates.append(trimmed)
         srcset = img_tag.get("srcset")
@@ -1895,9 +1987,16 @@ def run(
 
         documents_collection = db[os.getenv("MONGO_DOCUMENTS", "documents")]
         gridfs = GridFS(db)
+        for index_name in ("domain_url_unique", "documents_domain_url_unique", "documents_project_name_unique"):
+            try:
+                documents_collection.drop_index(index_name)
+            except Exception:
+                pass
         try:
             documents_collection.create_index(
-                [("domain", 1), ("url", 1)], unique=True, name="domain_url_unique"
+                [("project", 1), ("url", 1)],
+                unique=True,
+                name="documents_project_url_unique",
             )
         except Exception:
             pass
@@ -1941,6 +2040,7 @@ def run(
             logger.warning("project_upsert_failed", project=document_project)
 
         operations: list[UpdateOne] = []
+        pending_auto_description: list[tuple[str, str | None]] = []
         project_model: Project | None = None
         try:
             project_doc = db[os.getenv("MONGO_PROJECTS", "projects")].find_one(
@@ -1958,7 +2058,7 @@ def run(
             seen_text_hashes: set[str] = set()
             seen_binary_hashes: set[str] = set()
             downloaded_images: set[str] = set()
-            img_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+            img_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT, headers=HEADERS)
             try:
                 async for (
                     page_url,
@@ -2059,6 +2159,8 @@ def run(
                     skip_reason: str | None = None
                     content_hash: str | None = None
 
+                    auto_description_pending = False
+
                     if is_binary:
                         payload_bytes = binary_payload or b""
                         if payload_bytes:
@@ -2084,6 +2186,7 @@ def run(
                                 error=str(exc),
                             )
                             description = ""
+                            auto_description_pending = True
                         except Exception as exc:  # noqa: BLE001
                             logger.warning(
                                 "document_summary_failed",
@@ -2092,6 +2195,7 @@ def run(
                                 error=str(exc),
                             )
                             description = ""
+                            auto_description_pending = True
                         if not description.strip() and summary_source:
                             description = summary_source.replace("\n", " ").strip()[:200]
                         if not description.strip():
@@ -2126,7 +2230,12 @@ def run(
                                     else:
                                         seen_text_hashes.add(content_hash)
                         description = text.replace("\n", " ").strip()[:200]
+                        if len(description.strip()) < 60:
+                            auto_description_pending = True
+                            description = description or f"Документ «{filename}»."
 
+                    if len(description.strip()) < 60:
+                        auto_description_pending = True
                     if store_document:
                         existing = documents_collection.find_one(
                             {"url": page_url, "project": document_project},
@@ -2155,6 +2264,10 @@ def run(
                             "project": document_project,
                             "size_bytes": len(payload_bytes),
                         }
+                        if auto_description_pending:
+                            doc["autoDescriptionPending"] = True
+                            doc["status"] = "pending_auto_description"
+                            doc["statusMessage"] = "Ожидаем автоописание"
                         if source_ct:
                             doc["source_content_type"] = source_ct
                         elif is_binary and storage_type != "text/plain":
@@ -2176,6 +2289,8 @@ def run(
                                 upsert=True,
                             )
                         )
+                        if auto_description_pending:
+                            pending_auto_description.append((str(file_id), document_project))
 
                         if reading_payload and reading_payload.get("text"):
                             reading_records.append(
@@ -2203,10 +2318,19 @@ def run(
                             continue
                         if allowed_domain:
                             parsed_image = urlparse.urlsplit(image_url)
-                            if parsed_image.netloc and parsed_image.netloc.lower() != allowed_domain.lower():
+                            host = (parsed_image.hostname or "").lower()
+                            if host and not _is_allowed_image_host(host, allowed_domain):
+                                logger.debug(
+                                    "image_host_skipped",
+                                    url=image_url,
+                                    host=host,
+                                    allowed_domain=allowed_domain,
+                                )
                                 continue
                         try:
-                            img_resp = await img_client.get(image_url)
+                            img_headers = dict(HEADERS)
+                            img_headers.setdefault("Referer", page_url)
+                            img_resp = await img_client.get(image_url, headers=img_headers)
                             img_resp.raise_for_status()
                         except Exception as exc:
                             logger.debug("image_fetch_failed", url=image_url, error=str(exc))
@@ -2260,10 +2384,13 @@ def run(
                     if len(operations) >= BATCH_SIZE:
                         try:
                             documents_collection.bulk_write(operations, ordered=False)
+                            for file_id, project_name in pending_auto_description:
+                                queue_auto_description(file_id, project_name)
                         except Exception as exc:  # pragma: no cover - bulk failure
                             logger.warning("bulk_write_failed", error=str(exc))
                         finally:
                             operations.clear()
+                            pending_auto_description.clear()
             finally:
                 if JS_RENDER_ENABLED:
                     await _shutdown_playwright()
@@ -2397,10 +2524,13 @@ def run(
         if operations:
             try:
                 documents_collection.bulk_write(operations, ordered=False)
+                for file_id, project_name in pending_auto_description:
+                    queue_auto_description(file_id, project_name)
             except Exception as exc:  # pragma: no cover - bulk failure
                 logger.warning("bulk_write_failed", error=str(exc))
             finally:
                 operations.clear()
+                pending_auto_description.clear()
 
         if abort_note:
             logger.warning("crawler aborted", reason=abort_note)

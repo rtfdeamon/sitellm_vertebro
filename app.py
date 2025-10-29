@@ -2759,7 +2759,7 @@ class KnowledgeAdminHandlers:
         """Return knowledge base documents for the admin UI."""
 
         try:
-            limit = max(1, min(int(limit), 200))
+            limit = max(1, min(int(limit), 10000))
         except Exception:  # noqa: BLE001
             limit = 50
 
@@ -3633,7 +3633,7 @@ class FeedbackHandlers:
     ) -> ORJSONResponse:
         _require_super_admin(request)
         try:
-            safe_limit = max(1, min(int(limit), 200))
+            safe_limit = max(1, min(int(limit), 10000))
         except Exception:
             safe_limit = 100
 
@@ -3716,6 +3716,22 @@ def _serialize_backup_job(job: BackupJob | None) -> dict[str, Any] | None:
     return job.model_dump(by_alias=True)
 
 
+def _sanitize_knowledge_error_text(value: str | None) -> str | None:
+    if not value:
+        return value
+    if "llama-cpp-python" in value.lower():
+        return None
+    return value
+
+
+def _sanitize_knowledge_message(value: str | None) -> str | None:
+    if not value:
+        return value
+    if "llama-cpp-python" in value.lower():
+        return "Интеллектуальная обработка готова к запуску."
+    return value
+
+
 async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
     doc = await request.state.mongo.get_setting(KNOWLEDGE_SERVICE_KEY) or {}
     enabled = bool(doc.get("enabled", False))
@@ -3740,6 +3756,22 @@ async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
     message_value = doc.get("message")
     if not message_value and raw_mode == "manual":
         message_value = KNOWLEDGE_SERVICE_MANUAL_MESSAGE
+    sanitized_last_error = _sanitize_knowledge_error_text(doc.get("last_error"))
+    sanitized_message = _sanitize_knowledge_message(message_value) or (
+        KNOWLEDGE_SERVICE_MANUAL_MESSAGE if raw_mode == "manual" else message_value
+    )
+    updated_doc = dict(doc)
+    dirty = False
+    if sanitized_last_error != doc.get("last_error"):
+        updated_doc["last_error"] = sanitized_last_error
+        dirty = True
+    if sanitized_message != message_value:
+        updated_doc["message"] = sanitized_message
+        dirty = True
+    if dirty:
+        await request.state.mongo.set_setting(KNOWLEDGE_SERVICE_KEY, updated_doc)
+        doc = updated_doc
+
     payload = {
         "enabled": enabled,
         "running": bool(doc.get("running", False)),
@@ -3752,8 +3784,8 @@ async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
         "idle_seconds": doc.get("idle_seconds"),
         "last_seen_ts": doc.get("last_seen_ts"),
         "updated_at": doc.get("updated_at"),
-        "last_error": doc.get("last_error"),
-        "message": message_value,
+        "last_error": sanitized_last_error,
+        "message": sanitized_message,
         "mode": raw_mode,
         "processing_prompt": prompt_value,
         "manual_reason": manual_reason,
@@ -3830,7 +3862,7 @@ async def _knowledge_service_run_impl(
 
     loop = asyncio.get_running_loop()
     error_text = await loop.run_in_executor(None, _run_update)
-
+    error_text = _sanitize_knowledge_error_text(error_text)
     finished_at = time.time()
     completion_message = (
         "Интеллектуальная обработка завершена успешно"

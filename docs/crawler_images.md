@@ -14,12 +14,19 @@ includes:
 Compressed bytes are stored in GridFS alongside textual documents which lets the
 chat/Telegram integrations expose them as attachments.
 
+By default the crawler only downloads images served from the project domain (or
+its subdomains). Deployments that host assets on a separate CDN can add
+allowed host suffixes via the `CRAWL_IMAGE_ALLOWED_HOSTS` environment variable.
+Each entry may be a bare hostname (e.g. `cdn.example.com`) or a suffix such as
+`examplecdn.com`; multiple values are separated by commas.
+
 Environment variables controlling the behaviour:
 
 | Variable                    | Default | Description                                    |
 |-----------------------------|---------|------------------------------------------------|
 | `CRAWL_IMAGE_MAX_DIM`       | 1280    | Maximum width/height for the resized image.    |
 | `CRAWL_IMAGE_JPEG_QUALITY`  | 85      | JPEG quality used when saving the image.       |
+| `CRAWL_IMAGE_ALLOWED_HOSTS` | —       | Extra hostnames/suffixes permitted for image downloads (comma separated). |
 
 The crawler maintains a `downloaded_images` set to avoid re-fetching the same
 image multiple times within a crawl session.
