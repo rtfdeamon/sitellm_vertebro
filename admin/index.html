@@ -3664,7 +3664,6 @@
         if (projectModalPromptAiBtn) projectModalPromptAiBtn.disabled = true;
         if (projectModalPromptRole) projectModalPromptRole.disabled = true;
         if (ollamaCatalog) ollamaCatalog.classList.remove('show');
-        if (backupCard) backupCard.style.display = 'none';
         backupState = null;
         if (backupStatusLine) backupStatusLine.textContent = '';
         if (backupJobsList) {
@@ -4657,7 +4656,6 @@
         if (resp.status === 401 || resp.status === 404) {
           backupUnavailable = true;
           setBackupControlsDisabled(true);
-          if (backupCard) backupCard.style.display = 'none';
           scheduleBackupRefresh(false);
           return;
         }
@@ -4671,7 +4669,6 @@
         if (error && error.code === AUTH_CANCELLED_CODE) {
           backupUnavailable = true;
           setBackupControlsDisabled(true);
-          if (backupCard) backupCard.style.display = 'none';
           scheduleBackupRefresh(false);
           return;
         }
