@@ -32,6 +32,12 @@ const promptsCard = document.querySelector('.prompts-card');
 const logsCard = document.querySelector('.logs-card');
 const promptLogsElement = document.getElementById('promptLogs');
 const logLimitInput = document.getElementById('logLimit');
+let cpuAppEl = document.getElementById('cpu');
+let cpuSysEl = document.getElementById('cpuSys');
+let ramEl = document.getElementById('ram');
+let rssEl = document.getElementById('rss');
+let gpuEl = document.getElementById('gpu');
+let pythonEl = document.getElementById('pyver');
 const knowledgeServiceMode = document.getElementById('knowledgeServiceMode');
 const knowledgeServicePrompt = document.getElementById('knowledgeServicePrompt');
 const knowledgeServiceRun = document.getElementById('knowledgeServiceRun');
@@ -85,6 +91,52 @@ const formatTimestamp = indexUi.formatTimestamp || ((value) => {
   if (Number.isNaN(date.getTime())) return '—';
   return date.toLocaleString();
 });
+const formatPercent = (value) => {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+  return `${value.toFixed(1)}%`;
+};
+
+function setMetricValue(element, value) {
+  if (!element) return;
+  const display = value ?? '—';
+  element.textContent = display;
+  if (element.dataset && Object.prototype.hasOwnProperty.call(element.dataset, 'i18nValue')) {
+    element.dataset.i18nValue = display;
+  }
+}
+
+function showKnowledgeDescriptionPreview(text) {
+  if (!kbThinkingPreview) return;
+  const value = (text || '').trim();
+  if (!value) {
+    kbThinkingPreview.textContent = '';
+    kbThinkingPreview.classList.remove('visible');
+    return;
+  }
+  kbThinkingPreview.textContent = value;
+  kbThinkingPreview.classList.add('visible');
+}
+
+function renderAutoDescription(text) {
+  if (!kbAutoDescription) return;
+  const value = (text || '').trim();
+  if (!value) {
+    kbAutoDescription.textContent = '';
+    kbAutoDescription.classList.remove('visible');
+    return;
+  }
+  kbAutoDescription.textContent = t('knowledgeAutoDescriptionLabel', { value });
+  kbAutoDescription.classList.add('visible');
+}
+
+function refreshResourceElements() {
+  cpuAppEl = document.getElementById('cpu');
+  cpuSysEl = document.getElementById('cpuSys');
+  ramEl = document.getElementById('ram');
+  rssEl = document.getElementById('rss');
+  gpuEl = document.getElementById('gpu');
+  pythonEl = document.getElementById('pyver');
+}
 const pulseCard = indexUi.pulseCard || (() => {});
 let activeKnowledgeServiceEndpoint = null;
 const clusterWarning = document.getElementById('clusterWarning');
@@ -221,6 +273,9 @@ const LOG_SANITIZE_PATTERN = /llama-cpp-python/i;
 let logsPollTimer = null;
 let logsFetchInFlight = false;
 let lastLogsHash = '';
+let sysInfoPollTimer = null;
+let sysInfoFetchInFlight = false;
+let lastSysInfoHash = '';
 
 function applySessionPermissions() {
   const session = window.adminSession || window.sessionDefaults || {};
@@ -231,12 +286,21 @@ function applySessionPermissions() {
   if (feedbackSection) feedbackSection.style.display = isSuper ? '' : 'none';
   if (isSuper) {
     startLogsPolling({ immediate: true });
+    startSystemInfoPolling({ immediate: true });
   } else {
     stopLogsPolling();
+    stopSystemInfoPolling();
     lastLogsHash = '';
+    lastSysInfoHash = '';
     if (logsElement) logsElement.textContent = '';
     if (promptLogsElement) promptLogsElement.textContent = '';
     if (logInfoElement) logInfoElement.textContent = '';
+    setMetricValue(cpuAppEl, '—');
+    setMetricValue(cpuSysEl, '—');
+    setMetricValue(ramEl, '—');
+    setMetricValue(rssEl, '—');
+    setMetricValue(gpuEl, '—');
+    setMetricValue(pythonEl, '—');
   }
 }
 
@@ -255,6 +319,7 @@ const {
 });
 
 function handleLanguageApplied() {
+  refreshResourceElements();
   if (window.BackupModule?.handleLanguageApplied) {
     window.BackupModule.handleLanguageApplied();
   }
@@ -306,6 +371,8 @@ function handleLanguageApplied() {
   if (kbNewContentInput) {
     showKnowledgeDescriptionPreview(kbNewContentInput.value || '');
   }
+  lastSysInfoHash = '';
+  fetchSystemInfo({ force: true }).catch((error) => console.error('sysinfo_translate_failed', error));
 }
 
 const summaryProjectCard = document.getElementById('summaryProjectCard');
@@ -379,6 +446,7 @@ const KNOWLEDGE_SOURCES = [
 ];
 
 applyLanguage(getCurrentLanguage());
+refreshResourceElements();
 applySessionPermissions();
 
 const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
@@ -1486,30 +1554,6 @@ const resetKnowledgePreview = () => {
   }
 };
 
-const showKnowledgeDescriptionPreview = (text) => {
-  if (!kbThinkingPreview) return;
-  const value = (text || '').trim();
-  if (!value) {
-    kbThinkingPreview.textContent = '';
-    kbThinkingPreview.classList.remove('visible');
-    return;
-  }
-  kbThinkingPreview.textContent = value;
-  kbThinkingPreview.classList.add('visible');
-};
-
-const renderAutoDescription = (text) => {
-  if (!kbAutoDescription) return;
-  const value = (text || '').trim();
-  if (!value) {
-    kbAutoDescription.textContent = '';
-    kbAutoDescription.classList.remove('visible');
-    return;
-  }
-  kbAutoDescription.textContent = t('knowledgeAutoDescriptionLabel', { value });
-  kbAutoDescription.classList.add('visible');
-};
-
 const showKnowledgeThinking = (
   caption = t('knowledgeThinkingCaption'),
   subtitle = t('knowledgeThinkingSubtitle')
@@ -1866,6 +1910,145 @@ function startLogsPolling({ immediate = true } = {}) {
       fetchAdminLogs().catch((error) => console.error('admin_logs_poll_failed', error));
     }
   }, 4000);
+}
+
+const buildGpuLine = (gpu, index) => {
+  const label = gpu?.name || `GPU ${index}`;
+  const util = formatPercent(gpu?.util_percent);
+  let memInfo = '';
+  if (typeof gpu?.memory_used_bytes === 'number' && typeof gpu?.memory_total_bytes === 'number') {
+    memInfo = `${formatBytes(gpu.memory_used_bytes)} / ${formatBytes(gpu.memory_total_bytes)}`;
+  }
+  return memInfo ? `${label}: ${util} · ${memInfo}` : `${label}: ${util}`;
+};
+
+const buildRamSummary = (usedBytes, totalBytes, percent) => {
+  if (!Number.isFinite(usedBytes) || !Number.isFinite(totalBytes)) return '—';
+  const base = `${formatBytes(usedBytes)} / ${formatBytes(totalBytes)}`;
+  return Number.isFinite(percent) ? `${base} (${percent.toFixed(1)}%)` : base;
+};
+
+async function fetchSystemInfo({ force = false } = {}) {
+  if (
+    !cpuAppEl &&
+    !cpuSysEl &&
+    !ramEl &&
+    !rssEl &&
+    !gpuEl &&
+    !pythonEl &&
+    typeof setSummaryPerf !== 'function' &&
+    typeof setSummaryBuild !== 'function'
+  ) {
+    return;
+  }
+  if (sysInfoFetchInFlight && !force) return;
+  sysInfoFetchInFlight = true;
+  try {
+    const resp = await fetch('/sysinfo', { cache: 'no-store' });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+
+    const cpuDisplay = formatPercent(data.cpu_percent);
+    const sysDisplay = formatPercent(data.system_cpu_percent);
+    const rssText = Number.isFinite(data.rss_bytes) ? formatBytes(data.rss_bytes) : '—';
+    const ramText = buildRamSummary(data.memory_used_bytes, data.memory_total_bytes, data.memory_percent);
+    const gpuLines = Array.isArray(data.gpus)
+      ? data.gpus.map((gpu, idx) => buildGpuLine(gpu, idx)).filter(Boolean)
+      : [];
+    const gpuText = gpuLines.length ? gpuLines.join('\n') : '—';
+    const pythonText = typeof data.python === 'string' && data.python ? data.python : '—';
+
+    const buildInfo = data.build || {};
+    const buildVersion = buildInfo.version && buildInfo.version !== 'unknown' ? String(buildInfo.version) : '';
+    const buildRevision = buildInfo.revision ? String(buildInfo.revision).slice(0, 8) : '';
+    let builtAtSeconds = null;
+    if (Number.isFinite(buildInfo.built_at)) {
+      builtAtSeconds = buildInfo.built_at;
+    } else if (typeof buildInfo.built_at_iso === 'string') {
+      const parsed = Date.parse(buildInfo.built_at_iso);
+      if (!Number.isNaN(parsed)) builtAtSeconds = parsed / 1000;
+    }
+
+    const metaLines = [];
+    if (builtAtSeconds !== null) {
+      const formatted = formatTimestamp(builtAtSeconds);
+      if (formatted && formatted !== '—') {
+        metaLines.push(tl('Built at: {value}', { value: formatted }));
+      }
+    }
+    if (buildInfo.components && typeof buildInfo.components === 'object') {
+      Object.entries(buildInfo.components)
+        .slice(0, 3)
+        .forEach(([name, payload]) => {
+          if (!payload || typeof payload !== 'object') return;
+          const compVersion = payload.version ? `v${payload.version}` : '';
+          const compRevision = payload.revision ? String(payload.revision).slice(0, 8) : '';
+          const parts = [compVersion, compRevision].filter(Boolean);
+          if (parts.length) {
+            metaLines.push(`${name}: ${parts.join(' · ')}`);
+          }
+        });
+    }
+
+    const signature = JSON.stringify({
+      cpuDisplay,
+      sysDisplay,
+      rssText,
+      ramText,
+      gpuText,
+      pythonText,
+      buildVersion,
+      buildRevision,
+      metaLines,
+    });
+    if (!force && signature === lastSysInfoHash) {
+      return;
+    }
+    lastSysInfoHash = signature;
+
+    setMetricValue(cpuAppEl, cpuDisplay);
+    setMetricValue(cpuSysEl, sysDisplay);
+    setMetricValue(ramEl, ramText);
+    setMetricValue(rssEl, rssText);
+    setMetricValue(gpuEl, gpuText);
+    setMetricValue(pythonEl, pythonText);
+
+    const summaryLines = [];
+    if (sysDisplay !== '—') summaryLines.push(t('resourceCpuSys', { value: sysDisplay }));
+    if (ramText !== '—') summaryLines.push(t('resourceRam', { value: ramText }));
+    if (rssText !== '—') summaryLines.push(t('resourceRss', { value: rssText }));
+    if (gpuLines.length) summaryLines.push(t('resourceGpu', { value: gpuLines[0] }));
+    setSummaryPerf(cpuDisplay, summaryLines.join('\n') || '—');
+
+    let buildTitle = buildVersion ? `v${buildVersion}` : '—';
+    if (buildRevision) {
+      buildTitle = buildTitle !== '—' ? `${buildTitle} · ${buildRevision}` : buildRevision;
+    }
+    setSummaryBuild(buildTitle, metaLines.join('\n') || '—');
+  } catch (error) {
+    console.error('sysinfo_fetch_failed', error);
+  } finally {
+    sysInfoFetchInFlight = false;
+  }
+}
+
+function startSystemInfoPolling({ immediate = true } = {}) {
+  if (sysInfoPollTimer) return;
+  if (immediate) {
+    fetchSystemInfo({ force: true }).catch((error) => console.error('sysinfo_initial_failed', error));
+  }
+  sysInfoPollTimer = setInterval(() => {
+    if (!document.hidden) {
+      fetchSystemInfo().catch((error) => console.error('sysinfo_poll_failed', error));
+    }
+  }, 4000);
+}
+
+function stopSystemInfoPolling() {
+  if (sysInfoPollTimer) {
+    clearInterval(sysInfoPollTimer);
+    sysInfoPollTimer = null;
+  }
 }
 
 const INTELLIGENT_STATE_ENDPOINT = '/api/intelligent-processing/state';
@@ -2615,11 +2798,14 @@ if (logLimitInput) {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     pollLLM();
+    startSystemInfoPolling({ immediate: true });
   });
 } else {
   pollLLM();
+  startSystemInfoPolling({ immediate: true });
 }
 
 window.addEventListener('beforeunload', () => {
   stopLogsPolling();
+  stopSystemInfoPolling();
 });
