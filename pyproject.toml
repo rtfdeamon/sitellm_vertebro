@@ -39,6 +39,7 @@ dependencies = [
     "sentence-transformers>=5.1.2",
     "torch>=2.9.0",
     "langchain-huggingface>=0.3.0",
+    "psutil>=7.1.2",
 ]
 
 [dependency-groups]
