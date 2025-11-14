@@ -312,7 +312,14 @@
   };
 
   const refreshBackupStatus = async (clearMessage = false) => {
-    if (backupUnavailable || !global.adminSession?.is_super) {
+    // Hide backup section entirely for non-super admins (security requirement)
+    if (!global.adminSession?.is_super) {
+      if (backupCard) backupCard.style.display = 'none';
+      scheduleBackupRefresh(false);
+      return;
+    }
+
+    if (backupUnavailable) {
       scheduleBackupRefresh(false);
       return;
     }
@@ -323,7 +330,7 @@
     }
     try {
       const resp = await fetch('/api/v1/backup/status?limit=6');
-      if (resp.status === 401 || resp.status === 404) {
+      if (resp.status === 401 || resp.status === 403 || resp.status === 404) {
         backupUnavailable = true;
         setBackupControlsDisabled(true);
         if (backupCard) backupCard.style.display = 'none';
@@ -477,6 +484,12 @@
   };
 
   const init = () => {
+    // Security: Hide backup section for non-super admins immediately
+    if (!global.adminSession?.is_super) {
+      if (backupCard) backupCard.style.display = 'none';
+      return;
+    }
+
     ensureBackupTimezones();
     setBackupControlsDisabled(true);
     updateBackupActionButtons();
