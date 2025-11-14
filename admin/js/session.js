@@ -29,7 +29,7 @@
 
   async function fetchSession() {
     try {
-      const resp = await fetch('/api/v1/admin/session');
+      const resp = await fetch('/api/v1/admin/session', { credentials: 'same-origin' });
       if (resp.status === 401) {
         throw new Error(AUTH_CANCELLED_ERROR);
       }

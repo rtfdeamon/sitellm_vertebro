@@ -207,6 +207,7 @@
       const response = await fetch('/api/v1/voice/samples', {
         method: 'POST',
         body: formData,
+        credentials: 'same-origin',
       });
       if (!response.ok) throw new Error(await response.text());
       const data = await response.json();
@@ -440,8 +441,8 @@
     if (elements.fileInput) elements.fileInput.disabled = false;
     try {
       const [samplesRes, jobsRes] = await Promise.all([
-        fetch(`/api/v1/voice/samples?project=${encodeURIComponent(projectName)}`),
-        fetch(`/api/v1/voice/jobs?project=${encodeURIComponent(projectName)}&limit=5`),
+        fetch(`/api/v1/voice/samples?project=${encodeURIComponent(projectName)}`, { credentials: 'same-origin' }),
+        fetch(`/api/v1/voice/jobs?project=${encodeURIComponent(projectName)}&limit=5`, { credentials: 'same-origin' }),
       ]);
       if (!samplesRes.ok) throw new Error('samples_fetch_failed');
       if (!jobsRes.ok) throw new Error('jobs_fetch_failed');
@@ -473,6 +474,7 @@
       const response = await fetch('/api/v1/voice/samples', {
         method: 'POST',
         body: formData,
+        credentials: 'same-origin',
       });
       if (!response.ok) {
         const detail = await response.text();
@@ -495,6 +497,7 @@
     try {
       const response = await fetch(`/api/v1/voice/samples/${sampleId}?project=${encodeURIComponent(project)}`, {
         method: 'DELETE',
+        credentials: 'same-origin',
       });
       if (!response.ok) throw new Error('delete_failed');
       const data = await response.json();
@@ -515,6 +518,7 @@
       const response = await fetch('/api/v1/voice/train', {
         method: 'POST',
         body: formData,
+        credentials: 'same-origin',
       });
       const raw = await response.text();
       let data = {};

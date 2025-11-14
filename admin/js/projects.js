@@ -256,6 +256,7 @@ const initPromptAiControls = ({ textarea, domainInput, roleSelect, button, statu
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: pageUrl, role }),
         signal: controller.signal,
+        credentials: 'same-origin',
       });
       if (!response.ok) {
         let detail = `HTTP ${response.status}`;
@@ -546,7 +547,7 @@ async function loadProjectsList() {
 
 async function fetchProjectStorage() {
   try {
-    const resp = await fetch('/api/v1/admin/projects/storage');
+    const resp = await fetch('/api/v1/admin/projects/storage', { credentials: 'same-origin' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -948,7 +949,7 @@ if (projectModalPromptRole) renderPromptRoleOptions(projectModalPromptRole);
 
 async function fetchProjects(){
   try {
-    const resp = await fetch('/api/v1/admin/projects');
+    const resp = await fetch('/api/v1/admin/projects', { credentials: 'same-origin' });
     if (!resp.ok) {
       setProjectStatus(t('projectsLoadFailed'), 3000);
       return;
@@ -1187,6 +1188,7 @@ projectForm.addEventListener('submit', async (e) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      credentials: 'same-origin',
     });
     if (!resp.ok) {
       setProjectStatus(t('projectsSaveFailed'), 4000);
@@ -1253,6 +1255,7 @@ if (projectModalForm) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
       });
       if (!resp.ok) {
         if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaveFailed');
@@ -1281,7 +1284,7 @@ if (projectDeleteBtn) projectDeleteBtn.addEventListener('click', async () => {
   if (!confirm(t('projectsDeleteConfirm', { project: currentProject }))) return;
   const toDelete = currentProject;
   try {
-    const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(toDelete)}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(toDelete)}`, { method: 'DELETE', credentials: 'same-origin' });
     if (!resp.ok) {
       setProjectStatus(t('projectsDeleteFailed'), 4000);
       return;
@@ -1327,7 +1330,7 @@ projectTestBtn.addEventListener('click', async () => {
   }
   setProjectStatus(t('projectsTestingServices'));
   try {
-    const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/test`);
+    const resp = await fetch(`/api/v1/admin/projects/${encodeURIComponent(currentProject)}/test`, { credentials: 'same-origin' });
     if (!resp.ok) {
       setProjectStatus(t('projectsTestError'), 4000);
       return;

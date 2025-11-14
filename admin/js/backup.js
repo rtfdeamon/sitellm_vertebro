@@ -312,7 +312,21 @@
   };
 
   const refreshBackupStatus = async (clearMessage = false) => {
-    if (backupUnavailable || !global.adminSession?.is_super) {
+    // Wait for session to be loaded before checking permissions
+    if (!global.adminSession?.username) {
+      // Session not loaded yet, retry after a short delay
+      setTimeout(() => refreshBackupStatus(clearMessage), 100);
+      return;
+    }
+
+    // Hide backup section entirely for non-super admins (security requirement)
+    if (!global.adminSession?.is_super) {
+      if (backupCard) backupCard.style.display = 'none';
+      scheduleBackupRefresh(false);
+      return;
+    }
+
+    if (backupUnavailable) {
       scheduleBackupRefresh(false);
       return;
     }
@@ -322,8 +336,8 @@
       backupRefreshTimer = null;
     }
     try {
-      const resp = await fetch('/api/v1/backup/status?limit=6');
-      if (resp.status === 401 || resp.status === 404) {
+      const resp = await fetch('/api/v1/backup/status?limit=6', { credentials: 'same-origin' });
+      if (resp.status === 401 || resp.status === 403 || resp.status === 404) {
         backupUnavailable = true;
         setBackupControlsDisabled(true);
         if (backupCard) backupCard.style.display = 'none';
@@ -374,6 +388,7 @@
       const resp = await fetch('/api/v1/backup/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(payload),
       });
       if (!resp.ok) {
@@ -394,7 +409,7 @@
     if (!global.adminSession?.is_super || backupRunBtn?.disabled) return;
     try {
       backupRunBtn.disabled = true;
-      const resp = await fetch('/api/v1/backup/run', { method: 'POST' });
+      const resp = await fetch('/api/v1/backup/run', { method: 'POST', credentials: 'same-origin' });
       if (!resp.ok) {
         const detail = await resp.json().catch(() => null);
         throw new Error(detail?.detail || `HTTP ${resp.status}`);
@@ -421,6 +436,7 @@
       const resp = await fetch('/api/v1/backup/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ remotePath }),
       });
       if (!resp.ok) {
@@ -477,6 +493,13 @@
   };
 
   const init = () => {
+    // Security: Hide backup section for non-super admins immediately
+    // But only after session is loaded to avoid race condition
+    if (global.adminSession?.username && !global.adminSession?.is_super) {
+      if (backupCard) backupCard.style.display = 'none';
+      return;
+    }
+
     ensureBackupTimezones();
     setBackupControlsDisabled(true);
     updateBackupActionButtons();

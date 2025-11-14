@@ -3429,6 +3429,13 @@ async def _knowledge_service_run_impl(
 
 @app.get("/api/v1/backup/status", response_class=ORJSONResponse)
 async def backup_status(request: Request, limit: int = 10) -> ORJSONResponse:
+    """
+    Get backup system status and job history.
+
+    Security: Super admin only. Backup operations access ALL database data across
+    all projects, including sensitive credentials and data that regular admins
+    should not have access to.
+    """
     _require_super_admin(request)
     try:
         safe_limit = max(1, min(int(limit), 50))
@@ -3447,6 +3454,13 @@ async def backup_status(request: Request, limit: int = 10) -> ORJSONResponse:
 
 @app.post("/api/v1/backup/settings", response_class=ORJSONResponse)
 async def backup_update_settings(request: Request, payload: BackupSettingsPayload) -> ORJSONResponse:
+    """
+    Update backup configuration and Yandex Disk credentials.
+
+    Security: Super admin only. This endpoint manages cloud storage credentials
+    (Yandex Disk token) that provide access to all backup files. Compromise of
+    these credentials could expose all historical database backups.
+    """
     _require_super_admin(request)
     updates: dict[str, Any] = {}
     if payload.enabled is not None:
@@ -3474,6 +3488,14 @@ async def backup_update_settings(request: Request, payload: BackupSettingsPayloa
 
 @app.post("/api/v1/backup/run", response_class=ORJSONResponse)
 async def backup_run(request: Request, payload: BackupRunRequest | None = None) -> ORJSONResponse:
+    """
+    Trigger immediate database backup to cloud storage.
+
+    Security: Super admin only. This operation creates a complete dump of ALL
+    database collections, including user data, credentials, API keys, and other
+    sensitive information across all projects. The backup file contains data
+    that regular project administrators should not have access to.
+    """
     identity = _require_super_admin(request)
     active_job = await request.state.mongo.find_active_backup_job()
     if active_job:
@@ -3494,6 +3516,17 @@ async def backup_run(request: Request, payload: BackupRunRequest | None = None) 
 
 @app.post("/api/v1/backup/restore", response_class=ORJSONResponse)
 async def backup_restore(request: Request, payload: BackupRestoreRequest) -> ORJSONResponse:
+    """
+    Restore database from a cloud storage backup.
+
+    Security: Super admin only. This is the MOST DANGEROUS operation in the system.
+    It completely overwrites the current database with backup data, affecting ALL
+    projects and users. Unauthorized use could result in:
+    - Complete data loss (if wrong backup selected)
+    - Privilege escalation (restoring old admin credentials)
+    - Data corruption or system compromise
+    Regular administrators must never have access to this capability.
+    """
     identity = _require_super_admin(request)
     remote_path = (payload.remote_path or "").strip()
     if not remote_path:
@@ -3690,9 +3723,12 @@ class ProjectCreate(BaseModel):
     llm_emotions_enabled: bool | None = None
     llm_voice_enabled: bool | None = None
     llm_voice_model: str | None = None
+    llm_sources_enabled: bool | None = None
     debug_enabled: bool | None = None
     debug_info_enabled: bool | None = None
     knowledge_image_caption_enabled: bool | None = None
+    bitrix_enabled: bool | None = None
+    bitrix_webhook_url: str | None = None
     telegram_token: str | None = None
     telegram_auto_start: bool | None = None
     max_token: str | None = None
@@ -5967,6 +6003,18 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
     if not voice_enabled_value:
         voice_model_value = None
 
+    if "llm_sources_enabled" in provided_fields:
+        sources_enabled_value = (
+            bool(payload.llm_sources_enabled)
+            if payload.llm_sources_enabled is not None
+            else False
+        )
+    else:
+        if existing and existing.llm_sources_enabled is not None:
+            sources_enabled_value = bool(existing.llm_sources_enabled)
+        else:
+            sources_enabled_value = False
+
     if "debug_enabled" in provided_fields:
         debug_value = bool(payload.debug_enabled) if payload.debug_enabled is not None else False
     else:
@@ -5998,6 +6046,26 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
             captions_value = bool(existing.knowledge_image_caption_enabled)
         else:
             captions_value = True
+
+    if "bitrix_enabled" in provided_fields:
+        bitrix_enabled_value = (
+            bool(payload.bitrix_enabled)
+            if payload.bitrix_enabled is not None
+            else False
+        )
+    else:
+        if existing and existing.bitrix_enabled is not None:
+            bitrix_enabled_value = bool(existing.bitrix_enabled)
+        else:
+            bitrix_enabled_value = False
+
+    if "bitrix_webhook_url" in provided_fields:
+        if isinstance(payload.bitrix_webhook_url, str):
+            bitrix_webhook_value = payload.bitrix_webhook_url.strip() or None
+        else:
+            bitrix_webhook_value = None
+    else:
+        bitrix_webhook_value = existing.bitrix_webhook_url if existing else None
 
     if "telegram_token" in provided_fields:
         if isinstance(payload.telegram_token, str):
@@ -6156,9 +6224,12 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
         llm_emotions_enabled=emotions_value,
         llm_voice_enabled=voice_enabled_value,
         llm_voice_model=voice_model_value,
+        llm_sources_enabled=sources_enabled_value,
         debug_enabled=debug_value,
         debug_info_enabled=debug_info_value,
         knowledge_image_caption_enabled=captions_value,
+        bitrix_enabled=bitrix_enabled_value,
+        bitrix_webhook_url=bitrix_webhook_value,
         telegram_token=token_value,
         telegram_auto_start=auto_start_value,
         max_token=max_token_value,

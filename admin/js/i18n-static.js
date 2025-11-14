@@ -1442,6 +1442,26 @@
         en: 'Duplicates removed',
         ru: 'Дубликаты удалены',
       },
+      crawlerActionNoData: {
+        en: 'No data',
+        ru: 'Нет данных',
+      },
+      crawlerSelectProject: {
+        en: 'Select a project',
+        ru: 'Выберите проект',
+      },
+      crawlerLast: {
+        en: 'Last: {value}',
+        ru: 'Последний: {value}',
+      },
+      logCopySuccess: {
+        en: 'Logs copied',
+        ru: 'Логи скопированы',
+      },
+      logCopyError: {
+        en: 'Failed to copy',
+        ru: 'Не удалось скопировать',
+      },
       knowledgeQaUploadHint: {
         en: 'Excel file with columns “Question” and “Answer”',
         ru: 'Excel файл с колонками «Вопрос» и «Ответ»',

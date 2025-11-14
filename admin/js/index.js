@@ -355,7 +355,6 @@ let draggingPriorityItem = null;
 const summaryState = {
   project: '',
   crawler: '',
-  perf: '',
   build: '',
   prompt: '',
   crawlerData: null,
@@ -460,8 +459,6 @@ const summaryProjectMeta = document.getElementById('summaryProjectMeta');
 const summaryCrawlerCard = document.getElementById('summaryCrawlerCard');
 const summaryCrawlerEl = document.getElementById('summaryCrawler');
 const summaryCrawlerMeta = document.getElementById('summaryCrawlerMeta');
-const summaryPerfEl = document.getElementById('summaryPerf');
-const summaryPerfMeta = document.getElementById('summaryPerfMeta');
 const summaryPromptEl = document.getElementById('summaryPrompt');
 const summaryPromptDocs = document.getElementById('summaryPromptDocs');
 const summaryBuildEl = document.getElementById('summaryBuild');
@@ -586,7 +583,7 @@ const createTypeBadge = (category) => {
 
 async function refreshClusterAvailability() {
   try {
-    const resp = await fetch('/api/v1/admin/llm/availability');
+    const resp = await fetch('/api/v1/admin/llm/availability', { credentials: 'same-origin' });
     if (resp.status === 401) {
       if (clusterWarning) {
         clusterWarning.style.display = '';
@@ -643,7 +640,7 @@ async function pollLLM() {
     return;
   }
   try {
-    const resp = await fetch('/api/v1/llm/info');
+    const resp = await fetch('/api/v1/llm/info', { credentials: 'same-origin' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -774,7 +771,7 @@ async function fetchFeedbackTasks() {
   feedbackUnavailable = false;
   feedbackTasksList.innerHTML = `<div class="muted">${t('loadingEllipsis')}</div>`;
   try {
-    const resp = await fetch('/api/v1/admin/feedback');
+    const resp = await fetch('/api/v1/admin/feedback', { credentials: 'same-origin' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -1014,14 +1011,38 @@ function renderKnowledgePriority(order) {
     kbPriorityList.addEventListener('dragover', (event) => {
       if (!draggingPriorityItem) return;
       event.preventDefault();
-      const target = event.target.closest('.kb-priority-item');
-      if (!target || target === draggingPriorityItem) return;
-      const rect = target.getBoundingClientRect();
-      const after = event.clientY - rect.top > rect.height / 2;
-      kbPriorityList.insertBefore(
-        draggingPriorityItem,
-        after ? target.nextSibling : target,
-      );
+
+      // Find closest element using 2D Euclidean distance
+      const items = [...kbPriorityList.querySelectorAll('.kb-priority-item:not(.dragging)')];
+      let closestItem = null;
+      let minDistance = Number.POSITIVE_INFINITY;
+      let insertAfter = false;
+
+      items.forEach((item) => {
+        const rect = item.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        // Calculate 2D Euclidean distance from cursor to element center
+        const distance = Math.sqrt(
+          Math.pow(event.clientX - centerX, 2) +
+          Math.pow(event.clientY - centerY, 2)
+        );
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestItem = item;
+          // Determine if cursor is after the center (horizontally or vertically)
+          insertAfter = (event.clientX > centerX) || (event.clientY > centerY);
+        }
+      });
+
+      if (closestItem) {
+        kbPriorityList.insertBefore(
+          draggingPriorityItem,
+          insertAfter ? closestItem.nextSibling : closestItem,
+        );
+      }
     });
     kbPriorityList.dataset.dragBound = '1';
   }
@@ -1231,7 +1252,7 @@ async function loadUnansweredQuestions(projectName) {
     : '/api/v1/admin/knowledge/unanswered';
   if (kbUnansweredStatus) kbUnansweredStatus.textContent = t('loadingEllipsis');
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.status === 404) {
       knowledgeUnansweredUnavailable = true;
       setUnansweredVisibility(false);
@@ -1319,7 +1340,7 @@ async function loadKnowledge(projectName) {
     }
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge?${query}` : '/api/v1/admin/knowledge';
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const documents = Array.isArray(data?.documents) ? data.documents : [];
@@ -1380,7 +1401,7 @@ async function loadKnowledgeQa(projectName) {
   const url = query ? `/api/v1/admin/knowledge/qa?${query}` : '/api/v1/admin/knowledge/qa';
   if (kbQaStatus) kbQaStatus.textContent = translateOr('loadingEllipsis', 'Loading…');
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.status === 404) {
       knowledgeQaUnavailable = true;
       renderKnowledgeQa([]);
@@ -1418,6 +1439,7 @@ async function saveQaPair({ id = null, question, answer, priority }) {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      credentials: 'same-origin',
     },
   );
   if (!response.ok) {
@@ -1470,7 +1492,7 @@ async function deleteQaPair(pairId) {
   if (!window.confirm(confirmMessage)) return;
   if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaDeleting', 'Deleting…');
   try {
-    const resp = await fetch(`/api/v1/admin/knowledge/qa/${pairId}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/v1/admin/knowledge/qa/${pairId}`, { method: 'DELETE', credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     await loadKnowledgeQa(getKnowledgeProjectKey());
     const deletedMsg = translateOr('knowledgeQaDeleted', 'Pair deleted');
@@ -1497,7 +1519,7 @@ async function loadKnowledgePriority(projectName) {
     if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.status === 404) {
       knowledgePriorityUnavailable = true;
       renderKnowledgePriority(knowledgePriorityOrder);
@@ -1537,6 +1559,7 @@ async function saveKnowledgePriority() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      credentials: 'same-origin',
     });
     if (resp.status === 404) {
       knowledgePriorityUnavailable = true;
@@ -1645,6 +1668,7 @@ if (kbUnansweredClearBtn) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json().catch(() => ({}));
@@ -2113,6 +2137,7 @@ async function uploadKnowledgeFile(file, { project, description, url, name }) {
   const resp = await fetch('/api/v1/admin/knowledge/upload', {
     method: 'POST',
     body: formData,
+    credentials: 'same-origin',
   });
   if (!resp.ok) {
     throw new Error(await extractResponseError(resp));
@@ -2132,6 +2157,7 @@ async function createKnowledgeTextDocument({ project, name, description, url, co
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    credentials: 'same-origin',
   });
   if (!resp.ok) {
     throw new Error(await extractResponseError(resp));
@@ -2239,7 +2265,7 @@ function setKnowledgeFormButtonsDisabled(disabled) {
 async function refreshKnowledgeProjectsList() {
   if (!kbProjectList) return;
   try {
-    const resp = await fetch('/api/v1/admin/projects/names');
+    const resp = await fetch('/api/v1/admin/projects/names', { credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const projects = Array.isArray(data?.projects) ? data.projects : [];
@@ -2713,16 +2739,51 @@ function initLayoutReordering() {
     layout.querySelectorAll('.reorder-drop-target').forEach((el) => el.classList.remove('reorder-drop-target'));
   };
 
-  const getDragAfterElement = (container, y) => {
+  const getDragAfterElement = (container, x, y) => {
     const draggableElements = [...container.querySelectorAll(':scope > section[data-block-id]:not(.dragging)')];
-    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
-    draggableElements.forEach((child) => {
+
+    // Find all elements and calculate their distances from the cursor
+    const elementsWithDistance = draggableElements.map((child) => {
       const rect = child.getBoundingClientRect();
-      const offset = y - rect.top - rect.height / 2;
-      if (offset < 0 && offset > closest.offset) {
-        closest = { offset, element: child };
-      }
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      // Calculate Euclidean distance from cursor to element center
+      const distance = Math.sqrt(
+        Math.pow(x - centerX, 2) +
+        Math.pow(y - centerY, 2)
+      );
+
+      return {
+        element: child,
+        rect,
+        centerX,
+        centerY,
+        distance,
+        isBelow: y > centerY,
+        isRight: x > centerX
+      };
     });
+
+    // Sort by distance to find the closest element
+    elementsWithDistance.sort((a, b) => a.distance - b.distance);
+
+    if (elementsWithDistance.length === 0) {
+      return null;
+    }
+
+    // Get the closest element
+    const closest = elementsWithDistance[0];
+
+    // Determine insertion point based on cursor position relative to closest element
+    // If cursor is below the closest element's center, insert after it
+    if (closest.isBelow) {
+      // Find the next element that comes after this one in DOM order
+      const currentIndex = draggableElements.indexOf(closest.element);
+      return draggableElements[currentIndex + 1] || null;
+    }
+
+    // If cursor is above, insert before it
     return closest.element;
   };
 
@@ -2750,7 +2811,7 @@ function initLayoutReordering() {
   const handleDragOver = (event) => {
     if (!isReorderMode || !draggingSection) return;
     event.preventDefault();
-    const afterElement = getDragAfterElement(layout, event.clientY);
+    const afterElement = getDragAfterElement(layout, event.clientX, event.clientY);
     if (afterElement === draggingSection) return;
     if (afterElement == null) {
       layout.appendChild(draggingSection);
@@ -2869,17 +2930,6 @@ function setSummaryCrawler(main, meta, rawData = null) {
   }
   summaryState.crawlerData = null;
   applyCrawlerSummary(main, meta);
-}
-
-function setSummaryPerf(main, meta) {
-  const display = main || '—';
-  const metaText = meta || '';
-  const signature = `${display}::${metaText}`;
-  if (summaryState.perf === signature) return;
-  summaryState.perf = signature;
-  summaryPerfEl.textContent = display;
-  summaryPerfMeta.textContent = metaText;
-  pulseCard(summaryPerfCard);
 }
 
 function setSummaryBuild(main, meta) {
@@ -3032,6 +3082,7 @@ if (saveLlmButton) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
       });
       if (llmPingResultEl) {
         llmPingResultEl.textContent = resp.ok ? 'Saved' : 'Save failed';
