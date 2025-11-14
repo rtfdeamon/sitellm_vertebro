@@ -355,7 +355,6 @@ let draggingPriorityItem = null;
 const summaryState = {
   project: '',
   crawler: '',
-  perf: '',
   build: '',
   prompt: '',
   crawlerData: null,
@@ -460,8 +459,6 @@ const summaryProjectMeta = document.getElementById('summaryProjectMeta');
 const summaryCrawlerCard = document.getElementById('summaryCrawlerCard');
 const summaryCrawlerEl = document.getElementById('summaryCrawler');
 const summaryCrawlerMeta = document.getElementById('summaryCrawlerMeta');
-const summaryPerfEl = document.getElementById('summaryPerf');
-const summaryPerfMeta = document.getElementById('summaryPerfMeta');
 const summaryPromptEl = document.getElementById('summaryPrompt');
 const summaryPromptDocs = document.getElementById('summaryPromptDocs');
 const summaryBuildEl = document.getElementById('summaryBuild');
@@ -2713,16 +2710,51 @@ function initLayoutReordering() {
     layout.querySelectorAll('.reorder-drop-target').forEach((el) => el.classList.remove('reorder-drop-target'));
   };
 
-  const getDragAfterElement = (container, y) => {
+  const getDragAfterElement = (container, x, y) => {
     const draggableElements = [...container.querySelectorAll(':scope > section[data-block-id]:not(.dragging)')];
-    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
-    draggableElements.forEach((child) => {
+
+    // Find all elements and calculate their distances from the cursor
+    const elementsWithDistance = draggableElements.map((child) => {
       const rect = child.getBoundingClientRect();
-      const offset = y - rect.top - rect.height / 2;
-      if (offset < 0 && offset > closest.offset) {
-        closest = { offset, element: child };
-      }
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+
+      // Calculate Euclidean distance from cursor to element center
+      const distance = Math.sqrt(
+        Math.pow(x - centerX, 2) +
+        Math.pow(y - centerY, 2)
+      );
+
+      return {
+        element: child,
+        rect,
+        centerX,
+        centerY,
+        distance,
+        isBelow: y > centerY,
+        isRight: x > centerX
+      };
     });
+
+    // Sort by distance to find the closest element
+    elementsWithDistance.sort((a, b) => a.distance - b.distance);
+
+    if (elementsWithDistance.length === 0) {
+      return null;
+    }
+
+    // Get the closest element
+    const closest = elementsWithDistance[0];
+
+    // Determine insertion point based on cursor position relative to closest element
+    // If cursor is below the closest element's center, insert after it
+    if (closest.isBelow) {
+      // Find the next element that comes after this one in DOM order
+      const currentIndex = draggableElements.indexOf(closest.element);
+      return draggableElements[currentIndex + 1] || null;
+    }
+
+    // If cursor is above, insert before it
     return closest.element;
   };
 
@@ -2750,7 +2782,7 @@ function initLayoutReordering() {
   const handleDragOver = (event) => {
     if (!isReorderMode || !draggingSection) return;
     event.preventDefault();
-    const afterElement = getDragAfterElement(layout, event.clientY);
+    const afterElement = getDragAfterElement(layout, event.clientX, event.clientY);
     if (afterElement === draggingSection) return;
     if (afterElement == null) {
       layout.appendChild(draggingSection);
@@ -2869,17 +2901,6 @@ function setSummaryCrawler(main, meta, rawData = null) {
   }
   summaryState.crawlerData = null;
   applyCrawlerSummary(main, meta);
-}
-
-function setSummaryPerf(main, meta) {
-  const display = main || '—';
-  const metaText = meta || '';
-  const signature = `${display}::${metaText}`;
-  if (summaryState.perf === signature) return;
-  summaryState.perf = signature;
-  summaryPerfEl.textContent = display;
-  summaryPerfMeta.textContent = metaText;
-  pulseCard(summaryPerfCard);
 }
 
 function setSummaryBuild(main, meta) {
