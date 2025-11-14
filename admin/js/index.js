@@ -583,7 +583,7 @@ const createTypeBadge = (category) => {
 
 async function refreshClusterAvailability() {
   try {
-    const resp = await fetch('/api/v1/admin/llm/availability');
+    const resp = await fetch('/api/v1/admin/llm/availability', { credentials: 'same-origin' });
     if (resp.status === 401) {
       if (clusterWarning) {
         clusterWarning.style.display = '';
@@ -640,7 +640,7 @@ async function pollLLM() {
     return;
   }
   try {
-    const resp = await fetch('/api/v1/llm/info');
+    const resp = await fetch('/api/v1/llm/info', { credentials: 'same-origin' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -771,7 +771,7 @@ async function fetchFeedbackTasks() {
   feedbackUnavailable = false;
   feedbackTasksList.innerHTML = `<div class="muted">${t('loadingEllipsis')}</div>`;
   try {
-    const resp = await fetch('/api/v1/admin/feedback');
+    const resp = await fetch('/api/v1/admin/feedback', { credentials: 'same-origin' });
     if (!resp.ok) {
       throw new Error(`HTTP ${resp.status}`);
     }
@@ -1228,7 +1228,7 @@ async function loadUnansweredQuestions(projectName) {
     : '/api/v1/admin/knowledge/unanswered';
   if (kbUnansweredStatus) kbUnansweredStatus.textContent = t('loadingEllipsis');
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.status === 404) {
       knowledgeUnansweredUnavailable = true;
       setUnansweredVisibility(false);
@@ -1316,7 +1316,7 @@ async function loadKnowledge(projectName) {
     }
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge?${query}` : '/api/v1/admin/knowledge';
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const documents = Array.isArray(data?.documents) ? data.documents : [];
@@ -1377,7 +1377,7 @@ async function loadKnowledgeQa(projectName) {
   const url = query ? `/api/v1/admin/knowledge/qa?${query}` : '/api/v1/admin/knowledge/qa';
   if (kbQaStatus) kbQaStatus.textContent = translateOr('loadingEllipsis', 'Loading…');
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.status === 404) {
       knowledgeQaUnavailable = true;
       renderKnowledgeQa([]);
@@ -1415,6 +1415,7 @@ async function saveQaPair({ id = null, question, answer, priority }) {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      credentials: 'same-origin',
     },
   );
   if (!response.ok) {
@@ -1467,7 +1468,7 @@ async function deleteQaPair(pairId) {
   if (!window.confirm(confirmMessage)) return;
   if (kbQaStatus) kbQaStatus.textContent = translateOr('knowledgeQaDeleting', 'Deleting…');
   try {
-    const resp = await fetch(`/api/v1/admin/knowledge/qa/${pairId}`, { method: 'DELETE' });
+    const resp = await fetch(`/api/v1/admin/knowledge/qa/${pairId}`, { method: 'DELETE', credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     await loadKnowledgeQa(getKnowledgeProjectKey());
     const deletedMsg = translateOr('knowledgeQaDeleted', 'Pair deleted');
@@ -1494,7 +1495,7 @@ async function loadKnowledgePriority(projectName) {
     if (projectKey) params.set('project', projectKey);
     const query = params.toString();
     const url = query ? `/api/v1/admin/knowledge/priority?${query}` : '/api/v1/admin/knowledge/priority';
-    const resp = await fetch(url);
+    const resp = await fetch(url, { credentials: 'same-origin' });
     if (resp.status === 404) {
       knowledgePriorityUnavailable = true;
       renderKnowledgePriority(knowledgePriorityOrder);
@@ -1534,6 +1535,7 @@ async function saveKnowledgePriority() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      credentials: 'same-origin',
     });
     if (resp.status === 404) {
       knowledgePriorityUnavailable = true;
@@ -1642,6 +1644,7 @@ if (kbUnansweredClearBtn) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json().catch(() => ({}));
@@ -2110,6 +2113,7 @@ async function uploadKnowledgeFile(file, { project, description, url, name }) {
   const resp = await fetch('/api/v1/admin/knowledge/upload', {
     method: 'POST',
     body: formData,
+    credentials: 'same-origin',
   });
   if (!resp.ok) {
     throw new Error(await extractResponseError(resp));
@@ -2129,6 +2133,7 @@ async function createKnowledgeTextDocument({ project, name, description, url, co
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    credentials: 'same-origin',
   });
   if (!resp.ok) {
     throw new Error(await extractResponseError(resp));
@@ -2236,7 +2241,7 @@ function setKnowledgeFormButtonsDisabled(disabled) {
 async function refreshKnowledgeProjectsList() {
   if (!kbProjectList) return;
   try {
-    const resp = await fetch('/api/v1/admin/projects/names');
+    const resp = await fetch('/api/v1/admin/projects/names', { credentials: 'same-origin' });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     const projects = Array.isArray(data?.projects) ? data.projects : [];
@@ -3053,6 +3058,7 @@ if (saveLlmButton) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
       });
       if (llmPingResultEl) {
         llmPingResultEl.textContent = resp.ok ? 'Saved' : 'Save failed';

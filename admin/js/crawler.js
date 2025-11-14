@@ -179,7 +179,7 @@
     crawlerLogsLoading = true;
     crawlerLogsOutput.textContent = translate('crawlerLogsLoading', 'Loading…');
     try {
-      const resp = await fetch('/api/v1/admin/logs?limit=400');
+      const resp = await fetch('/api/v1/admin/logs?limit=400', { credentials: 'same-origin' });
       if (!resp.ok) throw new Error('logs request failed');
       const data = await resp.json();
       const lines = Array.isArray(data.lines) ? data.lines : [];
@@ -368,7 +368,7 @@
 
   const pollHealth = async () => {
     try {
-      const resp = await fetch('/health');
+      const resp = await fetch('/health', { credentials: 'same-origin' });
       if (!resp.ok) return;
       const data = await resp.json();
       const details = data.details || {};
@@ -416,6 +416,7 @@
       const res = await fetch('/api/v1/crawler/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -432,7 +433,7 @@
     if (!stopBtn || !launchMsg) return;
     stopBtn.disabled = true;
     try {
-      const resp = await fetch('/api/v1/crawler/stop', { method: 'POST' });
+      const resp = await fetch('/api/v1/crawler/stop', { method: 'POST', credentials: 'same-origin' });
       if (!resp.ok) throw new Error(await resp.text());
       setCrawlerProgressError(translate('crawlerStoppedByRequest', 'Stopped on request'));
       launchMsg.textContent = translate('crawlerStopping', 'Stopping…');

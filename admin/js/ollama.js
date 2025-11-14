@@ -504,7 +504,7 @@
     setAvailabilityMessage('ollamaCatalogRefreshing', 'Refreshing catalog…');
     clearCatalogPoll();
     try {
-      const response = await fetch('/api/v1/admin/ollama/catalog');
+      const response = await fetch('/api/v1/admin/ollama/catalog', { credentials: 'same-origin' });
       if (!response.ok) {
         throw new Error(await parseError(response));
       }
@@ -533,6 +533,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ model }),
+        credentials: 'same-origin',
       });
       if (!response.ok) {
         throw new Error(await parseError(response));
@@ -677,7 +678,7 @@
     serversLoading = true;
     setNodeText(serversStatusEl, 'ollamaRefreshUpdating', 'Refreshing list…');
     try {
-      const response = await fetch('/api/v1/admin/ollama/servers');
+      const response = await fetch('/api/v1/admin/ollama/servers', { credentials: 'same-origin' });
       if (!response.ok) {
         throw new Error(await parseError(response));
       }
@@ -714,6 +715,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        credentials: 'same-origin',
       });
       if (!response.ok) {
         throw new Error(await parseError(response));
@@ -735,6 +737,7 @@
     try {
       const response = await fetch(`/api/v1/admin/ollama/servers/${encodeURIComponent(trimmed)}`, {
         method: 'DELETE',
+        credentials: 'same-origin',
       });
       if (!response.ok) {
         throw new Error(await parseError(response));
@@ -765,6 +768,7 @@
           base_url: baseUrl,
           enabled,
         }),
+        credentials: 'same-origin',
       });
       if (!response.ok) {
         throw new Error(await parseError(response));
@@ -783,7 +787,7 @@
   async function loadLlmModels() {
     try {
       console.log('[ollama] loadLlmModels: fetching /api/v1/admin/llm/models');
-      const response = await fetch('/api/v1/admin/llm/models');
+      const response = await fetch('/api/v1/admin/llm/models', { credentials: 'same-origin' });
       if (!response.ok) {
         console.warn('[ollama] loadLlmModels: non-ok status', response.status);
         throw new Error(await parseError(response));

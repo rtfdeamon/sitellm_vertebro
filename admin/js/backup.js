@@ -329,7 +329,7 @@
       backupRefreshTimer = null;
     }
     try {
-      const resp = await fetch('/api/v1/backup/status?limit=6');
+      const resp = await fetch('/api/v1/backup/status?limit=6', { credentials: 'same-origin' });
       if (resp.status === 401 || resp.status === 403 || resp.status === 404) {
         backupUnavailable = true;
         setBackupControlsDisabled(true);
@@ -381,6 +381,7 @@
       const resp = await fetch('/api/v1/backup/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify(payload),
       });
       if (!resp.ok) {
@@ -401,7 +402,7 @@
     if (!global.adminSession?.is_super || backupRunBtn?.disabled) return;
     try {
       backupRunBtn.disabled = true;
-      const resp = await fetch('/api/v1/backup/run', { method: 'POST' });
+      const resp = await fetch('/api/v1/backup/run', { method: 'POST', credentials: 'same-origin' });
       if (!resp.ok) {
         const detail = await resp.json().catch(() => null);
         throw new Error(detail?.detail || `HTTP ${resp.status}`);
@@ -428,6 +429,7 @@
       const resp = await fetch('/api/v1/backup/restore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ remotePath }),
       });
       if (!resp.ok) {
