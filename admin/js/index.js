@@ -1011,14 +1011,38 @@ function renderKnowledgePriority(order) {
     kbPriorityList.addEventListener('dragover', (event) => {
       if (!draggingPriorityItem) return;
       event.preventDefault();
-      const target = event.target.closest('.kb-priority-item');
-      if (!target || target === draggingPriorityItem) return;
-      const rect = target.getBoundingClientRect();
-      const after = event.clientY - rect.top > rect.height / 2;
-      kbPriorityList.insertBefore(
-        draggingPriorityItem,
-        after ? target.nextSibling : target,
-      );
+
+      // Find closest element using 2D Euclidean distance
+      const items = [...kbPriorityList.querySelectorAll('.kb-priority-item:not(.dragging)')];
+      let closestItem = null;
+      let minDistance = Number.POSITIVE_INFINITY;
+      let insertAfter = false;
+
+      items.forEach((item) => {
+        const rect = item.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+
+        // Calculate 2D Euclidean distance from cursor to element center
+        const distance = Math.sqrt(
+          Math.pow(event.clientX - centerX, 2) +
+          Math.pow(event.clientY - centerY, 2)
+        );
+
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestItem = item;
+          // Determine if cursor is after the center (horizontally or vertically)
+          insertAfter = (event.clientX > centerX) || (event.clientY > centerY);
+        }
+      });
+
+      if (closestItem) {
+        kbPriorityList.insertBefore(
+          draggingPriorityItem,
+          insertAfter ? closestItem.nextSibling : closestItem,
+        );
+      }
     });
     kbPriorityList.dataset.dragBound = '1';
   }

@@ -312,6 +312,13 @@
   };
 
   const refreshBackupStatus = async (clearMessage = false) => {
+    // Wait for session to be loaded before checking permissions
+    if (!global.adminSession?.username) {
+      // Session not loaded yet, retry after a short delay
+      setTimeout(() => refreshBackupStatus(clearMessage), 100);
+      return;
+    }
+
     // Hide backup section entirely for non-super admins (security requirement)
     if (!global.adminSession?.is_super) {
       if (backupCard) backupCard.style.display = 'none';
@@ -487,7 +494,8 @@
 
   const init = () => {
     // Security: Hide backup section for non-super admins immediately
-    if (!global.adminSession?.is_super) {
+    // But only after session is loaded to avoid race condition
+    if (global.adminSession?.username && !global.adminSession?.is_super) {
       if (backupCard) backupCard.style.display = 'none';
       return;
     }
