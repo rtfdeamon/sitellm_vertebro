@@ -44,6 +44,10 @@ from bs4 import BeautifulSoup
 
 from observability.logging import configure_logging, get_recent_logs
 from observability.metrics import MetricsMiddleware, metrics_app
+from backend.rate_limiting import RateLimitingMiddleware
+from backend.csrf import CSRFMiddleware
+from backend.csp import CSPMiddleware
+from backend.gzip_middleware import GZipMiddleware
 
 from api import (
     llm_router,
@@ -53,6 +57,8 @@ from api import (
     _DEFAULT_KNOWLEDGE_PRIORITY,
     _KNOWN_KNOWLEDGE_SOURCES,
 )
+from voice import voice_assistant_router
+from voice.router import initialize_voice_providers
 from mongo import MongoClient, NotFound
 from models import BackupJob, BackupOperation, BackupStatus, Document, Project, OllamaServer
 from settings import MongoSettings, Settings
@@ -67,6 +73,12 @@ from backend.ollama import (
     ollama_available,
 )
 from backend.ollama_cluster import init_cluster, reload_cluster, get_cluster_manager, shutdown_cluster
+from backend.validators import (
+    validate_upload_file,
+    validate_question,
+    validate_answer,
+    detect_csv_delimiter,
+)
 from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qdrant_models
@@ -88,6 +100,8 @@ from knowledge_service.configuration import (
     DEFAULT_PROCESSING_PROMPT as KNOWLEDGE_SERVICE_DEFAULT_PROMPT,
     MANUAL_MODE_MESSAGE as KNOWLEDGE_SERVICE_MANUAL_MESSAGE,
 )
+# AdminIdentity imported here after other modules to avoid circular dependencies
+from app.services.auth import AdminIdentity
 from max_bot.config import get_settings as get_max_settings
 from vk_bot.config import get_settings as get_vk_settings
 import redis
@@ -280,25 +294,7 @@ XLS_MIME_TYPES: set[str] = {
 }
 
 
-@dataclass(frozen=True)
-class AdminIdentity:
-    """Represents authenticated admin context."""
-
-    username: str
-    is_super: bool
-    projects: tuple[str, ...] = ()
-
-    def can_access_project(self, project: str | None) -> bool:
-        if self.is_super:
-            return True
-        if not project:
-            return False
-        normalized = project.strip().lower()
-        return normalized in self.projects
-
-    @property
-    def primary_project(self) -> str | None:
-        return self.projects[0] if self.projects else None
+# AdminIdentity is now imported from app/services/auth.py above
 
 
 def _normalize_project(value: str | None) -> str | None:
@@ -756,23 +752,9 @@ async def _schedule_ollama_install(model: str) -> Dict[str, Any]:
     asyncio.create_task(_run_ollama_install(normalized))
     return job
 
-def _get_admin_identity(request: Request) -> AdminIdentity | None:
-    identity = getattr(request.state, "admin", None)
-    return identity if isinstance(identity, AdminIdentity) else None
-
-
-def _require_admin(request: Request) -> AdminIdentity:
-    identity = _get_admin_identity(request)
-    if identity is None:
-        raise HTTPException(status_code=401, detail="Admin authentication required")
-    return identity
-
-
-def _require_super_admin(request: Request) -> AdminIdentity:
-    identity = _require_admin(request)
-    if not identity.is_super:
-        raise HTTPException(status_code=403, detail="Super admin privileges required")
-    return identity
+# Auth helpers moved to app/services/auth.py for reuse in routers
+# Import here for backward compatibility
+from app.services.auth import require_admin as _require_admin, require_super_admin as _require_super_admin, _get_admin_identity
 
 
 def _resolve_admin_project(
@@ -2809,6 +2791,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict[str, Any], None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("vk_hub_refresh_failed", error=str(exc))
 
+    # Initialize voice providers
+    try:
+        await initialize_voice_providers()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("voice_providers_initialization_failed", error=str(exc))
+
     yield {
         "llm": llm,
         "mongo": mongo_client,
@@ -2862,39 +2850,12 @@ def _parse_cors_origins(raw: str | list[str] | tuple[str, ...]) -> list[str]:
     return values or ["*"]
 
 
-cors_origins = _parse_cors_origins(getattr(settings, "cors_origins", "*"))
-allow_all_origins = "*" in cors_origins
+# App creation moved to app/main.py factory
+# Import factory function for backward compatibility
+from app.main import create_app
 
-app = FastAPI(lifespan=lifespan, debug=settings.debug)
-if _ssl_enabled():
-    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if allow_all_origins else cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(MetricsMiddleware)
-app.add_middleware(BasicAuthMiddleware)
-app.mount("/metrics", metrics_app)
-app.include_router(
-    llm_router,
-    prefix="/api/v1",
-)
-app.include_router(
-    crawler_router,
-    prefix="/api/v1",
-)
-app.include_router(
-    reading_router,
-    prefix="/api/v1",
-)
-app.include_router(
-    voice_router,
-    prefix="/api/v1",
-)
-app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
-app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
+# Create app using factory
+app = create_app(debug=settings.debug)
 
 
 def _mongo_check(mongo_uri: str | None = None) -> tuple[bool, str | None]:
@@ -2948,32 +2909,7 @@ def _qdrant_check(qdrant_url: str | None = None) -> tuple[bool, str | None]:
     return False, error
 
 
-@app.get("/health", include_in_schema=False)
-def health() -> dict[str, object]:
-    """Health check with external service probes."""
-    mongo_ok, mongo_err = _mongo_check()
-    redis_ok, redis_err = _redis_check()
-    qdrant_ok, qdrant_err = _qdrant_check()
-
-    checks = {
-        "mongo": {"ok": mongo_ok, "error": mongo_err},
-        "redis": {"ok": redis_ok, "error": redis_err},
-        "qdrant": {"ok": qdrant_ok, "error": qdrant_err},
-    }
-    status = "ok" if all(item["ok"] for item in checks.values()) else "degraded"
-    return {
-        "status": status,
-        "mongo": mongo_ok,
-        "redis": redis_ok,
-        "qdrant": qdrant_ok,
-        "details": checks,
-    }
-
-
-@app.get("/healthz", include_in_schema=False)
-def healthz() -> dict[str, str]:
-    """Lightweight liveness probe used by container healthchecks."""
-    return {"status": "ok"}
+# health, healthz, csrf-token moved to app/routers/admin.py
 
 
 @app.get("/status")
@@ -2983,32 +2919,10 @@ def status(domain: str | None = None, project: str | None = None) -> dict[str, o
     return status_dict(_normalize_project(chosen))
 
 
-@app.post("/api/v1/admin/logout", response_class=PlainTextResponse, include_in_schema=False)
-async def admin_logout(request: Request) -> PlainTextResponse:
-    return _admin_logout_response(request)
+# admin_logout endpoints moved to app/routers/admin.py
 
 
-@app.get("/api/v1/admin/logout", response_class=PlainTextResponse, include_in_schema=False)
-async def admin_logout_get(request: Request) -> PlainTextResponse:
-    return _admin_logout_response(request)
-
-
-@app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
-def admin_logs(request: Request, limit: int = 200) -> ORJSONResponse:
-    """Return recent application logs for the admin UI.
-
-    Parameters
-    ----------
-    limit:
-        Maximum number of lines to return (default 200).
-    """
-    _require_super_admin(request)
-    try:
-        limit = max(1, min(int(limit), 1000))
-    except Exception:
-        limit = 200
-    lines = get_recent_logs(limit)
-    return ORJSONResponse({"lines": lines})
+# admin_logs moved to app/routers/stats.py
 
 
 class KnowledgeCreate(BaseModel):
@@ -3146,24 +3060,87 @@ async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
     if ext not in QA_SUPPORTED_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Формат файла не поддерживается")
 
-    payload = await file.read()
+    # Comprehensive file validation with timeout
+    try:
+        payload = await asyncio.wait_for(
+            validate_upload_file(file, max_size=100 * 1024 * 1024, check_magic=False),
+            timeout=30.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=408,
+            detail="Превышено время ожидания загрузки файла (30 сек)",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error("qa_upload_validation_failed", filename=filename, error=str(exc))
+        raise HTTPException(status_code=400, detail="Ошибка валидации файла") from exc
+
     if not payload:
         raise HTTPException(status_code=400, detail="Файл пустой")
 
     rows: list[list[str]] = []
     if ext == ".csv":
         try:
-            text = payload.decode("utf-8-sig", errors="ignore")
-        except Exception:
-            text = payload.decode("cp1251", errors="ignore")
-        reader = csv.reader(io.StringIO(text))
+            # Try UTF-8 with BOM first, then UTF-8, then fallback to cp1251
+            try:
+                text = payload.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                try:
+                    text = payload.decode("utf-8")
+                except UnicodeDecodeError:
+                    text = payload.decode("cp1251")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("csv_decode_failed", filename=filename, error=str(exc))
+            raise HTTPException(status_code=400, detail="Не удалось декодировать CSV файл") from exc
+        
+        # Detect delimiter using csv.Sniffer
+        delimiter = detect_csv_delimiter(text)
+        reader = csv.reader(io.StringIO(text), delimiter=delimiter)
         for raw in reader:
             rows.append([str(cell).strip() for cell in raw])
     else:
-        wb = load_workbook(filename=io.BytesIO(payload), read_only=True, data_only=True)
-        sheet = wb.active
-        for row in sheet.iter_rows(values_only=True):
-            rows.append(["" if cell is None else str(cell).strip() for cell in row])
+        # Excel file processing with comprehensive error handling
+        try:
+            wb = load_workbook(filename=io.BytesIO(payload), read_only=True, data_only=True)
+            sheet = wb.active
+            if sheet is None:
+                raise HTTPException(status_code=400, detail="Excel файл не содержит рабочих листов")
+            
+            for row_num, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                try:
+                    row_data = ["" if cell is None else str(cell).strip() for cell in row]
+                    rows.append(row_data)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "excel_row_parse_failed",
+                        filename=filename,
+                        row=row_num,
+                        error=str(exc),
+                    )
+                    # Continue processing other rows even if one fails
+                    continue
+            
+            wb.close()
+        except Exception as exc:  # noqa: BLE001
+            error_msg = str(exc)
+            if "is not a zip file" in error_msg.lower() or "not a valid" in error_msg.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail="Файл не является валидным Excel файлом. Убедитесь, что файл не поврежден.",
+                ) from exc
+            elif "worksheet" in error_msg.lower() or "sheet" in error_msg.lower():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Ошибка чтения Excel файла: {error_msg}",
+                ) from exc
+            else:
+                logger.error("excel_parse_failed", filename=filename, error=error_msg)
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Не удалось прочитать Excel файл: {error_msg}",
+                ) from exc
 
     if not rows:
         return []
@@ -3183,15 +3160,27 @@ async def _read_qa_upload(file: UploadFile) -> list[dict[str, str]]:
     for row in data_rows:
         if q_idx >= len(row) or q_idx < 0:
             continue
-        question = (row[q_idx] or "").strip()
-        answer = (row[a_idx] or "").strip() if 0 <= a_idx < len(row) else ""
+        question_raw = (row[q_idx] or "").strip()
+        answer_raw = (row[a_idx] or "").strip() if 0 <= a_idx < len(row) else ""
+        
+        # Validate and normalize question/answer text
+        try:
+            question = validate_question(question_raw)
+            answer = validate_answer(answer_raw)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("qa_text_validation_failed", error=str(exc))
+            # Skip invalid entries but continue processing
+            continue
+        
         if not question or not answer:
             continue
+        
         priority_value: str | None = None
         if 0 <= p_idx < len(row):
             priority_cell = (row[p_idx] or "").strip()
             if priority_cell != "":
                 priority_value = priority_cell
+        
         if priority_value is not None:
             pairs.append({"question": question, "answer": answer, "priority": priority_value})
         else:
@@ -3261,33 +3250,7 @@ class PromptGenerationRequest(BaseModel):
     role: str | None = None
 
 
-class BackupSettingsPayload(BaseModel):
-    enabled: bool | None = None
-    hour: int | None = None
-    minute: int | None = None
-    timezone: str | None = None
-    ya_disk_folder: str | None = Field(default=None, alias="yaDiskFolder")
-    token: str | None = None
-    clear_token: bool | None = Field(default=None, alias="clearToken")
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-
-class BackupRestoreRequest(BaseModel):
-    remote_path: str = Field(alias="remotePath")
-    source_job_id: str | None = Field(default=None, alias="sourceJobId")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class BackupRunRequest(BaseModel):
-    note: str | None = None
-
-
-def _serialize_backup_job(job: BackupJob | None) -> dict[str, Any] | None:
-    if not job:
-        return None
-    return job.model_dump(by_alias=True)
+# Backup models and endpoints moved to app/routers/backup.py
 
 
 async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
@@ -3427,129 +3390,7 @@ async def _knowledge_service_run_impl(
     return ORJSONResponse({"status": "ok", "error": error_text})
 
 
-@app.get("/api/v1/backup/status", response_class=ORJSONResponse)
-async def backup_status(request: Request, limit: int = 10) -> ORJSONResponse:
-    """
-    Get backup system status and job history.
-
-    Security: Super admin only. Backup operations access ALL database data across
-    all projects, including sensitive credentials and data that regular admins
-    should not have access to.
-    """
-    _require_super_admin(request)
-    try:
-        safe_limit = max(1, min(int(limit), 50))
-    except Exception:
-        safe_limit = 10
-    settings_model = await request.state.mongo.get_backup_settings()
-    active_job = await request.state.mongo.find_active_backup_job()
-    jobs = await request.state.mongo.list_backup_jobs(limit=safe_limit)
-    payload = {
-        "settings": settings_model.model_dump(by_alias=True),
-        "activeJob": _serialize_backup_job(active_job),
-        "jobs": [_serialize_backup_job(job) for job in jobs],
-    }
-    return ORJSONResponse(payload)
-
-
-@app.post("/api/v1/backup/settings", response_class=ORJSONResponse)
-async def backup_update_settings(request: Request, payload: BackupSettingsPayload) -> ORJSONResponse:
-    """
-    Update backup configuration and Yandex Disk credentials.
-
-    Security: Super admin only. This endpoint manages cloud storage credentials
-    (Yandex Disk token) that provide access to all backup files. Compromise of
-    these credentials could expose all historical database backups.
-    """
-    _require_super_admin(request)
-    updates: dict[str, Any] = {}
-    if payload.enabled is not None:
-        updates["enabled"] = bool(payload.enabled)
-    if payload.hour is not None:
-        updates["hour"] = int(payload.hour)
-    if payload.minute is not None:
-        updates["minute"] = int(payload.minute)
-    if payload.timezone is not None:
-        updates["timezone"] = payload.timezone
-    if payload.ya_disk_folder is not None:
-        updates["yaDiskFolder"] = payload.ya_disk_folder
-
-    extra_kwargs: dict[str, Any] = {}
-    if payload.token is not None:
-        extra_kwargs["token"] = payload.token
-
-    settings_model = await request.state.mongo.update_backup_settings(
-        updates,
-        clear_token=bool(payload.clear_token),
-        **extra_kwargs,
-    )
-    return ORJSONResponse(settings_model.model_dump(by_alias=True))
-
-
-@app.post("/api/v1/backup/run", response_class=ORJSONResponse)
-async def backup_run(request: Request, payload: BackupRunRequest | None = None) -> ORJSONResponse:
-    """
-    Trigger immediate database backup to cloud storage.
-
-    Security: Super admin only. This operation creates a complete dump of ALL
-    database collections, including user data, credentials, API keys, and other
-    sensitive information across all projects. The backup file contains data
-    that regular project administrators should not have access to.
-    """
-    identity = _require_super_admin(request)
-    active_job = await request.state.mongo.find_active_backup_job()
-    if active_job:
-        raise HTTPException(status_code=409, detail="backup_job_in_progress")
-    token = await request.state.mongo.get_backup_token()
-    if not token:
-        raise HTTPException(status_code=400, detail="ya_disk_token_missing")
-
-    triggered = getattr(identity, "username", None) or "admin"
-    job = await request.state.mongo.create_backup_job(
-        operation=BackupOperation.backup,
-        status=BackupStatus.queued,
-        triggered_by=f"admin:{triggered}",
-    )
-    backup_execute.delay(job.id)
-    return ORJSONResponse({"job": _serialize_backup_job(job)})
-
-
-@app.post("/api/v1/backup/restore", response_class=ORJSONResponse)
-async def backup_restore(request: Request, payload: BackupRestoreRequest) -> ORJSONResponse:
-    """
-    Restore database from a cloud storage backup.
-
-    Security: Super admin only. This is the MOST DANGEROUS operation in the system.
-    It completely overwrites the current database with backup data, affecting ALL
-    projects and users. Unauthorized use could result in:
-    - Complete data loss (if wrong backup selected)
-    - Privilege escalation (restoring old admin credentials)
-    - Data corruption or system compromise
-    Regular administrators must never have access to this capability.
-    """
-    identity = _require_super_admin(request)
-    remote_path = (payload.remote_path or "").strip()
-    if not remote_path:
-        raise HTTPException(status_code=400, detail="remote_path_required")
-
-    active_job = await request.state.mongo.find_active_backup_job()
-    if active_job:
-        raise HTTPException(status_code=409, detail="backup_job_in_progress")
-
-    token = await request.state.mongo.get_backup_token()
-    if not token:
-        raise HTTPException(status_code=400, detail="ya_disk_token_missing")
-
-    triggered = getattr(identity, "username", None) or "admin"
-    job = await request.state.mongo.create_backup_job(
-        operation=BackupOperation.restore,
-        status=BackupStatus.queued,
-        triggered_by=f"admin:{triggered}",
-        remote_path=remote_path,
-        source_job_id=payload.source_job_id,
-    )
-    backup_execute.delay(job.id)
-    return ORJSONResponse({"job": _serialize_backup_job(job)})
+# Backup endpoints moved to app/routers/backup.py
 
 
 class TelegramConfig(BaseModel):
@@ -3653,17 +3494,7 @@ async def _ensure_ollama_reachable(base_url: str, timeout: float = 2.5) -> None:
         raise HTTPException(status_code=400, detail=f"Не удалось подключиться: {exc}") from exc
 
 
-@app.get("/api/v1/admin/session", response_class=ORJSONResponse)
-async def admin_session(request: Request) -> ORJSONResponse:
-    identity = _require_admin(request)
-    payload = {
-        "username": identity.username,
-        "is_super": identity.is_super,
-        "projects": list(identity.projects),
-        "primary_project": identity.primary_project,
-        "can_manage_projects": identity.is_super,
-    }
-    return ORJSONResponse(payload)
+# admin_session moved to app/routers/stats.py
 
 
 @app.post("/api/v1/desktop/build")
@@ -3749,15 +3580,15 @@ class ProjectCreate(BaseModel):
     mail_signature: str | None = None
 
 
-@app.get("/api/v1/admin/knowledge", response_class=ORJSONResponse)
-async def admin_knowledge(
+# admin_knowledge moved to app/routers/knowledge.py
+async def _admin_knowledge_impl(
     request: Request,
     q: str | None = None,
     limit: int = 50,
     domain: str | None = None,
     project: str | None = None,
 ) -> ORJSONResponse:
-    """Return knowledge base documents for the admin UI."""
+    """Return knowledge base documents for the admin UI (implementation)."""
 
     try:
         limit = max(1, min(int(limit), 1000))
@@ -3859,675 +3690,26 @@ async def admin_knowledge(
     )
 
 
-@app.post("/api/v1/admin/knowledge", response_class=ORJSONResponse, status_code=201)
-async def admin_create_knowledge(request: Request, payload: KnowledgeCreate) -> ORJSONResponse:
-    """Create or update a text document in the knowledge base."""
-
-    if not payload.content.strip():
-        raise HTTPException(status_code=400, detail="Content is empty")
-
-    name = (payload.name or "").strip()
-    if not name:
-        name = f"doc-{uuid4().hex[:8]}"
-
-    project_name, project, mongo_client, owns_client = await _get_project_context(
-        request, payload.project or payload.domain
-    )
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-
-    description_input = (payload.description or "").strip()
-    auto_description_pending = False
-    status_message = None
-
-    if description_input:
-        description_value = description_input
-    else:
-        description_value = ""
-        auto_description_pending = True
-        status_message = "Автоописание в очереди"
-
-    try:
-        domain_value = payload.domain or (project.domain if project else None)
-        file_id = await mongo_client.upsert_text_document(
-            name=name,
-            content=payload.content,
-            documents_collection=collection,
-            description=description_value,
-            project=project_name,
-            domain=domain_value,
-            url=payload.url,
-        )
-        await mongo_client.db[collection].update_one(
-            {"fileId": file_id},
-            {
-                "$set": {
-                    "autoDescriptionPending": auto_description_pending,
-                }
-            },
-            upsert=False,
-        )
-        if auto_description_pending:
-            await mongo_client.update_document_status(
-                collection,
-                file_id,
-                "pending_auto_description",
-                status_message,
-            )
-            queue_auto_description(file_id, project_name)
-        else:
-            await mongo_client.update_document_status(
-                collection,
-                file_id,
-                "ready",
-                "Описание задано вручную",
-            )
-        if project_name:
-            project_payload = Project(
-                name=project.name if project else project_name,
-                title=project.title if project else None,
-                domain=domain_value,
-                admin_username=project.admin_username if project else None,
-                admin_password_hash=project.admin_password_hash if project else None,
-                llm_model=project.llm_model if project else None,
-                llm_prompt=project.llm_prompt if project else None,
-                llm_emotions_enabled=project.llm_emotions_enabled if project else True,
-                telegram_token=project.telegram_token if project else None,
-                telegram_auto_start=project.telegram_auto_start if project else None,
-                max_token=project.max_token if project else None,
-                max_auto_start=project.max_auto_start if project else None,
-                vk_token=project.vk_token if project else None,
-                vk_auto_start=project.vk_auto_start if project else None,
-                widget_url=project.widget_url if project else None,
-                debug_enabled=project.debug_enabled if project and project.debug_enabled is not None else None,
-            )
-            await request.state.mongo.upsert_project(project_payload)
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    finally:
-        if owns_client:
-            await mongo_client.close()
-
-    return ORJSONResponse({
-        "file_id": file_id,
-        "name": name,
-        "project": project_name,
-        "domain": domain_value,
-        "description": description_value,
-        "auto_description_pending": auto_description_pending,
-        "status": "pending_auto_description" if auto_description_pending else "ready",
-        "status_message": status_message,
-    })
-
-
-@app.post("/api/v1/admin/knowledge/upload", response_class=ORJSONResponse, status_code=201)
-async def admin_upload_knowledge(
-    request: Request,
-    project: str = Form(...),
-    description: str | None = Form(None),
-    name: str | None = Form(None),
-    url: str | None = Form(None),
-    file: UploadFile = File(...),
-) -> ORJSONResponse:
-    """Upload a binary document to GridFS and store metadata."""
-
-    project_name, project_model, mongo_client, owns_client = await _get_project_context(
-        request, project
-    )
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-
-    filename = (name or file.filename or "").strip()
-    if not filename:
-        raise HTTPException(status_code=400, detail="File name is required")
-
-    payload = await file.read()
-    if not payload:
-        raise HTTPException(status_code=400, detail="File is empty")
-
-    content_type = (file.content_type or "").lower()
-    description_input = (description or "").strip()
-    auto_description_pending = False
-    status_message = None
-    if description_input:
-        description_value = description_input
-    else:
-        description_value = ""
-        auto_description_pending = True
-        status_message = "Автоописание в очереди"
-
-    try:
-        file_id = await mongo_client.upload_document(
-            file_name=filename,
-            file=payload,
-            documents_collection=collection,
-            description=description_value,
-            url=url,
-            content_type=file.content_type,
-            project=project_name,
-            domain=project_model.domain if project_model else None,
-        )
-        download_url = _build_download_url(request, file_id)
-        await mongo_client.db[collection].update_one(
-            {"fileId": file_id},
-            {"$set": {"url": download_url, "content_type": file.content_type}},
-            upsert=False,
-        )
-        await mongo_client.db[collection].update_one(
-            {"fileId": file_id},
-            {
-                "$set": {
-                    "autoDescriptionPending": auto_description_pending,
-                }
-            },
-            upsert=False,
-        )
-        if auto_description_pending:
-            await mongo_client.update_document_status(
-                collection,
-                file_id,
-                "pending_auto_description",
-                status_message,
-            )
-            queue_auto_description(file_id, project_name)
-        else:
-            await mongo_client.update_document_status(
-                collection,
-                file_id,
-                "ready",
-                "Описание задано вручную",
-            )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    finally:
-        if owns_client:
-            await mongo_client.close()
-
-    return ORJSONResponse(
-        {
-            "file_id": file_id,
-            "name": filename,
-            "project": project_name,
-            "download_url": download_url,
-            "content_type": file.content_type,
-            "description": description_value,
-            "auto_description_pending": auto_description_pending,
-            "status": "pending_auto_description" if auto_description_pending else "ready",
-            "status_message": status_message,
-        }
-    )
-
-
-@app.post("/api/v1/admin/knowledge/deduplicate", response_class=ORJSONResponse)
-async def admin_deduplicate_knowledge(request: Request, payload: KnowledgeDeduplicate) -> ORJSONResponse:
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    project_name, _, _, _ = await _get_project_context(request, payload.project)
-    try:
-        summary = await request.state.mongo.deduplicate_documents(collection, project_name)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return ORJSONResponse({"project": project_name, **summary})
-
-
-@app.post("/api/v1/admin/knowledge/reindex", response_class=ORJSONResponse)
-async def admin_reindex_documents(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    loop = asyncio.get_running_loop()
-
-    def _run_update() -> None:
-        from worker import update_vector_store
-
-        update_vector_store()
-
-    loop.run_in_executor(None, _run_update)
-    return ORJSONResponse({"status": "queued"})
-
-@app.delete("/api/v1/admin/knowledge", response_class=ORJSONResponse)
-async def admin_clear_knowledge(request: Request, project: str | None = None) -> ORJSONResponse:
-    """Remove documents from the knowledge base (optionally scoped to a project)."""
-
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-    summary = await mongo_client.delete_documents(collection, project_name)
-
-    loop = asyncio.get_running_loop()
-
-    def _refresh() -> None:
-        from worker import update_vector_store
-
-        update_vector_store()
-
-    loop.run_in_executor(None, _refresh)
-    return ORJSONResponse({"project": project_name, **summary})
-
-
-@app.get("/api/v1/admin/knowledge/priority", response_class=ORJSONResponse)
-async def admin_get_knowledge_priority(request: Request, project: str | None = None) -> ORJSONResponse:
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-    try:
-        stored_order = await mongo_client.get_knowledge_priority(project_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_priority_fetch_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to load knowledge priority") from exc
-
-    available_sources = list(_KNOWN_KNOWLEDGE_SOURCES)
-    normalized = []
-    for entry in stored_order or []:
-        candidate = str(entry).strip()
-        if candidate in available_sources and candidate not in normalized:
-            normalized.append(candidate)
-    if not normalized:
-        normalized = [source for source in _DEFAULT_KNOWLEDGE_PRIORITY if source in available_sources]
-    if not normalized:
-        normalized = available_sources
-
-    return ORJSONResponse(
-        {
-            "order": normalized,
-            "available": available_sources,
-            "project": project_name,
-        }
-    )
-
-
-@app.post("/api/v1/admin/knowledge/priority", response_class=ORJSONResponse)
-async def admin_set_knowledge_priority(
-    request: Request,
-    payload: KnowledgePriorityPayload,
-    project: str | None = None,
-) -> ORJSONResponse:
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-
-    available_sources = list(_KNOWN_KNOWLEDGE_SOURCES)
-    lookup = {source.lower(): source for source in available_sources}
-    normalized: list[str] = []
-    for entry in payload.order or []:
-        candidate = lookup.get(str(entry or "").strip().lower())
-        if candidate and candidate not in normalized:
-            normalized.append(candidate)
-
-    for fallback in _DEFAULT_KNOWLEDGE_PRIORITY:
-        if fallback in available_sources and fallback not in normalized:
-            normalized.append(fallback)
-
-    if not normalized:
-        normalized = available_sources
-
-    try:
-        await mongo_client.set_knowledge_priority(project_name, normalized)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_priority_save_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to save knowledge priority") from exc
-
-    return ORJSONResponse({"order": normalized, "project": project_name})
-
-
-@app.delete("/api/v1/admin/knowledge/{file_id}", response_class=ORJSONResponse)
-async def admin_delete_knowledge_document(
-    request: Request,
-    file_id: str,
-    project: str | None = None,
-) -> ORJSONResponse:
-    """Delete a single knowledge document and its binary payload."""
-
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    desired_project = _resolve_admin_project(request, project)
-    mongo_client = _get_mongo_client(request)
-
-    try:
-        document = await mongo_client.db[collection].find_one({"fileId": file_id})
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_document_lookup_failed", file_id=file_id, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to load document metadata") from exc
-
-    if not document:
-        raise HTTPException(status_code=404, detail="document_not_found")
-
-    document_project = _normalize_project(
-        document.get("project") or document.get("domain")
-    )
-    if desired_project and document_project and desired_project != document_project:
-        raise HTTPException(status_code=403, detail="document_forbidden")
-
-    try:
-        await mongo_client.delete_document(collection, file_id)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail="Failed to delete document") from exc
-
-    loop = asyncio.get_running_loop()
-
-    def _refresh_vectors() -> None:
-        from worker import update_vector_store
-
-        update_vector_store()
-
-    loop.run_in_executor(None, _refresh_vectors)
-
-    return ORJSONResponse(
-        {
-            "removed": True,
-            "file_id": file_id,
-            "project": document_project or desired_project,
-        }
-    )
-
-
-@app.get("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse)
-async def admin_list_knowledge_qa(
-    request: Request,
-    project: str | None = None,
-    limit: int = 500,
-) -> ORJSONResponse:
-    try:
-        safe_limit = max(1, min(int(limit), 1000))
-    except Exception:
-        safe_limit = 500
-
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-
-    try:
-        items = await mongo_client.list_qa_pairs(project_name, limit=safe_limit)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_list_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to load QA pairs") from exc
-
-    try:
-        stored_order = await mongo_client.get_knowledge_priority(project_name)
-    except Exception:
-        stored_order = []
-
-    available_sources = list(_KNOWN_KNOWLEDGE_SOURCES)
-    normalized_priority = [item for item in stored_order if item in available_sources]
-    if not normalized_priority:
-        normalized_priority = [src for src in _DEFAULT_KNOWLEDGE_PRIORITY if src in available_sources]
-    if not normalized_priority:
-        normalized_priority = available_sources
-
-    return ORJSONResponse(
-        {
-            "items": items,
-            "priority": normalized_priority,
-            "project": project_name,
-        }
-    )
-
-
-@app.post("/api/v1/admin/knowledge/qa/upload", response_class=ORJSONResponse, status_code=201)
-async def admin_import_knowledge_qa_file(
-    request: Request,
-    project: str = Form(...),
-    file: UploadFile = File(...),
-    refine: str | None = Form(None),
-) -> ORJSONResponse:
-    project_name, project_model, mongo_client, _ = await _get_project_context(request, project)
-
-    try:
-        pairs = await _read_qa_upload(file)
-    except HTTPException:
-        raise
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_import_parse_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=400, detail="Failed to read QA file") from exc
-
-    if not pairs:
-        return ORJSONResponse(
-            {"inserted": 0, "updated": 0, "skipped": 0, "total": 0, "project": project_name},
-            status_code=201,
-        )
-
-    refine_flag = False
-    if refine is not None:
-        refine_flag = str(refine).strip().lower() in {"1", "true", "yes", "on"}
-
-    if refine_flag:
-        try:
-            pairs = await _refine_qa_with_llm(pairs, project_model=project_model)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("knowledge_qa_import_refine_failed", project=project_name, error=str(exc))
-
-    normalized: list[dict[str, object]] = []
-    skipped = 0
-    for pair in pairs:
-        question = str(pair.get("question") or "").strip()
-        answer = str(pair.get("answer") or "").strip()
-        if not question or not answer:
-            skipped += 1
-            continue
-        priority_value = 0
-        if "priority" in pair and pair.get("priority") not in (None, ""):
-            raw_priority = str(pair.get("priority")).replace(",", ".").strip()
-            try:
-                priority_value = int(float(raw_priority))
-            except Exception:
-                priority_value = 0
-        normalized.append(
-            {
-                "question": question,
-                "answer": answer,
-                "priority": priority_value,
-            }
-        )
-
-    if not normalized:
-        return ORJSONResponse(
-            {
-                "inserted": 0,
-                "updated": 0,
-                "skipped": skipped or len(pairs),
-                "total": len(pairs),
-                "project": project_name,
-            },
-            status_code=201,
-        )
-
-    try:
-        result = await mongo_client.insert_qa_pairs(project_name, normalized)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_import_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to import QA pairs") from exc
-
-    summary: dict[str, object] = {
-        "inserted": int(result.get("inserted", 0)),
-        "updated": int(result.get("updated", 0)),
-        "skipped": skipped,
-        "total": len(pairs),
-        "project": project_name,
-    }
-    return ORJSONResponse(summary, status_code=201)
-
-
-@app.post("/api/v1/admin/knowledge/qa", response_class=ORJSONResponse, status_code=201)
-async def admin_create_knowledge_qa(
-    request: Request,
-    payload: KnowledgeQAPayload,
-    project: str | None = None,
-) -> ORJSONResponse:
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-
-    question = payload.question.strip()
-    answer = payload.answer.strip()
-    if not question or not answer:
-        raise HTTPException(status_code=400, detail="question_and_answer_required")
-
-    try:
-        result = await mongo_client.insert_qa_pairs(
-            project_name,
-            [
-                {
-                    "question": question,
-                    "answer": answer,
-                    "priority": payload.priority,
-                }
-            ],
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_insert_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to save QA pair") from exc
-
-    return ORJSONResponse({**result, "project": project_name})
-
-
-@app.put("/api/v1/admin/knowledge/qa/{pair_id}", response_class=ORJSONResponse)
-async def admin_update_knowledge_qa(
-    request: Request,
-    pair_id: str,
-    payload: KnowledgeQAPayload,
-) -> ORJSONResponse:
-    mongo_client = _get_mongo_client(request)
-    existing = await _fetch_qa_document(mongo_client, pair_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="qa_not_found")
-
-    project_scope = _resolve_admin_project(request, existing.get("project"))
-
-    question = payload.question.strip()
-    answer = payload.answer.strip()
-    if not question or not answer:
-        raise HTTPException(status_code=400, detail="question_and_answer_required")
-
-    try:
-        updated = await mongo_client.update_qa_pair(
-            pair_id,
-            question=question,
-            answer=answer,
-            priority=payload.priority,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_update_failed", pair_id=pair_id, project=project_scope, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to update QA pair") from exc
-
-    if not updated:
-        raise HTTPException(status_code=404, detail="qa_not_found")
-
-    if project_scope:
-        doc_project = _normalize_project(updated.get("project"))
-        if doc_project and doc_project != project_scope:
-            raise HTTPException(status_code=403, detail="project_forbidden")
-
-    return ORJSONResponse(updated)
-
-
-@app.delete("/api/v1/admin/knowledge/qa/{pair_id}", response_class=ORJSONResponse)
-async def admin_delete_knowledge_qa(request: Request, pair_id: str) -> ORJSONResponse:
-    mongo_client = _get_mongo_client(request)
-    existing = await _fetch_qa_document(mongo_client, pair_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="qa_not_found")
-
-    project_scope = _resolve_admin_project(request, existing.get("project"))
-
-    try:
-        removed = await mongo_client.delete_qa_pair(pair_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_delete_failed", pair_id=pair_id, project=project_scope, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to delete QA pair") from exc
-
-    if not removed:
-        raise HTTPException(status_code=404, detail="qa_not_found")
-
-    return ORJSONResponse({"removed": True, "id": pair_id})
-
-
-@app.post("/api/v1/admin/knowledge/qa/reorder", response_class=ORJSONResponse)
-async def admin_reorder_knowledge_qa(
-    request: Request,
-    payload: KnowledgeQAReorderPayload,
-    project: str | None = None,
-) -> ORJSONResponse:
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-    order = [str(item).strip() for item in payload.order or [] if str(item).strip()]
-    try:
-        await mongo_client.reorder_qa_pairs(project_name, order)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_qa_reorder_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to reorder QA pairs") from exc
-
-    return ORJSONResponse({"order": order, "project": project_name})
-
-
-@app.get("/api/v1/admin/knowledge/unanswered", response_class=ORJSONResponse)
-async def admin_list_unanswered(
-    request: Request,
-    project: str | None = None,
-    limit: int = 500,
-) -> ORJSONResponse:
-    try:
-        safe_limit = max(1, min(int(limit), 5000))
-    except Exception:
-        safe_limit = 500
-
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-
-    try:
-        items = await mongo_client.list_unanswered_questions(project_name, limit=safe_limit)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_unanswered_list_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to load unanswered questions") from exc
-
-    return ORJSONResponse({"items": items, "project": project_name})
-
-
-@app.post("/api/v1/admin/knowledge/unanswered/clear", response_class=ORJSONResponse)
-async def admin_clear_unanswered(
-    request: Request,
-    payload: KnowledgeUnansweredClearPayload,
-) -> ORJSONResponse:
-    project_hint = payload.project
-    project_name, _, mongo_client, _ = await _get_project_context(request, project_hint)
-
-    try:
-        removed = await mongo_client.clear_unanswered_questions(project_name)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_unanswered_clear_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to clear unanswered questions") from exc
-
-    return ORJSONResponse({"removed": removed, "project": project_name})
-
-
-@app.get("/api/v1/admin/knowledge/unanswered/export")
-async def admin_export_unanswered(
-    request: Request,
-    project: str | None = None,
-    limit: int = 1000,
-) -> Response:
-    try:
-        safe_limit = max(1, min(int(limit), 5000))
-    except Exception:
-        safe_limit = 1000
-
-    project_name, _, mongo_client, _ = await _get_project_context(request, project)
-
-    try:
-        items = await mongo_client.list_unanswered_questions(project_name, limit=safe_limit)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("knowledge_unanswered_export_failed", project=project_name, error=str(exc))
-        raise HTTPException(status_code=500, detail="Failed to export unanswered questions") from exc
-
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(["question", "hits", "updated_at", "project"])
-    for item in items:
-        updated_at = item.get("updated_at")
-        if isinstance(updated_at, (int, float)):
-            updated_iso = datetime.utcfromtimestamp(updated_at).isoformat()
-        else:
-            updated_iso = str(updated_at or "")
-        writer.writerow([
-            item.get("question", ""),
-            item.get("hits", 0),
-            updated_iso,
-            item.get("project") or (project_name or ""),
-        ])
-
-    filename = f"unanswered-{(project_name or 'all')}.csv"
-    content = buffer.getvalue().encode("utf-8")
-    headers = {"Content-Disposition": f"attachment; filename={filename}"}
-    return Response(content, media_type="text/csv", headers=headers)
+# Knowledge document management endpoints moved to app/routers/knowledge.py
+# POST /api/v1/admin/knowledge - admin_create_knowledge
+# POST /api/v1/admin/knowledge/upload - admin_upload_knowledge
+# POST /api/v1/admin/knowledge/deduplicate - admin_deduplicate_knowledge
+# POST /api/v1/admin/knowledge/reindex - admin_reindex_documents
+# DELETE /api/v1/admin/knowledge - admin_clear_knowledge
+# GET /api/v1/admin/knowledge/priority - admin_get_knowledge_priority
+# POST /api/v1/admin/knowledge/priority - admin_set_knowledge_priority
+# DELETE /api/v1/admin/knowledge/{file_id} - admin_delete_knowledge_document
+# All implementations moved to app/routers/knowledge.py
+# Old implementations removed - see app/routers/knowledge.py for current implementations
+
+
+# Q&A endpoints moved to app/routers/knowledge.py
+# All Q&A endpoints (list, upload, create, update, delete, reorder) are now handled by knowledge router
+# Old implementations removed - see app/routers/knowledge.py for current implementations
+
+# Unanswered questions endpoints moved to app/routers/knowledge.py
+# All unanswered endpoints (list, clear, export) are now handled by knowledge router
+# Old implementations removed - see app/routers/knowledge.py for current implementations
 
 
 @app.post("/api/v1/feedback", response_class=ORJSONResponse, status_code=201)
@@ -4605,53 +3787,13 @@ async def admin_update_feedback(
     return ORJSONResponse(result)
 
 
-@app.get("/api/v1/admin/knowledge/service", response_class=ORJSONResponse)
-async def admin_knowledge_service_status(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    return await _knowledge_service_status_impl(request)
+# Knowledge service endpoints moved to app/routers/knowledge.py
+# All knowledge service endpoints (status, update, run) are now handled by knowledge router
+# Backward-compatible aliases (/api/v1/knowledge/service*) are kept here for compatibility
 
-
-@app.post("/api/v1/admin/knowledge/service", response_class=ORJSONResponse)
-async def admin_knowledge_service_update(
-    request: Request, payload: KnowledgeServiceConfig
-) -> ORJSONResponse:
-    _require_super_admin(request)
-    return await _knowledge_service_update_impl(request, payload)
-
-
-@app.get("/api/v1/knowledge/service", response_class=ORJSONResponse)
-async def knowledge_service_status_alias(request: Request) -> ORJSONResponse:
-    """Backward-compatible alias for knowledge service status."""
-
-    return await _knowledge_service_status_impl(request)
-
-
-@app.post("/api/v1/knowledge/service", response_class=ORJSONResponse)
-async def knowledge_service_update_alias(
-    request: Request, payload: KnowledgeServiceConfig
-) -> ORJSONResponse:
-    """Backward-compatible alias for knowledge service updates."""
-
-    return await _knowledge_service_update_impl(request, payload)
-
-
-@app.post("/api/v1/admin/knowledge/service/run", response_class=ORJSONResponse)
-async def admin_knowledge_service_run(
-    request: Request,
-    payload: KnowledgeServiceRunRequest | None = None,
-) -> ORJSONResponse:
-    _require_super_admin(request)
-    return await _knowledge_service_run_impl(request, payload)
-
-
-@app.post("/api/v1/knowledge/service/run", response_class=ORJSONResponse)
-async def knowledge_service_run_alias(
-    request: Request,
-    payload: KnowledgeServiceRunRequest | None = None,
-) -> ORJSONResponse:
-    """Backward-compatible alias for manual knowledge service runs."""
-
-    return await _knowledge_service_run_impl(request, payload)
+# Knowledge document management endpoints moved to app/routers/knowledge.py
+# All knowledge endpoints (POST, DELETE, upload, deduplicate, reindex, priority, delete file) are now handled by knowledge router
+# Old implementations removed - see app/routers/knowledge.py for current implementations
 
 
 @app.get("/api/intelligent-processing/state", response_class=ORJSONResponse)
@@ -4713,54 +3855,11 @@ async def llm_knowledge_service_run(
 ) -> ORJSONResponse:
     return await _knowledge_service_run_impl(request, payload)
 
-@app.get("/api/v1/admin/projects/names", response_class=ORJSONResponse)
-async def admin_project_names(request: Request, limit: int = 100) -> ORJSONResponse:
-    """Return a list of known project identifiers."""
-
-    identity = _require_admin(request)
-    mongo_cfg = MongoSettings()
-    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    mongo_client = _get_mongo_client(request)
-    names = await mongo_client.list_project_names(collection, limit=limit)
-    if not identity.is_super:
-        allowed = {proj.strip().lower() for proj in identity.projects if proj}
-        names = [name for name in names if name in allowed]
-        default_name = identity.primary_project
-    else:
-        default_name = _normalize_project(None)
-    if default_name and default_name not in names:
-        names.insert(0, default_name)
-    return ORJSONResponse({"projects": names})
+# admin_project_names moved to app/routers/projects.py
 
 
-@app.get("/api/v1/admin/llm/models", response_class=ORJSONResponse)
-def admin_llm_models() -> ORJSONResponse:
-    """Return available LLM model identifiers."""
-
-    models = base_settings.get_available_llm_models()
-    return ORJSONResponse({"models": models})
-
-
-@app.get("/api/v1/admin/llm/availability", response_class=ORJSONResponse)
-async def admin_llm_availability(request: Request) -> ORJSONResponse:
-    """Expose a simple availability flag for the LLM cluster."""
-
-    _require_admin(request)
-    available = False
-    try:
-        cluster = get_cluster_manager()
-    except RuntimeError:
-        available = False
-    else:
-        try:
-            available = bool(cluster.has_available())
-        except Exception:
-            available = False
-    return ORJSONResponse({"available": available})
-
-
-@app.get("/api/v1/admin/ollama/catalog", response_class=ORJSONResponse)
-async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
+# LLM/Ollama endpoints moved to app/routers/llm.py
+async def _admin_ollama_catalog_impl(request: Request) -> ORJSONResponse:
     _require_super_admin(request)
 
     cli_available = ollama_available()
@@ -4804,7 +3903,7 @@ async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
     )
 
 
-@app.get("/api/v1/admin/ollama/servers", response_class=ORJSONResponse)
+# admin_ollama_servers moved to app/routers/llm.py
 async def admin_ollama_servers(request: Request) -> ORJSONResponse:
     _require_super_admin(request)
     cluster = get_cluster_manager()
@@ -4812,7 +3911,7 @@ async def admin_ollama_servers(request: Request) -> ORJSONResponse:
     return ORJSONResponse({"servers": servers})
 
 
-@app.post("/api/v1/admin/ollama/servers", response_class=ORJSONResponse)
+# admin_ollama_server_upsert moved to app/routers/llm.py
 async def admin_ollama_server_upsert(request: Request, payload: OllamaServerPayload) -> ORJSONResponse:
     _require_super_admin(request)
     name = (payload.name or "").strip().lower()
@@ -4836,7 +3935,7 @@ async def admin_ollama_server_upsert(request: Request, payload: OllamaServerPayl
         raise
 
 
-@app.delete("/api/v1/admin/ollama/servers/{name}", response_class=ORJSONResponse)
+# admin_ollama_server_delete moved to app/routers/llm.py
 async def admin_ollama_server_delete(request: Request, name: str) -> ORJSONResponse:
     _require_super_admin(request)
     key = (name or "").strip().lower()
@@ -4851,7 +3950,7 @@ async def admin_ollama_server_delete(request: Request, name: str) -> ORJSONRespo
     return ORJSONResponse({"servers": servers})
 
 
-@app.post("/api/v1/admin/ollama/install", response_class=ORJSONResponse)
+# admin_ollama_install moved to app/routers/llm.py
 async def admin_ollama_install(request: Request, payload: "OllamaInstallRequest") -> ORJSONResponse:
     _require_super_admin(request)
     model = (payload.model or "").strip()
@@ -4924,1021 +4023,125 @@ async def admin_feedback_update(request: Request, task_id: str, payload: Feedbac
     return ORJSONResponse({"task": doc})
 
 
-@app.get("/api/v1/admin/telegram", response_class=ORJSONResponse)
-async def telegram_status(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: TelegramHub = request.app.state.telegram
-    default_project = _normalize_project(None)
-    project: Project | None = None
-    if default_project:
-        project = await request.state.mongo.get_project(default_project)
-    token = (
-        project.telegram_token if project and isinstance(project.telegram_token, str) else None
-    )
-    preview = _build_token_preview(token)
-    auto_start = bool(project.telegram_auto_start) if project else False
-    running = hub.is_project_running(default_project)
-    last_error = hub.get_last_error(default_project) if default_project else None
-    return ORJSONResponse(
-        {
-            "running": running,
-            "token_set": bool(token),
-            "token_preview": preview,
-            "auto_start": auto_start,
-            "project": default_project,
-            "last_error": last_error,
-        }
-    )
+# Telegram/Max/VK bot endpoints moved to app/routers/projects.py
+# All bot endpoints (telegram/max/vk) are now handled by app/routers/projects.py router
 
 
-@app.post("/api/v1/admin/telegram/config", response_class=ORJSONResponse)
-async def telegram_config(request: Request, payload: TelegramConfig) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: TelegramHub = request.app.state.telegram
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
+# All project-specific bot endpoints moved to app/routers/projects.py
+# The following endpoints are now handled by the projects router:
+# - /api/v1/admin/projects/{project}/telegram (get, config, start, stop)
+# - /api/v1/admin/projects/{project}/max (get, config, start, stop)
+# - /api/v1/admin/projects/{project}/vk (get, config, start, stop)
 
-    existing = await request.state.mongo.get_project(default_project)
-    data = existing.model_dump() if existing else {"name": default_project}
-    if payload.token is not None:
-        value = payload.token.strip()
-        data["telegram_token"] = value or None
-    if payload.auto_start is not None:
-        data["telegram_auto_start"] = bool(payload.auto_start)
 
-    project = Project(**data)
-    saved = await request.state.mongo.upsert_project(project)
-    await hub.ensure_runner(saved)
-    return ORJSONResponse({"ok": True})
+# Keep helper functions for backward compatibility if used elsewhere
+# TODO: Move _build_token_preview and _project_*_payload functions to projects router if not used elsewhere
 
 
-@app.post("/api/v1/admin/telegram/start", response_class=ORJSONResponse)
-async def telegram_start(request: Request, payload: TelegramAction) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: TelegramHub = request.app.state.telegram
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
+# admin_request_stats and admin_request_stats_export moved to app/routers/stats.py
 
-    existing = await request.state.mongo.get_project(default_project)
-    data = existing.model_dump() if existing else {"name": default_project}
-    token_value = payload.token.strip() if isinstance(payload.token, str) else None
-    if token_value:
-        data["telegram_token"] = token_value
-    project = Project(**data)
-    saved = await request.state.mongo.upsert_project(project)
-    await hub.start_project(saved)
-    return ORJSONResponse({"running": True})
 
-
-@app.post("/api/v1/admin/telegram/stop", response_class=ORJSONResponse)
-async def telegram_stop(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: TelegramHub = request.app.state.telegram
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-    await hub.stop_project(default_project)
-    return ORJSONResponse({"running": False})
-
-
-@app.get("/api/v1/admin/max", response_class=ORJSONResponse)
-async def max_status(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: MaxHub = request.app.state.max
-    mongo_client = _get_mongo_client(request)
-    default_project = _normalize_project(None)
-    project: Project | None = None
-    if default_project:
-        project = await mongo_client.get_project(default_project)
-    token_value = (
-        project.max_token.strip() if project and isinstance(project.max_token, str) else None
-    )
-    response = {
-        "project": default_project,
-        "running": hub.is_project_running(default_project),
-        "token_set": bool(token_value),
-        "token_preview": _build_token_preview(token_value),
-        "auto_start": bool(project.max_auto_start) if project and project.max_auto_start is not None else False,
-        "last_error": hub.get_last_error(default_project) if default_project else None,
-    }
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/max/config", response_class=ORJSONResponse)
-async def max_config(request: Request, payload: MaxConfig) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: MaxHub = request.app.state.max
-    mongo_client = _get_mongo_client(request)
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-
-    existing = await mongo_client.get_project(default_project)
-    data = existing.model_dump() if existing else {"name": default_project}
-    if payload.token is not None:
-        value = payload.token.strip()
-        data["max_token"] = value or None
-    if payload.auto_start is not None:
-        data["max_auto_start"] = bool(payload.auto_start)
-
-    project = Project(**data)
-    saved = await mongo_client.upsert_project(project)
-    await hub.ensure_runner(saved)
-    return ORJSONResponse({"ok": True})
-
-
-@app.post("/api/v1/admin/max/start", response_class=ORJSONResponse)
-async def max_start(request: Request, payload: MaxAction) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: MaxHub = request.app.state.max
-    mongo_client = _get_mongo_client(request)
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-
-    existing = await mongo_client.get_project(default_project)
-    data = existing.model_dump() if existing else {"name": default_project}
-    token_value = payload.token.strip() if isinstance(payload.token, str) else None
-    if token_value:
-        data["max_token"] = token_value
-    project = Project(**data)
-    saved = await mongo_client.upsert_project(project)
-    await hub.start_project(saved)
-    return ORJSONResponse({"running": True})
-
-
-@app.post("/api/v1/admin/max/stop", response_class=ORJSONResponse)
-async def max_stop(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: MaxHub = request.app.state.max
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-    await hub.stop_project(default_project)
-    return ORJSONResponse({"running": False})
-
-
-@app.get("/api/v1/admin/vk", response_class=ORJSONResponse)
-async def vk_status(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: VkHub = request.app.state.vk
-    mongo_client = _get_mongo_client(request)
-    default_project = _normalize_project(None)
-    project: Project | None = None
-    if default_project:
-        project = await mongo_client.get_project(default_project)
-    token_value = (
-        project.vk_token.strip() if project and isinstance(project.vk_token, str) else None
-    )
-    response = {
-        "project": default_project,
-        "running": hub.is_project_running(default_project),
-        "token_set": bool(token_value),
-        "token_preview": _build_token_preview(token_value),
-        "auto_start": bool(project.vk_auto_start) if project and project.vk_auto_start is not None else False,
-        "last_error": hub.get_last_error(default_project) if default_project else None,
-    }
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/vk/config", response_class=ORJSONResponse)
-async def vk_config(request: Request, payload: VkConfig) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: VkHub = request.app.state.vk
-    mongo_client = _get_mongo_client(request)
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-
-    existing = await mongo_client.get_project(default_project)
-    data = existing.model_dump() if existing else {"name": default_project}
-    if payload.token is not None:
-        value = payload.token.strip()
-        data["vk_token"] = value or None
-    if payload.auto_start is not None:
-        data["vk_auto_start"] = bool(payload.auto_start)
-
-    project = Project(**data)
-    saved = await mongo_client.upsert_project(project)
-    await hub.ensure_runner(saved)
-    return ORJSONResponse({"ok": True})
-
-
-@app.post("/api/v1/admin/vk/start", response_class=ORJSONResponse)
-async def vk_start(request: Request, payload: VkAction) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: VkHub = request.app.state.vk
-    mongo_client = _get_mongo_client(request)
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-
-    existing = await mongo_client.get_project(default_project)
-    data = existing.model_dump() if existing else {"name": default_project}
-    token_value = payload.token.strip() if isinstance(payload.token, str) else None
-    if token_value:
-        data["vk_token"] = token_value
-    project = Project(**data)
-    saved = await mongo_client.upsert_project(project)
-    await hub.start_project(saved)
-    return ORJSONResponse({"running": True})
-
-
-@app.post("/api/v1/admin/vk/stop", response_class=ORJSONResponse)
-async def vk_stop(request: Request) -> ORJSONResponse:
-    _require_super_admin(request)
-    hub: VkHub = request.app.state.vk
-    default_project = _normalize_project(None)
-    if not default_project:
-        raise HTTPException(status_code=400, detail="Default project is not configured")
-    await hub.stop_project(default_project)
-    return ORJSONResponse({"running": False})
-
-
-@app.get("/api/v1/admin/projects/{project}/telegram", response_class=ORJSONResponse)
-async def admin_project_telegram_status(project: str, request: Request) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    hub: TelegramHub = request.app.state.telegram
-    payload = _project_telegram_payload(existing, hub)
-    return ORJSONResponse(payload)
-
-
-@app.post("/api/v1/admin/projects/{project}/telegram/config", response_class=ORJSONResponse)
-async def admin_project_telegram_config(
-    project: str,
-    request: Request,
-    payload: ProjectTelegramConfig,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        existing = Project(name=project_name)
-
-    provided_fields = getattr(payload, "model_fields_set", set())
-
-    if "token" in provided_fields:
-        if isinstance(payload.token, str):
-            token_value = payload.token.strip() or None
-        else:
-            token_value = None
-    else:
-        token_value = existing.telegram_token
-
-    if "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.telegram_auto_start
-
-    project_payload = Project(
-        name=project_name,
-        title=existing.title,
-        domain=existing.domain,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=token_value,
-        telegram_auto_start=auto_start_value,
-        max_token=existing.max_token,
-        max_auto_start=existing.max_auto_start,
-        vk_token=existing.vk_token,
-        vk_auto_start=existing.vk_auto_start,
-        widget_url=existing.widget_url,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: TelegramHub = request.app.state.telegram
-    await hub.ensure_runner(saved)
-    response = _project_telegram_payload(saved, hub)
-    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-    if isinstance(max_hub, MaxHub):
-        await max_hub.ensure_runner(saved)
-    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-    if isinstance(vk_hub, VkHub):
-        await vk_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/projects/{project}/telegram/start", response_class=ORJSONResponse)
-async def admin_project_telegram_start(
-    project: str,
-    request: Request,
-    payload: ProjectTelegramAction,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    provided_fields = getattr(payload, "model_fields_set", set())
-
-    if "token" in provided_fields:
-        if isinstance(payload.token, str):
-            token_value = payload.token.strip() or None
-        else:
-            token_value = None
-    else:
-        token_value = (
-            existing.telegram_token.strip() or None
-            if isinstance(existing.telegram_token, str)
-            else None
-        )
-
-    if not token_value:
-        raise HTTPException(status_code=400, detail="Telegram token is not configured")
-
-    if "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.telegram_auto_start
-
-    project_payload = Project(
-        name=existing.name,
-        title=existing.title,
-        domain=existing.domain,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=token_value,
-        telegram_auto_start=auto_start_value,
-        max_token=existing.max_token,
-        max_auto_start=existing.max_auto_start,
-        vk_token=existing.vk_token,
-        vk_auto_start=existing.vk_auto_start,
-        widget_url=existing.widget_url,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: TelegramHub = request.app.state.telegram
-    await hub.start_project(saved, auto_start=auto_start_value if "auto_start" in provided_fields else None)
-    response = _project_telegram_payload(saved, hub)
-    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-    if isinstance(max_hub, MaxHub):
-        await max_hub.ensure_runner(saved)
-    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-    if isinstance(vk_hub, VkHub):
-        await vk_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/projects/{project}/telegram/stop", response_class=ORJSONResponse)
-async def admin_project_telegram_stop(
-    project: str,
-    request: Request,
-    payload: ProjectTelegramAction | None = None,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    provided_fields = getattr(payload, "model_fields_set", set()) if payload else set()
-    if payload and "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.telegram_auto_start
-
-    project_payload = Project(
-        name=existing.name,
-        title=existing.title,
-        domain=existing.domain,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=auto_start_value,
-        widget_url=existing.widget_url,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        max_token=existing.max_token,
-        max_auto_start=existing.max_auto_start,
-        vk_token=existing.vk_token,
-        vk_auto_start=existing.vk_auto_start,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: TelegramHub = request.app.state.telegram
-    await hub.stop_project(saved.name, auto_start=auto_start_value if payload and "auto_start" in provided_fields else None)
-    response = _project_telegram_payload(saved, hub)
-    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-    if isinstance(max_hub, MaxHub):
-        await max_hub.ensure_runner(saved)
-    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-    if isinstance(vk_hub, VkHub):
-        await vk_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.get("/api/v1/admin/projects/{project}/max", response_class=ORJSONResponse)
-async def admin_project_max_status(project: str, request: Request) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    hub: MaxHub = request.app.state.max
-    payload = _project_max_payload(existing, hub)
-    return ORJSONResponse(payload)
-
-
-@app.post("/api/v1/admin/projects/{project}/max/config", response_class=ORJSONResponse)
-async def admin_project_max_config(
-    project: str,
-    request: Request,
-    payload: ProjectMaxConfig,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        existing = Project(name=project_name)
-
-    provided_fields = getattr(payload, "model_fields_set", set())
-
-    if "token" in provided_fields:
-        if isinstance(payload.token, str):
-            token_value = payload.token.strip() or None
-        else:
-            token_value = None
-    else:
-        token_value = existing.max_token
-
-    if "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.max_auto_start
-
-    project_payload = Project(
-        name=project_name,
-        title=existing.title,
-        domain=existing.domain,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=existing.telegram_auto_start,
-        max_token=token_value,
-        max_auto_start=auto_start_value,
-        vk_token=existing.vk_token,
-        vk_auto_start=existing.vk_auto_start,
-        widget_url=existing.widget_url,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: MaxHub = request.app.state.max
-    await hub.ensure_runner(saved)
-    response = _project_max_payload(saved, hub)
-    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-    if isinstance(telegram_hub, TelegramHub):
-        await telegram_hub.ensure_runner(saved)
-    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-    if isinstance(vk_hub, VkHub):
-        await vk_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/projects/{project}/max/start", response_class=ORJSONResponse)
-async def admin_project_max_start(
-    project: str,
-    request: Request,
-    payload: ProjectMaxAction,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    provided_fields = getattr(payload, "model_fields_set", set())
-
-    if "token" in provided_fields:
-        if isinstance(payload.token, str):
-            token_value = payload.token.strip() or None
-        else:
-            token_value = None
-    else:
-        token_value = (
-            existing.max_token.strip() or None
-            if isinstance(existing.max_token, str)
-            else None
-        )
-
-    if not token_value:
-        raise HTTPException(status_code=400, detail="MAX token is not configured")
-
-    if "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.max_auto_start
-
-    project_payload = Project(
-        name=existing.name,
-        title=existing.title,
-        domain=existing.domain,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=existing.telegram_auto_start,
-        max_token=token_value,
-        max_auto_start=auto_start_value,
-        vk_token=existing.vk_token,
-        vk_auto_start=existing.vk_auto_start,
-        widget_url=existing.widget_url,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: MaxHub = request.app.state.max
-    await hub.start_project(saved, auto_start=auto_start_value if "auto_start" in provided_fields else None)
-    response = _project_max_payload(saved, hub)
-    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-    if isinstance(telegram_hub, TelegramHub):
-        await telegram_hub.ensure_runner(saved)
-    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-    if isinstance(vk_hub, VkHub):
-        await vk_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/projects/{project}/max/stop", response_class=ORJSONResponse)
-async def admin_project_max_stop(
-    project: str,
-    request: Request,
-    payload: ProjectMaxAction | None = None,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    provided_fields = getattr(payload, "model_fields_set", set()) if payload else set()
-    if payload and "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.max_auto_start
-
-    project_payload = Project(
-        name=existing.name,
-        title=existing.title,
-        domain=existing.domain,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=existing.telegram_auto_start,
-        max_token=existing.max_token,
-        max_auto_start=auto_start_value,
-        vk_token=existing.vk_token,
-        vk_auto_start=existing.vk_auto_start,
-        widget_url=existing.widget_url,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: MaxHub = request.app.state.max
-    await hub.stop_project(saved.name, auto_start=auto_start_value if payload and "auto_start" in provided_fields else None)
-    response = _project_max_payload(saved, hub)
-    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-    if isinstance(telegram_hub, TelegramHub):
-        await telegram_hub.ensure_runner(saved)
-    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
-    if isinstance(vk_hub, VkHub):
-        await vk_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.get("/api/v1/admin/projects/{project}/vk", response_class=ORJSONResponse)
-async def admin_project_vk_status(project: str, request: Request) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    hub: VkHub = request.app.state.vk
-    payload = _project_vk_payload(existing, hub)
-    return ORJSONResponse(payload)
-
-
-@app.post("/api/v1/admin/projects/{project}/vk/config", response_class=ORJSONResponse)
-async def admin_project_vk_config(
-    project: str,
-    request: Request,
-    payload: ProjectVkConfig,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        existing = Project(name=project_name)
-
-    provided_fields = getattr(payload, "model_fields_set", set())
-
-    if "token" in provided_fields:
-        if isinstance(payload.token, str):
-            token_value = payload.token.strip() or None
-        else:
-            token_value = None
-    else:
-        token_value = existing.vk_token
-
-    if "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.vk_auto_start
-
-    project_payload = Project(
-        name=project_name,
-        title=existing.title,
-        domain=existing.domain,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=existing.telegram_auto_start,
-        max_token=existing.max_token,
-        max_auto_start=existing.max_auto_start,
-        vk_token=token_value,
-        vk_auto_start=auto_start_value,
-        widget_url=existing.widget_url,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: VkHub = request.app.state.vk
-    await hub.ensure_runner(saved)
-    response = _project_vk_payload(saved, hub)
-    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-    if isinstance(telegram_hub, TelegramHub):
-        await telegram_hub.ensure_runner(saved)
-    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-    if isinstance(max_hub, MaxHub):
-        await max_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/projects/{project}/vk/start", response_class=ORJSONResponse)
-async def admin_project_vk_start(
-    project: str,
-    request: Request,
-    payload: ProjectVkAction,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    provided_fields = getattr(payload, "model_fields_set", set())
-
-    if "token" in provided_fields:
-        if isinstance(payload.token, str):
-            token_value = payload.token.strip() or None
-        else:
-            token_value = None
-    else:
-        token_value = (
-            existing.vk_token.strip() or None
-            if isinstance(existing.vk_token, str)
-            else None
-        )
-
-    if not token_value:
-        raise HTTPException(status_code=400, detail="VK token is not configured")
-
-    if "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.vk_auto_start
-
-    project_payload = Project(
-        name=existing.name,
-        title=existing.title,
-        domain=existing.domain,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=existing.telegram_auto_start,
-        max_token=existing.max_token,
-        max_auto_start=existing.max_auto_start,
-        vk_token=token_value,
-        vk_auto_start=auto_start_value,
-        widget_url=existing.widget_url,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: VkHub = request.app.state.vk
-    await hub.start_project(saved, auto_start=auto_start_value if "auto_start" in provided_fields else None)
-    response = _project_vk_payload(saved, hub)
-    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-    if isinstance(telegram_hub, TelegramHub):
-        await telegram_hub.ensure_runner(saved)
-    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-    if isinstance(max_hub, MaxHub):
-        await max_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.post("/api/v1/admin/projects/{project}/vk/stop", response_class=ORJSONResponse)
-async def admin_project_vk_stop(
-    project: str,
-    request: Request,
-    payload: ProjectVkAction | None = None,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project, required=True)
-    mongo_client = _get_mongo_client(request)
-
-    existing = await mongo_client.get_project(project_name)
-    if not existing:
-        raise HTTPException(status_code=404, detail="project not found")
-
-    provided_fields = getattr(payload, "model_fields_set", set()) if payload else set()
-    if payload and "auto_start" in provided_fields:
-        auto_start_value = (
-            bool(payload.auto_start)
-            if payload.auto_start is not None
-            else None
-        )
-    else:
-        auto_start_value = existing.vk_auto_start
-
-    project_payload = Project(
-        name=existing.name,
-        title=existing.title,
-        domain=existing.domain,
-        llm_model=existing.llm_model,
-        llm_prompt=existing.llm_prompt,
-        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
-        telegram_token=existing.telegram_token,
-        telegram_auto_start=existing.telegram_auto_start,
-        max_token=existing.max_token,
-        max_auto_start=existing.max_auto_start,
-        vk_token=existing.vk_token,
-        vk_auto_start=auto_start_value,
-        widget_url=existing.widget_url,
-        admin_username=existing.admin_username,
-        admin_password_hash=existing.admin_password_hash,
-        debug_enabled=existing.debug_enabled,
-    )
-
-    saved = await mongo_client.upsert_project(project_payload)
-    hub: VkHub = request.app.state.vk
-    await hub.stop_project(saved.name, auto_start=auto_start_value if payload and "auto_start" in provided_fields else None)
-    response = _project_vk_payload(saved, hub)
-    telegram_hub: TelegramHub | None = getattr(request.app.state, "telegram", None)
-    if isinstance(telegram_hub, TelegramHub):
-        await telegram_hub.ensure_runner(saved)
-    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
-    if isinstance(max_hub, MaxHub):
-        await max_hub.ensure_runner(saved)
-    return ORJSONResponse(response)
-
-
-@app.get("/api/v1/admin/stats/requests", response_class=ORJSONResponse)
-async def admin_request_stats(
-    request: Request,
-    project: str | None = None,
-    start: str | None = None,
-    end: str | None = None,
-    channel: str | None = None,
-) -> ORJSONResponse:
-    project_name = _resolve_admin_project(request, project)
-    start_dt = _parse_stats_date(start)
-    end_dt = _parse_stats_date(end)
-    if end_dt:
-        end_dt = end_dt + timedelta(days=1)
-    mongo_client = _get_mongo_client(request)
-    stats = await mongo_client.aggregate_request_stats(
-        project=project_name,
-        start=start_dt,
-        end=end_dt,
-        channel=channel,
-    )
-    return ORJSONResponse({"stats": stats})
-
-
-@app.get("/api/v1/admin/stats/requests/export")
-async def admin_request_stats_export(
-    request: Request,
-    project: str | None = None,
-    start: str | None = None,
-    end: str | None = None,
-    channel: str | None = None,
-) -> StreamingResponse:
-    project_name = _resolve_admin_project(request, project)
-    start_dt = _parse_stats_date(start)
-    end_dt = _parse_stats_date(end)
-    if end_dt:
-        end_dt = end_dt + timedelta(days=1)
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow([
-        "timestamp",
-        "date",
-        "project",
-        "channel",
-        "question",
-        "response_chars",
-        "attachments",
-        "prompt_chars",
-        "session_id",
-        "user_id",
-        "error",
-    ])
-
-    mongo_client = _get_mongo_client(request)
-    async for item in mongo_client.iter_request_stats(
-        project=project_name,
-        start=start_dt,
-        end=end_dt,
-        channel=channel,
-    ):
-        ts = item.get("ts")
-        if isinstance(ts, datetime):
-            ts_str = ts.astimezone(timezone.utc).isoformat()
-        else:
-            ts_str = str(ts)
-        day = item.get("date")
-        if isinstance(day, datetime):
-            day_str = day.date().isoformat()
-        else:
-            day_str = str(day)
-        writer.writerow(
-            [
-                ts_str,
-                day_str,
-                item.get("project"),
-                item.get("channel"),
-                item.get("question"),
-                item.get("response_chars"),
-                item.get("attachments"),
-                item.get("prompt_chars"),
-                item.get("session_id"),
-                item.get("user_id"),
-                item.get("error"),
-            ]
-        )
-
-    output.seek(0)
-    filename = "request_stats.csv"
-    headers = {
-        "Content-Disposition": f"attachment; filename={filename}",
-    }
-    return StreamingResponse(
-        iter([output.getvalue().encode("utf-8")]),
-        media_type="text/csv",
-        headers=headers,
-    )
-
-
+# _resolve_session_identifiers moved to app/routers/stats.py
+# Keep for backward compatibility if used elsewhere
 def _resolve_session_identifiers(request: Request, project: str | None, session_id: str | None) -> tuple[str | None, str]:
-    project_name = _normalize_project(project)
-    base = session_id or request.headers.get("X-Session-Id") or request.headers.get("X-Client-Session")
-    if not base:
-        base = request.cookies.get("chat_session")
-    if not base:
-        base = uuid4().hex
-    base = base.strip().lower()
-    if project_name:
-        return project_name, f"{project_name}::{base}"
-    return project_name, base
+    """Resolve session identifiers from request (backward compatibility wrapper)."""
+    from app.routers.stats import _resolve_session_identifiers as _resolve
+    return _resolve(request, project, session_id)
 
 
-@app.get("/api/v1/admin/projects", response_class=ORJSONResponse)
-async def admin_projects(request: Request) -> ORJSONResponse:
-    """Return configured projects."""
-
-    identity = _require_admin(request)
-    mongo_client = _get_mongo_client(request)
-    projects = await mongo_client.list_projects()
-    if not identity.is_super:
-        allowed = {proj.strip().lower() for proj in identity.projects if proj}
-        projects = [project for project in projects if project.name in allowed]
-    serialized = [_project_response(project) for project in projects]
-    return ORJSONResponse({"projects": serialized})
+# admin_projects moved to app/routers/projects.py
 
 
-@app.get("/api/v1/admin/projects/storage", response_class=ORJSONResponse)
-async def admin_projects_storage(request: Request) -> ORJSONResponse:
-    """Return aggregated storage usage per project (Mongo/GridFS/Redis)."""
+# Project-specific bot endpoints moved to app/routers/projects.py
+# GET/POST /api/v1/admin/projects/{project}/telegram - status, config, start, stop
+# GET/POST /api/v1/admin/projects/{project}/max - status, config, start, stop
+# GET/POST /api/v1/admin/projects/{project}/vk - status, config, start, stop
+# All implementations moved to app/routers/projects.py
+# Old implementations removed - see app/routers/projects.py for current implementations
 
-    identity = _require_admin(request)
-    mongo_cfg = MongoSettings()
-    documents_collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
-    contexts_collection = getattr(request.state, "contexts_collection", mongo_cfg.contexts)
 
-    mongo_client = _get_mongo_client(request)
-    storage = await mongo_client.aggregate_project_storage(documents_collection, contexts_collection)
-    redis_usage = await _redis_project_usage()
+# admin_create_project moved to app/routers/projects.py
+# Keeping implementation here temporarily for backward compatibility
+async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJSONResponse:
 
-    if not identity.is_super:
-        allowed = {proj.strip().lower() for proj in identity.projects if proj}
-        storage = {key: value for key, value in storage.items() if key in allowed}
-        redis_usage = {key: value for key, value in redis_usage.items() if key in allowed}
+    if "auto_start" in provided_fields:
+        auto_start_value = (
+            bool(payload.auto_start)
+            if payload.auto_start is not None
+            else None
+        )
     else:
-        allowed = None
+        auto_start_value = existing.telegram_auto_start
 
-    combined_keys = set(storage.keys()) | set(redis_usage.keys())
-    if allowed is not None:
-        combined_keys = {key for key in combined_keys if key in allowed}
-    combined: dict[str, dict[str, float | int]] = {}
-    for key in combined_keys:
-        doc_stats = storage.get(key, {})
-        redis_stats = redis_usage.get(key, {})
-        documents_bytes = int(doc_stats.get("documents_bytes", 0) or 0)
-        binary_bytes = int(doc_stats.get("binary_bytes", 0) or 0)
-        text_bytes = max(documents_bytes - binary_bytes, 0)
-        combined[key] = {
-            "documents_bytes": documents_bytes,
-            "binary_bytes": binary_bytes,
-            "text_bytes": text_bytes,
-            "document_count": int(doc_stats.get("document_count", 0)),
-            "context_bytes": int(doc_stats.get("context_bytes", 0) or 0),
-            "context_count": int(doc_stats.get("context_count", 0)),
-            "redis_bytes": float(redis_stats.get("redis_bytes", 0)),
-            "redis_keys": int(redis_stats.get("redis_keys", 0)),
-        }
+    project_payload = Project(
+        name=project_name,
+        title=existing.title,
+        domain=existing.domain,
+        admin_username=existing.admin_username,
+        admin_password_hash=existing.admin_password_hash,
+        llm_model=existing.llm_model,
+        llm_prompt=existing.llm_prompt,
+        llm_emotions_enabled=existing.llm_emotions_enabled if existing.llm_emotions_enabled is not None else True,
+        telegram_token=token_value,
+        telegram_auto_start=auto_start_value,
+        max_token=existing.max_token,
+        max_auto_start=existing.max_auto_start,
+        vk_token=existing.vk_token,
+        vk_auto_start=existing.vk_auto_start,
+        widget_url=existing.widget_url,
+        debug_enabled=existing.debug_enabled,
+    )
 
-    return ORJSONResponse({"projects": combined})
+    saved = await mongo_client.upsert_project(project_payload)
+    hub: TelegramHub = request.app.state.telegram
+    await hub.ensure_runner(saved)
+    response = _project_telegram_payload(saved, hub)
+    max_hub: MaxHub | None = getattr(request.app.state, "max", None)
+    if isinstance(max_hub, MaxHub):
+        await max_hub.ensure_runner(saved)
+    vk_hub: VkHub | None = getattr(request.app.state, "vk", None)
+    if isinstance(vk_hub, VkHub):
+        await vk_hub.ensure_runner(saved)
+    return ORJSONResponse(response)
 
 
-@app.post("/api/v1/admin/projects", response_class=ORJSONResponse, status_code=201)
+# Project-specific bot endpoints removed - they are now in app/routers/projects.py
+# All project-specific bot endpoints (telegram/max/vk for specific projects) have been moved
+# See app/routers/projects.py for current implementations
+
+# Removed endpoints (moved to app/routers/projects.py):
+# POST /api/v1/admin/projects/{project}/telegram/start
+# POST /api/v1/admin/projects/{project}/telegram/stop
+# GET /api/v1/admin/projects/{project}/max
+# POST /api/v1/admin/projects/{project}/max/config
+# POST /api/v1/admin/projects/{project}/max/start
+# POST /api/v1/admin/projects/{project}/max/stop
+# GET /api/v1/admin/projects/{project}/vk
+# POST /api/v1/admin/projects/{project}/vk/config
+# POST /api/v1/admin/projects/{project}/vk/start
+# POST /api/v1/admin/projects/{project}/vk/stop
+
+
+
+# admin_request_stats and admin_request_stats_export moved to app/routers/stats.py
+
+
+# _resolve_session_identifiers moved to app/routers/stats.py
+# Keep for backward compatibility if used elsewhere
+def _resolve_session_identifiers(request: Request, project: str | None, session_id: str | None) -> tuple[str | None, str]:
+    """Resolve session identifiers from request (backward compatibility wrapper)."""
+    from app.routers.stats import _resolve_session_identifiers as _resolve
+    return _resolve(request, project, session_id)
+
+
+# admin_projects moved to app/routers/projects.py
+
+
+# admin_projects_storage moved to app/routers/projects.py
+
+
+# admin_create_project moved to app/routers/projects.py
+# Keeping implementation here temporarily for backward compatibility
 async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJSONResponse:
     """Create or update a project (domain)."""
 
@@ -6262,8 +4465,8 @@ async def admin_create_project(request: Request, payload: ProjectCreate) -> ORJS
     return ORJSONResponse(_project_response(project))
 
 
-@app.delete("/api/v1/admin/projects/{domain}", response_class=ORJSONResponse)
-async def admin_delete_project(request: Request, domain: str) -> ORJSONResponse:
+# admin_delete_project moved to app/routers/projects.py
+async def _admin_delete_project_impl(request: Request, domain: str) -> ORJSONResponse:
     identity = _require_admin(request)
     domain_value = _normalize_project(domain)
     if not domain_value:
@@ -6569,30 +4772,12 @@ async def admin_generate_project_prompt(
     )
 
 
-@app.get("/api/v1/admin/projects/{domain}/test", response_class=ORJSONResponse)
-async def admin_test_project(domain: str, request: Request) -> ORJSONResponse:
-    domain_value = _resolve_admin_project(request, domain, required=True)
-
-    mongo_ok, mongo_err = _mongo_check()
-    redis_ok, redis_err = _redis_check()
-    qdrant_ok, qdrant_err = _qdrant_check()
-
-    mongo_client = _get_mongo_client(request)
-    project = await mongo_client.get_project(domain_value)
-
-    return ORJSONResponse(
-        {
-            "name": domain_value,
-            "mongo": {"ok": mongo_ok, "error": mongo_err},
-            "redis": {"ok": redis_ok, "error": redis_err},
-            "qdrant": {"ok": qdrant_ok, "error": qdrant_err},
-        }
-    )
+# admin_test_project moved to app/routers/projects.py
 
 
-@app.get("/api/v1/admin/knowledge/documents/{file_id}")
+# admin_download_document moved to app/routers/knowledge.py
 async def admin_download_document(request: Request, file_id: str) -> Response:
-    """Return the raw contents of a document from GridFS."""
+    """Return the raw contents of a document from GridFS (implementation)."""
 
     identity = _require_admin(request)
     mongo_cfg = MongoSettings()
@@ -6812,136 +4997,4 @@ def _collect_gpu_stats_fallback() -> list[dict[str, object]] | None:
     except Exception:  # pragma: no cover - optional dependency
         return None
 
-@app.get("/sysinfo", include_in_schema=False)
-def sysinfo() -> dict[str, object]:
-    """Return process, system and GPU usage metrics for the dashboard."""
-
-    import os
-    import platform
-    import shutil
-    import subprocess
-    import time
-
-    info: dict[str, object] = {
-        "python": platform.python_version(),
-        "timestamp": time.time(),
-    }
-
-    build_info = dict(get_build_info())
-    info.update(
-        {
-            "build": build_info,
-            "build_version": build_info.get("version"),
-            "build_revision": build_info.get("revision"),
-            "build_time": build_info.get("built_at"),
-            "build_time_iso": build_info.get("built_at_iso"),
-        }
-    )
-
-    try:
-        import psutil  # type: ignore
-
-        proc = psutil.Process(os.getpid())
-        rss = proc.memory_info().rss
-        try:
-            cpu = proc.cpu_percent(interval=None)
-        except Exception:
-            cpu = None
-
-        try:
-            system_cpu = psutil.cpu_percent(interval=None)
-        except Exception:
-            system_cpu = None
-
-        try:
-            vm = psutil.virtual_memory()
-            total_mem = int(vm.total)
-            used_mem = int(vm.used)
-            mem_percent = float(vm.percent)
-        except Exception:
-            total_mem = used_mem = None
-            mem_percent = None
-
-        info.update(
-            {
-                "rss_bytes": int(rss),
-                "cpu_percent": cpu,
-                "system_cpu_percent": system_cpu,
-                "memory_total_bytes": total_mem,
-                "memory_used_bytes": used_mem,
-                "memory_percent": mem_percent,
-            }
-        )
-    except Exception:
-        pass
-
-    if info.get("cpu_percent") is None:
-        cpu_fallback = _compute_process_cpu_fallback()
-        if cpu_fallback is not None:
-            info["cpu_percent"] = cpu_fallback
-
-    if info.get("system_cpu_percent") is None:
-        system_cpu_fallback = _compute_system_cpu_fallback()
-        if system_cpu_fallback is not None:
-            info["system_cpu_percent"] = system_cpu_fallback
-
-    if info.get("rss_bytes") is None:
-        rss_fallback = _compute_process_rss_fallback()
-        if rss_fallback is not None:
-            info["rss_bytes"] = rss_fallback
-
-    if info.get("memory_total_bytes") is None or info.get("memory_used_bytes") is None:
-        total_mem, used_mem, mem_percent = _compute_system_memory_fallback()
-        if total_mem is not None:
-            info["memory_total_bytes"] = total_mem
-        if used_mem is not None:
-            info["memory_used_bytes"] = used_mem
-        if mem_percent is not None:
-            info["memory_percent"] = mem_percent
-
-    # GPU metrics via nvidia-smi when available
-    if shutil.which("nvidia-smi"):
-        try:
-            result = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    "--query-gpu=name,utilization.gpu,memory.used,memory.total",
-                    "--format=csv,noheader,nounits",
-                ],
-                text=True,
-                timeout=1,
-            )
-            gpus: list[dict[str, object]] = []
-            for line in result.strip().splitlines():
-                parts = [part.strip() for part in line.split(",")]
-                if len(parts) != 4:
-                    continue
-                name, util, mem_used, mem_total = parts
-                try:
-                    util_val = float(util)
-                except Exception:
-                    util_val = None
-                try:
-                    mem_used_bytes = int(float(mem_used)) * 1024 * 1024
-                    mem_total_bytes = int(float(mem_total)) * 1024 * 1024
-                except Exception:
-                    mem_used_bytes = mem_total_bytes = None
-                gpus.append(
-                    {
-                        "name": name,
-                        "util_percent": util_val,
-                        "memory_used_bytes": mem_used_bytes,
-                        "memory_total_bytes": mem_total_bytes,
-                    }
-                )
-            if gpus:
-                info["gpus"] = gpus
-        except Exception:
-            pass
-
-    if "gpus" not in info:
-        gpu_fallback = _collect_gpu_stats_fallback()
-        if gpu_fallback:
-            info["gpus"] = gpu_fallback
-
-    return info
+# sysinfo moved to app/routers/admin.py (keeping helper functions here)
