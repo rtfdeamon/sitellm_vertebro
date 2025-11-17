@@ -106,9 +106,11 @@
   - Organize tests into `tests/unit`, `tests/integration`, `tests/performance`, `tests/security`, `tests/e2e`; seed representative examples from PDF.  
   - **Goal:** 90 %+ total coverage; unit ≥95 % for business logic, integration ≥85 %, perf tests enforce p95 <500 ms, zero critical security findings.
 
-- [ ] **3.2 CI/CD quality gates (`.github/workflows/ci.yml`)**  
-  - Steps: `ruff format --check`, `ruff check`, `black --check`, `mypy`, `bandit`, `pytest --cov --cov-report=xml --cov-fail-under=90`, performance smoke (p95 <=4 s).  
-  - Upload coverage + benchmark artifacts; fail build if metrics regress vs previous baseline.  
+- [x] **3.2 CI/CD quality gates ✅ COMPLETED (`.github/workflows/ci.yml`)**  
+  ✅ Steps: `ruff format --check`, `ruff check`, `black --check`, `mypy`, `bandit`, `pytest --cov --cov-report=xml --cov-fail-under=90`, performance smoke (p95 <=4 s).  
+  ✅ Upload coverage + benchmark artifacts; fail build if metrics regress vs previous baseline.  
+  - ✅ Created `.github/workflows/deploy.yml` for automatic deployment on push to main/dev branches
+  - ✅ Separate workflows for production (main branch) and staging (dev branch)
   - **Tests:** dry-run workflow locally via `act` or equivalent.
 
 - [ ] **3.3 QA import regression suite**  
