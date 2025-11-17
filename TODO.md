@@ -219,6 +219,23 @@
 
 ---
 
+## Recent Additions & Improvements
+
+- [x] **Auto theme switching** ✅ COMPLETED
+  - ✅ Implemented automatic theme switching based on time of day (light theme 6:00-20:00, dark theme 20:00-6:00)
+  - ✅ Theme updates every minute to handle day transitions
+  - ✅ Manual theme toggle disables auto-mode and saves preference
+  - **Location:** `widget/index.html`
+
+- [x] **Automatic deployment** ✅ COMPLETED
+  - ✅ Created `.github/workflows/deploy.yml` for CI/CD
+  - ✅ Automatic deployment on push to main/dev branches
+  - ✅ Separate workflows for production and staging
+  - ✅ Deployment status notifications
+  - **Location:** `.github/workflows/deploy.yml`
+
+---
+
 ## Quality Targets & Metrics
 
 - Test coverage 95 % unit / 85 % integration / 100 % critical flows; enforce via `pytest --cov` + coverage badge.  
