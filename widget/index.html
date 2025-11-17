@@ -3405,7 +3405,41 @@ function toggleTheme() {
   setTheme(current === 'dark' ? 'light' : 'dark');
 }
 
-themeToggle.addEventListener('click', toggleTheme);
+// Автоматическое переключение темы по времени дня
+function getTimeBasedTheme() {
+  const hour = new Date().getHours();
+  // Светлая тема: 6:00 - 20:00 (6:00 - 20:00)
+  // Темная тема: 20:00 - 6:00 (20:00 - 6:00)
+  return (hour >= 6 && hour < 20) ? 'light' : 'dark';
+}
+
+function applyAutoTheme() {
+  const savedTheme = localStorage.getItem('chat_theme');
+  const autoThemeEnabled = localStorage.getItem('chat_theme_auto') !== 'false'; // по умолчанию включено
+  
+  if (autoThemeEnabled && !savedTheme) {
+    // Если автоматическая тема включена и нет сохраненной темы, используем время дня
+    const timeBasedTheme = getTimeBasedTheme();
+    setTheme(timeBasedTheme);
+  } else if (autoThemeEnabled && savedTheme === 'auto') {
+    // Если явно выбрана автоматическая тема
+    const timeBasedTheme = getTimeBasedTheme();
+    setTheme(timeBasedTheme);
+  }
+}
+
+// Проверяем и обновляем тему каждую минуту
+function startAutoThemeChecker() {
+  applyAutoTheme();
+  // Проверяем каждую минуту на случай, если пользователь перешел на другой день
+  setInterval(applyAutoTheme, 60000);
+}
+
+themeToggle.addEventListener('click', () => {
+  // При клике отключаем автотему и переключаем вручную
+  localStorage.setItem('chat_theme_auto', 'false');
+  toggleTheme();
+});
 
 function setHealth(ok, statusKey) {
   healthDot.classList.remove('ok', 'bad');
@@ -3837,7 +3871,25 @@ stopBtn.addEventListener('click', () => {
 saveCfgBtn.addEventListener('click', saveConfig);
 attachChatInputHandler(form, input, sendBtn);
 
-setTheme(localStorage.getItem('chat_theme') || 'dark');
+// Инициализация темы с поддержкой автоматического переключения
+const savedTheme = localStorage.getItem('chat_theme');
+const autoThemeEnabled = localStorage.getItem('chat_theme_auto') !== 'false';
+
+if (autoThemeEnabled && !savedTheme) {
+  // Если автоматическая тема включена и нет сохраненной темы, используем время дня
+  const timeBasedTheme = getTimeBasedTheme();
+  setTheme(timeBasedTheme);
+} else if (autoThemeEnabled && savedTheme === 'auto') {
+  // Если явно выбрана автоматическая тема
+  const timeBasedTheme = getTimeBasedTheme();
+  setTheme(timeBasedTheme);
+} else {
+  // Используем сохраненную тему или темную по умолчанию
+  setTheme(savedTheme || 'dark');
+}
+
+// Запускаем проверку автоматической темы
+startAutoThemeChecker();
 
 window.addEventListener('load', () => {
   ensureSessionId();
