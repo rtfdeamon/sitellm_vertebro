@@ -23,6 +23,7 @@
     const nativeFetch = global.fetch.bind(global);
     const adminAuthHeaders = new Map();
 
+    // Try to restore from sessionStorage first
     try {
       const storedHeader = global.sessionStorage?.getItem(authHeaderSessionKey);
       if (storedHeader) {
@@ -30,6 +31,44 @@
       }
     } catch (error) {
       console.warn('admin_auth_header_restore_failed', error);
+    }
+
+    // If no stored header, try to extract credentials from URL (HTTP Basic Auth)
+    if (!adminAuthHeaders.has(adminBaseKey)) {
+      try {
+        const url = new URL(global.location.href);
+        const username = url.username;
+        const password = url.password;
+
+        if (username && password) {
+          // Encode credentials inline (same logic as encodeBasicAuth function)
+          const raw = `${username}:${password}`;
+          let token = null;
+          try {
+            token = global.btoa(raw);
+          } catch (encError) {
+            try {
+              token = global.btoa(unescape(encodeURIComponent(raw)));
+            } catch (fallbackError) {
+              console.warn('admin_auth_base64_failed', fallbackError);
+            }
+          }
+
+          if (token) {
+            const header = `Basic ${token}`;
+            adminAuthHeaders.set(adminBaseKey, header);
+            // Store for future use
+            try {
+              global.sessionStorage?.setItem(authHeaderSessionKey, header);
+            } catch (storageError) {
+              console.warn('admin_auth_header_store_failed', storageError);
+            }
+            console.log('admin_auth_extracted_from_url');
+          }
+        }
+      } catch (error) {
+        console.warn('admin_auth_url_extraction_failed', error);
+      }
     }
 
     if (authHint) {
@@ -168,7 +207,9 @@
     }
 
     function requestAdminAuth() {
-      if (!authModal) return Promise.resolve(false);
+      // If no modal, assume HTTP Basic Auth credentials are already stored
+      // Return true to allow retry with existing credentials from sessionStorage/URL
+      if (!authModal) return Promise.resolve(true);
       if (authModalPromise) return authModalPromise;
       showAuthModal();
       authModalPromise = new Promise((resolve) => {

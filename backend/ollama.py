@@ -7,7 +7,10 @@ import math
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from backend.ollama_cluster import OllamaClusterManager
 
 POPULAR_MODELS: list[dict[str, Any]] = [
     {"name": "yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest", "size_gb": 4.5},
@@ -72,7 +75,8 @@ def ollama_available() -> bool:
     return shutil.which("ollama") is not None
 
 
-def list_installed_models() -> list[OllamaModel]:
+def _list_local_cli_models() -> list[OllamaModel]:
+    """List models from local Ollama CLI installation."""
     if not ollama_available():
         return []
 
@@ -132,6 +136,111 @@ def list_installed_models() -> list[OllamaModel]:
             )
         )
     return models
+
+
+async def _list_remote_models(cluster: OllamaClusterManager | None) -> list[OllamaModel]:
+    """List models from remote Ollama servers via cluster manager."""
+    if cluster is None:
+        return []
+
+    try:
+        import httpx
+
+        # Get all enabled servers from cluster
+        servers_info = await cluster.describe()
+        if not servers_info:
+            return []
+
+        models: list[OllamaModel] = []
+        seen_models: set[str] = set()
+
+        # Query each enabled server
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            for server in servers_info:
+                if not server.get("enabled", False):
+                    continue
+
+                base_url = server.get("base_url", "").rstrip("/")
+                if not base_url:
+                    continue
+
+                try:
+                    resp = await client.get(f"{base_url}/api/tags")
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                    for model_data in data.get("models", []):
+                        name = str(model_data.get("name") or model_data.get("model") or "").strip()
+                        if not name or name in seen_models:
+                            continue
+
+                        seen_models.add(name)
+                        size_bytes = _parse_size(model_data.get("size"))
+                        models.append(
+                            OllamaModel(
+                                name=name,
+                                size_bytes=size_bytes,
+                                size_human=_to_human_size(size_bytes),
+                                modified_at=model_data.get("modified_at"),
+                                digest=model_data.get("digest"),
+                            )
+                        )
+                except Exception:
+                    # Skip failed servers silently
+                    continue
+
+        return models
+    except Exception:
+        return []
+
+
+async def list_installed_models_async(cluster: OllamaClusterManager | None = None) -> list[OllamaModel]:
+    """
+    List installed Ollama models from both local CLI and remote servers (async version).
+
+    Args:
+        cluster: Optional cluster manager for querying remote servers.
+                 If None, only local CLI models are returned.
+
+    Returns:
+        Combined list of models from local and remote sources.
+    """
+    # Get local CLI models (synchronous, run in thread pool)
+    import asyncio
+    loop = asyncio.get_running_loop()
+    models = await loop.run_in_executor(None, _list_local_cli_models)
+    model_names = {m.name for m in models}
+
+    # Get remote models if cluster is provided
+    if cluster is not None:
+        try:
+            remote_models = await _list_remote_models(cluster)
+            # Add remote models that aren't already in local list
+            for model in remote_models:
+                if model.name not in model_names:
+                    models.append(model)
+                    model_names.add(model.name)
+        except Exception:
+            # If remote fetch fails, just return local models
+            pass
+
+    return models
+
+
+def list_installed_models(cluster: OllamaClusterManager | None = None) -> list[OllamaModel]:
+    """
+    List installed Ollama models from local CLI only (synchronous version).
+
+    Note: This version only checks local CLI. For remote servers, use
+    list_installed_models_async() from async context.
+
+    Args:
+        cluster: Ignored in sync version for backwards compatibility.
+
+    Returns:
+        List of models from local CLI.
+    """
+    return _list_local_cli_models()
 
 
 def installed_model_names() -> list[str]:

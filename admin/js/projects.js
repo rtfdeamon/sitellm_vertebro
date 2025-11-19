@@ -97,7 +97,7 @@ const getDefaultWidgetPath = projectsUi.getDefaultWidgetPath || ((project) => {
 });
 const resolveWidgetHref = projectsUi.resolveWidgetHref || ((path) => path || null);
 const voiceModule = window.VoiceModule || null;
-const translate = (key, params) => (typeof t === 'function' ? t(key, params) : key);
+const translateProject = (key, params) => (typeof t === 'function' ? t(key, params) : key);
 const safeNormalizeProjectName = (value) => {
   if (typeof globalThis.normalizeProjectName === 'function') {
     try {
@@ -392,9 +392,9 @@ const warnProjectSlugDuplicate = (slug) => {
   if (!projectModalStatus) return;
   const duplicateExists = slug && projectsCache && Object.prototype.hasOwnProperty.call(projectsCache, slug);
   if (duplicateExists) {
-    projectModalStatus.textContent = translate('projectsIdentifierExists');
+    projectModalStatus.textContent = translateProject('projectsIdentifierExists');
     projectModalName?.classList.add('input-warning');
-  } else if (projectModalStatus.textContent === translate('projectsIdentifierExists')) {
+  } else if (projectModalStatus.textContent === translateProject('projectsIdentifierExists')) {
     projectModalStatus.textContent = '';
     projectModalName?.classList.remove('input-warning');
   } else {
@@ -1065,7 +1065,7 @@ projectPromptSaveBtn.addEventListener('click', () => {
 if (projectAddBtn && projectModalBackdrop) {
   projectAddBtn.addEventListener('click', () => {
     if (!adminSession?.can_manage_projects) {
-    setProjectStatus(translate('projectsNoPermission'), 3000);
+    setProjectStatus(translateProject('projectsNoPermission'), 3000);
     return;
   }
   openProjectModal();
@@ -1212,18 +1212,18 @@ if (projectModalForm) {
   projectModalForm.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!adminSession?.can_manage_projects) {
-      if (projectModalStatus) projectModalStatus.textContent = translate('projectsNoPermission');
+      if (projectModalStatus) projectModalStatus.textContent = translateProject('projectsNoPermission');
       return;
     }
     const rawName = projectModalName?.value?.trim() || '';
     const normalizedName = safeNormalizeProjectName(rawName);
     if (!normalizedName) {
-      if (projectModalStatus) projectModalStatus.textContent = translate('projectsEnterIdentifier');
+      if (projectModalStatus) projectModalStatus.textContent = translateProject('projectsEnterIdentifier');
       projectModalName?.focus();
       return;
     }
     if (normalizedName && projectsCache && Object.prototype.hasOwnProperty.call(projectsCache, normalizedName)) {
-      if (projectModalStatus) projectModalStatus.textContent = translate('projectsIdentifierExists');
+      if (projectModalStatus) projectModalStatus.textContent = translateProject('projectsIdentifierExists');
       projectModalName?.focus();
       warnProjectSlugDuplicate(normalizedName);
       setProjectModalDisabled(false);
@@ -1247,7 +1247,7 @@ if (projectModalForm) {
       payload.admin_password = adminPassword;
     }
 
-    if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaving');
+    if (projectModalStatus) projectModalStatus.textContent = translateProject('projectsSaving');
     setProjectModalDisabled(true);
 
     try {
@@ -1258,7 +1258,7 @@ if (projectModalForm) {
         credentials: 'same-origin',
       });
       if (!resp.ok) {
-        if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaveFailed');
+        if (projectModalStatus) projectModalStatus.textContent = translateProject('projectsSaveFailed');
         return;
       }
       await resp.json().catch(() => ({}));
@@ -1268,11 +1268,11 @@ if (projectModalForm) {
       await fetchProjectStorage();
       await loadKnowledge(currentProject);
       pollStatus();
-      setProjectStatus(translate('projectsSaved'), 2000);
+      setProjectStatus(translateProject('projectsSaved'), 2000);
       closeProjectModal();
     } catch (error) {
       console.error(error);
-      if (projectModalStatus) projectModalStatus.textContent = translate('projectsSaveError');
+      if (projectModalStatus) projectModalStatus.textContent = translateProject('projectsSaveError');
     } finally {
       setProjectModalDisabled(false);
     }

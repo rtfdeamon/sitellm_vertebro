@@ -39,12 +39,16 @@ services:
     env_file: .env
     command:
       - redis-server
+      - "--dir"
+      - "/bitnami/redis/data"
       - "--appendonly"
       - "no"
       - "--requirepass"
       - "${REDIS_PASSWORD}"
     ports:
       - "${HOST_REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/bitnami/redis/data
     healthcheck:
       <<: *health_defaults
       test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping"]
@@ -212,5 +216,6 @@ services:
 
 volumes:
   mongo_data:
+  redis_data:
   qdrant_data:
   ollama_data:

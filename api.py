@@ -3226,7 +3226,7 @@ async def stop_crawler(request: Request) -> dict[str, str]:
         return {"status": "unknown"}
     try:
         os.kill(pid, signal.SIGTERM)
-        return {"status": "stopping", "pid": pid}
+        return {"status": "stopping", "pid": str(pid)}
     except ProcessLookupError:
         return {"status": "not_running"}
     except Exception:

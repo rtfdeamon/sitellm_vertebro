@@ -191,22 +191,22 @@ def _redis_key(name: str, project: str | None = None) -> str:
 def _incr(key: str, delta: int = 1, project: str | None = None):
     try:
         r.incrby(_redis_key(key, project), delta)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("redis_incr_failed", key=key, delta=delta, project=project, error=str(exc))
 
 
 def _set(key: str, value, project: str | None = None):
     try:
         r.set(_redis_key(key, project), value)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("redis_set_failed", key=key, value=value, project=project, error=str(exc))
 
 
 def _delete(key: str, project: str | None = None):
     try:
         r.delete(_redis_key(key, project))
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("redis_delete_failed", key=key, project=project, error=str(exc))
 
 
 def get_crawler_counters(project: str | None = None) -> dict[str, int]:

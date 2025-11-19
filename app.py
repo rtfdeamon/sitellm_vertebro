@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any, Dict, Literal
+from uuid import uuid4
 import random
 import json
 from datetime import datetime, timezone, timedelta
@@ -39,7 +40,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from starlette.requests import Request
 from starlette.responses import Response, RedirectResponse, PlainTextResponse
 from starlette.routing import NoMatchFound
-from fastapi.responses import ORJSONResponse, FileResponse
+from fastapi.responses import ORJSONResponse, FileResponse, StreamingResponse
 from bs4 import BeautifulSoup
 
 from observability.logging import configure_logging, get_recent_logs
@@ -2572,6 +2573,9 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         ("POST", "/api/v1/crawler/stop"),
     }
 
+    # Session storage: username -> AdminIdentity
+    _sessions: dict[str, AdminIdentity] = {}
+
     @staticmethod
     def _unauthorized_response(request: Request) -> Response:
         path = request.url.path
@@ -2628,6 +2632,14 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if not is_protected:
             return await call_next(request)
 
+        # Check for existing session cookie first
+        session_token = request.cookies.get("admin_session")
+        if session_token and session_token in self._sessions:
+            identity = self._sessions[session_token]
+            request.state.admin = identity
+            return await call_next(request)
+
+        # Try HTTP Basic Auth
         auth = request.headers.get("Authorization")
         if auth and auth.lower().startswith("basic "):
             encoded = ""
@@ -2642,7 +2654,19 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                 identity = await self._authenticate(request, username, password)
                 if identity:
                     request.state.admin = identity
-                    return await call_next(request)
+                    # Create session token and store it
+                    session_token = hashlib.sha256(f"{username}:{uuid4()}".encode()).hexdigest()
+                    self._sessions[session_token] = identity
+                    response = await call_next(request)
+                    # Set cookie with session token
+                    response.set_cookie(
+                        key="admin_session",
+                        value=session_token,
+                        httponly=True,
+                        samesite="lax",
+                        max_age=86400  # 24 hours
+                    )
+                    return response
                 logger.warning("admin_auth_invalid_credentials", username=username)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -4775,6 +4799,10 @@ async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
         except Exception:
             remote_available = False
 
+    # Get installed models from both local and remote sources
+    from backend.ollama import list_installed_models_async
+    all_models = await list_installed_models_async(cluster=cluster)
+
     installed_models = [
         {
             "name": model.name,
@@ -4783,7 +4811,7 @@ async def admin_ollama_catalog(request: Request) -> ORJSONResponse:
             "modified_at": model.modified_at,
             "digest": model.digest,
         }
-        for model in list_installed_models()
+        for model in all_models
     ]
     installed_names = {item["name"] for item in installed_models}
     popular = popular_models_with_size()
@@ -6627,6 +6655,122 @@ async def admin_download_document(request: Request, file_id: str) -> Response:
     headers = {"Content-Disposition": _build_content_disposition(filename)}
     media_type = doc_meta.get("content_type") or "application/octet-stream"
     return Response(content=payload, media_type=media_type, headers=headers)
+
+
+@app.get("/api/v1/admin/knowledge/documents/{file_id}/metadata", response_class=ORJSONResponse)
+async def admin_get_document_metadata(request: Request, file_id: str) -> ORJSONResponse:
+    """Return document metadata for editing."""
+
+    identity = _require_admin(request)
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    def fetch_metadata() -> dict[str, Any]:
+        with SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=2000) as sync_client:
+            db = sync_client[mongo_cfg.database]
+            coll = db[collection]
+            doc = coll.find_one({"fileId": file_id}, {"_id": False})
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
+            return doc
+
+    doc_meta = await run_in_threadpool(fetch_metadata)
+
+    # Check permissions
+    if not identity.is_super:
+        allowed = {proj.strip().lower() for proj in identity.projects if proj}
+        doc_project_value = doc_meta.get("project")
+        if isinstance(doc_project_value, str) and doc_project_value.strip():
+            normalized_doc_project = doc_project_value.strip().lower()
+        else:
+            domain_value = doc_meta.get("domain")
+            normalized_doc_project = domain_value.strip().lower() if isinstance(domain_value, str) and domain_value.strip() else None
+        if not normalized_doc_project or normalized_doc_project not in allowed:
+            raise HTTPException(status_code=403, detail="Access forbidden")
+
+    return ORJSONResponse({
+        "fileId": str(doc_meta.get("fileId", file_id)),
+        "name": doc_meta.get("name", ""),
+        "url": doc_meta.get("url", ""),
+        "description": doc_meta.get("description", ""),
+        "content": doc_meta.get("content", ""),
+        "project": doc_meta.get("project", ""),
+        "domain": doc_meta.get("domain", ""),
+    })
+
+
+@app.put("/api/v1/admin/knowledge/documents/{file_id}", response_class=ORJSONResponse)
+async def admin_update_document(request: Request, file_id: str) -> ORJSONResponse:
+    """Update document metadata."""
+
+    identity = _require_admin(request)
+    mongo_cfg = MongoSettings()
+    collection = getattr(request.state, "documents_collection", mongo_cfg.documents)
+
+    try:
+        body = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON") from exc
+
+    def update_metadata() -> dict[str, Any]:
+        with SyncMongoClient(base_settings.mongo_uri, serverSelectionTimeoutMS=2000) as sync_client:
+            db = sync_client[mongo_cfg.database]
+            coll = db[collection]
+
+            # Check if document exists
+            doc = coll.find_one({"fileId": file_id}, {"_id": False})
+            if not doc:
+                raise HTTPException(status_code=404, detail="Document not found")
+
+            # Check permissions
+            if not identity.is_super:
+                allowed = {proj.strip().lower() for proj in identity.projects if proj}
+                doc_project_value = doc.get("project")
+                if isinstance(doc_project_value, str) and doc_project_value.strip():
+                    normalized_doc_project = doc_project_value.strip().lower()
+                else:
+                    domain_value = doc.get("domain")
+                    normalized_doc_project = domain_value.strip().lower() if isinstance(domain_value, str) and domain_value.strip() else None
+                if not normalized_doc_project or normalized_doc_project not in allowed:
+                    raise HTTPException(status_code=403, detail="Access forbidden")
+
+            # Prepare update fields
+            update_fields = {}
+            if "name" in body:
+                update_fields["name"] = str(body["name"]).strip()
+            if "url" in body:
+                update_fields["url"] = str(body["url"]).strip()
+            if "description" in body:
+                update_fields["description"] = str(body["description"]).strip()
+            if "content" in body:
+                update_fields["content"] = str(body["content"]).strip()
+
+            if not update_fields:
+                raise HTTPException(status_code=400, detail="No fields to update")
+
+            # Update document
+            result = coll.update_one(
+                {"fileId": file_id},
+                {"$set": update_fields}
+            )
+
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Document not found")
+
+            # Return updated document
+            updated_doc = coll.find_one({"fileId": file_id}, {"_id": False})
+            return updated_doc
+
+    updated_doc = await run_in_threadpool(update_metadata)
+
+    return ORJSONResponse({
+        "success": True,
+        "fileId": str(updated_doc.get("fileId", file_id)),
+        "name": updated_doc.get("name", ""),
+        "url": updated_doc.get("url", ""),
+        "description": updated_doc.get("description", ""),
+        "content": updated_doc.get("content", ""),
+    })
 
 
 @app.get("/", include_in_schema=False)

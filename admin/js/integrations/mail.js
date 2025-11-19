@@ -39,20 +39,45 @@
     return;
   }
 
+  const formatTemplate = (template, params = {}) => {
+    if (typeof template !== 'string') return '';
+    return template.replace(/\{(\w+)\}/g, (_, token) => {
+      if (Object.prototype.hasOwnProperty.call(params, token)) {
+        const replacement = params[token];
+        return replacement === null || replacement === undefined ? '' : String(replacement);
+      }
+      return '';
+    });
+  };
+
+  const translate = (key, fallback = '', params = undefined) => {
+    if (typeof global.t === 'function') {
+      try {
+        return params ? global.t(key, params) : global.t(key);
+      } catch (error) {
+        console.warn('mail_translate_failed', error);
+      }
+    }
+    if (fallback) {
+      return formatTemplate(fallback, params);
+    }
+    return key;
+  };
+
   function refreshHint() {
     const enabled = enabledInput ? !!enabledInput.checked : false;
     const hasImap = Boolean(imapHostInput?.value.trim());
     const hasSmtp = Boolean(smtpHostInput?.value.trim());
     if (!hasImap && !hasSmtp) {
-      hintLabel.textContent = tl('Укажите параметры IMAP/SMTP, чтобы ассистент мог работать с почтой.');
+      hintLabel.textContent = translate('integrationMailHintNotConfigured', 'Specify IMAP/SMTP parameters so the assistant can work with email.');
       return;
     }
     if (enabled) {
-      hintLabel.textContent = tl('Интеграция активна. Ассистент может отправлять и читать почту.');
+      hintLabel.textContent = translate('integrationMailHintActive', 'Integration is active. The assistant can send and read emails.');
       return;
     }
     hintLabel.textContent =
-      tl('Параметры сохранены, но интеграция выключена. Включите переключатель, чтобы активировать почтовый коннектор.');
+      translate('integrationMailHintConfiguredButDisabled', 'Parameters saved, but integration is disabled. Enable the toggle to activate the mail connector.');
   }
 
   function resetInputs() {
@@ -65,7 +90,7 @@
     smtpTlsInput.checked = true;
     usernameInput.value = '';
     passwordInput.value = '';
-    passwordInput.placeholder = tl('Пароль');
+    passwordInput.placeholder = translate('integrationMailPassword', 'Password');
     fromInput.value = '';
     signatureInput.value = '';
   }
@@ -85,7 +110,7 @@
     smtpTlsInput.checked = project.mail_smtp_tls !== false;
     usernameInput.value = project.mail_username || '';
     passwordInput.value = '';
-    passwordInput.placeholder = project.mail_password_set ? tl('Пароль сохранён') : tl('Пароль');
+    passwordInput.placeholder = project.mail_password_set ? translate('integrationMailPasswordSaved', 'Password saved') : translate('integrationMailPassword', 'Password');
     fromInput.value = project.mail_from || '';
     signatureInput.value = project.mail_signature || '';
     refreshHint();

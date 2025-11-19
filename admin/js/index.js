@@ -1,13 +1,4 @@
 const languageSelect = document.getElementById('adminLanguage');
-const authModal = document.getElementById('adminAuthModal');
-const authForm = document.getElementById('adminAuthForm');
-const authUserInput = document.getElementById('adminAuthUsername');
-const authPasswordInput = document.getElementById('adminAuthPassword');
-const authSubmitBtn = document.getElementById('adminAuthSubmit');
-const authCancelBtn = document.getElementById('adminAuthCancel');
-const authError = document.getElementById('adminAuthError');
-const authHint = document.getElementById('adminAuthHint');
-const authMessage = document.getElementById('adminAuthMessage');
 const kbModalBackdrop = document.getElementById('kbModal');
 const kbModalClose = document.getElementById('kbModalClose');
 const kbModalCancel = document.getElementById('kbModalCancel');
@@ -149,17 +140,17 @@ const translateText = (key, fallback, params) => {
   return '';
 };
 
-const KNOWLEDGE_DEFAULT_PROMPTS = {
-  ru: 'Ты — сервис интеллектуальной обработки базы знаний. Обрабатывай документы последовательно, разбивая каждый документ на части, которые помещаются в контекст модели. Для каждой части выполняй необходимые преобразования и обновляй содержимое по частям, чтобы итоговые изменения оставались.',
-  en: 'You are the knowledge base processing service. Process documents sequentially, splitting each document into parts that fit into the model context. For each part, perform the required transformations and update the content piece by piece so that the resulting changes persist.',
-};
-
 const getKnowledgeDefaultPrompt = (lang) => {
   const key = typeof lang === 'string' ? lang.trim().toLowerCase() : '';
-  if (key && KNOWLEDGE_DEFAULT_PROMPTS[key]) {
-    return KNOWLEDGE_DEFAULT_PROMPTS[key];
+  const i18n = window.ADMIN_I18N_STATIC;
+  if (i18n && i18n.text && i18n.text.knowledgeProcessingDefaultPrompt) {
+    const translations = i18n.text.knowledgeProcessingDefaultPrompt;
+    if (key && translations[key]) {
+      return translations[key];
+    }
+    return translations.en || '';
   }
-  return KNOWLEDGE_DEFAULT_PROMPTS.en;
+  return 'You are the knowledge base processing service. Process documents sequentially, splitting each document into parts that fit into the model context. For each part, perform the required transformations and update the content piece by piece so that the resulting changes persist.';
 };
 
 const normalizeServiceErrorKey = (value) => {
@@ -240,6 +231,22 @@ const updateFileInputLabel = (input, label, filesOverride) => {
 
 const translateOr = (key, fallback, params) => translateText(key, fallback, params);
 
+const translate = (key, fallback = '', params = null) => {
+  if (typeof t === 'function') {
+    try {
+      return params ? t(key, params) : t(key);
+    } catch (error) {
+      console.warn('index_translate_failed', error);
+    }
+  }
+  if (fallback && params && typeof fallback === 'string') {
+    return fallback.replace(/\{(\w+)\}/g, (_, token) =>
+      Object.prototype.hasOwnProperty.call(params, token) ? String(params[token]) : '',
+    );
+  }
+  return fallback || key;
+};
+
 async function fetchWithAdminAuth(url, options = {}, { reauthenticate = true } = {}) {
   const baseHeaders = new Headers(options.headers || {});
   const maxAttempts = reauthenticate ? 2 : 1;
@@ -307,19 +314,11 @@ const ADMIN_PROTECTED_PREFIXES = [
 const ADMIN_KNOWLEDGE_DOWNLOAD_PREFIX = '/api/v1/admin/knowledge/documents/';
 
 const {
+  getAuthHeaderForBase,
   clearAuthHeaderForBase,
   setStoredAdminUser,
   requestAdminAuth,
 } = initAdminAuth({
-  authModal,
-  authForm,
-  authUserInput,
-  authPasswordInput,
-  authSubmitBtn,
-  authCancelBtn,
-  authError,
-  authHint,
-  authMessage,
   adminBaseKey: ADMIN_BASE_KEY,
   authHeaderSessionKey: ADMIN_AUTH_HEADER_SESSION_KEY,
   authUserStorageKey: ADMIN_AUTH_USER_STORAGE_KEY,
@@ -327,6 +326,48 @@ const {
   protectedPrefixes: ADMIN_PROTECTED_PREFIXES,
 });
 window.requestAdminAuth = requestAdminAuth;
+
+async function checkBackupSectionVisibility() {
+  const backupSection = document.getElementById('block-backup');
+  if (!backupSection) {
+    console.log('backup_section_not_found');
+    return;
+  }
+
+  // Check sessionStorage first (fast)
+  const authHeader = getAuthHeaderForBase ? getAuthHeaderForBase(ADMIN_BASE_KEY) : null;
+  const adminAuthHeader = window.AdminAuth?.getAuthHeaderForBase?.(ADMIN_BASE_KEY);
+  const sessionToken = sessionStorage?.getItem('admin_auth_header_v1');
+  const hasSessionAuth = !!(authHeader || adminAuthHeader || sessionToken);
+
+  // Also check via API request (reliable for HTTP Basic Auth)
+  let hasApiAuth = false;
+  try {
+    const response = await fetch('/api/v1/admin/session', { credentials: 'same-origin' });
+    hasApiAuth = response.ok;
+  } catch (error) {
+    console.warn('backup_auth_check_failed', error);
+  }
+
+  const isAuthenticated = hasSessionAuth || hasApiAuth;
+  console.log('backup_visibility_check', {
+    isAuthenticated,
+    hasSessionAuth,
+    hasApiAuth,
+    hasAuthHeader: !!authHeader,
+    hasAdminAuthHeader: !!adminAuthHeader,
+    hasSessionToken: !!sessionToken,
+    adminBaseKey: ADMIN_BASE_KEY
+  });
+  backupSection.style.display = isAuthenticated ? '' : 'none';
+}
+
+window.addEventListener('storage', (event) => {
+  if (event.key === ADMIN_AUTH_HEADER_SESSION_KEY) {
+    checkBackupSectionVisibility();
+  }
+});
+
 window.healthPollTimer = window.healthPollTimer || null;
 
 let feedbackTasksCache = [];
@@ -369,9 +410,6 @@ const {
   getCurrentLanguage,
 } = initAdminI18n({
   languageSelect,
-  authHint,
-  authMessage,
-  authError,
   onLanguageApplied: () => setTimeout(handleLanguageApplied, 0),
 });
 
@@ -391,10 +429,45 @@ function handleLanguageApplied() {
   if (window.StatsModule?.handleLanguageApplied) {
     window.StatsModule.handleLanguageApplied();
   }
-  if (knowledgeServicePrompt && knowledgeServicePrompt.dataset.isDefault === 'true') {
-    const lang = getCurrentLanguage();
-    knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(lang);
-    knowledgeServicePrompt.dataset.defaultLocale = lang;
+  if (knowledgeServicePrompt) {
+    const currentPrompt = knowledgeServicePrompt.value.trim();
+    if (currentPrompt.length > 0) {
+      const lang = getCurrentLanguage();
+      const isDatasetDefault = knowledgeServicePrompt.dataset.isDefault === 'true';
+      const i18n = window.ADMIN_I18N_STATIC;
+      const defaultPrompts = i18n?.text?.knowledgeProcessingDefaultPrompt || {};
+      const isPromptMatchesDefault = Object.values(defaultPrompts).some(text => text === currentPrompt);
+
+      // Detailed debugging
+      console.log('prompt_comparison_details', {
+        currentPromptLength: currentPrompt.length,
+        currentPromptPreview: currentPrompt.substring(0, 100),
+        availableDefaults: Object.keys(defaultPrompts),
+        comparisons: Object.entries(defaultPrompts).map(([locale, text]) => ({
+          locale,
+          textLength: text.length,
+          textPreview: text.substring(0, 100),
+          matches: text === currentPrompt
+        }))
+      });
+
+      const shouldUpdate = isDatasetDefault || isPromptMatchesDefault;
+      console.log('prompt_update_check', {
+        isDatasetDefault,
+        isPromptMatchesDefault,
+        shouldUpdate,
+        dataset: knowledgeServicePrompt.dataset.isDefault,
+        currentLang: lang
+      });
+      if (shouldUpdate) {
+        console.log('updating_prompt_to_lang', lang);
+        knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(lang);
+        knowledgeServicePrompt.dataset.isDefault = 'true';
+        knowledgeServicePrompt.dataset.defaultLocale = lang;
+      }
+    } else {
+      console.log('prompt_empty_skip_update');
+    }
   }
   if (knowledgeServiceStateCache) {
     renderKnowledgeServiceStatus(knowledgeServiceStateCache);
@@ -450,6 +523,18 @@ function handleLanguageApplied() {
   }
   if (kbNewContentInput) {
     showKnowledgeDescriptionPreview(kbNewContentInput.value || '');
+  }
+  if (typeof renderKnowledgeQa === 'function' && qaPairsCache) {
+    renderKnowledgeQa(qaPairsCache);
+    const kbTableQa = document.getElementById('kbTableQa');
+    if (kbTableQa) {
+      kbTableQa.querySelectorAll('[data-i18n]').forEach((el) => {
+        const key = el.getAttribute('data-i18n');
+        if (key && typeof t === 'function') {
+          el.textContent = t(key);
+        }
+      });
+    }
   }
 }
 
@@ -872,7 +957,9 @@ async function downloadKnowledgeDocumentWithAuth(href, fallbackName) {
       return;
     }
     console.error('knowledge_document_download_failed', error);
-    const message = error?.message ? `Download failed: ${error.message}` : 'Download failed';
+    const message = error?.message
+      ? `${translate('knowledgeDownloadFailed', 'Download failed')}: ${error.message}`
+      : translate('knowledgeDownloadFailed', 'Download failed');
     window.alert(message);
   }
 }
@@ -1137,12 +1224,14 @@ const renderKnowledgeQa = (items) => {
     const editButton = document.createElement('button');
     editButton.type = 'button';
     editButton.className = 'ghost';
+    editButton.setAttribute('data-i18n', 'buttonEdit');
     editButton.textContent = t('buttonEdit');
     editButton.addEventListener('click', () => editQaPair(pair.id));
 
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'ghost danger';
+    deleteButton.setAttribute('data-i18n', 'buttonDelete');
     deleteButton.textContent = t('buttonDelete');
     deleteButton.addEventListener('click', () => deleteQaPair(pair.id));
 
@@ -1794,6 +1883,47 @@ if (kbNewDescriptionInput) {
   });
 }
 
+// Open knowledge document for editing
+async function openKnowledgeModal(fileId) {
+  if (!fileId) return;
+
+  try {
+    // Fetch document data
+    const response = await fetch(`/api/v1/admin/knowledge/documents/${fileId}/metadata`, {
+      credentials: 'same-origin'
+    });
+
+    if (!response.ok) {
+      console.error('knowledge_fetch_failed', response.status);
+      return;
+    }
+
+    const doc = await response.json();
+
+    // Switch to Upload tab
+    activateKnowledgeSection('upload');
+
+    // Populate form fields
+    if (kbNewNameInput && doc.name) kbNewNameInput.value = doc.name;
+    if (kbNewUrlInput && doc.url) kbNewUrlInput.value = doc.url;
+    if (kbNewDescriptionInput && doc.description) kbNewDescriptionInput.value = doc.description;
+    if (kbNewContentInput && doc.content) kbNewContentInput.value = doc.content;
+
+    // Store editing fileId
+    if (kbAddForm) {
+      kbAddForm.dataset.editingFileId = fileId;
+    }
+
+    // Scroll to form
+    kbAddForm?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (error) {
+    console.error('knowledge_modal_open_failed', error);
+  }
+}
+
+// Make function globally available
+window.openKnowledgeModal = openKnowledgeModal;
+
 if (kbAddForm) {
   kbAddForm.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -1804,6 +1934,48 @@ if (kbAddForm) {
       return;
     }
 
+    // Check if we're editing an existing document
+    const editingFileId = kbAddForm.dataset.editingFileId;
+    if (editingFileId) {
+      // Update existing document
+      const descriptionValue = (kbNewDescriptionInput?.value || '').trim();
+      const urlValue = (kbNewUrlInput?.value || '').trim();
+      const nameValue = (kbNewNameInput?.value || '').trim();
+      const contentValue = (kbNewContentInput?.value || '').trim();
+
+      if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadProcessing');
+      setKnowledgeFormButtonsDisabled(true);
+
+      try {
+        const response = await fetch(`/api/v1/admin/knowledge/documents/${editingFileId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            name: nameValue,
+            description: descriptionValue,
+            url: urlValue,
+            content: contentValue
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Update failed: ${response.status}`);
+        }
+
+        if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadSuccess', { count: 1 });
+        resetKnowledgeForm();
+        delete kbAddForm.dataset.editingFileId;
+        await refreshKnowledgeTable();
+      } catch (error) {
+        if (kbAddStatus) kbAddStatus.textContent = t('knowledgeUploadError', { error: getErrorMessage(error) });
+      } finally {
+        setKnowledgeFormButtonsDisabled(false);
+      }
+      return;
+    }
+
+    // Create new document(s) - original logic
     const files = collectSelectedFiles();
     const textValue = (kbNewContentInput?.value || '').trim();
     if (!files.length && !textValue) {
@@ -2239,6 +2411,10 @@ function resetKnowledgeForm() {
   if (kbAddForm && typeof kbAddForm.reset === 'function') {
     kbAddForm.reset();
   }
+  // Clear editing state
+  if (kbAddForm) {
+    delete kbAddForm.dataset.editingFileId;
+  }
   dropFilesBuffer = [];
   if (kbNewFileInput) {
     kbNewFileInput.value = '';
@@ -2550,19 +2726,47 @@ async function fetchKnowledgeServiceStatus(triggerPulseOrOptions = false, maybeO
       if (knowledgeServicePrompt) {
         const rawPrompt = typeof data.processing_prompt === 'string' ? data.processing_prompt.trim() : '';
         const currentLang = getCurrentLanguage();
-        const matchedDefaultEntry = Object.entries(KNOWLEDGE_DEFAULT_PROMPTS).find(([, text]) => text === rawPrompt);
-        if (!rawPrompt) {
-          knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(currentLang);
+        const i18n = window.ADMIN_I18N_STATIC;
+        const defaultPrompts = i18n?.text?.knowledgeProcessingDefaultPrompt || {};
+        const comparisonResults = Object.entries(defaultPrompts).map(([locale, text]) => ({
+          locale,
+          textLength: text.length,
+          rawLength: rawPrompt.length,
+          matches: text === rawPrompt,
+          textPreview: text.substring(0, 50),
+          rawPreview: rawPrompt.substring(0, 50)
+        }));
+        const isDefaultPrompt = comparisonResults.some(r => r.matches);
+
+        console.log('prompt_server_comparison', {
+          rawPromptLength: rawPrompt.length,
+          rawPromptPreview: rawPrompt.substring(0, 100),
+          currentLang,
+          comparisons: comparisonResults,
+          isDefaultPrompt
+        });
+
+        if (!rawPrompt || isDefaultPrompt) {
+          const defaultPrompt = getKnowledgeDefaultPrompt(currentLang);
+          knowledgeServicePrompt.value = defaultPrompt;
           knowledgeServicePrompt.dataset.isDefault = 'true';
           knowledgeServicePrompt.dataset.defaultLocale = currentLang;
-        } else if (matchedDefaultEntry) {
-          knowledgeServicePrompt.value = getKnowledgeDefaultPrompt(currentLang);
-          knowledgeServicePrompt.dataset.isDefault = 'true';
-          knowledgeServicePrompt.dataset.defaultLocale = currentLang;
+          console.log('prompt_set_to_default', {
+            currentLang,
+            promptLength: defaultPrompt.length,
+            promptPreview: defaultPrompt.substring(0, 100),
+            rawPromptWasEmpty: !rawPrompt,
+            rawPromptWasDefault: isDefaultPrompt
+          });
         } else {
           knowledgeServicePrompt.value = rawPrompt;
           knowledgeServicePrompt.dataset.isDefault = 'false';
           knowledgeServicePrompt.dataset.defaultLocale = '';
+          console.log('prompt_set_to_custom', {
+            currentLang,
+            promptLength: rawPrompt.length,
+            promptPreview: rawPrompt.substring(0, 100)
+          });
         }
       }
       renderKnowledgeServiceStatus(data);
@@ -3039,11 +3243,32 @@ bootstrapAdminApp({
   });
 
 document.addEventListener('DOMContentLoaded', () => {
+  checkBackupSectionVisibility();
+  setTimeout(() => checkBackupSectionVisibility(), 500);
   try {
     pollStatusProxy();
   } catch (error) {
     console.error('poll_status_initial_failed', error);
   }
+
+  // Ensure crawler poll timer starts even if event was missed
+  setTimeout(() => {
+    if (!window.crawlerPollTimer && typeof window.pollStatus === 'function') {
+      console.log('[index] Starting crawler poll timer (fallback)');
+      window.pollStatus(); // Initial call
+      window.crawlerPollTimer = setInterval(() => {
+        const pollFn = typeof window.pollStatus === 'function' ? window.pollStatus : null;
+        if (pollFn) {
+          try {
+            pollFn();
+          } catch (error) {
+            console.error('poll_status_auto_failed', error);
+          }
+        }
+      }, 5000);
+    }
+  }, 100);
+
   if (!window.healthPollTimer && typeof window.pollHealth === 'function') {
     window.pollHealth();
     window.healthPollTimer = setInterval(() => {
@@ -3061,6 +3286,19 @@ document.addEventListener('admin:poll-status-ready', () => {
     } catch (error) {
       console.error('poll_status_initial_failed', error);
     }
+  }
+  // Auto-poll crawler status every 5 seconds
+  if (!window.crawlerPollTimer && typeof window.pollStatus === 'function') {
+    window.crawlerPollTimer = setInterval(() => {
+      const pollFn = typeof window.pollStatus === 'function' ? window.pollStatus : null;
+      if (pollFn) {
+        try {
+          pollFn();
+        } catch (error) {
+          console.error('poll_status_auto_failed', error);
+        }
+      }
+    }, 5000);
   }
   if (!window.healthPollTimer && typeof window.pollHealth === 'function') {
     window.pollHealth();
@@ -3085,12 +3323,12 @@ if (saveLlmButton) {
         credentials: 'same-origin',
       });
       if (llmPingResultEl) {
-        llmPingResultEl.textContent = resp.ok ? 'Saved' : 'Save failed';
+        llmPingResultEl.textContent = resp.ok ? translate('llmSaved', 'Saved') : translate('llmSaveFailed', 'Save failed');
       }
     } catch (error) {
       console.error('llm_config_save_failed', error);
       if (llmPingResultEl) {
-        llmPingResultEl.textContent = 'Save failed';
+        llmPingResultEl.textContent = translate('llmSaveFailed', 'Save failed');
       }
     }
     await pollLLM();
@@ -3102,22 +3340,22 @@ if (pingLlmButton) {
     try {
       const resp = await fetch('/api/v1/llm/ping');
       if (!resp.ok) {
-        if (llmPingResultEl) llmPingResultEl.textContent = 'Ping failed';
+        if (llmPingResultEl) llmPingResultEl.textContent = translate('llmPingFailed', 'Ping failed');
         return;
       }
       const payload = await resp.json();
       if (!llmPingResultEl) return;
       if (!payload.enabled) {
-        llmPingResultEl.textContent = 'Disabled';
+        llmPingResultEl.textContent = translate('llmPingDisabled', 'Disabled');
       } else if (payload.reachable) {
-        llmPingResultEl.textContent = 'Reachable';
+        llmPingResultEl.textContent = translate('llmPingReachable', 'Reachable');
       } else {
         const suffix = payload.error ? `: ${payload.error}` : '';
-        llmPingResultEl.textContent = `Unreachable${suffix}`;
+        llmPingResultEl.textContent = `${translate('llmPingUnreachable', 'Unreachable')}${suffix}`;
       }
     } catch (error) {
       console.error('llm_ping_failed', error);
-      if (llmPingResultEl) llmPingResultEl.textContent = 'Ping failed';
+      if (llmPingResultEl) llmPingResultEl.textContent = translate('llmPingFailed', 'Ping failed');
     }
   });
 }
@@ -3127,9 +3365,9 @@ if (copyLogsButton && logsElement && logInfoElement) {
     const content = logsElement.textContent || '';
     try {
       await navigator.clipboard.writeText(content);
-      logInfoElement.textContent = 'Copied';
+      logInfoElement.textContent = translate('logsCopied', 'Copied');
     } catch {
-      logInfoElement.textContent = 'Copy failed';
+      logInfoElement.textContent = translate('logsCopyFailed', 'Copy failed');
     }
   });
 }

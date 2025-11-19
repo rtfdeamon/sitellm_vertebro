@@ -226,6 +226,46 @@
         ru: 'Промпты LLM',
         match: ['Промпты LLM'],
       },
+      llmAvailableStatus: {
+        en: 'LLM available · {docs} docs',
+        ru: 'LLM доступна · {docs} док.',
+        es: 'LLM disponible · {docs} docs',
+        de: 'LLM verfügbar · {docs} Dokumente',
+        fr: 'LLM disponible · {docs} docs',
+        match: ['LLM доступна · {docs} док.'],
+      },
+      llmUnavailableStatus: {
+        en: 'LLM unavailable',
+        ru: 'LLM недоступна',
+        es: 'LLM no disponible',
+        de: 'LLM nicht verfügbar',
+        fr: 'LLM indisponible',
+        match: ['LLM недоступна'],
+      },
+      llmCheckConnection: {
+        en: 'Check connection',
+        ru: 'Проверьте подключение',
+        es: 'Verifique la conexión',
+        de: 'Verbindung prüfen',
+        fr: 'Vérifier la connexion',
+        match: ['Проверьте подключение'],
+      },
+      vectorStoreFill: {
+        en: 'Fill: {percent}%',
+        ru: 'Заполнено: {percent}%',
+        es: 'Llenado: {percent}%',
+        de: 'Gefüllt: {percent}%',
+        fr: 'Rempli: {percent}%',
+        match: ['Заполнено: {percent}%'],
+      },
+      vectorStoreDetails: {
+        en: 'MongoDB: {mongo} · Qdrant: {qdrant}',
+        ru: 'MongoDB: {mongo} · Qdrant: {qdrant}',
+        es: 'MongoDB: {mongo} · Qdrant: {qdrant}',
+        de: 'MongoDB: {mongo} · Qdrant: {qdrant}',
+        fr: 'MongoDB: {mongo} · Qdrant: {qdrant}',
+        match: ['MongoDB: {mongo} · Qdrant: {qdrant}'],
+      },
       logsCardTitle: {
         en: 'Logs (last 200)',
         ru: 'Логи (последние 200)',
@@ -355,6 +395,42 @@
         en: 'Bitrix24',
         ru: 'Bitrix24',
         match: ['Bitrix24'],
+      },
+      integrationBitrixWebhookHint: {
+        en: 'Webhook is used for model requests and is stored on the server.',
+        ru: 'Webhook используется для запросов модели и хранится на сервере.',
+      },
+      integrationBitrixActive: {
+        en: 'Integration is active. The model will be able to query Bitrix24.',
+        ru: 'Интеграция активна. Модель сможет запрашивать Bitrix24.',
+      },
+      integrationBitrixConfiguredButDisabled: {
+        en: 'Webhook saved, but integration is disabled. Enable the toggle to use Bitrix.',
+        ru: 'Webhook сохранён, но интеграция выключена. Включите переключатель, чтобы использовать Bitrix.',
+      },
+      integrationMailHintNotConfigured: {
+        en: 'Specify IMAP/SMTP parameters so the assistant can work with email.',
+        ru: 'Укажите параметры IMAP/SMTP, чтобы ассистент мог работать с почтой.',
+      },
+      integrationMailHintActive: {
+        en: 'Integration is active. The assistant can send and read emails.',
+        ru: 'Интеграция активна. Ассистент может отправлять и читать почту.',
+      },
+      integrationMailHintConfiguredButDisabled: {
+        en: 'Parameters saved, but integration is disabled. Enable the toggle to activate the mail connector.',
+        ru: 'Параметры сохранены, но интеграция выключена. Включите переключатель, чтобы активировать почтовый коннектор.',
+      },
+      integrationMailPassword: {
+        en: 'Password',
+        ru: 'Пароль',
+      },
+      integrationMailPasswordSaved: {
+        en: 'Password saved',
+        ru: 'Пароль сохранён',
+      },
+      knowledgeProcessingDefaultPrompt: {
+        en: 'You are the knowledge base processing service. Process documents sequentially, splitting each document into parts that fit into the model context. For each part, perform the required transformations and update the content piece by piece so that the resulting changes persist.',
+        ru: 'Ты — сервис интеллектуальной обработки базы знаний. Обрабатывай документы последовательно, разбивая каждый документ на части, которые помещаются в контекст модели. Для каждой части выполняй необходимые преобразования и обновляй содержимое по частям, чтобы итоговые изменения оставались согласованными.',
       },
       intelligentProcessingTitle: {
         en: 'Intelligent processing',
@@ -1069,6 +1145,42 @@
         en: 'Disabled',
         ru: 'выключен',
       },
+      llmPingDisabled: {
+        en: 'Disabled',
+        ru: 'Выключен',
+      },
+      llmPingReachable: {
+        en: 'Reachable',
+        ru: 'Доступен',
+      },
+      llmPingUnreachable: {
+        en: 'Unreachable',
+        ru: 'Недоступен',
+      },
+      llmPingFailed: {
+        en: 'Ping failed',
+        ru: 'Проверка не удалась',
+      },
+      llmSaved: {
+        en: 'Saved',
+        ru: 'Сохранено',
+      },
+      llmSaveFailed: {
+        en: 'Save failed',
+        ru: 'Не удалось сохранить',
+      },
+      logsCopied: {
+        en: 'Copied',
+        ru: 'Скопировано',
+      },
+      logsCopyFailed: {
+        en: 'Copy failed',
+        ru: 'Не удалось скопировать',
+      },
+      knowledgeDownloadFailed: {
+        en: 'Download failed',
+        ru: 'Не удалось скачать',
+      },
       ollamaServerDefaultTitle: {
         en: 'Default',
         ru: 'По умолчанию',
@@ -1357,10 +1469,12 @@
       crawlerFetchError: {
         en: 'Failed to fetch crawler data',
         ru: 'Не удалось получить данные о краулере',
+        match: ['Не удалось получить данные о краулере'],
       },
       crawlerStatusError: {
         en: 'Status error',
         ru: 'Ошибка статуса',
+        match: ['Ошибка статуса'],
       },
       crawlerErrorsShort: {
         en: 'Errors',
@@ -1401,6 +1515,7 @@
       crawlerStatusFetchFailed: {
         en: 'Failed to fetch crawler status',
         ru: 'Не удалось получить статус краулера',
+        match: ['Не удалось получить статус краулера'],
       },
       crawlerGenericError: {
         en: 'Error',
@@ -1909,6 +2024,34 @@
       statsRangeLastDays: {
         en: 'Last {days} days',
         ru: 'Последние {days} дней',
+      },
+      statsExportError: {
+        en: 'Export error',
+        ru: 'Ошибка экспорта',
+      },
+      statsNoData: {
+        en: 'No data',
+        ru: 'Нет данных',
+      },
+      statsLoading: {
+        en: 'Loading…',
+        ru: 'Загружаем…',
+      },
+      statsLoadingShort: {
+        en: 'Loading…',
+        ru: 'Загрузка…',
+      },
+      statsLoadError: {
+        en: 'Load error',
+        ru: 'Ошибка загрузки',
+      },
+      statsCsvPreparing: {
+        en: 'Preparing CSV…',
+        ru: 'Готовим CSV…',
+      },
+      statsCsvExported: {
+        en: 'CSV exported',
+        ru: 'CSV выгружен',
       },
       crawlerStatusWaiting: {
         en: 'Waiting to start',

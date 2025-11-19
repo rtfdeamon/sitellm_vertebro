@@ -18,16 +18,41 @@
     return;
   }
 
+  const formatTemplate = (template, params = {}) => {
+    if (typeof template !== 'string') return '';
+    return template.replace(/\{(\w+)\}/g, (_, token) => {
+      if (Object.prototype.hasOwnProperty.call(params, token)) {
+        const replacement = params[token];
+        return replacement === null || replacement === undefined ? '' : String(replacement);
+      }
+      return '';
+    });
+  };
+
+  const translate = (key, fallback = '', params = undefined) => {
+    if (typeof global.t === 'function') {
+      try {
+        return params ? global.t(key, params) : global.t(key);
+      } catch (error) {
+        console.warn('bitrix_translate_failed', error);
+      }
+    }
+    if (fallback) {
+      return formatTemplate(fallback, params);
+    }
+    return key;
+  };
+
   function refreshHint() {
     const hasWebhook = Boolean(webhookInput.value.trim());
     if (!hasWebhook) {
-      hintLabel.textContent = tl('Webhook используется для запросов модели и хранится на сервере.');
+      hintLabel.textContent = translate('integrationBitrixWebhookHint', 'Webhook is used for model requests and is stored on the server.');
       return;
     }
     if (enabledInput.checked) {
-      hintLabel.textContent = tl('Интеграция активна. Модель сможет запрашивать Bitrix24.');
+      hintLabel.textContent = translate('integrationBitrixActive', 'Integration is active. The model will be able to query Bitrix24.');
     } else {
-      hintLabel.textContent = tl('Webhook сохранён, но интеграция выключена. Включите переключатель, чтобы использовать Bitrix.');
+      hintLabel.textContent = translate('integrationBitrixConfiguredButDisabled', 'Webhook saved, but integration is disabled. Enable the toggle to use Bitrix.');
     }
   }
 

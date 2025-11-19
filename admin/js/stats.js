@@ -289,7 +289,7 @@
       statsGraphState.currentPoints = [];
       drawStatsGraph([]);
       if (statsSummary) {
-        const emptyText = tl('Нет данных');
+        const emptyText = translate('statsNoData', 'No data');
         statsSummary.dataset.summaryTotal = '';
         statsSummary.dataset.summaryAverage = '';
         statsSummary.dataset.summaryHasAverage = 'false';
@@ -325,7 +325,7 @@
               : `Total ${total} requests`,
             { total, average },
           )
-        : tl('Нет данных');
+        : translate('statsNoData', 'No data');
       statsSummary.dataset.summaryTotal = total ? String(total) : '';
       statsSummary.dataset.summaryAverage = hasAverage ? String(average) : '';
       statsSummary.dataset.summaryHasAverage = hasAverage ? 'true' : 'false';
@@ -351,8 +351,8 @@
   const loadRequestStats = async () => {
     if (!statsCanvas) return;
     const previousSummary = statsSummary ? (statsSummary.dataset.lastText || statsSummary.textContent) : '';
-    if (statsSummary) statsSummary.textContent = tl('Загружаем…');
-    if (statsEmpty) statsEmpty.textContent = tl('Загрузка…');
+    if (statsSummary) statsSummary.textContent = translate('statsLoading', 'Loading…');
+    if (statsEmpty) statsEmpty.textContent = translate('statsLoadingShort', 'Loading…');
     const params = new URLSearchParams();
     if (global.currentProject) params.set('project', global.currentProject);
     const end = new Date();
@@ -364,20 +364,20 @@
       const resp = await fetch(`/api/v1/admin/stats/requests?${params.toString()}`);
       if (!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      if (statsEmpty) statsEmpty.textContent = tl('Нет данных');
+      if (statsEmpty) statsEmpty.textContent = translate('statsNoData', 'No data');
       renderStatsChart(data.stats || [], { animate: true });
     } catch (error) {
       console.error(error);
       if (statsEmpty) {
-        statsEmpty.textContent = tl('Ошибка загрузки');
+        statsEmpty.textContent = translate('statsLoadError', 'Load error');
         statsEmpty.style.display = 'grid';
       }
       drawStatsGraph([]);
       if (statsSummary) {
-        statsSummary.textContent = tl('Ошибка загрузки');
+        statsSummary.textContent = translate('statsLoadError', 'Load error');
       }
       setTimeout(() => {
-        if (statsSummary && statsSummary.textContent === tl('Ошибка загрузки')) {
+        if (statsSummary && statsSummary.textContent === translate('statsLoadError', 'Load error')) {
           statsSummary.textContent = previousSummary || '—';
         }
       }, 3000);
@@ -395,7 +395,7 @@
     params.set('end', formatDateISO(end));
     const previousSummary = statsSummary ? (statsSummary.dataset.lastText || statsSummary.textContent) : '';
     try {
-      if (statsSummary) statsSummary.textContent = tl('Готовим CSV…');
+      if (statsSummary) statsSummary.textContent = translate('statsCsvPreparing', 'Preparing CSV…');
       const resp = await fetch(`/api/v1/admin/stats/requests/export?${params.toString()}`);
       if (!resp.ok) {
         const message = await resp.text();
@@ -413,9 +413,9 @@
         URL.revokeObjectURL(href);
       });
       if (statsSummary) {
-        statsSummary.textContent = tl('CSV выгружен');
+        statsSummary.textContent = translate('statsCsvExported', 'CSV exported');
         setTimeout(() => {
-          if (statsSummary.textContent === tl('CSV выгружен')) {
+          if (statsSummary.textContent === translate('statsCsvExported', 'CSV exported')) {
             statsSummary.textContent = previousSummary || '—';
           }
         }, 2600);
@@ -423,9 +423,9 @@
     } catch (error) {
       console.error(error);
       if (statsSummary) {
-        statsSummary.textContent = `Ошибка экспорта: ${error.message || error}`;
+        statsSummary.textContent = `${translate('statsExportError', 'Export error')}: ${error.message || error}`;
         setTimeout(() => {
-          if (statsSummary.textContent?.startsWith(tl('Ошибка экспорта'))) {
+          if (statsSummary.textContent?.startsWith(translate('statsExportError', 'Export error'))) {
             statsSummary.textContent = previousSummary || '—';
           }
         }, 3600);

@@ -247,7 +247,7 @@
       clear('done');
       clear('failed');
       const lastCrawl = document.getElementById('last_crawl');
-      if (lastCrawl) lastCrawl.textContent = 'Last: –';
+      if (lastCrawl) lastCrawl.textContent = translate('crawlerLast', 'Last: {value}', { value: '–' });
       const recent = document.getElementById('recent_urls');
       if (recent) recent.innerHTML = '';
         if (typeof global.setSummaryCrawler === 'function') {
@@ -269,10 +269,10 @@
           const el = document.getElementById(id);
           if (el) el.textContent = value;
         };
-        setVal('queued', data.queued ?? 0);
-        setVal('in_progress', data.in_progress ?? 0);
-        setVal('done', data.done ?? 0);
-        setVal('failed', data.failed ?? 0);
+        setVal('queued', data.crawler?.queued ?? data.queued ?? 0);
+        setVal('in_progress', data.crawler?.in_progress ?? data.in_progress ?? 0);
+        setVal('done', data.crawler?.done ?? data.done ?? 0);
+        setVal('failed', data.crawler?.failed ?? data.failed ?? 0);
         const noteCodes = Array.isArray(data.note_codes) ? data.note_codes : [];
         const resolvedNotes = noteCodes
           .map((code) => {
@@ -307,10 +307,10 @@
             list.appendChild(li);
           });
         }
-        const active = Number(data.in_progress ?? 0);
-        const queued = Number(data.queued ?? 0);
-        const done = Number(data.done ?? 0);
-        const failed = Number(data.failed ?? 0);
+        const active = Number(data.crawler?.in_progress ?? data.in_progress ?? 0);
+        const queued = Number(data.crawler?.queued ?? data.queued ?? 0);
+        const done = Number(data.crawler?.done ?? data.done ?? 0);
+        const failed = Number(data.crawler?.failed ?? data.failed ?? 0);
         const statusNoteRaw = typeof data.notes === 'string' ? data.notes.trim() : '';
         const extraNote = typeof data.note_extra === 'string' ? data.note_extra.trim() : '';
         const legacyNote = (crawlerData && typeof crawlerData.notes === 'string' ? crawlerData.notes.trim() : '') || '';
@@ -348,6 +348,80 @@
             },
           }
         );
+
+        // Update LLM МЫСЛИ block
+        if (typeof global.setSummaryPrompt === 'function') {
+          const llmAvailable = data.llm_available;
+          if (llmAvailable) {
+            const dbDocs = data.db?.mongo_docs || 0;
+            const promptText = translate('llmAvailableStatus', 'LLM available · {docs} docs', { docs: dbDocs });
+            global.setSummaryPrompt(promptText, null, null);
+          } else {
+            global.setSummaryPrompt(
+              translate('llmUnavailableStatus', 'LLM unavailable'),
+              null,
+              translate('llmCheckConnection', 'Check connection')
+            );
+          }
+        }
+
+        // Update СБОРКА (Build) block - show vector store status
+        if (typeof global.setSummaryBuild === 'function') {
+          const fillPercent = data.fill_percent || data.db?.fill_percent || 0;
+          const mongoDocs = data.db?.mongo_docs || 0;
+          const qdrantPoints = data.db?.qdrant_points || 0;
+          const buildText = translate('vectorStoreFill', 'Fill: {percent}%', { percent: fillPercent.toFixed(1) });
+          const buildMeta = translate('vectorStoreDetails', 'MongoDB: {mongo} · Qdrant: {qdrant}', {
+            mongo: mongoDocs,
+            qdrant: qdrantPoints
+          });
+          global.setSummaryBuild(buildText, buildMeta);
+        }
+
+        // Update РЕСУРСЫ (Resources) block
+        const res = data.resources;
+        if (res) {
+          // CPU (app)
+          const cpuApp = res.cpu_app != null ? `${res.cpu_app.toFixed(1)}%` : '–';
+          setVal('cpu', cpuApp);
+
+          // CPU (sys)
+          const cpuSys = res.cpu_sys != null ? `${res.cpu_sys.toFixed(1)}%` : '–';
+          setVal('cpuSys', cpuSys);
+
+          // RAM
+          if (res.ram_used != null && res.ram_total != null) {
+            const ramUsedMB = (res.ram_used / (1024 * 1024)).toFixed(0);
+            const ramTotalMB = (res.ram_total / (1024 * 1024)).toFixed(0);
+            const ramPercent = res.ram_percent != null ? res.ram_percent.toFixed(1) : '–';
+            setVal('ram', `${ramUsedMB}/${ramTotalMB} MB (${ramPercent}%)`);
+          } else {
+            setVal('ram', '–');
+          }
+
+          // RSS
+          if (res.rss_used != null) {
+            const rssMB = (res.rss_used / (1024 * 1024)).toFixed(0);
+            setVal('rss', `${rssMB} MB`);
+          } else {
+            setVal('rss', '–');
+          }
+
+          // GPU
+          if (res.gpu_info) {
+            setVal('gpu', res.gpu_info);
+          } else {
+            setVal('gpu', '—');
+          }
+
+          // Python version
+          if (res.python_version) {
+            setVal('pyver', res.python_version);
+          } else {
+            setVal('pyver', '—');
+          }
+        }
+
         if (crawlerLogsPanel?.classList.contains('visible')) {
           refreshCrawlerLogs();
         }
@@ -435,12 +509,14 @@
     try {
       const resp = await fetch('/api/v1/crawler/stop', { method: 'POST', credentials: 'same-origin' });
       if (!resp.ok) throw new Error(await resp.text());
-      setCrawlerProgressError(translate('crawlerStoppedByRequest', 'Stopped on request'));
       launchMsg.textContent = translate('crawlerStopping', 'Stopping…');
+      launchMsg.style.color = '';
+      await pollStatus();
     } catch (error) {
       console.error('crawler_stop_failed', error);
       setCrawlerProgressError(translate('crawlerStopFailed', 'Failed to stop crawler'));
       launchMsg.textContent = translate('crawlerStopError', 'Failed to stop');
+      launchMsg.style.color = 'var(--danger)';
     } finally {
       stopBtn.disabled = false;
     }

@@ -213,9 +213,8 @@
 
 .file-control input[type="file"] {
   position: absolute;
-  inset: 0;
+  left: -9999px;
   opacity: 0;
-  pointer-events: none;
   width: 0;
   height: 0;
 }

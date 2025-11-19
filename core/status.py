@@ -9,6 +9,7 @@ responsive.
 
 from __future__ import annotations
 import os
+import platform
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime
@@ -24,6 +25,9 @@ REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 MONGO_DB = os.getenv("MONGO_DB") or os.getenv("MONGO_DATABASE", "app")
 TARGET_DOCS = int(os.getenv("TARGET_DOCS", "1000"))
+
+# Global for CPU tracking
+_PROCESS_CPU_SAMPLE: dict | None = None
 
 def _redis_key(name: str, project: str | None = None) -> str:
     if project:
@@ -54,12 +58,26 @@ class DbStats:
 
 
 @dataclass
+class ResourceStats:
+    """System resource metrics."""
+    cpu_app: Optional[float] = None
+    cpu_sys: Optional[float] = None
+    ram_used: Optional[int] = None
+    ram_total: Optional[int] = None
+    ram_percent: Optional[float] = None
+    rss_used: Optional[int] = None
+    gpu_info: Optional[str] = None
+    python_version: Optional[str] = None
+
+
+@dataclass
 class Status:
     """Top-level structure returned by :func:`get_status`."""
     ok: bool
     ts: float
     crawler: CrawlerStats
     db: DbStats
+    resources: Optional[ResourceStats] = None
     last_crawl_ts: Optional[float] = None
     last_crawl_iso: Optional[str] = None
     notes: str = ""
@@ -72,6 +90,166 @@ def _safe_int(x) -> int:
         return int(x or 0)
     except Exception:
         return 0
+
+
+def _compute_process_cpu_fallback() -> float | None:
+    """Return process CPU percent without relying on psutil."""
+    global _PROCESS_CPU_SAMPLE
+
+    try:
+        import resource
+    except Exception:
+        return None
+
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    total = float(usage.ru_utime + usage.ru_stime)
+    now = time.time()
+
+    previous = _PROCESS_CPU_SAMPLE
+    _PROCESS_CPU_SAMPLE = {"timestamp": now, "total": total}
+
+    if not previous:
+        return None
+
+    elapsed = now - previous.get("timestamp", 0.0)
+    if elapsed <= 0:
+        return None
+
+    cpu_delta = total - previous.get("total", 0.0)
+    if cpu_delta < 0:
+        return None
+
+    return (cpu_delta / elapsed) * 100.0
+
+
+def _compute_system_cpu_fallback() -> float | None:
+    """Approximate system-wide CPU percent via load average."""
+    try:
+        load_avg = os.getloadavg()[0]
+        cpu_count = max(1, os.cpu_count() or 1)
+        percent = (load_avg / cpu_count) * 100.0
+        return max(0.0, min(percent, 100.0))
+    except Exception:
+        return None
+
+
+def _compute_system_memory_fallback() -> tuple[int | None, int | None, float | None]:
+    """Return total/used memory using sysconf or /proc reads."""
+    try:
+        page_size = int(os.sysconf("SC_PAGE_SIZE"))
+        phys_pages = int(os.sysconf("SC_PHYS_PAGES"))
+        avail_pages = int(os.sysconf("SC_AVPHYS_PAGES"))
+        total_bytes = page_size * phys_pages if phys_pages > 0 else None
+        used_bytes = None
+        percent = None
+        if total_bytes is not None and avail_pages >= 0:
+            available_bytes = page_size * avail_pages
+            used_bytes = total_bytes - available_bytes
+            if total_bytes:
+                percent = (used_bytes / total_bytes) * 100.0
+        return total_bytes, used_bytes, percent
+    except Exception:
+        pass
+
+    try:
+        meminfo: dict[str, int] = {}
+        with open("/proc/meminfo", "r", encoding="utf-8", errors="ignore") as handle:
+            for line in handle:
+                if ":" not in line:
+                    continue
+                key, raw_value = line.split(":", 1)
+                tokens = raw_value.strip().split()
+                number = None
+                for token in tokens:
+                    try:
+                        number = float(token)
+                        break
+                    except ValueError:
+                        continue
+                if number is None:
+                    continue
+                scale = 1
+                for token in tokens[1:]:
+                    upper = token.upper()
+                    if upper.startswith("KB"):
+                        scale = 1024
+                        break
+                    if upper.startswith("MB"):
+                        scale = 1024 * 1024
+                        break
+                    if upper.startswith("GB"):
+                        scale = 1024 * 1024 * 1024
+                        break
+                meminfo[key.strip()] = int(number * scale)
+        total = meminfo.get("MemTotal")
+        available = meminfo.get("MemAvailable")
+        if total is None:
+            return None, None, None
+        used = total - available if available is not None else None
+        percent = (used / total) * 100.0 if used is not None else None
+        return total, used, percent
+    except Exception:
+        return None, None, None
+
+
+def _compute_process_rss_fallback() -> int | None:
+    """Return RSS memory bytes using /proc or resource module."""
+    try:
+        with open("/proc/self/statm", "r", encoding="utf-8", errors="ignore") as handle:
+            parts = handle.read().split()
+        if len(parts) >= 2:
+            rss_pages = int(parts[1])
+            page_size = int(os.sysconf("SC_PAGE_SIZE"))
+            return rss_pages * page_size
+    except Exception:
+        pass
+
+    try:
+        import resource
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        rss_kb = getattr(usage, "ru_maxrss", 0)
+        if rss_kb:
+            system_name = platform.system()
+            if system_name == "Darwin":
+                return int(rss_kb)
+            return int(rss_kb) * 1024
+    except Exception:
+        pass
+
+    return None
+
+
+def _collect_gpu_info() -> str | None:
+    """Collect GPU information as a formatted string."""
+    try:
+        import pynvml
+        pynvml.nvmlInit()
+        try:
+            count = pynvml.nvmlDeviceGetCount()
+            if count == 0:
+                return None
+            gpu_parts = []
+            for index in range(count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(index)
+                name = pynvml.nvmlDeviceGetName(handle)
+                try:
+                    decoded = name.decode("utf-8")
+                except AttributeError:
+                    decoded = str(name)
+                util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                memory = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                util_percent = float(getattr(util, "gpu", 0.0))
+                mem_used_gb = int(getattr(memory, "used", 0)) / (1024**3)
+                mem_total_gb = int(getattr(memory, "total", 0)) / (1024**3)
+                gpu_parts.append(f"{decoded}: {util_percent:.0f}% · {mem_used_gb:.1f}/{mem_total_gb:.1f} GB")
+            return "\n".join(gpu_parts) if gpu_parts else None
+        finally:
+            try:
+                pynvml.nvmlShutdown()
+            except Exception:
+                pass
+    except Exception:
+        return None
 
 
 def get_status(domain: str | None = None) -> Status:
@@ -197,6 +375,25 @@ def get_status(domain: str | None = None) -> Status:
         note_codes.append("llm_queue_paused")
     notes_text = " ".join(part for part in notes_parts if part)
 
+    # Collect resource metrics
+    cpu_app = _compute_process_cpu_fallback()
+    cpu_sys = _compute_system_cpu_fallback()
+    ram_total, ram_used, ram_percent = _compute_system_memory_fallback()
+    rss_used = _compute_process_rss_fallback()
+    gpu_info = _collect_gpu_info()
+    python_version = platform.python_version()
+
+    resources = ResourceStats(
+        cpu_app=cpu_app,
+        cpu_sys=cpu_sys,
+        ram_used=ram_used,
+        ram_total=ram_total,
+        ram_percent=ram_percent,
+        rss_used=rss_used,
+        gpu_info=gpu_info,
+        python_version=python_version,
+    )
+
     return Status(
         ok=ok,
         ts=time.time(),
@@ -211,6 +408,7 @@ def get_status(domain: str | None = None) -> Status:
             remaining=remaining,
         ),
         db=DbStats(mongo_docs, points, target, fill_percent),
+        resources=resources,
         last_crawl_ts=last_crawl_ts,
         last_crawl_iso=last_crawl_iso,
         notes=notes_text,
