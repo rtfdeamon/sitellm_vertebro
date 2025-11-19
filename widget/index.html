@@ -140,11 +140,11 @@
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--muted); }
     .dot.ok { background: var(--ok); }
     .dot.bad { background: var(--error); }
-    #messages { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; height: 360px; overflow-y: auto; margin-bottom: 12px; }
+    #messages { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; min-height: 360px; overflow-y: auto; margin-bottom: 12px; }
     .msg { margin: 8px 0; line-height: 1.55; }
     .msg .role { font-size: 12px; color: var(--muted); margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
     .msg .time { opacity: 0.85; font-variant-numeric: tabular-nums; }
-    .msg.user { color: #9cc9ff; }
+    .msg.user { color: #ffffff; }
     .msg.assistant { color: #b8e994; }
     .msg.debug { color: #facc15; }
     .msg .msg-body { white-space: pre-wrap; }
@@ -161,7 +161,7 @@
     .msg-sources a::before { content: '\1F517'; font-size: 12px; }
     .msg-sources a:hover { text-decoration: underline; }
     form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: start; }
-    textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; resize: vertical; }
+    textarea { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 8px; min-height: 56px; max-height: 800px; resize: vertical; overflow-y: auto; }
     .btn { background: var(--accent); border: none; color: white; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
     .btn.secondary { background: var(--panel); border: 1px solid var(--border); color: var(--text); }
     .download-section {
@@ -475,6 +475,10 @@
     .section-header { display: grid; gap: 12px; margin-bottom: 24px; }
     .section-title { margin: 0; font-size: 28px; letter-spacing: -0.01em; color: var(--text); }
     .section-lead { margin: 0; color: var(--muted); font-size: 16px; max-width: 680px; }
+    details.collapsible-section summary { cursor: pointer; list-style: none; position: relative; }
+    details.collapsible-section summary::-webkit-details-marker { display: none; }
+    details.collapsible-section .collapse-arrow { color: #4f7cff; font-size: 22px; display: inline-block; transition: transform 0.3s ease; margin-left: 12px; vertical-align: middle; }
+    details.collapsible-section[open] .collapse-arrow { transform: rotate(-180deg); }
     .embed-section, .voice-section {
       border: 1px solid var(--border);
       border-radius: 24px;
@@ -729,11 +733,81 @@
       </div>
     </section>
 
+    <section class="preview-section" id="livePreview">
+      <details class="collapsible-section" open>
+        <summary class="section-header">
+          <h2 class="section-title"><span>Live chat preview</span> <span class="collapse-arrow">▼</span></h2>
+          <p class="section-lead">Test the chat widget with your own configuration.</p>
+        </summary>
+        <div class="chat-window" style="max-width: 100%; margin: 0 auto; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+          <div class="chat-header">
+            <div>
+              <div class="chat-title" data-i18n="chatTitle">AI Assistant</div>
+              <div class="chat-subtitle" data-i18n="chatSubtitle">Ready to help with your questions</div>
+            </div>
+          </div>
+          <div class="chat-body">
+            <div class="container">
+              <div class="toolbar">
+                <strong data-i18n="toolbarTitle">LLM Chat Widget</strong>
+                <span class="spacer"></span>
+                <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" data-i18n-placeholder="basePlaceholder" />
+                <button id="saveCfg" class="btn secondary" data-i18n="saveButton">Save</button>
+                <button id="themeToggle" class="btn secondary" title="Toggle theme" data-i18n="themeButton">Theme</button>
+                <select id="languageSelect" aria-label="Language" data-i18n-aria-label="languageLabel"></select>
+                <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText" data-status-key="unknown">unknown</span></span>
+              </div>
+
+              <div id="banner" style="display:none; border:1px solid var(--error); color:#fff; background:#3a1f1f; padding:8px 10px; border-radius:6px; margin:10px 0;" data-active="false">
+                <span id="bannerText" data-i18n="bannerConnectionError">Connection error</span>
+                <button id="bannerClose" class="btn secondary" style="float:right;" data-i18n="bannerDismiss">Dismiss</button>
+              </div>
+
+              <div class="project-panel">
+                <div>
+                  <label for="projectSelect" data-i18n="projectLabel">Project</label>
+                  <div class="row">
+                    <select id="projectSelect" class="grow"></select>
+                    <button id="refreshProjects" class="btn secondary" type="button" data-i18n="reloadProjects">Reload</button>
+                  </div>
+                  <div class="muted" id="projectInfo">No project selected</div>
+                </div>
+                <div class="row" style="align-items:center;">
+                  <label class="checkbox">
+                    <input type="checkbox" id="projectDebug">
+                    <span data-i18n="debugLabel">Debug</span>
+                  </label>
+                  <span class="muted" id="projectDebugHint">Show extended events in chat</span>
+                </div>
+                <div>
+                  <label for="startPrompt" data-i18n="startPromptLabel">Initial prompt</label>
+                  <textarea id="startPrompt" placeholder="Project initial prompt" data-i18n-placeholder="startPromptPlaceholder"></textarea>
+                  <div class="actions">
+                    <button id="savePrompt" class="btn secondary" type="button" data-i18n="savePrompt">Save prompt</button>
+                    <span id="promptStatus" class="muted"></span>
+                  </div>
+                </div>
+              </div>
+
+              <div id="messages"></div>
+              <form id="chat-form">
+                <textarea id="question" placeholder="Ask a question (Shift+Enter = newline)" autocomplete="off" data-i18n-placeholder="questionPlaceholder"></textarea>
+                <button type="button" id="stop" class="btn secondary" disabled data-i18n="stopButton">Stop</button>
+                <button type="submit" id="sendBtn" class="btn" data-i18n="sendButton">Send</button>
+                <div class="muted" id="inputHint"><span id="hintSend">Enter to send</span><span>&nbsp;•&nbsp;</span><span id="hintNewline">Shift+Enter for newline</span><span>&nbsp;•&nbsp;</span><a href="#" id="clear">Clear</a></div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
     <section class="embed-section" id="embedShowcase">
-      <div class="section-header">
-        <h2 class="section-title" data-i18n="embedSectionTitle">Chat widget embed options</h2>
-        <p class="section-lead" data-i18n="embedSectionSubtitle">Choose the presentation style and copy a ready-to-paste snippet for your site.</p>
-      </div>
+      <details class="collapsible-section">
+        <summary class="section-header">
+          <h2 class="section-title"><span data-i18n="embedSectionTitle">Chat widget embed options</span> <span class="collapse-arrow">▼</span></h2>
+          <p class="section-lead" data-i18n="embedSectionSubtitle">Choose the presentation style and copy a ready-to-paste snippet for your site.</p>
+        </summary>
       <div class="embed-tabs" role="tablist">
         <button type="button" class="embed-tab active" data-embed-tab="floating" data-i18n="embedTabFloating">Floating bubble</button>
         <button type="button" class="embed-tab" data-embed-tab="inline" data-i18n="embedTabInline">Inline card</button>
@@ -769,13 +843,15 @@
         <button type="button" class="copy-btn" id="embedCopy" data-i18n="embedCopy">Copy snippet</button>
         <pre><code id="embedCode"></code></pre>
       </div>
+      </details>
     </section>
 
     <section class="voice-section" id="voiceSection">
-      <div class="section-header">
-        <h2 class="section-title" data-i18n="avatarSectionTitle">Voice-enabled avatar</h2>
-        <p class="section-lead" data-i18n="avatarSectionSubtitle">Let visitors speak with an animated assistant that streams and reads answers aloud.</p>
-      </div>
+      <details class="collapsible-section">
+        <summary class="section-header">
+          <h2 class="section-title"><span data-i18n="avatarSectionTitle">Voice-enabled avatar</span> <span class="collapse-arrow">▼</span></h2>
+          <p class="section-lead" data-i18n="avatarSectionSubtitle">Let visitors speak with an animated assistant that streams and reads answers aloud.</p>
+        </summary>
       <div class="voice-layout">
         <div class="voice-controls">
           <div class="voice-mode-select">
@@ -856,15 +932,19 @@
           <div class="voice-preview-placeholder" data-i18n="avatarPreviewSelect">Select a project to preview the voice assistant.</div>
         </div>
       </div>
+      </details>
     </section>
 
     <section class="download-section" id="desktopDownloads">
-      <h2>Desktop assistant for Windows &amp; Linux</h2>
-      <p>
-        Launch the voice avatar as a standalone program that stays on top of other windows, supports the same animated
-        characters, and listens for a wake word. Build installers from <code>widget/desktop</code> or place your signed
-        binaries in the paths below and the links will serve them directly.
-      </p>
+      <details class="collapsible-section">
+        <summary class="section-header">
+          <h2>Desktop assistant for Windows &amp; Linux <span class="collapse-arrow">▼</span></h2>
+          <p>
+            Launch the voice avatar as a standalone program that stays on top of other windows, supports the same animated
+            characters, and listens for a wake word. Build installers from <code>widget/desktop</code> or place your signed
+            binaries in the paths below and the links will serve them directly.
+          </p>
+        </summary>
       <div class="download-grid">
         <article class="download-card">
           <h3>Windows (x64)</h3>
@@ -892,42 +972,7 @@
           Click a button to build the latest installer for your platform.
         </div>
       </div>
-    </section>
-
-    <section class="download-section" id="desktopDownloads">
-      <h2>Desktop assistant for Windows &amp; Linux</h2>
-      <p>
-        Launch the voice avatar as a standalone program that stays on top of other windows, supports the same animated
-        characters, and listens for a wake word. Build installers from <code>widget/desktop</code> or place your signed
-        binaries in the paths below and the links will serve them directly.
-      </p>
-      <div class="download-grid">
-        <article class="download-card">
-          <h3>Windows (x64)</h3>
-          <p>Includes hotword activation, animated avatar, and auto-start options.</p>
-          <button type="button" class="btn" data-build-platform="windows">
-            Build &amp; download .exe
-          </button>
-        </article>
-        <article class="download-card">
-          <h3>Linux (AppImage / deb)</h3>
-          <p>Runs on any modern distribution, stays always-on-top, supports microphone wake word.</p>
-          <div class="download-links">
-            <button type="button" class="btn" data-build-platform="linux-appimage">
-              Build AppImage
-            </button>
-            <button type="button" class="btn secondary" data-build-platform="linux-deb">
-              Build deb package
-            </button>
-          </div>
-        </article>
-      </div>
-      <div class="download-note">
-        Builds run on demand when you click a button. Ensure <code>npm</code> and <code>electron-builder</code> are available on the server.
-        <div class="download-status" id="desktopBuildStatus" role="status" aria-live="polite">
-          Click a button to build the latest installer for your platform.
-        </div>
-      </div>
+      </details>
     </section>
   </div>
   <div class="widget-launcher" id="widgetLauncher" aria-label="Open chat" data-i18n-aria-label="launcherAria">
@@ -936,69 +981,6 @@
       <strong data-i18n="launcherTitle">AI Assistant</strong>
       <span data-i18n="launcherSubtitle">Ask me anything</span>
     </div>
-  </div>
-  <div class="chat-backdrop" id="chatBackdrop"></div>
-  <div class="chat-modal" id="chatModal" data-demo-title="Live chat preview">
-    <div class="chat-window">
-      <div class="chat-header">
-        <div>
-          <div class="chat-title" data-i18n="chatTitle">AI Assistant</div>
-          <div class="chat-subtitle" data-i18n="chatSubtitle">Ready to help with your questions</div>
-        </div>
-        <button class="chat-close" id="chatClose" aria-label="Close" data-i18n-aria-label="chatClose">×</button>
-      </div>
-      <div class="chat-body">
-        <div class="container">
-          <div class="toolbar">
-            <strong data-i18n="toolbarTitle">LLM Chat Widget</strong>
-            <span class="spacer"></span>
-            <input type="text" id="baseUrl" placeholder="API base (optional), e.g. http://host:18000" data-i18n-placeholder="basePlaceholder" />
-            <button id="saveCfg" class="btn secondary" data-i18n="saveButton">Save</button>
-            <button id="themeToggle" class="btn secondary" title="Toggle theme" data-i18n="themeButton">Theme</button>
-            <select id="languageSelect" aria-label="Language" data-i18n-aria-label="languageLabel"></select>
-            <span id="health" class="status"><span class="dot" id="healthDot"></span><span id="healthText" data-status-key="unknown">unknown</span></span>
-          </div>
-
-          <div id="banner" style="display:none; border:1px solid var(--error); color:#fff; background:#3a1f1f; padding:8px 10px; border-radius:6px; margin:10px 0;" data-active="false">
-            <span id="bannerText" data-i18n="bannerConnectionError">Connection error</span>
-            <button id="bannerClose" class="btn secondary" style="float:right;" data-i18n="bannerDismiss">Dismiss</button>
-          </div>
-
-          <div class="project-panel">
-            <div>
-              <label for="projectSelect" data-i18n="projectLabel">Project</label>
-              <div class="row">
-                <select id="projectSelect" class="grow"></select>
-                <button id="refreshProjects" class="btn secondary" type="button" data-i18n="reloadProjects">Reload</button>
-              </div>
-              <div class="muted" id="projectInfo">No project selected</div>
-            </div>
-            <div class="row" style="align-items:center;">
-              <label class="checkbox">
-                <input type="checkbox" id="projectDebug">
-                <span data-i18n="debugLabel">Debug</span>
-              </label>
-              <span class="muted" id="projectDebugHint">Show extended events in chat</span>
-            </div>
-            <div>
-              <label for="startPrompt" data-i18n="startPromptLabel">Initial prompt</label>
-              <textarea id="startPrompt" placeholder="Project initial prompt" data-i18n-placeholder="startPromptPlaceholder"></textarea>
-              <div class="actions">
-                <button id="savePrompt" class="btn secondary" type="button" data-i18n="savePrompt">Save prompt</button>
-                <span id="promptStatus" class="muted"></span>
-              </div>
-            </div>
-          </div>
-
-          <div id="messages"></div>
-          <form id="chat-form">
-            <textarea id="question" placeholder="Ask a question (Shift+Enter = newline)" autocomplete="off" data-i18n-placeholder="questionPlaceholder"></textarea>
-            <button type="button" id="stop" class="btn secondary" disabled data-i18n="stopButton">Stop</button>
-            <button type="submit" id="sendBtn" class="btn" data-i18n="sendButton">Send</button>
-            <div class="muted" id="inputHint"><span id="hintSend">Enter to send</span><span>&nbsp;•&nbsp;</span><span id="hintNewline">Shift+Enter for newline</span><span>&nbsp;•&nbsp;</span><a href="#" id="clear">Clear</a></div>
-          </form>
-        </div>
-      </div>
   </div>
   <a href="https://dev-bot.su" class="developer-credit" target="_blank" rel="noopener" data-i18n="developerCredit">Created by дев-бот-су</a>
   <button type="button" class="feedback-trigger" id="feedbackTrigger" data-i18n="feedbackButton">Feedback</button>
@@ -3366,15 +3348,15 @@ if (isEmbed) {
 }
 
 function openChat() {
-  chatModal.classList.add('open');
-  chatBackdrop.classList.add('open');
+  if (chatModal) chatModal.classList.add('open');
+  if (chatBackdrop) chatBackdrop.classList.add('open');
   setTimeout(() => { input?.focus(); }, 150);
 }
 
 function closeChat() {
   if (!document.body.classList.contains('embed')) return;
-  chatModal.classList.remove('open');
-  chatBackdrop.classList.remove('open');
+  if (chatModal) chatModal.classList.remove('open');
+  if (chatBackdrop) chatBackdrop.classList.remove('open');
 }
 
 if (widgetLauncher) widgetLauncher.addEventListener('click', openChat);

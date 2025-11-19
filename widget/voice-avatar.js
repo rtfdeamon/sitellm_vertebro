@@ -480,7 +480,9 @@
       position: relative;
       width: min(360px, 100%);
       max-height: 520px;
-      overflow: hidden;
+      overflow-y: auto;
+      overflow-x: hidden;
+      scroll-behavior: smooth;
       margin: 24px auto;
       font-family: "Inter", system-ui, -apple-system, Segoe UI, sans-serif;
       border-radius: 24px;
@@ -489,7 +491,6 @@
       background: linear-gradient(140deg, rgba(${accent}, 0.08), rgba(${accent}, 0.02));
       border: 1px solid rgba(${accent}, 0.25);
       box-shadow: 0 24px 64px rgba(15, 23, 42, 0.25);
-      overflow: hidden;
     }
     .sitellm-voice-widget.mode-text .sitellm-voice-visual,
     .sitellm-voice-widget.mode-text .sitellm-voice-mic {
@@ -624,17 +625,17 @@
     .sitellm-voice-status {
       font-size: 13px;
       line-height: 1.5;
-      color: rgba(15, 23, 42, 0.68);
       min-height: 40px;
     }
     .sitellm-voice-status .user,
     .sitellm-voice-status .bot {
+      color: wheat !important;
       display: block;
       margin-bottom: 6px;
       padding-left: 6px;
     }
     .sitellm-voice-status .bot {
-      color: rgba(${accent}, 1);
+      color: rgba(${accent}, 1) !important;
     }
     .sitellm-voice-actions {
       display: flex;
@@ -698,12 +699,14 @@
     .sitellm-voice-input textarea {
       width: 100%;
       min-height: 64px;
+      max-height: 800px;
       border-radius: 14px;
       border: 1px solid rgba(${accent}, 0.24);
       padding: 12px;
       font-family: inherit;
       font-size: 14px;
       resize: vertical;
+      overflow-y: auto;
     }
     .sitellm-voice-input button {
       margin-top: 8px;
@@ -1842,6 +1845,27 @@
     const manualTextarea = manualInput.querySelector('textarea');
     const manualButton = manualInput.querySelector('button');
 
+    // Auto-resize textarea and scroll button into view
+    if (manualTextarea) {
+      manualTextarea.addEventListener('input', () => {
+        manualTextarea.style.height = 'auto';
+        const newHeight = Math.min(manualTextarea.scrollHeight, 800);
+        manualTextarea.style.height = newHeight + 'px';
+
+        // Always ensure button is visible after resize
+        requestAnimationFrame(() => {
+          if (manualButton) {
+            // Use scrollIntoView with block: 'nearest' to ensure button stays in view
+            manualButton.scrollIntoView({
+              behavior: 'smooth',
+              block: 'nearest',
+              inline: 'nearest'
+            });
+          }
+        });
+      });
+    }
+
     const session = sessionKey(project);
     const channel = modeSupportsVoice ? 'voice-avatar' : 'widget';
 
@@ -2630,6 +2654,7 @@
     }
 
     function updateMicButton() {
+      if (!micButton) return;
       if (!modeSupportsVoice) {
         micButton.style.display = 'none';
         micButton.disabled = true;
@@ -2824,6 +2849,14 @@
 
     function resumeAfterResponse() {
       renewIdleTimer();
+      // Resume recognition if it was paused during speech
+      if (voiceArmed && recognitionPausedBySpeech) {
+        setTimeout(() => {
+          if (voiceArmed && recognitionPausedBySpeech && activeSpeechCount === 0 && !awaitingResponse) {
+            resumeRecognitionIfPaused(300);
+          }
+        }, 500);
+      }
     }
 
     function resetSpeechStream() {
@@ -2891,6 +2924,7 @@
     }
 
     function setError(message) {
+      if (!errorBox) return;
       if (!message) {
         errorBox.textContent = '';
         errorBox.classList.remove('show');
@@ -3107,10 +3141,10 @@
     const normalizedBase = baseUrl.replace(/\/$/, '');
     if (project) {
       if (modeSupportsVoice) {
-        micButton.disabled = true;
+        if (micButton) micButton.disabled = true;
       }
       if (modeSupportsVoice) {
-        manualButton.disabled = true;
+        if (manualButton) manualButton.disabled = true;
         if (manualTextarea) manualTextarea.disabled = true;
       }
       fetchProjectConfig(normalizedBase, project)
@@ -3120,31 +3154,33 @@
             voiceSettings.model = cfg.model;
           }
           if (modeSupportsVoice && !voiceSettings.enabled) {
-            micButton.disabled = true;
+            if (micButton) {
+              micButton.disabled = true;
+              micButton.textContent = '🔇';
+            }
             deactivateVoice(disabledMessage);
-            micButton.textContent = '🔇';
             status.innerHTML = '';
             appendMessage('bot', disabledMessage);
             setError(disabledMessage);
-            manualButton.disabled = true;
+            if (manualButton) manualButton.disabled = true;
             if (manualTextarea) manualTextarea.disabled = true;
             manualInput.style.display = 'block';
             return;
           }
-          micButton.disabled = false;
+          if (micButton) micButton.disabled = false;
           voiceArmed = false;
           updateMicButton();
-          manualButton.disabled = false;
+          if (manualButton) manualButton.disabled = false;
           if (manualTextarea) manualTextarea.disabled = false;
           announceModel(voiceSettings.model);
         })
         .catch((error) => {
           console.error('[SiteLLM voice-avatar]', error);
           setError('Unable to load voice settings.');
-          micButton.disabled = false;
+          if (micButton) micButton.disabled = false;
           voiceArmed = false;
           updateMicButton();
-          manualButton.disabled = false;
+          if (manualButton) manualButton.disabled = false;
           if (manualTextarea) manualTextarea.disabled = false;
           announceModel(voiceSettings.model);
         });
@@ -3244,15 +3280,29 @@
         resumeAfterResponse();
       });
       currentSource.addEventListener('llm_error', () => {
+        if (currentSource) {
+          currentSource.close();
+          currentSource = null;
+        }
+        buffer = '';
+        spokenChars = 0;
         setError('Assistant failed to answer.');
-        maybeSpeak(true);
+        transcript.textContent = 'Error: Assistant failed to answer.';
+        appendMessage('bot', '❌ Assistant failed to answer.');
         awaitingResponse = false;
         lastFinalUtterance = '';
         resumeAfterResponse();
       });
       currentSource.onerror = () => {
+        if (currentSource) {
+          currentSource.close();
+          currentSource = null;
+        }
+        buffer = '';
+        spokenChars = 0;
         setError('Connection interrupted.');
-        maybeSpeak(true);
+        transcript.textContent = 'Error: Connection interrupted.';
+        appendMessage('bot', '❌ Connection interrupted.');
         awaitingResponse = false;
         lastFinalUtterance = '';
         resumeAfterResponse();

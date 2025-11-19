@@ -24,6 +24,7 @@ logger = structlog.get_logger(__name__)
 REDIS_PREFIX = os.getenv("STATUS_PREFIX", "crawl:")
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://mongo:27017")
 MONGO_DB = os.getenv("MONGO_DB") or os.getenv("MONGO_DATABASE", "app")
+QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 TARGET_DOCS = int(os.getenv("TARGET_DOCS", "1000"))
 
 # Global for CPU tracking
@@ -83,6 +84,7 @@ class Status:
     notes: str = ""
     note_codes: tuple[str, ...] = ()
     llm_available: Optional[bool] = None
+    qdrant_ok: Optional[bool] = None
 
 
 def _safe_int(x) -> int:
@@ -337,8 +339,21 @@ def get_status(domain: str | None = None) -> Status:
         mongo_docs = 0
         last_crawl_ts = None
 
-    # Qdrant stats are not collected because the collection is managed externally
+    # Qdrant health check
+    qdrant_ok = False
     points = 0
+    try:
+        import httpx
+        with httpx.Client(timeout=1.0) as client:
+            resp = client.get(f"{QDRANT_URL}/healthz")
+            if resp.status_code == 200:
+                qdrant_ok = True
+    except Exception as exc:
+        logger.warning(
+            "qdrant connection failed",
+            url=QDRANT_URL,
+            error=str(exc),
+        )
 
     total_now = max(mongo_docs, points)
     target = max(TARGET_DOCS, 1)
@@ -414,6 +429,7 @@ def get_status(domain: str | None = None) -> Status:
         notes=notes_text,
         note_codes=tuple(note_codes),
         llm_available=llm_available,
+        qdrant_ok=qdrant_ok,
     )
 
 

@@ -1005,6 +1005,9 @@ const renderKnowledgeRow = (doc, category) => {
   }
 
   const actionsTd = document.createElement('td');
+  const actionsWrapper = document.createElement('div');
+  actionsWrapper.className = 'knowledge-actions';
+
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   let editKey = 'buttonEdit';
@@ -1020,7 +1023,7 @@ const renderKnowledgeRow = (doc, category) => {
     editBtn.removeAttribute('data-i18n-title');
   }
   editBtn.addEventListener('click', () => openKnowledgeModal(doc.fileId));
-  actionsTd.appendChild(editBtn);
+  actionsWrapper.appendChild(editBtn);
 
   if (doc.fileId) {
     const deleteBtn = document.createElement('button');
@@ -1030,8 +1033,10 @@ const renderKnowledgeRow = (doc, category) => {
     deleteBtn.className = 'danger-btn';
     const docProject = (doc.project || doc.domain || currentProject || '').trim().toLowerCase();
     deleteBtn.addEventListener('click', () => deleteKnowledgeDocument(doc.fileId, docProject));
-    actionsTd.appendChild(deleteBtn);
+    actionsWrapper.appendChild(deleteBtn);
   }
+
+  actionsTd.appendChild(actionsWrapper);
 
   tr.append(nameTd, descTd, projectTd, linkTd, actionsTd);
   return tr;
@@ -3204,6 +3209,26 @@ if (feedbackRefreshBtn) {
 
 if (kbProjectInput && getActiveProjectKey()) {
   kbProjectInput.value = getActiveProjectKey();
+}
+
+// Set default block order (important blocks first) if user hasn't customized it
+if (!localStorage.getItem(LAYOUT_ORDER_STORAGE_KEY)) {
+  const defaultOrder = [
+    'crawler',      // Crawler - important
+    'project',      // Project prompt - important
+    'status',       // Resources, Services, Status
+    'projects',     // Project selector
+    'backup',       // Backup
+    'llm',          // LLM
+    'feedback',     // Feedback
+    'stats',        // Stats
+    'knowledge-tools'  // Knowledge tools
+  ];
+  try {
+    localStorage.setItem(LAYOUT_ORDER_STORAGE_KEY, JSON.stringify(defaultOrder));
+  } catch (error) {
+    console.warn('default_layout_order_set_failed', error);
+  }
 }
 
 initLayoutReordering();

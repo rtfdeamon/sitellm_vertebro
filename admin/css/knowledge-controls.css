@@ -1,6 +1,19 @@
-.knowledge-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+.knowledge-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;
+  margin-bottom: 0;
+  justify-content: flex-start;
+}
+.knowledge-actions button {
+  display: inline-block !important;
+  margin: 0 !important;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
 .danger-btn {
-  margin-left: 8px;
   border: 1px solid #d83a3a;
   color: #d83a3a;
   background: transparent;
