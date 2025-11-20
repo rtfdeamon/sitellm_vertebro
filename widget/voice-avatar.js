@@ -480,9 +480,7 @@
       position: relative;
       width: min(360px, 100%);
       max-height: 520px;
-      overflow-y: auto;
-      overflow-x: hidden;
-      scroll-behavior: smooth;
+      overflow: visible;
       margin: 24px auto;
       font-family: "Inter", system-ui, -apple-system, Segoe UI, sans-serif;
       border-radius: 24px;
@@ -626,6 +624,9 @@
       font-size: 13px;
       line-height: 1.5;
       min-height: 40px;
+      word-wrap: break-word;
+      word-break: break-word;
+      white-space: pre-wrap;
     }
     .sitellm-voice-status .user,
     .sitellm-voice-status .bot {
@@ -633,6 +634,9 @@
       display: block;
       margin-bottom: 6px;
       padding-left: 6px;
+      word-wrap: break-word;
+      word-break: break-word;
+      white-space: pre-wrap;
     }
     .sitellm-voice-status .bot {
       color: rgba(${accent}, 1) !important;
@@ -680,6 +684,9 @@
       color: #0f172a;
       overflow-y: auto;
       max-height: 120px;
+      word-wrap: break-word;
+      word-break: break-word;
+      white-space: pre-wrap;
     }
     .sitellm-voice-error {
       margin-top: 12px;
@@ -1266,7 +1273,7 @@
     }
     const promise = (async () => {
       const url = `${normalizedBase}/api/v1/llm/project-config?project=${encodeURIComponent(project)}`;
-      const resp = await fetch(url, { mode: 'cors' });
+      const resp = await fetch(url, { mode: 'cors', credentials: 'include' });
       if (!resp.ok) {
         throw new Error(`HTTP ${resp.status}`);
       }
@@ -1303,7 +1310,7 @@
       params.set('url', options.url);
     }
     const url = `${normalizedBase}/api/v1/reading/pages?${params.toString()}`;
-    const resp = await fetch(url, { mode: 'cors' });
+    const resp = await fetch(url, { mode: 'cors', credentials: 'include' });
     if (!resp.ok) {
       throw new Error(`Reading pages HTTP ${resp.status}`);
     }
@@ -3206,7 +3213,7 @@
       transcript.textContent = 'Assistant is responding...';
 
       try {
-        currentSource = new EventSource(url, { withCredentials: false });
+        currentSource = new EventSource(url, { withCredentials: true });
       } catch (err) {
         setError('Your browser blocked EventSource.');
         awaitingResponse = false;

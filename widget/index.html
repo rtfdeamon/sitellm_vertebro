@@ -3789,7 +3789,7 @@ async function sendQuestion(question) {
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
-  if (isEmbed && !chatModal.classList.contains('open')) {
+  if (isEmbed && chatModal && !chatModal.classList.contains('open')) {
     openChat();
   }
   const question = input.value.trim();
@@ -3823,7 +3823,7 @@ setTheme(localStorage.getItem('chat_theme') || 'dark');
 
 window.addEventListener('load', () => {
   ensureSessionId();
-  if (!isEmbed) {
+  if (!isEmbed && chatModal) {
     chatModal.classList.add('open');
   }
   loadProjects().finally(() => {
