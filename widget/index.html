@@ -3635,7 +3635,7 @@ savePromptBtn.addEventListener('click', async () => {
     promptStatus.textContent = t('projectInfoNone');
     return;
   }
-  const path = `/api/v1/admin/projects/${encodeURIComponent(currentProject)}`;
+  const path = `/api/v1/admin/projects`;
   const payload = {
     name: currentProject,
     llm_prompt: startPromptInput.value,

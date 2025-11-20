@@ -3278,7 +3278,9 @@
         currentSource && currentSource.close();
         currentSource = null;
         const finalAnswer = stripEmojis(buffer) || 'No answer received.';
-        transcript.textContent = finalAnswer;
+        transcript.textContent = modeSupportsVoice
+          ? 'Tap the microphone and ask your question.'
+          : 'Type a question below to start chatting.';
         appendMessage('bot', buffer || 'No answer received.');
         rememberAssistantUtterance(finalAnswer);
         maybeSpeak(true);
