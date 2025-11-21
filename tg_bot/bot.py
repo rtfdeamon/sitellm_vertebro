@@ -741,7 +741,7 @@ async def text_handler(
         backend_hint = str(settings.backend_url)
         features = await _get_project_features(project)
         emotions_enabled = features.get("emotions_enabled", True)
-        debug_info_allowed = features.get("debug_info_enabled", True)
+        debug_info_allowed = features.get("debug_info_enabled", False)
         debug_summary_allowed = features.get("debug_enabled", False)
         try:
             response = await rag_answer(
