@@ -43,6 +43,7 @@ from starlette.routing import NoMatchFound
 from fastapi.responses import ORJSONResponse, FileResponse, StreamingResponse
 from bs4 import BeautifulSoup
 
+from backend.rate_limiting import RateLimitingMiddleware
 from observability.logging import configure_logging, get_recent_logs
 from observability.metrics import MetricsMiddleware, metrics_app
 
@@ -2898,6 +2899,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Rate limiting middleware - protects API from abuse
+app.add_middleware(RateLimitingMiddleware)
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(BasicAuthMiddleware)
 app.mount("/metrics", metrics_app)
