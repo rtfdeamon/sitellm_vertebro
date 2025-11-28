@@ -1,0 +1,291 @@
+/* Theme System for SiteLLM Vertebro Admin Panel */
+/* Support for Dark (default), Light, and Sand themes */
+
+/* ====== DARK THEME (Default) ====== */
+:root,
+[data-theme="dark"] {
+  /* Background */
+  --bg-primary: radial-gradient(circle at 15% 15%, rgba(79, 70, 229, 0.6), transparent 45%), radial-gradient(circle at 85% 20%, rgba(6, 182, 212, 0.55), transparent 50%), linear-gradient(135deg, #0b1026, #131b2f 55%, #0e1629);
+  --card-bg: rgba(19, 27, 45, 0.75);
+  --card-border: rgba(148, 163, 184, 0.15);
+  --card-shadow: 0 20px 45px rgba(8, 12, 24, 0.35);
+  
+  /* Text colors */
+  --text-primary: #f1f5ff;
+  --text-muted: #8fa0c6;
+  --text-inverse: #0b1026;
+  
+  /* Accent colors */
+  --accent: #60a5fa;
+  --accent-soft: rgba(96, 165, 250, 0.2);
+  --accent-hover: #93c5fd;
+  
+  /* Status colors */
+  --danger: #f87171;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  
+  /* Input styles */
+  --input-bg: rgba(13, 19, 34, 0.7);
+  --input-border: rgba(96, 112, 152, 0.35);
+  --input-focus-border: rgba(96, 165, 250, 0.65);
+  --input-focus-shadow: 0 0 0 2px rgba(96, 165, 250, 0.25);
+  
+  /* UI elements */
+  --badge-bg: rgba(59, 130, 246, 0.2);
+  --scroll-thumb: rgba(96, 165, 250, 0.4);
+  --scroll-track: rgba(15, 19, 35, 0.6);
+  
+  /* Button styles */
+  --button-bg: rgba(17, 24, 39, 0.6);
+  --button-border: rgba(148, 163, 184, 0.35);
+  --button-hover-bg: rgba(96, 165, 250, 0.2);
+  --button-hover-border: rgba(96, 165, 250, 0.65);
+}
+
+/* ====== LIGHT THEME ====== */
+[data-theme="light"] {
+  /* Background */
+  --bg-primary: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  --card-bg: rgba(255, 255, 255, 0.9);
+  --card-border: rgba(203, 213, 225, 0.5);
+  --card-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  
+  /* Text colors */
+  --text-primary: #0f172a;
+  --text-muted: #64748b;
+  --text-inverse: #f8fafc;
+  
+  /* Accent colors */
+  --accent: #3b82f6;
+  --accent-soft: rgba(59, 130, 246, 0.1);
+  --accent-hover: #2563eb;
+  
+  /* Status colors */
+  --danger: #ef4444;
+  --success: #10b981;
+  --warning: #f59e0b;
+  
+  /* Input styles */
+  --input-bg: rgba(255, 255, 255, 0.95);
+  --input-border: rgba(148, 163, 184, 0.4);
+  --input-focus-border: rgba(59, 130, 246, 0.6);
+  --input-focus-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  
+  /* UI elements */
+  --badge-bg: rgba(59, 130, 246, 0.1);
+  --scroll-thumb: rgba(148, 163, 184, 0.4);
+  --scroll-track: rgba(241, 245, 249, 0.6);
+  
+  /* Button styles */
+  --button-bg: rgba(248, 250, 252, 0.9);
+  --button-border: rgba(203, 213, 225, 0.6);
+  --button-hover-bg: rgba(59, 130, 246, 0.1);
+  --button-hover-border: rgba(59, 130, 246, 0.5);
+}
+
+/* ====== SAND THEME (Warm/Beige) ====== */
+[data-theme="sand"] {
+  /* Background */
+  --bg-primary: radial-gradient(circle at 20% 20%, rgba(251, 191, 36, 0.15), transparent 50%), 
+                radial-gradient(circle at 80% 80%, rgba(217, 119, 6, 0.12), transparent 50%), 
+                linear-gradient(135deg, #fef3c7 0%, #fde68a 50%, #fcd34d 100%);
+  --card-bg: rgba(254, 252, 232, 0.85);
+  --card-border: rgba(217, 119, 6, 0.2);
+  --card-shadow: 0 12px 32px rgba(120, 53, 15, 0.12);
+  
+  /* Text colors */
+  --text-primary: #451a03;
+  --text-muted: #78350f;
+  --text-inverse: #fef3c7;
+  
+  /* Accent colors */
+  --accent: #d97706;
+  --accent-soft: rgba(217, 119, 6, 0.15);
+  --accent-hover: #b45309;
+  
+  /* Status colors */
+  --danger: #dc2626;
+  --success: #16a34a;
+  --warning: #ea580c;
+  
+  /* Input styles */
+  --input-bg: rgba(255, 251, 235, 0.9);
+  --input-border: rgba(217, 119, 6, 0.3);
+  --input-focus-border: rgba(217, 119, 6, 0.6);
+  --input-focus-shadow: 0 0 0 3px rgba(251, 191, 36, 0.2);
+  
+  /* UI elements */
+  --badge-bg: rgba(251, 191, 36, 0.2);
+  --scroll-thumb: rgba(217, 119, 6, 0.4);
+  --scroll-track: rgba(254, 243, 199, 0.6);
+  
+  /* Button styles */
+  --button-bg: rgba(254, 243, 199, 0.7);
+  --button-border: rgba(217, 119, 6, 0.3);
+  --button-hover-bg: rgba(251, 191, 36, 0.25);
+  --button-hover-border: rgba(217, 119, 6, 0.5);
+}
+
+/* ====== Theme-specific adjustments ====== */
+
+/* Light theme specific overrides */
+[data-theme="light"] .cluster-warning {
+  background: rgba(239, 68, 68, 0.95);
+  box-shadow: 0 4px 12px rgba(127, 29, 29, 0.25);
+}
+
+[data-theme="light"] .auth-modal .auth-backdrop {
+  background: rgba(248, 250, 252, 0.85);
+}
+
+[data-theme="light"] .auth-modal .auth-card {
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(203, 213, 225, 0.5);
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.15);
+}
+
+[data-theme="light"] .collapsible-card[open] .collapsible-summary {
+  background: rgba(59, 130, 246, 0.08);
+}
+
+[data-theme="light"] .collapsible-body {
+  background: rgba(241, 245, 249, 0.5);
+  border-top: 1px solid rgba(203, 213, 225, 0.3);
+}
+
+[data-theme="light"] .status-group {
+  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid rgba(203, 213, 225, 0.3);
+}
+
+[data-theme="light"] .status-group:hover {
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.08);
+}
+
+/* Sand theme specific overrides */
+[data-theme="sand"] .cluster-warning {
+  background: rgba(220, 38, 38, 0.92);
+  box-shadow: 0 6px 16px rgba(120, 53, 15, 0.3);
+}
+
+[data-theme="sand"] .auth-modal .auth-backdrop {
+  background: rgba(254, 243, 199, 0.82);
+}
+
+[data-theme="sand"] .auth-modal .auth-card {
+  background: rgba(255, 251, 235, 0.97);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  box-shadow: 0 20px 50px rgba(120, 53, 15, 0.18);
+}
+
+[data-theme="sand"] .collapsible-card[open] .collapsible-summary {
+  background: rgba(251, 191, 36, 0.12);
+}
+
+[data-theme="sand"] .collapsible-body {
+  background: rgba(254, 252, 232, 0.6);
+  border-top: 1px solid rgba(217, 119, 6, 0.2);
+}
+
+[data-theme="sand"] .status-group {
+  background: rgba(255, 251, 235, 0.7);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] .status-group:hover {
+  border-color: rgba(217, 119, 6, 0.45);
+  box-shadow: 0 10px 20px rgba(120, 53, 15, 0.12);
+}
+
+/* ====== Theme Switcher Component ====== */
+.theme-switcher {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-switcher-label {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.theme-switcher-buttons {
+  display: flex;
+  gap: 4px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  padding: 4px;
+}
+
+.theme-button {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.theme-button:hover {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+}
+
+.theme-button.active {
+  color: var(--text-inverse);
+  background: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.theme-button.active:hover {
+  background: var(--accent-hover);
+}
+
+/* Smooth theme transitions */
+body {
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.card,
+.auth-modal .auth-card,
+.collapsible-body,
+.status-group {
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* ====== Accessibility improvements for light themes ====== */
+[data-theme="light"] a,
+[data-theme="sand"] a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+[data-theme="light"] .page-header-actions button:focus,
+[data-theme="sand"] .page-header-actions button:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ====== Print styles ====== */
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+  }
+  
+  .theme-switcher,
+  .page-header-actions button {
+    display: none !important;
+  }
+}
