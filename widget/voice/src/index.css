@@ -1,0 +1,80 @@
+.voice-widget {
+  font-family: system-ui, -apple-system, sans-serif;
+  padding: 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: white;
+  max-width: 400px;
+}
+
+.voice-widget__status {
+  padding: 0.5rem;
+  margin-bottom: 0.5rem;
+  border-radius: 4px;
+  text-align: center;
+  font-weight: 500;
+}
+
+.voice-widget__status--idle {
+  background: #f5f5f5;
+  color: #666;
+}
+
+.voice-widget__status--listening {
+  background: #e3f2fd;
+  color: #1976d2;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.voice-widget__status--processing {
+  background: #fff3e0;
+  color: #f57c00;
+}
+
+.voice-widget__status--speaking {
+  background: #e8f5e9;
+  color: #388e3c;
+}
+
+.voice-widget__status--error {
+  background: #ffebee;
+  color: #c62828;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+.voice-widget__controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.voice-widget__button {
+  flex: 1;
+  min-width: 100px;
+  padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.voice-widget__button:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #bbb;
+}
+
+.voice-widget__button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+

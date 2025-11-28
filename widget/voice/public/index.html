@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Voice Widget Demo</title>
+  </head>
+  <body>
+    <h1>Voice Widget Demo</h1>
+    <div id="voice-root"></div>
+    <script src="/voice-widget.js"></script>
+    <script>
+      const root = document.getElementById("voice-root");
+      if (window.VoiceWidget && window.VoiceWidget.createVoiceWidget) {
+        window.VoiceWidget.createVoiceWidget(root, {
+          apiBaseUrl: "http://localhost:8000",
+          project: "default",
+          language: "ru-RU"
+        });
+      } else {
+        console.error("VoiceWidget not found");
+      }
+    </script>
+  </body>
+</html>
+
