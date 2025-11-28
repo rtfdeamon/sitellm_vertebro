@@ -79,6 +79,14 @@ services:
         condition: service_started
     volumes:
       - ./data/hf:/root/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
     healthcheck:
       <<: *health_defaults
       test:
@@ -103,7 +111,14 @@ services:
       CMAKE_ARGS: "-DLLAMA_CUBLAS=OFF -DLLAMA_BLAS=ON -DLLAMA_BLAS_VENDOR=OpenBLAS -DLLAMA_NATIVE=ON"
       LLAMA_CPP_PYTHON_BUILD: "cmake"
       PIP_INDEX_URL: "https://download.pytorch.org/whl/cpu"
-
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 256M
     healthcheck:
       <<: *health_defaults
       test:
@@ -155,6 +170,14 @@ services:
       - ./certs:/certs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '1'
+          memory: 2G
     healthcheck:
       interval: 15s
       timeout: 5s
@@ -207,6 +230,14 @@ services:
         condition: service_started
     volumes:
       - ./certs:/certs:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       <<: *health_defaults
       test:

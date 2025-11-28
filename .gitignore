@@ -1,21 +1,72 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
 yallm.egg-info/
 
 # Virtual environments
 .venv/
+.venv-temp/
+venv/
+env/
+ENV/
 
 # Python environment files
 .env
+.env.local
+.env.*.local
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+coverage.xml
+*.log
+
+# Build artifacts
+dist/
+build/
+*.egg
+*.egg-info/
+.eggs/
 
 # Editors
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
 
-# Others
-*.log
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific
 deploy-backups/
 data/
 certs/
 node_modules/
+bench.json
+bandit-report.json
+safety-report.json
+pip-audit-report.json
+trivy-results.sarif
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+

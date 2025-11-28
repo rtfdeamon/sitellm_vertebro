@@ -4,31 +4,125 @@ on: [push, pull_request]
 
 jobs:
   test:
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ matrix.python-version }}
+      
       - name: Install dependencies
         run: |
           pip install uv
           uv pip install --system -e .[dev]
+      
       - name: Ruff lint
-        run: ruff .
-      - name: Run tests
-        run: pytest -q
+        run: ruff check .
+      
+      - name: Type checking with mypy
+        run: |
+          pip install mypy types-requests types-redis
+          mypy . --install-types --non-interactive --ignore-missing-imports || echo "::warning::Type checking found issues"
+      
+      - name: Run unit tests with coverage
+        run: |
+          pytest -v -m "not integration and not e2e" \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-report=html
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.10'
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+      
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.10'
+        with:
+          name: coverage-html
+          path: htmlcov/
+      
       - name: Benchmark
+        if: matrix.python-version == '3.10'
         run: |
           python scripts/benchmark.py --requests 50 > bench.json
           python - <<'PY'
 import json, sys
 with open('bench.json') as f:
     data=json.load(f)
-if data['p95_ms'] > 4000:
+p95 = data['p95_ms']
+print(f"::notice::Benchmark p95: {p95}ms")
+if p95 > 4000:
+    print(f"::error::Performance regression! p95 {p95}ms > 4000ms threshold")
     sys.exit(1)
 PY
+      
       - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.10'
         with:
-          name: bench
+          name: benchmark-results
           path: bench.json
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: bitnami/redis:latest
+        env:
+          REDIS_PASSWORD: test_password
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli -a test_password ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      mongo:
+        image: mongo:8.0
+        env:
+          MONGO_INITDB_ROOT_USERNAME: root
+          MONGO_INITDB_ROOT_PASSWORD: test_password
+          MONGO_INITDB_DATABASE: testdb
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv pip install --system -e .[dev]
+      
+      - name: Run integration tests
+        env:
+          REDIS_URL: redis://:test_password@localhost:6379/0
+          MONGO_URI: mongodb://root:test_password@localhost:27017/testdb?authSource=admin
+          MONGO_USERNAME: root
+          MONGO_PASSWORD: test_password
+          MONGO_DATABASE: testdb
+        run: |
+          pytest -v -m "integration" --tb=short

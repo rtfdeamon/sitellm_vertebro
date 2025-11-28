@@ -409,7 +409,11 @@ if [ -z "${MONGO_USERNAME:-}" ]; then
 fi
 if [ -z "${MONGO_PASSWORD:-}" ]; then
   MONGO_PASSWORD=$(get_env_var MONGO_PASSWORD)
-  MONGO_PASSWORD=${MONGO_PASSWORD:-f76DlgezffdHetX}
+  # Generate secure password if not provided
+  if [ -z "$MONGO_PASSWORD" ]; then
+    MONGO_PASSWORD=$(openssl rand -hex 16)
+    echo "[+] Generated secure MongoDB password"
+  fi
 fi
 if [ -z "${MONGO_DATABASE:-}" ]; then
   MONGO_DATABASE=$(get_env_var MONGO_DATABASE)
