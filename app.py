@@ -143,6 +143,23 @@ from backend.ollama.installer import (
     snapshot_install_jobs as _snapshot_install_jobs,
     update_install_job as _update_install_job,
 )
+from backend.bots.schemas import (
+    MaxAction,
+    MaxConfig,
+    ProjectMaxAction,
+    ProjectMaxConfig,
+    ProjectTelegramAction,
+    ProjectTelegramConfig,
+    ProjectVkAction,
+    ProjectVkConfig,
+    TelegramAction,
+    TelegramConfig,
+    VkAction,
+    VkConfig,
+)
+from api.admin import router as admin_router
+from api.backup import router as backup_router
+from api.desktop import router as desktop_router
 
 
 _FEEDBACK_STATUS_VALUES = {"open", "in_progress", "done", "dismissed"}
@@ -411,6 +428,18 @@ app.include_router(
     voice_router,
     prefix="/api/v1",
 )
+app.include_router(
+    backup_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    desktop_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    admin_router,
+    prefix="/api/v1",
+)
 app.mount("/widget", StaticFiles(directory="widget", html=True), name="widget")
 app.mount("/admin", StaticFiles(directory="admin", html=True), name="admin")
 
@@ -501,32 +530,6 @@ def status(domain: str | None = None, project: str | None = None) -> dict[str, o
     return status_dict(_normalize_project(chosen))
 
 
-@app.post("/api/v1/admin/logout", response_class=PlainTextResponse, include_in_schema=False)
-async def admin_logout(request: Request) -> PlainTextResponse:
-    return _admin_logout_response(request)
-
-
-@app.get("/api/v1/admin/logout", response_class=PlainTextResponse, include_in_schema=False)
-async def admin_logout_get(request: Request) -> PlainTextResponse:
-    return _admin_logout_response(request)
-
-
-@app.get("/api/v1/admin/logs", response_class=ORJSONResponse)
-def admin_logs(request: Request, limit: int = 200) -> ORJSONResponse:
-    """Return recent application logs for the admin UI.
-
-    Parameters
-    ----------
-    limit:
-        Maximum number of lines to return (default 200).
-    """
-    _require_super_admin(request)
-    try:
-        limit = max(1, min(int(limit), 1000))
-    except Exception:
-        limit = 200
-    lines = get_recent_logs(limit)
-    return ORJSONResponse({"lines": lines})
 
 
 class KnowledgeCreate(BaseModel):
@@ -779,34 +782,6 @@ class PromptGenerationRequest(BaseModel):
     role: str | None = None
 
 
-class BackupSettingsPayload(BaseModel):
-    enabled: bool | None = None
-    hour: int | None = None
-    minute: int | None = None
-    timezone: str | None = None
-    ya_disk_folder: str | None = Field(default=None, alias="yaDiskFolder")
-    token: str | None = None
-    clear_token: bool | None = Field(default=None, alias="clearToken")
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-
-class BackupRestoreRequest(BaseModel):
-    remote_path: str = Field(alias="remotePath")
-    source_job_id: str | None = Field(default=None, alias="sourceJobId")
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class BackupRunRequest(BaseModel):
-    note: str | None = None
-
-
-def _serialize_backup_job(job: BackupJob | None) -> dict[str, Any] | None:
-    if not job:
-        return None
-    return job.model_dump(by_alias=True)
-
 
 async def _knowledge_service_status_impl(request: Request) -> ORJSONResponse:
     doc = await request.state.mongo.get_setting(KNOWLEDGE_SERVICE_KEY) or {}
@@ -945,186 +920,7 @@ async def _knowledge_service_run_impl(
     return ORJSONResponse({"status": "ok", "error": error_text})
 
 
-@app.get("/api/v1/backup/status", response_class=ORJSONResponse)
-async def backup_status(request: Request, limit: int = 10) -> ORJSONResponse:
-    """
-    Get backup system status and job history.
 
-    Security: Super admin only. Backup operations access ALL database data across
-    all projects, including sensitive credentials and data that regular admins
-    should not have access to.
-    """
-    _require_super_admin(request)
-    try:
-        safe_limit = max(1, min(int(limit), 50))
-    except Exception:
-        safe_limit = 10
-    settings_model = await request.state.mongo.get_backup_settings()
-    active_job = await request.state.mongo.find_active_backup_job()
-    jobs = await request.state.mongo.list_backup_jobs(limit=safe_limit)
-    payload = {
-        "settings": settings_model.model_dump(by_alias=True),
-        "activeJob": _serialize_backup_job(active_job),
-        "jobs": [_serialize_backup_job(job) for job in jobs],
-    }
-    return ORJSONResponse(payload)
-
-
-@app.post("/api/v1/backup/settings", response_class=ORJSONResponse)
-async def backup_update_settings(request: Request, payload: BackupSettingsPayload) -> ORJSONResponse:
-    """
-    Update backup configuration and Yandex Disk credentials.
-
-    Security: Super admin only. This endpoint manages cloud storage credentials
-    (Yandex Disk token) that provide access to all backup files. Compromise of
-    these credentials could expose all historical database backups.
-    """
-    _require_super_admin(request)
-    updates: dict[str, Any] = {}
-    if payload.enabled is not None:
-        updates["enabled"] = bool(payload.enabled)
-    if payload.hour is not None:
-        updates["hour"] = int(payload.hour)
-    if payload.minute is not None:
-        updates["minute"] = int(payload.minute)
-    if payload.timezone is not None:
-        updates["timezone"] = payload.timezone
-    if payload.ya_disk_folder is not None:
-        updates["yaDiskFolder"] = payload.ya_disk_folder
-
-    extra_kwargs: dict[str, Any] = {}
-    if payload.token is not None:
-        extra_kwargs["token"] = payload.token
-
-    settings_model = await request.state.mongo.update_backup_settings(
-        updates,
-        clear_token=bool(payload.clear_token),
-        **extra_kwargs,
-    )
-    return ORJSONResponse(settings_model.model_dump(by_alias=True))
-
-
-@app.post("/api/v1/backup/run", response_class=ORJSONResponse)
-async def backup_run(request: Request, payload: BackupRunRequest | None = None) -> ORJSONResponse:
-    """
-    Trigger immediate database backup to cloud storage.
-
-    Security: Super admin only. This operation creates a complete dump of ALL
-    database collections, including user data, credentials, API keys, and other
-    sensitive information across all projects. The backup file contains data
-    that regular project administrators should not have access to.
-    """
-    identity = _require_super_admin(request)
-    active_job = await request.state.mongo.find_active_backup_job()
-    if active_job:
-        raise HTTPException(status_code=409, detail="backup_job_in_progress")
-    token = await request.state.mongo.get_backup_token()
-    if not token:
-        raise HTTPException(status_code=400, detail="ya_disk_token_missing")
-
-    triggered = getattr(identity, "username", None) or "admin"
-    job = await request.state.mongo.create_backup_job(
-        operation=BackupOperation.backup,
-        status=BackupStatus.queued,
-        triggered_by=f"admin:{triggered}",
-    )
-    backup_execute.delay(job.id)
-    return ORJSONResponse({"job": _serialize_backup_job(job)})
-
-
-@app.post("/api/v1/backup/restore", response_class=ORJSONResponse)
-async def backup_restore(request: Request, payload: BackupRestoreRequest) -> ORJSONResponse:
-    """
-    Restore database from a cloud storage backup.
-
-    Security: Super admin only. This is the MOST DANGEROUS operation in the system.
-    It completely overwrites the current database with backup data, affecting ALL
-    projects and users. Unauthorized use could result in:
-    - Complete data loss (if wrong backup selected)
-    - Privilege escalation (restoring old admin credentials)
-    - Data corruption or system compromise
-    Regular administrators must never have access to this capability.
-    """
-    identity = _require_super_admin(request)
-    remote_path = (payload.remote_path or "").strip()
-    if not remote_path:
-        raise HTTPException(status_code=400, detail="remote_path_required")
-
-    active_job = await request.state.mongo.find_active_backup_job()
-    if active_job:
-        raise HTTPException(status_code=409, detail="backup_job_in_progress")
-
-    token = await request.state.mongo.get_backup_token()
-    if not token:
-        raise HTTPException(status_code=400, detail="ya_disk_token_missing")
-
-    triggered = getattr(identity, "username", None) or "admin"
-    job = await request.state.mongo.create_backup_job(
-        operation=BackupOperation.restore,
-        status=BackupStatus.queued,
-        triggered_by=f"admin:{triggered}",
-        remote_path=remote_path,
-        source_job_id=payload.source_job_id,
-    )
-    backup_execute.delay(job.id)
-    return ORJSONResponse({"job": _serialize_backup_job(job)})
-
-
-class TelegramConfig(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class TelegramAction(BaseModel):
-    token: str | None = None
-
-
-class ProjectTelegramConfig(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class ProjectTelegramAction(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class MaxConfig(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class MaxAction(BaseModel):
-    token: str | None = None
-
-
-class ProjectMaxConfig(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class ProjectMaxAction(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class VkConfig(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class VkAction(BaseModel):
-    token: str | None = None
-
-
-class ProjectVkConfig(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
-
-
-class ProjectVkAction(BaseModel):
-    token: str | None = None
-    auto_start: bool | None = None
 
 
 FEEDBACK_ALLOWED_STATUSES = {"open", "in_progress", "done", "dismissed"}
@@ -1154,8 +950,6 @@ class OllamaServerPayload(BaseModel):
     enabled: bool = True
 
 
-class DesktopBuildRequest(BaseModel):
-    platform: Literal["windows", "linux-appimage", "linux-deb"]
 
 
 async def _ensure_ollama_reachable(base_url: str, timeout: float = 2.5) -> None:
@@ -1171,63 +965,7 @@ async def _ensure_ollama_reachable(base_url: str, timeout: float = 2.5) -> None:
         raise HTTPException(status_code=400, detail=f"Не удалось подключиться: {exc}") from exc
 
 
-@app.get("/api/v1/admin/session", response_class=ORJSONResponse)
-async def admin_session(request: Request) -> ORJSONResponse:
-    identity = _require_admin(request)
-    payload = {
-        "username": identity.username,
-        "is_super": identity.is_super,
-        "projects": list(identity.projects),
-        "primary_project": identity.primary_project,
-        "can_manage_projects": identity.is_super,
-    }
-    return ORJSONResponse(payload)
 
-
-@app.post("/api/v1/desktop/build")
-async def desktop_build(request: Request, payload: DesktopBuildRequest) -> FileResponse:
-    identity = _get_admin_identity(request)
-    meta = DESKTOP_BUILD_ARTIFACTS.get(payload.platform)
-    if meta is None:
-        raise HTTPException(status_code=400, detail="Unsupported platform")
-
-    lock_key = meta.get("command_key")
-    lock = DESKTOP_BUILD_LOCKS.get(lock_key)
-    if lock is None:
-        raise HTTPException(status_code=500, detail="Desktop build lock unavailable")
-
-    try:
-        async with lock:
-            artifact_path = await asyncio.to_thread(
-                _prepare_desktop_artifact_blocking,
-                payload.platform,
-            )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("desktop build failed", platform=payload.platform)
-        raise HTTPException(status_code=500, detail="Desktop build failed") from exc
-
-    filename = meta.get("download_name") or artifact_path.name
-    try:
-        stat_result = artifact_path.stat()
-    except FileNotFoundError as exc:  # pragma: no cover - race after build
-        raise HTTPException(status_code=404, detail="Artifact was removed") from exc
-
-    logger.info(
-        "desktop build ready",
-        platform=payload.platform,
-        artifact=str(artifact_path),
-        size=stat_result.st_size,
-        requested_by=getattr(identity, "username", None),
-    )
-
-    return FileResponse(
-        artifact_path,
-        media_type=meta.get("content_type") or "application/octet-stream",
-        filename=filename,
-        stat_result=stat_result,
-    )
 
 
 class ProjectCreate(BaseModel):
