@@ -2893,6 +2893,14 @@ allow_all_origins = "*" in cors_origins
 app = FastAPI(lifespan=lifespan, debug=settings.debug)
 if _ssl_enabled():
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+# CORS: Allow all origins for widget embedding
+# The widget is designed to be embedded on any third-party website,
+# so we need to allow requests from any domain. This is intentional.
+# Additional security is provided by:
+# - Rate limiting (protects from abuse)
+# - Admin authentication (protects sensitive endpoints)
+# - CSRF protection where applicable
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if allow_all_origins else cors_origins,
