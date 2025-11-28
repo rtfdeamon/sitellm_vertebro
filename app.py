@@ -98,35 +98,32 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from worker import backup_execute
 from uuid import uuid4, UUID
 
+from backend.adapters import OllamaLLM, QdrantSearchAdapter as _QdrantSearchAdapter
+from backend.auth import (
+    ADMIN_PASSWORD_DIGEST,
+    ADMIN_USER,
+    admin_logout_response as _admin_logout_response,
+    get_admin_identity as _get_admin_identity,
+    require_admin as _require_admin,
+    require_super_admin as _require_super_admin,
+    resolve_admin_password_digest as _resolve_admin_password_digest,
+    resolve_admin_project as _resolve_admin_project,
+)
+from backend.dependencies import get_mongo_client as _get_mongo_client
+from backend.desktop import (
+    DESKTOP_BUILD_ARTIFACTS,
+    DESKTOP_BUILD_COMMANDS,
+    DESKTOP_BUILD_LOCKS,
+    DESKTOP_BUILD_ROOT,
+    prepare_desktop_artifact_blocking as _prepare_desktop_artifact_blocking,
+)
+from backend.middleware.admin import AdminIdentity
+from backend.middleware.auth import BasicAuthMiddleware
+from backend.utils.project import normalize_project as _normalize_project
+
 
 _FEEDBACK_STATUS_VALUES = {"open", "in_progress", "done", "dismissed"}
 
-DESKTOP_BUILD_ROOT = (Path(__file__).resolve().parent / "widget" / "desktop").resolve()
-DESKTOP_BUILD_COMMANDS: dict[str, list[str]] = {
-    "windows": ["npm", "run", "build:windows"],
-    "linux": ["npm", "run", "build:linux"],
-}
-DESKTOP_BUILD_ARTIFACTS: dict[str, dict[str, Any]] = {
-    "windows": {
-        "command_key": "windows",
-        "patterns": ["dist/*.exe"],
-        "content_type": "application/octet-stream",
-        "download_name": "SiteLLMAssistant-Setup.exe",
-    },
-    "linux-appimage": {
-        "command_key": "linux",
-        "patterns": ["dist/*.AppImage"],
-        "content_type": "application/octet-stream",
-        "download_name": "SiteLLMAssistant.AppImage",
-    },
-    "linux-deb": {
-        "command_key": "linux",
-        "patterns": ["dist/*.deb"],
-        "content_type": "application/x-debian-package",
-        "download_name": "sitellm-assistant.deb",
-    },
-}
-DESKTOP_BUILD_LOCKS = {key: asyncio.Lock() for key in DESKTOP_BUILD_COMMANDS}
 
 
 configure_logging()
@@ -175,29 +172,9 @@ PROMPT_FETCH_HEADERS = {
     )
 }
 
-ADMIN_USER = os.getenv("ADMIN_USERNAME", "admin")
 
 
-def _resolve_admin_password_digest(raw_value: str | None) -> bytes:
-    candidate = (raw_value or "").strip()
-    if not candidate:
-        candidate = hashlib.sha256(b"admin").hexdigest()
 
-    lowered = candidate.lower()
-    if lowered.startswith("sha256:"):
-        lowered = lowered.split(":", 1)[1]
-
-    try:
-        digest = bytes.fromhex(lowered)
-        if len(digest) == hashlib.sha256().digest_size:
-            return digest
-    except ValueError:
-        pass
-
-    return hashlib.sha256(candidate.encode()).digest()
-
-
-ADMIN_PASSWORD_DIGEST = _resolve_admin_password_digest(os.getenv("ADMIN_PASSWORD"))
 
 PDF_MIME_TYPES: set[str] = {"application/pdf"}
 DOCX_MIME_TYPES: set[str] = {
@@ -224,36 +201,6 @@ XLS_MIME_TYPES: set[str] = {
 }
 
 
-@dataclass(frozen=True)
-class AdminIdentity:
-    """Represents authenticated admin context."""
-
-    username: str
-    is_super: bool
-    projects: tuple[str, ...] = ()
-
-    def can_access_project(self, project: str | None) -> bool:
-        if self.is_super:
-            return True
-        if not project:
-            return False
-        normalized = project.strip().lower()
-        return normalized in self.projects
-
-    @property
-    def primary_project(self) -> str | None:
-        return self.projects[0] if self.projects else None
-
-
-def _normalize_project(value: str | None) -> str | None:
-    """Return a normalized project identifier."""
-
-    candidate = (value or "").strip()
-    if not candidate:
-        default = getattr(settings, "project_name", None) or settings.domain or os.getenv("PROJECT_NAME") or os.getenv("DOMAIN", "")
-        candidate = default.strip() if default else ""
-    return candidate.lower() or None
-
 
 def _append_limited(buffer: list[str], line: str, *, limit: int = 40) -> None:
     buffer.append(line)
@@ -261,103 +208,6 @@ def _append_limited(buffer: list[str], line: str, *, limit: int = 40) -> None:
         del buffer[:-limit]
 
 
-def _desktop_latest_source_mtime() -> float:
-    if not DESKTOP_BUILD_ROOT.exists():
-        return 0.0
-    tracked_files = [
-        DESKTOP_BUILD_ROOT / "package.json",
-        DESKTOP_BUILD_ROOT / "package-lock.json",
-        DESKTOP_BUILD_ROOT / "main.js",
-        DESKTOP_BUILD_ROOT / "preload.js",
-        DESKTOP_BUILD_ROOT / "config.json",
-    ]
-    mtimes: list[float] = []
-    for path in tracked_files:
-        if path.exists():
-            try:
-                mtimes.append(path.stat().st_mtime)
-            except FileNotFoundError:
-                continue
-    src_dir = DESKTOP_BUILD_ROOT / "src"
-    if src_dir.exists():
-        for dirpath, _, filenames in os.walk(src_dir):
-            base = Path(dirpath)
-            for name in filenames:
-                file_path = base / name
-                try:
-                    mtimes.append(file_path.stat().st_mtime)
-                except FileNotFoundError:
-                    continue
-    return max(mtimes) if mtimes else 0.0
-
-
-def _desktop_find_latest_artifact(patterns: list[str]) -> Path | None:
-    if not DESKTOP_BUILD_ROOT.exists():
-        return None
-    candidates: list[Path] = []
-    for pattern in patterns:
-        candidates.extend(
-            path for path in DESKTOP_BUILD_ROOT.glob(pattern) if path.is_file()
-        )
-    if not candidates:
-        return None
-    candidates.sort(key=lambda item: item.stat().st_mtime, reverse=True)
-    return candidates[0]
-
-
-def _resolve_command(command: list[str]) -> list[str]:
-    if not command:
-        raise RuntimeError("Desktop build command is empty")
-    binary = shutil.which(command[0])
-    if binary is None:
-        raise RuntimeError(f"Не найден исполняемый файл '{command[0]}' (npm). Установите его на сервере.")
-    return [binary, *command[1:]]
-
-
-def _run_desktop_command(command: list[str]) -> None:
-    resolved = _resolve_command(command)
-    env = os.environ.copy()
-    env.setdefault("NODE_ENV", "production")
-    try:
-        subprocess.run(
-            resolved,
-            cwd=DESKTOP_BUILD_ROOT,
-            check=True,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except subprocess.CalledProcessError as exc:  # noqa: PERF203 - surface build errors
-        stderr = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else str(exc)
-        raise RuntimeError(stderr.strip() or str(exc)) from exc
-
-
-def _ensure_desktop_dependencies() -> None:
-    if not DESKTOP_BUILD_ROOT.exists():
-        raise RuntimeError("Каталог widget/desktop не найден в проекте")
-    node_modules = DESKTOP_BUILD_ROOT / "node_modules"
-    if node_modules.exists():
-        return
-    _run_desktop_command(["npm", "install"])
-
-
-def _prepare_desktop_artifact_blocking(platform_key: str) -> Path:
-    if platform_key not in DESKTOP_BUILD_ARTIFACTS:
-        raise RuntimeError("Unsupported platform")
-    meta = DESKTOP_BUILD_ARTIFACTS[platform_key]
-    artifact = _desktop_find_latest_artifact(meta["patterns"])
-    latest_source = _desktop_latest_source_mtime()
-    if artifact and artifact.stat().st_mtime >= latest_source:
-        return artifact
-    _ensure_desktop_dependencies()
-    command_key = meta["command_key"]
-    command = DESKTOP_BUILD_COMMANDS.get(command_key)
-    if not command:
-        raise RuntimeError("Build command is not configured")
-    _run_desktop_command(command)
-    artifact = _desktop_find_latest_artifact(meta["patterns"])
-    if not artifact:
-        raise RuntimeError("Сборка завершилась без артефактов — проверьте журнал electron-builder")
     return artifact
 
 
@@ -700,64 +550,6 @@ async def _schedule_ollama_install(model: str) -> Dict[str, Any]:
     asyncio.create_task(_run_ollama_install(normalized))
     return job
 
-def _get_admin_identity(request: Request) -> AdminIdentity | None:
-    identity = getattr(request.state, "admin", None)
-    return identity if isinstance(identity, AdminIdentity) else None
-
-
-def _require_admin(request: Request) -> AdminIdentity:
-    identity = _get_admin_identity(request)
-    if identity is None:
-        raise HTTPException(status_code=401, detail="Admin authentication required")
-    return identity
-
-
-def _require_super_admin(request: Request) -> AdminIdentity:
-    identity = _require_admin(request)
-    if not identity.is_super:
-        raise HTTPException(status_code=403, detail="Super admin privileges required")
-    return identity
-
-
-def _resolve_admin_project(
-    request: Request,
-    project_name: str | None,
-    *,
-    required: bool = False,
-) -> str | None:
-    identity = _get_admin_identity(request)
-    normalized = _normalize_project(project_name)
-    if identity and not identity.is_super:
-        normalized_allowed: list[str] = []
-        for proj in identity.projects:
-            if not proj:
-                continue
-            cleaned = proj.strip().lower()
-            if cleaned and cleaned not in normalized_allowed:
-                normalized_allowed.append(cleaned)
-        if not normalized_allowed:
-            raise HTTPException(status_code=403, detail="Project administrator has no assigned project")
-        if normalized and normalized not in normalized_allowed:
-            raise HTTPException(status_code=403, detail="Access to project is forbidden")
-        normalized = normalized or normalized_allowed[0]
-        if not normalized:
-            raise HTTPException(status_code=403, detail="Project scope is required")
-    if required and not normalized:
-        raise HTTPException(status_code=400, detail="Project identifier is required")
-    return normalized
-
-
-def _admin_logout_response(request: Request) -> PlainTextResponse:
-    identity = _get_admin_identity(request)
-    if identity:
-        logger.info(
-            "admin_logout",
-            username=identity.username,
-            is_super=identity.is_super,
-        )
-    response = PlainTextResponse("Logged out", status_code=401)
-    response.headers["WWW-Authenticate"] = 'Basic realm="admin"'
-    return response
 
 
 def _project_response(project: Project) -> dict[str, Any]:
@@ -775,14 +567,6 @@ def _project_response(project: Project) -> dict[str, Any]:
     return data
 
 
-def _get_mongo_client(request: Request) -> MongoClient:
-    mongo_client: MongoClient | None = getattr(request.state, "mongo", None)
-    if mongo_client is None:
-        mongo_client = getattr(request.app.state, "mongo", None)
-        if mongo_client is None:
-            raise HTTPException(status_code=500, detail="Mongo client is unavailable")
-        request.state.mongo = mongo_client
-    return mongo_client
 
 
 def _parse_stats_date(value: str | None) -> datetime | None:
@@ -989,205 +773,7 @@ async def _fetch_qa_document(mongo_client: MongoClient, pair_id: str) -> dict | 
         return None
 
 
-class BasicAuthMiddleware(BaseHTTPMiddleware):
-    _PROTECTED_PREFIXES = (
-        "/admin",
-        "/api/v1/admin",
-        "/api/v1/backup",
-        "/api/v1/crawler",
-        "/api/intelligent-processing",
-    )
-    # Exact method+path pairs that must be admin-protected even if their prefix is different
-    # Keep minimal and explicit to avoid over-protecting public APIs like crawler status.
-    _PROTECTED_EXACT: set[tuple[str, str]] = {
-        ("POST", "/api/v1/crawler/reset"),
-        ("POST", "/api/v1/crawler/deduplicate"),
-        ("POST", "/api/v1/crawler/stop"),
-    }
 
-    # Session storage: username -> AdminIdentity
-    _sessions: dict[str, AdminIdentity] = {}
-
-    @staticmethod
-    def _unauthorized_response(request: Request) -> Response:
-        path = request.url.path
-        accept = request.headers.get("Accept", "")
-        wants_json = path.startswith("/api/") or "application/json" in accept
-        if wants_json:
-            return ORJSONResponse({"detail": "Unauthorized"}, status_code=401)
-        return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="admin"'})
-
-    async def _authenticate(self, request: Request, username: str, password: str) -> AdminIdentity | None:
-        normalized_username = username.strip().lower()
-        if normalized_username == ADMIN_USER.strip().lower():
-            logger.debug("basic_auth_attempt_super", username=normalized_username)
-            hashed = hashlib.sha256(password.encode()).digest()
-            if hmac.compare_digest(hashed, ADMIN_PASSWORD_DIGEST):
-                logger.debug("admin_super_login_success", username=normalized_username)
-                return AdminIdentity(username=normalized_username, is_super=True)
-            else: 
-                logger.warning("admin_super_login_failed", username=normalized_username)
-                return None
-
-        mongo_client: MongoClient | None = getattr(request.app.state, "mongo", None)
-        if not mongo_client:
-            return None
-
-        try:
-            project = await mongo_client.get_project_by_admin_username(normalized_username)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("project_admin_lookup_failed", username=normalized_username, error=str(exc))
-            return None
-
-        if not project or not project.admin_password_hash:
-            return None
-
-        candidate_hash = hashlib.sha256(password.encode()).hexdigest()
-        stored_hash = project.admin_password_hash.strip().lower()
-        if not hmac.compare_digest(candidate_hash, stored_hash):
-            return None
-
-        return AdminIdentity(
-            username=normalized_username,
-            is_super=False,
-            projects=(project.name,),
-        )
-
-    async def dispatch(self, request: Request, call_next):
-        path = request.url.path
-        method = request.method.upper()
-        normalized_path = path.rstrip("/") or "/"
-        is_protected = (
-            any(path.startswith(prefix) for prefix in self._PROTECTED_PREFIXES)
-            or (method, normalized_path) in self._PROTECTED_EXACT
-        )
-        if not is_protected:
-            return await call_next(request)
-
-        # Check for existing session cookie first
-        session_token = request.cookies.get("admin_session")
-        if session_token and session_token in self._sessions:
-            identity = self._sessions[session_token]
-            request.state.admin = identity
-            return await call_next(request)
-
-        # Try HTTP Basic Auth
-        auth = request.headers.get("Authorization")
-        if auth and auth.lower().startswith("basic "):
-            encoded = ""
-            try:
-                encoded = auth.split(" ", 1)[1].strip()
-                raw_bytes = base64.b64decode(encoded.encode("ascii", "ignore"))
-                decoded = raw_bytes.decode("utf-8", errors="ignore").strip()
-                if ":" not in decoded:
-                    logger.warning("admin_auth_malformed_header")
-                    return self._unauthorized_response(request)
-                username, password = decoded.split(":", 1)
-                identity = await self._authenticate(request, username, password)
-                if identity:
-                    request.state.admin = identity
-                    # Create session token and store it
-                    session_token = hashlib.sha256(f"{username}:{uuid4()}".encode()).hexdigest()
-                    self._sessions[session_token] = identity
-                    response = await call_next(request)
-                    # Set cookie with session token
-                    response.set_cookie(
-                        key="admin_session",
-                        value=session_token,
-                        httponly=True,
-                        samesite="lax",
-                        max_age=86400  # 24 hours
-                    )
-                    return response
-                logger.warning("admin_auth_invalid_credentials", username=username)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "basic_auth_decode_failed",
-                    error=str(exc),
-                    header_length=len(encoded) if isinstance(encoded, str) else None,
-                )
-
-        return self._unauthorized_response(request)
-
-
-class OllamaLLM:
-    """Minimal adapter to use Ollama via backend.llm_client.
-
-    Provides a ``respond`` method compatible with the previous local LLM
-    wrapper so the rest of the API does not change.
-    """
-
-    class _Msg:
-        def __init__(self, text: str) -> None:
-            self.text = text
-
-    async def respond(self, session: list[dict[str, str]], preset: list[dict[str, str]]):
-        from backend import llm_client
-
-        prompt_parts: list[str] = []
-        for m in preset + session:
-            role = m.get("role", "user")
-            text = m.get("content", "")
-            prompt_parts.append(f"{role}: {text}")
-        prompt = "\n".join(prompt_parts)
-
-        chunks: list[str] = []
-        async for token in llm_client.generate(prompt):
-            chunks.append(token)
-        return [self._Msg("".join(chunks))]
-
-
-class _QdrantSearchAdapter:
-    """Provide ``similarity`` interface used by retrieval layer."""
-
-    def __init__(self, client: QdrantClient, collection: str):
-        self._client = client
-        self._collection = collection
-
-    def similarity(self, query: str, top: int, method: str):
-        if method == "dense":
-            vector = retrieval_encode(query)
-            vector_list = vector.tolist() if hasattr(vector, "tolist") else list(vector)
-            results = self._client.search(
-                collection_name=self._collection,
-                query_vector=vector_list,
-                limit=top,
-                with_payload=True,
-            )
-        elif method == "bm25":
-            if hasattr(self._client, "text_search"):
-                results = self._client.text_search(
-                    collection_name=self._collection,
-                    query=query,
-                    with_payload=True,
-                    limit=top,
-                )
-            else:
-                # Fallback to dense search when BM25 isn't available
-                vector = retrieval_encode(query)
-                vector_list = vector.tolist() if hasattr(vector, "tolist") else list(vector)
-                results = self._client.search(
-                    collection_name=self._collection,
-                    query_vector=vector_list,
-                    limit=top,
-                    with_payload=True,
-                )
-        else:
-            raise ValueError(f"Unknown similarity method: {method}")
-
-        docs = []
-        for point in results:
-            docs.append(
-                SimpleNamespace(
-                    id=str(point.id),
-                    payload=getattr(point, "payload", None),
-                    score=getattr(point, "score", 0.0),
-                )
-            )
-        return docs
-
-    def close(self) -> None:
-        self._client.close()
 
 
 @asynccontextmanager
