@@ -361,18 +361,38 @@ def _validate_god_mode_input(kind: str, value: str) -> Any:
     if kind == "text_optional":
         return text or None
     if kind == "domain":
-        domain = text.lower()
-        if not domain or " " in domain or "/" in domain:
+        domain = text.lower().strip()
+        # Remove protocol if user added it by mistake
+        if domain.startswith("http://"):
+            domain = domain[7:]
+        elif domain.startswith("https://"):
+            domain = domain[8:]
+        # Remove trailing slash
+        domain = domain.rstrip("/")
+        if not domain or " " in domain:
             raise ValueError("Введите домен без протокола, например example.com")
+        # Check for valid domain format (must have at least one dot, or be localhost/IP)
+        if "." not in domain and domain != "localhost" and not domain.replace(":", "").isdigit():
+            raise ValueError("Введите корректный домен, например example.com")
         return domain
     if kind == "url":
         if not text.lower().startswith("http://") and not text.lower().startswith("https://"):
             raise ValueError("URL должен начинаться с http:// или https://")
+        # Check that URL has a domain after the protocol
+        from urllib.parse import urlparse
+        parsed = urlparse(text)
+        if not parsed.netloc or len(parsed.netloc) < 3:
+            raise ValueError("Введите полный URL с доменом, например https://example.com")
         return text
     if kind == "bool_optional":
         if not text:
             return True
-        return text.lower() in {"да", "yes", "y", "true", "1", "+"}
+        lower = text.lower()
+        if lower in {"да", "yes", "y", "true", "1", "+"}:
+            return True
+        if lower in {"нет", "no", "n", "false", "0", "-"}:
+            return False
+        raise ValueError("Введите 'да' или 'нет'")
     if kind == "token":
         if len(text) < 20 or ":" not in text:
             raise ValueError("Похоже, токен неверный. Формат 123456:ABC...")
