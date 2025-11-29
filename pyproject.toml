@@ -65,6 +65,7 @@ include = [
     "backend*",
     "backup*",
     "core*",
+    "connectors*",
     "crawler*",
     "integrations*",
     "knowledge*",
