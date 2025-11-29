@@ -17,3 +17,4 @@ __pycache__/
 deploy-backups/
 data/
 certs/
+node_modules/

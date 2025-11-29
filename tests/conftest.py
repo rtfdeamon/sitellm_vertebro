@@ -121,6 +121,8 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "asyncio: mark async test to run in event loop"
     )
+    # Disable pytest-asyncio if it's installed, since we have a custom implementation
+    config.pluginmanager.set_blocked("asyncio")
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -130,7 +132,12 @@ def pytest_pyfunc_call(pyfuncitem):
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            loop.run_until_complete(pyfuncitem.obj(**pyfuncitem.funcargs))
+            # Filter out pytest-asyncio fixtures if they sneak in
+            funcargs = {
+                k: v for k, v in pyfuncitem.funcargs.items()
+                if not k.startswith('_') and k not in ('event_loop', 'event_loop_policy')
+            }
+            loop.run_until_complete(pyfuncitem.obj(**funcargs))
         finally:
             loop.close()
             asyncio.set_event_loop(None)
