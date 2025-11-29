@@ -1684,6 +1684,41 @@
       }
     }
 
+    .theme-toggle-fab {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 9998;
+      background: var(--panel);
+      backdrop-filter: var(--blur);
+      border: 1px solid var(--border);
+      color: var(--text);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: var(--shadow-lg);
+      transition: var(--transition);
+      font-size: 20px;
+    }
+
+    .theme-toggle-fab:hover {
+      transform: scale(1.1);
+      box-shadow: var(--shadow-xl), 0 0 24px var(--accent-glow);
+      border-color: var(--border-hover);
+    }
+
+    .theme-toggle-fab::before {
+      content: '🌙';
+    }
+
+    [data-theme='light'] .theme-toggle-fab::before {
+      content: '☀️';
+    }
+
     body.embed .toolbar,
     body.embed .project-panel,
     body.embed #saveCfg,
@@ -1819,6 +1854,8 @@
       </form>
     </div>
   </div>
+  </div>
+  <button class="theme-toggle-fab" id="floatingThemeToggle" title="Toggle theme" aria-label="Toggle theme"></button>
   <div class="page-shell" id="pageShell">
     <section class="hero">
       <div class="hero-copy">
@@ -1960,9 +1997,9 @@
                 <span class="avatar-character-desc" data-i18n="avatarCharacterCosmoDesc">Futuristic guide</span>
               </button>
               <button type="button" class="avatar-character-card" data-avatar-option="ivan">
-                <span class="avatar-character-name" data-i18n="avatarCharacterIvanName">Ivan Ivanych</span>
-                <span class="avatar-character-desc" data-i18n="avatarCharacterIvanDesc">Seasoned 3D mentor for confident
-                  launches</span>
+                <span class="avatar-character-name" data-i18n="avatarCharacterIvanName">3D Mentor</span>
+                <span class="avatar-character-desc" data-i18n="avatarCharacterIvanDesc">Interactive 3D assistant for
+                  your website</span>
               </button>
             </div>
           </div>
@@ -2324,8 +2361,8 @@
           avatarCharacterAtlasDesc: 'Calm operations engineer',
           avatarCharacterCosmoName: 'Cosmo',
           avatarCharacterCosmoDesc: 'Futuristic guide',
-          avatarCharacterIvanName: 'Ivan Ivanych',
-          avatarCharacterIvanDesc: 'Seasoned 3D mentor for confident launches',
+          avatarCharacterIvanName: '3D Mentor',
+          avatarCharacterIvanDesc: 'Interactive 3D assistant for your website',
           avatarVoiceLabel: 'Speech voice (optional)',
           avatarSpeechRateLabel: 'Speech speed',
           avatarTestPlaceholder: 'Enter a short line to preview the voice…',
@@ -2878,8 +2915,8 @@
           avatarCharacterAtlasDesc: 'Спокойный инженер по операциям',
           avatarCharacterCosmoName: 'Космо',
           avatarCharacterCosmoDesc: 'Футуристичный проводник',
-          avatarCharacterIvanName: 'Иван Иваныч',
-          avatarCharacterIvanDesc: '3D-наставник, уверенно ведёт диалог',
+          avatarCharacterIvanName: '3D Ментор',
+          avatarCharacterIvanDesc: 'Интерактивный 3D-ассистент для вашего сайта',
           avatarVoiceLabel: 'Голос синтеза (опционально)',
           avatarSpeechRateLabel: 'Скорость озвучивания',
           avatarTestPlaceholder: 'Введите короткий текст, чтобы прослушать пример…',
@@ -4580,17 +4617,26 @@
     baseUrlInput.value = localStorage.getItem('chat_base_url') || '';
 
     function setTheme(theme) {
-      const next = theme === 'light' ? 'light' : 'dark';
-      document.documentElement.dataset.theme = next;
-      try { localStorage.setItem('chat_theme', next); } catch { }
+      document.body.setAttribute('data-theme', theme);
+      document.documentElement.dataset.theme = theme;
+      try {
+        localStorage.setItem('chat_theme', theme);
+        localStorage.setItem('theme', theme);
+      } catch { }
+
+      // Update floating button icon if needed
+      // (CSS handles this via data-theme attribute)
     }
 
     function toggleTheme() {
-      const current = document.documentElement.dataset.theme || 'dark';
-      setTheme(current === 'dark' ? 'light' : 'dark');
+      const current = document.body.getAttribute('data-theme');
+      const next = current === 'light' ? 'dark' : 'light';
+      setTheme(next);
     }
 
-    themeToggle.addEventListener('click', toggleTheme);
+    if (themeToggle) themeToggle.addEventListener('click', toggleTheme);
+    const floatingThemeToggle = document.getElementById('floatingThemeToggle');
+    if (floatingThemeToggle) floatingThemeToggle.addEventListener('click', toggleTheme);
 
     function setHealth(ok, statusKey) {
       healthDot.classList.remove('ok', 'bad');
