@@ -1283,9 +1283,16 @@
 
     .voice-layout {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 24px;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
       align-items: start;
+    }
+
+    @media (max-width: 768px) {
+      .voice-layout {
+        grid-template-columns: 1fr;
+        gap: 24px;
+      }
     }
 
     .voice-preview {
