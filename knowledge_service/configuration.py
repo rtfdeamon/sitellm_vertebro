@@ -12,3 +12,4 @@ DEFAULT_PROCESSING_PROMPT = (
     "по частям, чтобы итоговые изменения оставались согласованными."
 )
 MANUAL_MODE_MESSAGE = "Ручной режим: используйте команду запуска."
+KEY = "knowledge_service_config"

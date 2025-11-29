@@ -162,7 +162,7 @@ def test_session_lifecycle_and_history():
     )
     assert response.status_code == 201
     data = response.json()
-    session_id = data["session_id"]
+    session_id = data["sessionId"]
 
     # Fetch
     get_response = client.get(f"/api/v1/voice/session/{session_id}")
@@ -174,7 +174,7 @@ def test_session_lifecycle_and_history():
         json={"session_id": session_id, "project": "demo", "text": "navigate to pricing"},
     )
     assert dialog_response.status_code == 202
-    assert dialog_response.json()["suggested_actions"]
+    assert dialog_response.json()["suggestedActions"]
 
     # History
     history_response = client.get(f"/api/v1/voice/session/{session_id}/history")
@@ -207,7 +207,7 @@ def test_recognize_and_synthesize_endpoints():
         json={"text": "Привет!", "voice": "default", "language": "ru-RU"},
     )
     assert synth.status_code == 202
-    audio_url = synth.json()["audio_url"]
+    audio_url = synth.json()["audioUrl"]
     assert audio_url.endswith(".mp3") is False  # path format
 
     # Fetch cached audio

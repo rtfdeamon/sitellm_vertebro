@@ -41,6 +41,7 @@ ADMIN_PASSWORD_DIGEST = resolve_admin_password_digest(os.getenv("ADMIN_PASSWORD"
 def get_admin_identity(request: Request) -> AdminIdentity | None:
     """Get admin identity from request state."""
     identity = getattr(request.state, "admin", None)
+    print(f"DEBUG: get_admin_identity: {identity}")
     return identity if isinstance(identity, AdminIdentity) else None
 
 
@@ -48,6 +49,7 @@ def require_admin(request: Request) -> AdminIdentity:
     """Require admin authentication."""
     identity = get_admin_identity(request)
     if identity is None:
+        print("DEBUG: require_admin: identity is None")
         raise HTTPException(status_code=401, detail="Admin authentication required")
     return identity
 
@@ -56,6 +58,7 @@ def require_super_admin(request: Request) -> AdminIdentity:
     """Require super admin privileges."""
     identity = require_admin(request)
     if not identity.is_super:
+        print("DEBUG: require_super_admin: not super")
         raise HTTPException(status_code=403, detail="Super admin privileges required")
     return identity
 

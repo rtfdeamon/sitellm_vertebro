@@ -38,6 +38,7 @@ class TestCSRF:
     
     def test_csrf_endpoint(self, client: TestClient):
         """Test CSRF token endpoint."""
+        client.auth = ("admin", "admin")
         response = client.get("/api/v1/admin/csrf-token")
         
         # Should return CSRF token

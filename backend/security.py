@@ -150,14 +150,14 @@ class RateLimiter:
         limit: int,
         period_seconds: int,
         request_type: str = "request",
-    ) -> None:
+    ) -> tuple[bool, int]:
         """
         Check if the given key has exceeded the rate limit.
-        Raises HTTPException if limit is exceeded.
+        Returns (allowed, retry_after).
         """
         if not self.redis:
             logger.warning("rate_limiter_redis_unavailable", key=key)
-            return  # Allow all requests if Redis is not configured
+            return True, 0  # Allow all requests if Redis is not configured
         
         now = datetime.now(timezone.utc)
         # Use a sorted set to store timestamps of requests
@@ -186,11 +186,27 @@ class RateLimiter:
                 current_count=current_count,
                 request_type=request_type,
             )
-            raise HTTPException(
-                status_code=429,
-                detail=f"Rate limit exceeded for {request_type}. Try again in {period_seconds} seconds.",
-                headers={"Retry-After": str(period_seconds)},
-            )
+            return False, period_seconds
+            
+        return True, 0
+
+    async def check_read_limit(self, key: str) -> tuple[bool, int]:
+        """Check if read rate limit is exceeded."""
+        return await self.check_rate_limit(
+            key,
+            RATE_LIMIT_READ_PER_MIN,
+            60,
+            request_type="read",
+        )
+
+    async def check_write_limit(self, key: str) -> tuple[bool, int]:
+        """Check if write rate limit is exceeded."""
+        return await self.check_rate_limit(
+            key,
+            RATE_LIMIT_WRITE_PER_MIN,
+            60,
+            request_type="write",
+        )
 
 
 # Placeholder for CSRF token generation and validation

@@ -21,12 +21,21 @@ logger = structlog.get_logger(__name__)
 class TelegramHub:
     """Manage multiple Telegram bot instances keyed by project."""
 
+    _instance: TelegramHub | None = None
+
     def __init__(self, mongo: MongoClient) -> None:
+        TelegramHub._instance = self
         self._mongo = mongo
         self._runners: dict[str, TelegramRunner] = {}
         self._sessions: dict[str, dict[int, UUID]] = {}
         self._errors: dict[str, str] = {}
         self._lock = asyncio.Lock()
+
+    @classmethod
+    def get_instance(cls) -> TelegramHub:
+        if cls._instance is None:
+            raise RuntimeError("TelegramHub not initialized")
+        return cls._instance
 
     @property
     def is_any_running(self) -> bool:

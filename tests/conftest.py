@@ -1,5 +1,8 @@
 """Pytest configuration with basic asyncio support."""
 
+import os
+os.environ["RATE_LIMITING_ENABLED"] = "false"
+
 import asyncio
 import types
 import sys
@@ -18,24 +21,25 @@ fake_structlog.get_logger = lambda *a, **k: types.SimpleNamespace(
 sys.modules.setdefault("structlog", fake_structlog)
 
 # Provide minimal ``backend`` and ``backend.settings`` stubs for dynamic imports.
-from pathlib import Path
-
-backend_pkg = types.ModuleType("backend")
-backend_pkg.__path__ = [str(Path(__file__).resolve().parents[1] / "backend")]
-sys.modules.setdefault("backend", backend_pkg)
-backend_settings = types.ModuleType("backend.settings")
-backend_settings.get_settings = lambda: types.SimpleNamespace(
-    redis_url="redis://",
-    project_name=None,
-    domain=None,
-)
-backend_settings.settings = types.SimpleNamespace(
-    use_gpu=False,
-    llm_model="stub",
-    project_name=None,
-    domain=None,
-)
-sys.modules.setdefault("backend.settings", backend_settings)
+# from pathlib import Path
+#
+# backend_pkg = types.ModuleType("backend")
+# backend_pkg.__path__ = [str(Path(__file__).resolve().parents[1] / "backend")]
+# sys.modules.setdefault("backend", backend_pkg)
+# backend_settings = types.ModuleType("backend.settings")
+# backend_settings.get_settings = lambda: types.SimpleNamespace(
+#     redis_url="redis://",
+#     project_name=None,
+#     domain=None,
+# )
+# backend_settings.settings = types.SimpleNamespace(
+#     use_gpu=False,
+#     llm_model="stub",
+#     project_name=None,
+#     domain=None,
+#     qdrant_url="http://localhost:6333",
+# )
+# sys.modules.setdefault("backend.settings", backend_settings)
 
 # Stub out ``redis.asyncio`` used by caching module only if the real package is
 # unavailable (older minimal test setups).
@@ -103,7 +107,10 @@ else:
 # unavailable (e.g. stripped dependency environments).
 try:
     import app as _real_app
-except Exception:  # pragma: no cover - fallback only when app import fails
+except Exception as e:  # pragma: no cover - fallback only when app import fails
+    print(f"DEBUG: app import failed: {e}")
+    import traceback
+    traceback.print_exc()
     app_stub = types.ModuleType("app")
     app_stub.app = object()
     sys.modules.setdefault("app", app_stub)
@@ -116,25 +123,25 @@ fake_requests.get = lambda *a, **k: types.SimpleNamespace(ok=True, json=lambda: 
 sys.modules.setdefault("requests", fake_requests)
 
 
-def pytest_configure(config):
-    """Register the ``asyncio`` marker for asynchronous tests."""
-    config.addinivalue_line(
-        "markers", "asyncio: mark async test to run in event loop"
-    )
+# def pytest_configure(config):
+#     """Register the ``asyncio`` marker for asynchronous tests."""
+#     config.addinivalue_line(
+#         "markers", "asyncio: mark async test to run in event loop"
+#     )
 
 
-@pytest.hookimpl(tryfirst=True)
-def pytest_pyfunc_call(pyfuncitem):
-    """Run functions marked with ``asyncio`` in a new event loop."""
-    if pyfuncitem.get_closest_marker("asyncio"):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(pyfuncitem.obj(**pyfuncitem.funcargs))
-        finally:
-            loop.close()
-            asyncio.set_event_loop(None)
-        return True
+# @pytest.hookimpl(tryfirst=True)
+# def pytest_pyfunc_call(pyfuncitem):
+#     """Run functions marked with ``asyncio`` in a new event loop."""
+#     if pyfuncitem.get_closest_marker("asyncio"):
+#         loop = asyncio.new_event_loop()
+#         asyncio.set_event_loop(loop)
+#         try:
+#             loop.run_until_complete(pyfuncitem.obj(**pyfuncitem.funcargs))
+#         finally:
+#             loop.close()
+#             asyncio.set_event_loop(None)
+#         return True
 
 
 # Ensure compatibility when other tests stub fastapi.responses without Response
@@ -164,3 +171,12 @@ def pytest_runtest_setup(item):  # noqa: D401
 
 def pytest_runtest_teardown(item):
     """No-op: kept for symmetry if future isolation is added."""
+
+
+@pytest.fixture
+def client():
+    """Yield a TestClient instance with lifespan management."""
+    from app import app
+    from fastapi.testclient import TestClient
+    with TestClient(app) as c:
+        yield c

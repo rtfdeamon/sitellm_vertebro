@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Optional
 import time
 
-from models import RecognitionResult
+from voice.schemas import RecognitionResult
 
 
 class BaseRecognizer:

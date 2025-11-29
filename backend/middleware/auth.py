@@ -49,9 +49,11 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
 
     async def _authenticate(self, request: Request, username: str, password: str) -> AdminIdentity | None:
         normalized_username = username.strip().lower()
+        print(f"DEBUG: Auth attempt: {normalized_username} vs {ADMIN_USER.strip().lower()}")
         if normalized_username == ADMIN_USER.strip().lower():
             logger.debug("basic_auth_attempt_super", username=normalized_username)
             hashed = hashlib.sha256(password.encode()).digest()
+            print(f"DEBUG: Hash comparison: {hashed.hex()} vs {ADMIN_PASSWORD_DIGEST.hex()}")
             if hmac.compare_digest(hashed, ADMIN_PASSWORD_DIGEST):
                 logger.debug("admin_super_login_success", username=normalized_username)
                 return AdminIdentity(username=normalized_username, is_super=True)
@@ -131,10 +133,12 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                     return response
                 logger.warning("admin_auth_invalid_credentials", username=username)
             except Exception as exc:  # noqa: BLE001
+                print(f"DEBUG: BasicAuthMiddleware caught exception: {exc}")
                 logger.warning(
                     "basic_auth_decode_failed",
                     error=str(exc),
-                    header_length=len(encoded) if isinstance(encoded, str) else None,
+                    auth_header=request.headers.get("Authorization"),
                 )
+                return self._unauthorized_response(request)
 
         return self._unauthorized_response(request)

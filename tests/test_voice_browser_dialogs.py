@@ -74,7 +74,12 @@ def client():
     """Create test client with in-memory storage."""
     test_app = app
     test_app.state.mongo = InMemoryVoiceStore()
-    return TestClient(test_app)
+    
+    # Disable rate limiting for tests
+    from unittest.mock import patch
+    with patch("backend.rate_limiting.RATE_LIMITING_ENABLED", False):
+        with TestClient(test_app) as c:
+            yield c
 
 
 class DialogFlowTester:

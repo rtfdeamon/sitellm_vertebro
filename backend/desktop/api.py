@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from backend.auth import require_admin
-from backend.desktop import prepare_desktop_artifact_blocking
+from backend.desktop.utils import prepare_desktop_artifact_blocking
 
 router = APIRouter(prefix="/desktop", tags=["desktop"])
 

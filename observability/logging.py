@@ -17,6 +17,8 @@ from typing import List
 
 import structlog
 
+get_logger = structlog.get_logger
+
 
 _ring: deque[str] | None = None
 

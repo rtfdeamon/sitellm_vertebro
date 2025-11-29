@@ -52,6 +52,8 @@ def project_telegram_payload(
 
     return {
         "enabled": bool(project.telegram_token),
+        "token_set": bool(project.telegram_token),
+        "token_preview": f"{project.telegram_token[:4]}…{project.telegram_token[-2:]}" if project.telegram_token and len(project.telegram_token) > 6 else None,
         "auto_start": bool(project.telegram_auto_start),
         "running": running,
         "error": error,
@@ -73,6 +75,8 @@ def project_max_payload(
 
     return {
         "enabled": bool(project.max_token),
+        "token_set": bool(project.max_token),
+        "token_preview": f"{project.max_token[:4]}…{project.max_token[-2:]}" if project.max_token and len(project.max_token) > 6 else None,
         "auto_start": bool(project.max_auto_start),
         "running": running,
         "error": error,
@@ -93,6 +97,8 @@ def project_vk_payload(
 
     return {
         "enabled": bool(project.vk_token),
+        "token_set": bool(project.vk_token),
+        "token_preview": f"{project.vk_token[:4]}…{project.vk_token[-2:]}" if project.vk_token and len(project.vk_token) > 6 else None,
         "auto_start": bool(project.vk_auto_start),
         "running": running,
         "error": error,

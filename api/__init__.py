@@ -317,10 +317,7 @@ reading_router = APIRouter(
     tags=["reading"],
 )
 
-voice_router = APIRouter(
-    prefix="/voice",
-    tags=["voice"],
-)
+from voice.router import voice_assistant_router as voice_router
 
 
 def _normalize_priority_order(order: list[str] | None) -> list[str]:

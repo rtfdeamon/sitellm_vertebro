@@ -2,12 +2,14 @@
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 from urllib.parse import quote
 
 from fastapi import Request
 from starlette.responses import Response
 
 from models import Project
+from backend.cache import _get_redis
 
 
 def project_response(project: Project) -> dict[str, Any]:

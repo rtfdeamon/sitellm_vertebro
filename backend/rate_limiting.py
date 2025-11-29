@@ -47,6 +47,7 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
     
     async def dispatch(self, request: Request, call_next: Any) -> Response:
         """Process request and check rate limits."""
+        print(f"DEBUG: RateLimitingMiddleware dispatch. Enabled: {RATE_LIMITING_ENABLED}, Limiter: {self.rate_limiter}")
         
         # Skip rate limiting for health checks and metrics
         if request.url.path in {"/health", "/healthz", "/status", "/metrics"}:
@@ -54,14 +55,19 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
         
         # Skip rate limiting if disabled
         if not RATE_LIMITING_ENABLED or not self.rate_limiter:
+            print("DEBUG: Rate limiting skipped")
             return await call_next(request)
         
-        # Get client IP
-        client_ip = get_client_ip(request)
-        if client_ip == "unknown":
-            # If we can't determine IP, allow request but log
-            logger.warning("unknown_client_ip", path=request.url.path)
-            return await call_next(request)
+        try:
+            # Get client IP
+            client_ip = get_client_ip(request)
+            if client_ip == "unknown":
+                # If we can't determine IP, allow request but log
+                logger.warning("unknown_client_ip", path=request.url.path)
+                return await call_next(request)
+        except Exception as e:
+            print(f"DEBUG: RateLimitingMiddleware failed: {e}")
+            raise
         
         # Check rate limits based on HTTP method
         is_read = request.method in {"GET", "HEAD", "OPTIONS"}

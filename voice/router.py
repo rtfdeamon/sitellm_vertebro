@@ -20,7 +20,7 @@ import structlog
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-from models import (
+from voice.schemas import (
     DialogMessageRequest,
     IntentRequest,
     IntentResponse,

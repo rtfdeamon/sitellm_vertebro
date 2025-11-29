@@ -50,3 +50,11 @@ async def admin_logs(
         Maximum number of lines to return (default 200).
     """
     return {"logs": get_recent_logs(limit)}
+
+
+@router.get("/csrf-token")
+async def get_csrf_token_endpoint(request: Request) -> dict[str, str]:
+    """Return CSRF token for the current session."""
+    from backend.csrf import get_csrf_token
+    token = await get_csrf_token(request)
+    return {"csrf_token": token}

@@ -4,10 +4,10 @@ from core.build import get_build_info
 
 
 def test_widget_served():
-    client = TestClient(app)
-    response = client.get("/widget/")
-    assert response.status_code == 200
-    assert "LLM Chat Widget" in response.text
+    with TestClient(app) as client:
+        response = client.get("/widget/")
+        assert response.status_code == 200
+        assert "LLM Chat Widget" in response.text
 
 
 def test_build_info_contains_metadata():

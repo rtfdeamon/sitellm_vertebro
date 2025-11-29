@@ -33,9 +33,9 @@ def test_complete_voice_interaction_flow():
     )
     assert session_response.status_code == 201
     session_data = session_response.json()
-    session_id = session_data["session_id"]
-    assert "websocket_url" in session_data
-    assert session_data["initial_greeting"]
+    session_id = session_data["sessionId"]
+    assert "websocketUrl" in session_data
+    assert session_data["initialGreeting"]
 
     # 2. Recognize speech (using text hint for demo)
     audio_data = base64.b64encode(b"fake audio data").decode("ascii")
@@ -90,11 +90,11 @@ def test_complete_voice_interaction_flow():
     )
     assert synth_response.status_code == 202
     synth_data = synth_response.json()
-    assert "audio_url" in synth_data
-    assert synth_data["duration_seconds"] > 0
+    assert "audioUrl" in synth_data
+    assert synth_data["durationSeconds"] > 0
 
     # 6. Fetch audio
-    audio_url = synth_data["audio_url"]
+    audio_url = synth_data["audioUrl"]
     audio_response = client.get(audio_url)
     assert audio_response.status_code == 200
     assert audio_response.headers["content-type"] == "audio/mpeg"
@@ -135,7 +135,7 @@ def test_concurrent_sessions_limit():
             json={"project": "concurrent-test", "user_id": f"user-{i}", "language": "ru-RU"},
         )
         assert response.status_code == 201
-        session_ids.append(response.json()["session_id"])
+        session_ids.append(response.json()["sessionId"])
 
     # Verify all sessions exist
     for session_id in session_ids:
@@ -164,14 +164,14 @@ def test_audio_caching_behavior():
     assert first_response.status_code == 202
     first_data = first_response.json()
     assert first_data["cached"] is False
-    first_audio_url = first_data["audio_url"]
+    first_audio_url = first_data["audioUrl"]
 
     # Second synthesis with same parameters (should be cached)
     second_response = client.post("/api/v1/voice/synthesize", json=synth_request)
     assert second_response.status_code == 202
     second_data = second_response.json()
     assert second_data["cached"] is True
-    assert second_data["audio_url"] == first_audio_url
+    assert second_data["audioUrl"] == first_audio_url
 
     # Third synthesis with different emotion (should not be cached)
     synth_request_different = {**synth_request, "emotion": "happy"}
@@ -179,7 +179,7 @@ def test_audio_caching_behavior():
     assert third_response.status_code == 202
     third_data = third_response.json()
     assert third_data["cached"] is False
-    assert third_data["audio_url"] != first_audio_url
+    assert third_data["audioUrl"] != first_audio_url
 
 
 def test_intent_recognition_variations():
@@ -264,7 +264,7 @@ def test_session_expiry_behavior():
     )
     assert session_response.status_code == 201
     session_data = session_response.json()
-    session_id = session_data["session_id"]
+    session_id = session_data["sessionId"]
 
     # Verify session exists
     get_response = client.get(f"/api/v1/voice/session/{session_id}")

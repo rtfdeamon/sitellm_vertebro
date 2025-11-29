@@ -5,9 +5,11 @@ import types
 
 import pytest
 
-from app import (
+from backend.bots.schemas import (
     ProjectVkAction,
     ProjectVkConfig,
+)
+from backend.projects.api import (
     admin_project_vk_config,
     admin_project_vk_start,
     admin_project_vk_status,
@@ -82,6 +84,8 @@ def _load_json(response) -> dict:
     return json.loads(response.body.decode())
 
 
+from unittest.mock import patch
+
 @pytest.mark.asyncio
 async def test_project_config_creates_and_updates_token() -> None:
     mongo = _FakeMongo(project=None)
@@ -89,7 +93,8 @@ async def test_project_config_creates_and_updates_token() -> None:
     request = _make_request(mongo, controller)
     payload = ProjectVkConfig(token=" token123 ", auto_start=True)
 
-    response = await admin_project_vk_config("demo", request, payload)
+    with patch("backend.bots.vk.VkHub.get_instance", return_value=controller):
+        response = await admin_project_vk_config("demo", request, payload)
     data = _load_json(response)
 
     assert data["token_set"] is True
@@ -109,7 +114,8 @@ async def test_project_status_reflects_running_state() -> None:
     controller.tokens["demo"] = "abc"
 
     request = _make_request(mongo, controller)
-    response = await admin_project_vk_status("demo", request)
+    with patch("backend.bots.vk.VkHub.get_instance", return_value=controller):
+        response = await admin_project_vk_status("demo", request)
     data = _load_json(response)
 
     assert data["project"] == "demo"
@@ -125,7 +131,8 @@ async def test_project_start_uses_existing_token() -> None:
     request = _make_request(mongo, controller)
     payload = ProjectVkAction()
 
-    response = await admin_project_vk_start("demo", request, payload)
+    with patch("backend.bots.vk.VkHub.get_instance", return_value=controller):
+        response = await admin_project_vk_start("demo", request, payload)
     data = _load_json(response)
 
     assert controller.is_project_running("demo") is True
@@ -144,7 +151,8 @@ async def test_project_stop_can_update_auto_start() -> None:
     request = _make_request(mongo, controller)
     payload = ProjectVkAction(auto_start=False)
 
-    response = await admin_project_vk_stop("demo", request, payload)
+    with patch("backend.bots.vk.VkHub.get_instance", return_value=controller):
+        response = await admin_project_vk_stop("demo", request, payload)
     data = _load_json(response)
 
     assert controller.is_project_running("demo") is False

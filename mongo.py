@@ -36,10 +36,13 @@ from models import (
 try:
     from models import Project
 except ImportError:  # pragma: no cover - fallback for test stubs
+    print("DEBUG: Using fallback Project class in mongo.py")
     class Project:  # type: ignore
         def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
+            self.__dict__.update(kwargs)
+
+        def __getattr__(self, name):
+            return None
 
         def model_dump(self):
             return self.__dict__.copy()
@@ -138,6 +141,9 @@ class MongoClient:
         self.unanswered_collection = os.getenv("MONGO_UNANSWERED", "unanswered_questions")
         self.voice_samples_collection = os.getenv("MONGO_VOICE_SAMPLES", "voice_samples")
         self.voice_jobs_collection = os.getenv("MONGO_VOICE_JOBS", "voice_training_jobs")
+        self.voice_sessions_collection = os.getenv("MONGO_VOICE_SESSIONS", "voice_sessions")
+        self.voice_interactions_collection = os.getenv("MONGO_VOICE_INTERACTIONS", "voice_interactions")
+        self.voice_audio_cache_collection = os.getenv("MONGO_VOICE_AUDIO_CACHE", "voice_audio_cache")
         self.backup_jobs_collection = os.getenv("MONGO_BACKUPS", "backup_jobs")
         self._indexes_ready = False
 
@@ -1495,6 +1501,29 @@ class MongoClient:
             logger.error("mongo_upsert_project_failed", project=data.get("name"), error=str(exc))
             raise
 
+    async def create_project(self, name: str, **kwargs) -> Project:
+        """Create a new project with given attributes."""
+        # Ensure name is in kwargs for Project constructor
+        kwargs["name"] = name
+        # Filter out None values to let Project defaults take over if needed
+        data = {k: v for k, v in kwargs.items() if v is not None}
+        project = Project(**data)
+        return await self.upsert_project(project)
+
+    async def update_project(self, name: str, updates: dict[str, Any]) -> Project | None:
+        """Update an existing project."""
+        project = await self.get_project(name)
+        if not project:
+            return None
+        
+        data = project.model_dump()
+        # Merge updates
+        for k, v in updates.items():
+            data[k] = v
+            
+        updated_project = Project(**data)
+        return await self.upsert_project(updated_project)
+
     async def delete_project(
         self,
         domain: str,
@@ -2794,3 +2823,148 @@ class MongoClient:
         cursor = self.db[self.stats_collection].find(match, {"_id": False}).sort("ts", 1)
         async for item in cursor:
             yield item
+
+    # Voice Session methods
+    async def count_active_voice_sessions(self, project: str | None = None) -> int:
+        query = {"status": "active"}
+        if project:
+            query["project"] = project
+        return await self.db[self.voice_sessions_collection].count_documents(query)
+
+    async def count_voice_sessions(self, project: str | None = None) -> int:
+        query = {}
+        if project:
+            query["project"] = project
+        return await self.db[self.voice_sessions_collection].count_documents(query)
+
+    async def count_voice_interactions(self, project: str | None = None) -> int:
+        query = {}
+        if project:
+            query["project"] = project
+        return await self.db[self.voice_interactions_collection].count_documents(query)
+
+    async def create_voice_session(
+        self,
+        session_id: str,
+        project: str,
+        user_id: str,
+        metadata: dict[str, Any],
+        *,
+        expires_in: timedelta,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        doc = {
+            "session_id": session_id,
+            "project": project,
+            "user_id": user_id,
+            "metadata": metadata,
+            "created_at": now,
+            "expires_at": now + expires_in,
+            "last_activity": now,
+            "total_interactions": 0,
+            "status": "active",
+        }
+        await self.db[self.voice_sessions_collection].insert_one(doc)
+        return session_id
+
+    async def get_voice_session(self, session_id: str) -> dict[str, Any] | None:
+        return await self.db[self.voice_sessions_collection].find_one({"session_id": session_id}, {"_id": False})
+
+    async def delete_voice_session(self, session_id: str) -> bool:
+        result = await self.db[self.voice_sessions_collection].delete_one({"session_id": session_id})
+        return result.deleted_count > 0
+
+    async def update_voice_session_activity(self, session_id: str) -> None:
+        now = datetime.now(timezone.utc)
+        await self.db[self.voice_sessions_collection].update_one(
+            {"session_id": session_id},
+            {
+                "$set": {"last_activity": now},
+                "$inc": {"total_interactions": 1}
+            }
+        )
+
+    async def get_session_history(self, session_id: str, *, limit: int) -> list[dict[str, Any]]:
+        cursor = (
+            self.db[self.voice_interactions_collection]
+            .find({"session_id": session_id}, {"_id": False})
+            .sort("created_at", 1)
+        )
+        return [doc async for doc in cursor.limit(limit)]
+
+    async def log_voice_interaction(
+        self,
+        session_id: str,
+        project: str,
+        user_id: str,
+        interaction_type: str,
+        content: dict[str, Any],
+        **extra: Any,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "session_id": session_id,
+            "project": project,
+            "user_id": user_id,
+            "interaction_type": interaction_type,
+            "content": content,
+            "created_at": now,
+            **extra,
+        }
+        result = await self.db[self.voice_interactions_collection].insert_one(payload)
+        return str(result.inserted_id)
+
+    async def cache_audio(
+        self,
+        audio_id: str,
+        *,
+        text: str,
+        voice: str,
+        language: str,
+        provider: str,
+        audio_data: bytes,
+        duration_seconds: float,
+        cost: float,
+        text_hash: str | None = None,
+    ) -> str:
+        if text_hash is None:
+            text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        
+        doc = {
+            "audio_id": audio_id,
+            "text": text,
+            "text_hash": text_hash,
+            "voice": voice,
+            "language": language,
+            "provider": provider,
+            "duration_seconds": duration_seconds,
+            "cost": cost,
+            "created_at": datetime.now(timezone.utc),
+        }
+        await self.db[self.voice_audio_cache_collection].insert_one(doc)
+        
+        await self.gridfs.upload_from_stream(
+            audio_id,
+            audio_data,
+            metadata={"audio_id": audio_id, "type": "voice_cache"}
+        )
+        return audio_id
+
+    async def get_cached_audio(
+        self,
+        *,
+        text_hash: str,
+        voice: str,
+        language: str,
+    ) -> dict[str, Any] | None:
+        return await self.db[self.voice_audio_cache_collection].find_one(
+            {"text_hash": text_hash, "voice": voice, "language": language},
+            {"_id": False}
+        )
+
+    async def get_audio_data(self, audio_id: str) -> bytes | None:
+        try:
+            stream = await self.gridfs.open_download_stream_by_name(audio_id)
+            return await stream.read()
+        except Exception:
+            return None

@@ -21,13 +21,22 @@ logger = structlog.get_logger(__name__)
 class VkHub:
     """Manage VK bot runners per project."""
 
+    _instance: VkHub | None = None
+
     def __init__(self, mongo: MongoClient) -> None:
+        VkHub._instance = self
         self._mongo = mongo
         self._runners: dict[str, VkRunner] = {}
         self._sessions: dict[str, dict[str, UUID]] = {}
         self._errors: dict[str, str] = {}
         self._pending: dict[str, dict[str, dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
+
+    @classmethod
+    def get_instance(cls) -> VkHub:
+        if cls._instance is None:
+            raise RuntimeError("VkHub not initialized")
+        return cls._instance
 
     @property
     def is_any_running(self) -> bool:

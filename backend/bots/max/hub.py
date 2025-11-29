@@ -21,13 +21,22 @@ logger = structlog.get_logger(__name__)
 class MaxHub:
     """Manage MAX bot runners per project."""
 
+    _instance: MaxHub | None = None
+
     def __init__(self, mongo: MongoClient) -> None:
+        MaxHub._instance = self
         self._mongo = mongo
         self._runners: dict[str, MaxRunner] = {}
         self._sessions: dict[str, dict[str, UUID]] = {}
         self._errors: dict[str, str] = {}
         self._pending: dict[str, dict[str, dict[str, Any]]] = {}
         self._lock = asyncio.Lock()
+
+    @classmethod
+    def get_instance(cls) -> MaxHub:
+        if cls._instance is None:
+            raise RuntimeError("MaxHub not initialized")
+        return cls._instance
 
     @property
     def is_any_running(self) -> bool:
