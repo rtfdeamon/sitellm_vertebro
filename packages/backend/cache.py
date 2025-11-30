@@ -14,9 +14,9 @@ from redis.asyncio import ConnectionPool, Redis
 import structlog
 
 try:
-    from backend.settings import get_settings
-except ModuleNotFoundError:  # pragma: no cover - fallback for tests
-    from settings import get_settings
+    from packages.backend.settings import get_settings
+except ImportError:  # pragma: no cover - fallback for test stubs
+    from packages.core.settings import get_settings  # type: ignore[assignment]
 
 logger = structlog.get_logger(__name__)
 
