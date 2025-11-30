@@ -5,7 +5,7 @@ from rich.live import Live
 from rich.table import Table
 from rich.panel import Panel
 from rich.progress import Progress, BarColumn, TextColumn
-from core.status import status_dict
+from packages.core.status import status_dict
 
 
 def render():

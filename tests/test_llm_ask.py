@@ -12,7 +12,7 @@ import pytest
 if sys.version_info < (3, 10):  # pragma: no cover - tooling compatibility
     pytest.skip("LLM API tests require Python 3.10+ for modern typing syntax", allow_module_level=True)
 
-import backend.cache as cache
+from packages import backend.cache as cache
 
 
 class FakeRedis:

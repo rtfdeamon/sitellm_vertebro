@@ -8,8 +8,8 @@ and stores them in GridFS while also creating metadata entries in the
 import asyncio
 from pathlib import Path
 
-from mongo import MongoClient
-from settings import Settings
+from packages.core.mongo import MongoClient
+from packages.core.settings import Settings
 
 
 settings = Settings()

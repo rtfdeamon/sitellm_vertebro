@@ -38,7 +38,7 @@ class _MongoSettings:
 settings_stub.MongoSettings = _MongoSettings  # type: ignore[attr-defined]
 sys.modules.setdefault("settings", settings_stub)
 
-from crawler.run_crawl import crawl
+from packages.crawler.run_crawl import crawl
 
 
 @pytest.mark.asyncio

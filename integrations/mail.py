@@ -16,7 +16,7 @@ from typing import Iterable, Sequence
 
 import structlog
 
-from models import Project
+from packages.core.models import Project
 
 logger = structlog.get_logger(__name__)
 

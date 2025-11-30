@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from knowledge import summary
+from packages.knowledge import summary
 
 
 @pytest.mark.asyncio

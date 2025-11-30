@@ -13,7 +13,7 @@ from app import (
     admin_project_vk_status,
     admin_project_vk_stop,
 )
-from models import Project
+from packages.core.models import Project
 
 
 class _FakeVkHub:

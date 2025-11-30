@@ -17,8 +17,8 @@ from fastapi.responses import StreamingResponse, ORJSONResponse
 from pydantic import BaseModel
 import structlog
 
-from backend import llm_client
-from backend.settings import settings
+from packages.backend import llm_client
+from packages.backend.settings import settings
 
 
 logger = structlog.get_logger(__name__)

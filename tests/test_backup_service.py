@@ -8,14 +8,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from backup.service import (
+from packages.utils.backup.service import (
     BackupError,
     BackupResult,
     normalize_remote_folder,
     perform_backup,
     should_run_backup,
 )
-from models import BackupSettings
+from packages.core.models import BackupSettings
 
 
 def test_normalize_remote_folder_trims_slashes() -> None:

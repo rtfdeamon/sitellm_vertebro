@@ -7,9 +7,9 @@ from typing import Optional
 
 import structlog
 
-from backend import llm_client
-from backend.llm_client import ModelNotFoundError
-from models import Project
+from packages.backend import llm_client
+from packages.backend.llm_client import ModelNotFoundError
+from packages.core.models import Project
 
 
 logger = structlog.get_logger(__name__)

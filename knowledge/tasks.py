@@ -11,11 +11,11 @@ from bson import ObjectId
 from gridfs import GridFS
 from pymongo import MongoClient
 
-from worker import celery, get_mongo_client, settings as worker_settings
-from models import Project
-from knowledge.summary import generate_document_summary
-from knowledge.text import extract_best_effort_text
-from backend.ollama_cluster import get_cluster_manager
+from apps.worker.main import celery, get_mongo_client, settings as worker_settings
+from packages.core.models import Project
+from packages.knowledge.summary import generate_document_summary
+from packages.knowledge.text import extract_best_effort_text
+from packages.backend.ollama_cluster import get_cluster_manager
 
 logger = structlog.get_logger(__name__)
 

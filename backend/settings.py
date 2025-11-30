@@ -13,7 +13,7 @@ from typing import Optional
 from pydantic import Field
 import json
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from backend.ollama import installed_model_names
+from packages.backend.ollama import installed_model_names
 
 
 class Settings(BaseSettings):

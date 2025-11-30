@@ -18,8 +18,8 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from pymongo.errors import ConfigurationError
 
-from backend.cache import _get_redis
-from models import (
+from packages.backend.cache import _get_redis
+from packages.core.models import (
     BackupJob,
     BackupOperation,
     BackupSettings,

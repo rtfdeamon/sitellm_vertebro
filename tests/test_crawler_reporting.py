@@ -18,7 +18,7 @@ fake_redis.from_url = lambda *a, **k: object()
 sys.modules.setdefault("redis", fake_redis)
 
 import redis  # type: ignore  # noqa: E402
-import backend.crawler_reporting as cr  # noqa: E402
+from packages import backend.crawler_reporting as cr  # noqa: E402
 
 
 class FailRedis:

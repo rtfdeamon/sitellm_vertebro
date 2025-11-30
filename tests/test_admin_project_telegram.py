@@ -13,7 +13,7 @@ from app import (
     admin_project_telegram_status,
     admin_project_telegram_stop,
 )
-from models import Project
+from packages.core.models import Project
 
 
 class _FakeHub:

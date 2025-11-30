@@ -19,7 +19,7 @@ from celery.signals import worker_ready
 
 import structlog
 
-from backup import (
+from packages.utils.backup import (
     BackupError,
     build_mongo_uri,
     normalize_remote_folder,
@@ -27,13 +27,13 @@ from backup import (
     perform_restore,
     should_run_backup,
 )
-from models import BackupOperation, BackupStatus, Document, VoiceTrainingStatus
-from mongo import MongoClient as AsyncMongoClient
-from settings import Settings
-from vectors import DocumentsParser
-from yallm import YaLLMEmbeddings
-from core.status import status_dict
-from observability.logging import configure_logging
+from packages.core.models import BackupOperation, BackupStatus, Document, VoiceTrainingStatus
+from packages.core.mongo import MongoClient as AsyncMongoClient
+from packages.core.settings import Settings
+from packages.core.vectors import DocumentsParser
+from packages.core.yallm import YaLLMEmbeddings
+from packages.core.status import status_dict
+from packages.utils.observability.logging import configure_logging
 
 
 

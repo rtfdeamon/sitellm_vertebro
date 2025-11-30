@@ -14,7 +14,7 @@ import structlog
 from fastapi import BackgroundTasks, HTTPException
 from starlette.requests import Request
 
-from models import Project
+from packages.core.models import Project
 
 logger = structlog.get_logger(__name__)
 

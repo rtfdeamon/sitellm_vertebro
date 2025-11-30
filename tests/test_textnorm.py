@@ -2,9 +2,9 @@ import types
 
 import pytest
 
-from textnorm import rewrite_query
-from backend import cache as cache_mod
-from backend import llm_client
+from packages.core.textnorm import rewrite_query
+from packages.backend import cache as cache_mod
+from packages.backend import llm_client
 
 
 class FakeRedis:

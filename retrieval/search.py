@@ -8,7 +8,7 @@ import asyncio
 import hashlib, json
 import structlog
 
-from backend.cache import _get_redis
+from packages.backend.cache import _get_redis
 
 logger = structlog.get_logger(__name__)
 

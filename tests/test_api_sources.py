@@ -1,6 +1,6 @@
 """Behavioural checks for source link helpers used by /chat endpoint."""
 
-from api import _collect_source_entries, _question_requests_sources
+from apps.api import _collect_source_entries, _question_requests_sources
 
 
 def test_collect_source_entries_sanitises_and_deduplicates() -> None:

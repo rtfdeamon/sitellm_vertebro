@@ -13,8 +13,8 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 from starlette.requests import Request
 
-from models import VoiceSample, VoiceTrainingJob, VoiceTrainingStatus
-from mongo import MongoClient
+from packages.core.models import VoiceSample, VoiceTrainingJob, VoiceTrainingStatus
+from packages.core.mongo import MongoClient
 
 logger = structlog.get_logger(__name__)
 

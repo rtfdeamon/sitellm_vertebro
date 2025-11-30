@@ -10,10 +10,10 @@ from typing import Any, Dict
 
 import structlog
 
-from core.status import status_dict
-from mongo import MongoClient
-from settings import Settings
-from worker import update_vector_store
+from packages.core.status import status_dict
+from packages.core.mongo import MongoClient
+from packages.core.settings import Settings
+from apps.worker.main import update_vector_store
 from .configuration import (
     DEFAULT_MODE,
     ALLOWED_MODES,

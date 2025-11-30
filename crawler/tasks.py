@@ -7,8 +7,8 @@ from typing import Optional
 
 import structlog
 
-from worker import celery
-from backend.crawler_reporting import Reporter, CrawlerProgress
+from apps.worker.main import celery
+from packages.backend.crawler_reporting import Reporter, CrawlerProgress
 from .run_crawl import run, DEFAULT_MAX_PAGES, DEFAULT_MAX_DEPTH, DEFAULT_MONGO_URI
 
 

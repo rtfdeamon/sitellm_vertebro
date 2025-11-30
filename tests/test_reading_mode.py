@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from crawler.run_crawl import chunk_reading_blocks, prepare_reading_material
+from packages.crawler.run_crawl import chunk_reading_blocks, prepare_reading_material
 
 
 def test_prepare_reading_material_strips_header_footer() -> None:

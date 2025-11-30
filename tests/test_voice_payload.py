@@ -88,7 +88,7 @@ fake_worker.voice_train_model = types.SimpleNamespace(delay=lambda *args, **kwar
 fake_worker.backup_execute = types.SimpleNamespace(delay=lambda *args, **kwargs: None)
 sys.modules["worker"] = fake_worker
 
-from api import _validate_voice_payload, VOICE_MAX_SAMPLE_BYTES  # noqa: E402
+from apps.api import _validate_voice_payload, VOICE_MAX_SAMPLE_BYTES  # noqa: E402
 
 if _original_fastapi is not None:
     sys.modules["fastapi"] = _original_fastapi

@@ -3,7 +3,7 @@
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 
-from observability.metrics import MetricsMiddleware
+from packages.utils.observability.metrics import MetricsMiddleware
 
 
 def test_metrics_middleware_registration():

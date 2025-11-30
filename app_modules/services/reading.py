@@ -11,8 +11,8 @@ import structlog
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from models import Document, ReadingPage
-from mongo import MongoClient
+from packages.core.models import Document, ReadingPage
+from packages.core.mongo import MongoClient
 
 logger = structlog.get_logger(__name__)
 

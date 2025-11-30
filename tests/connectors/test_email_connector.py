@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from mcp.types import Tool
 
-from connectors.email.server import app, get_client, list_tools, call_tool, list_resources, read_resource
+from connectors.email.server import app, list_tools, call_tool, list_resources, read_resource
 from connectors.email.client import MailClient
 
 

@@ -56,7 +56,7 @@ class _MongoSettings:
 settings_stub.MongoSettings = _MongoSettings  # type: ignore[attr-defined]
 sys.modules.setdefault("settings", settings_stub)
 
-from crawler import run_crawl
+from packages.crawler import run_crawl
 
 
 class _BinaryResponse:

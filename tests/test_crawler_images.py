@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from crawler.run_crawl import extract_image_links
+from packages.crawler.run_crawl import extract_image_links
 
 
 def test_extract_image_links_handles_lazy_and_meta_sources() -> None:

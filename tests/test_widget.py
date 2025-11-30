@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 from app import app
-from core.build import get_build_info
+from packages.core.build import get_build_info
 
 
 def test_widget_served():

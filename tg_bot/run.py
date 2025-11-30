@@ -10,7 +10,7 @@ import sys
 from aiogram import Bot, Dispatcher
 import structlog
 
-from observability.logging import configure_logging
+from packages.utils.observability.logging import configure_logging
 
 configure_logging()
 logger = structlog.get_logger(__name__)

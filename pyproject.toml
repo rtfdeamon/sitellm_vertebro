@@ -62,32 +62,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = [
-    "backend*",
-    "backup*",
-    "core*",
-    "connectors*",
-    "crawler*",
-    "integrations*",
-    "knowledge*",
-    "knowledge_service*",
-    "max_bot*",
-    "retrieval*",
-    "safety*",
-    "tg_bot*",
-    "vk_bot*",
-]
-
-[tool.setuptools]
-py-modules = [
-    "api",
-    "app",
-    "models",
-    "mongo",
-    "settings",
-    "textnorm",
-    "vectors",
-    "worker",
-    "yallm",
+    "apps*",
+    "packages*",
 ]
 
 [tool.poetry.source]

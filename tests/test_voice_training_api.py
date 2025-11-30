@@ -25,8 +25,8 @@ fake_worker.get_mongo_client = lambda: None
 fake_worker.settings = types.SimpleNamespace()
 sys.modules["worker"] = fake_worker
 
-import api
-from models import VoiceTrainingJob, VoiceTrainingStatus
+from apps import api
+from packages.core.models import VoiceTrainingJob, VoiceTrainingStatus
 
 if _original_backend_ollama is not None:
     sys.modules["backend.ollama"] = _original_backend_ollama

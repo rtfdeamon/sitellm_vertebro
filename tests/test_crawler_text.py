@@ -1,6 +1,6 @@
 """Tests for crawler text normalization helpers."""
 
-from crawler.run_crawl import clean_text
+from packages.crawler.run_crawl import clean_text
 
 
 def test_clean_text_removes_spaces_inside_phone_numbers() -> None:

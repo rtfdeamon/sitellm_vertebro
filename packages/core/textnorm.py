@@ -2,8 +2,8 @@
 
 import structlog
 
-from backend import llm_client
-from backend.cache import cache_query_rewrite
+from packages.backend import llm_client
+from packages.backend.cache import cache_query_rewrite
 
 logger = structlog.get_logger(__name__)
 

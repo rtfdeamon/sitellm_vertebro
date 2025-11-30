@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from backend.settings import settings
+from packages.backend.settings import settings
 from .ollama_cluster import get_cluster_manager, ModelNotFoundError
 
 DEVICE = "ollama"

@@ -104,8 +104,8 @@ llm_client = importlib.util.module_from_spec(spec_llm)
 sys.modules[spec_llm.name] = llm_client
 spec_llm.loader.exec_module(llm_client)
 
-from api import ask_llm
-from models import LLMRequest
+from apps.api import ask_llm
+from packages.core.models import LLMRequest
 
 
 @pytest.mark.asyncio

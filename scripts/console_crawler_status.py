@@ -4,7 +4,7 @@ from time import sleep
 from rich.table import Table
 from rich.live import Live
 from rich import box
-from backend.crawler_reporting import Reporter
+from packages.backend.crawler_reporting import Reporter
 
 
 def render(rows):

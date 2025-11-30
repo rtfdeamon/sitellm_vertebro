@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from models import ReadingPage
+from packages.core.models import ReadingPage
 
 
 @pytest.fixture()

@@ -13,7 +13,7 @@ from app import (
     admin_project_max_status,
     admin_project_max_stop,
 )
-from models import Project
+from packages.core.models import Project
 
 
 class _FakeMaxHub:

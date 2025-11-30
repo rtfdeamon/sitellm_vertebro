@@ -1,6 +1,6 @@
 """Tests for crawler knowledge filtering helpers."""
 
-from crawler.run_crawl import _normalize_for_hash, _should_skip_text_document
+from packages.crawler.run_crawl import _normalize_for_hash, _should_skip_text_document
 
 
 def test_should_skip_navigation_breadcrumbs() -> None:

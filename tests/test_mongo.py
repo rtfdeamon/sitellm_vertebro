@@ -8,8 +8,8 @@ from bson import ObjectId
 
 # Ensure any test stubs for ``mongo`` are cleared before importing the real module.
 sys.modules.pop("mongo", None)
-from mongo import MongoClient
-from models import Project, OllamaServer
+from packages.core.mongo import MongoClient
+from packages.core.models import Project, OllamaServer
 
 
 class _FakeGridFS:

@@ -14,7 +14,7 @@ from urllib.parse import quote_plus
 import httpx
 from zoneinfo import ZoneInfo
 
-from models import BackupSettings
+from packages.core.models import BackupSettings
 
 
 YANDEX_API_BASE = "https://cloud-api.yandex.net/v1/disk"

@@ -1,6 +1,6 @@
 """Tests for attachment handling in API helpers."""
 
-import api as api_mod
+from apps import api as api_mod
 
 
 def test_collect_attachments_preserves_description():

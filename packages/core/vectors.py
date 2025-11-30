@@ -11,7 +11,7 @@ from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, Te
 
 from redis import Redis
 
-from knowledge.text import extract_doc_text, extract_xls_text, extract_xlsx_text
+from packages.knowledge.text import extract_doc_text, extract_xls_text, extract_xlsx_text
 
 
 class DocumentsParser:

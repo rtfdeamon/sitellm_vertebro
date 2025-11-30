@@ -39,17 +39,17 @@ import xml.etree.ElementTree as ET
 from bson import ObjectId
 from PIL import Image
 
-from knowledge.summary import (
+from packages.knowledge.summary import (
     generate_document_summary,
     generate_image_caption,
     generate_reading_segment_summary,
 )
-from knowledge.text import extract_best_effort_text, extract_doc_text, extract_docx_text
-from models import Project
+from packages.knowledge.text import extract_best_effort_text, extract_doc_text, extract_docx_text
+from packages.core.models import Project
 
-from observability.logging import configure_logging
-from settings import MongoSettings
-from backend.llm_client import ModelNotFoundError
+from packages.utils.observability.logging import configure_logging
+from packages.core.settings import MongoSettings
+from packages.backend.llm_client import ModelNotFoundError
 
 
 configure_logging()

@@ -13,8 +13,8 @@ from typing import AsyncIterator, Dict, List, Optional
 import httpx
 import structlog
 
-from backend.settings import settings as backend_settings
-from models import OllamaServer
+from packages.backend.settings import settings as backend_settings
+from packages.core.models import OllamaServer
 
 logger = structlog.get_logger(__name__)
 
