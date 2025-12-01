@@ -76,7 +76,7 @@ from packages.knowledge.text import (
     extract_xls_text,
     extract_xlsx_text,
 )
-from knowledge_service.configuration import (
+from packages.knowledge_service.configuration import (
     ALLOWED_MODES as KNOWLEDGE_SERVICE_ALLOWED_MODES,
     DEFAULT_MODE as KNOWLEDGE_SERVICE_DEFAULT_MODE,
     DEFAULT_PROCESSING_PROMPT as KNOWLEDGE_SERVICE_DEFAULT_PROMPT,
