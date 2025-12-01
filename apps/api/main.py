@@ -33,7 +33,7 @@ from packages.backend.ollama import (
     ollama_available,
     popular_models_with_size,
 )
-from retrieval import search as retrieval_search
+from packages.retrieval import search as retrieval_search
 from packages.crawler.run_crawl import (
     clear_crawler_state,
     deduplicate_recent_urls,
@@ -684,7 +684,7 @@ async def _collect_knowledge_snippets(
             )
 
     try:
-        docs = await asyncio.to_thread(retrieval_search.hybrid_search, question, limit * 3)
+        docs = await retrieval_search.hybrid_search(question, limit * 3)
     except Exception as exc:  # noqa: BLE001
         logger.debug("knowledge_hybrid_failed", error=str(exc))
         docs = []

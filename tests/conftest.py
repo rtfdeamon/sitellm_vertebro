@@ -20,10 +20,10 @@ sys.modules.setdefault("structlog", fake_structlog)
 # Provide minimal ``backend`` and ``backend.settings`` stubs for dynamic imports.
 from pathlib import Path
 
-backend_pkg = types.ModuleType("backend")
-backend_pkg.__path__ = [str(Path(__file__).resolve().parents[1] / "backend")]
-sys.modules.setdefault("backend", backend_pkg)
-backend_settings = types.ModuleType("backend.settings")
+backend_pkg = types.ModuleType("packages.backend")
+backend_pkg.__path__ = [str(Path(__file__).resolve().parents[1] / "packages" / "backend")]
+sys.modules.setdefault("packages.backend", backend_pkg)
+backend_settings = types.ModuleType("packages.backend.settings")
 backend_settings.get_settings = lambda: types.SimpleNamespace(
     redis_url="redis://",
     project_name=None,
@@ -35,7 +35,7 @@ backend_settings.settings = types.SimpleNamespace(
     project_name=None,
     domain=None,
 )
-sys.modules.setdefault("backend.settings", backend_settings)
+sys.modules.setdefault("packages.backend.settings", backend_settings)
 
 # Stub out ``redis.asyncio`` used by caching module only if the real package is
 # unavailable (older minimal test setups).

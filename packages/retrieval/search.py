@@ -26,14 +26,18 @@ class Doc:
 qdrant = None  # type: ignore
 
 
-def hybrid_search(query: str, k: int = 10) -> List[Doc]:
+async def hybrid_search(query: str, k: int = 10) -> List[Doc]:
     """Return top ``k`` documents ranked by RRF."""
 
     logger.info("hybrid search", query=query)
     if qdrant is None:
         raise RuntimeError("Qdrant not configured")
-    dense_scores = qdrant.similarity(query, top=50, method="dense")
-    bm25_scores = qdrant.similarity(query, top=50, method="bm25")
+
+    # Run blocking Qdrant calls in a separate thread
+    dense_scores, bm25_scores = await asyncio.gather(
+        asyncio.to_thread(qdrant.similarity, query, top=50, method="dense"),
+        asyncio.to_thread(qdrant.similarity, query, top=50, method="bm25"),
+    )
 
     rrf_const = 60
     results: Dict[str, Doc] = {}

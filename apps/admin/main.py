@@ -66,7 +66,7 @@ from pymongo import MongoClient as SyncMongoClient
 from qdrant_client import QdrantClient
 from gridfs import GridFS
 from bson import ObjectId
-from retrieval import search as retrieval_search
+from packages.retrieval import search as retrieval_search
 from packages.knowledge.summary import generate_document_summary
 from packages.knowledge.tasks import queue_auto_description
 from packages.knowledge.text import (

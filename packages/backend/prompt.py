@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from retrieval.search import Doc
+from packages.retrieval.search import Doc
 import structlog
 
 logger = structlog.get_logger(__name__)
