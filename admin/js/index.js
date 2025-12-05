@@ -2967,52 +2967,86 @@ function initLayoutReordering() {
     layout.querySelectorAll('.reorder-drop-target').forEach((el) => el.classList.remove('reorder-drop-target'));
   };
 
-  const getDragAfterElement = (container, x, y) => {
-    const draggableElements = [...container.querySelectorAll(':scope > section[data-block-id]:not(.dragging)')];
+  const getNextSection = (section) => {
+    let next = section?.nextElementSibling;
+    while (next && (next === draggingSection || !next.matches('section[data-block-id]'))) {
+      next = next.nextElementSibling;
+    }
+    return next && next.matches('section[data-block-id]') ? next : null;
+  };
 
-    // Find all elements and calculate their distances from the cursor
-    const elementsWithDistance = draggableElements.map((child) => {
-      const rect = child.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
+  const buildRows = () => {
+    const sections = getSections().filter((section) => section !== draggingSection);
+    const rows = [];
+    const tolerance = 28; // px
+    const items = sections
+      .map((section) => ({ section, rect: section.getBoundingClientRect() }))
+      .sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left);
 
-      // Calculate Euclidean distance from cursor to element center
-      const distance = Math.sqrt(
-        Math.pow(x - centerX, 2) +
-        Math.pow(y - centerY, 2)
-      );
-
-      return {
-        element: child,
-        rect,
-        centerX,
-        centerY,
-        distance,
-        isBelow: y > centerY,
-        isRight: x > centerX
-      };
+    items.forEach((item) => {
+      let row = rows.find((r) => Math.abs(r.top - item.rect.top) <= tolerance);
+      if (!row) {
+        row = { top: item.rect.top, bottom: item.rect.bottom, items: [] };
+        rows.push(row);
+      }
+      row.top = Math.min(row.top, item.rect.top);
+      row.bottom = Math.max(row.bottom, item.rect.bottom);
+      row.items.push(item);
     });
 
-    // Sort by distance to find the closest element
-    elementsWithDistance.sort((a, b) => a.distance - b.distance);
+    rows.forEach((row) => row.items.sort((a, b) => a.rect.left - b.rect.left));
+    return rows;
+  };
 
-    if (elementsWithDistance.length === 0) {
-      return null;
+  const resolveDropReference = (event) => {
+    const { clientX: x, clientY: y } = event;
+    const hovered = event.target?.closest('section[data-block-id]');
+    if (hovered && hovered !== draggingSection && layout.contains(hovered)) {
+      const rect = hovered.getBoundingClientRect();
+      const isAfter = x >= rect.left + rect.width / 2;
+      const reference = isAfter ? getNextSection(hovered) : hovered;
+      return { reference, highlight: hovered };
     }
 
-    // Get the closest element
-    const closest = elementsWithDistance[0];
-
-    // Determine insertion point based on cursor position relative to closest element
-    // If cursor is below the closest element's center, insert after it
-    if (closest.isBelow) {
-      // Find the next element that comes after this one in DOM order
-      const currentIndex = draggableElements.indexOf(closest.element);
-      return draggableElements[currentIndex + 1] || null;
+    const rows = buildRows();
+    if (!rows.length) {
+      return { reference: null, highlight: null };
     }
 
-    // If cursor is above, insert before it
-    return closest.element;
+    let targetRow = rows.find((row) => y >= row.top && y <= row.bottom);
+    if (!targetRow) {
+      targetRow = rows.reduce((best, row) => {
+        const rowCenter = row.top + (row.bottom - row.top) / 2;
+        const distance = Math.abs(y - rowCenter);
+        if (!best || distance < best.distance) {
+          return { row, distance };
+        }
+        return best;
+      }, null)?.row || rows[rows.length - 1];
+    }
+
+    const rowIndex = rows.indexOf(targetRow);
+    let reference = null;
+    let highlight = null;
+
+    for (let i = 0; i < targetRow.items.length; i += 1) {
+      const { section, rect } = targetRow.items[i];
+      const centerX = rect.left + rect.width / 2;
+      if (x < centerX) {
+        reference = section;
+        highlight = section;
+        break;
+      }
+    }
+
+    if (!reference) {
+      const lastInRow = targetRow.items[targetRow.items.length - 1];
+      const nextRow = rows[rowIndex + 1];
+      reference = nextRow ? nextRow.items[0].section : null;
+      highlight = lastInRow?.section || null;
+    }
+
+    return { reference, highlight };
   };
 
   let isReorderMode = false;
@@ -3022,6 +3056,7 @@ function initLayoutReordering() {
     if (!isReorderMode) return;
     draggingSection = event.currentTarget;
     draggingSection.classList.add('dragging');
+    draggingSection.style.pointerEvents = 'none';
     if (event.dataTransfer) {
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', draggingSection.dataset.blockId || '');
@@ -3031,6 +3066,7 @@ function initLayoutReordering() {
   const handleDragEnd = (event) => {
     if (!isReorderMode) return;
     event.currentTarget.classList.remove('dragging');
+    event.currentTarget.style.pointerEvents = '';
     draggingSection = null;
     clearDropHighlights();
     saveOrder();
@@ -3039,16 +3075,18 @@ function initLayoutReordering() {
   const handleDragOver = (event) => {
     if (!isReorderMode || !draggingSection) return;
     event.preventDefault();
-    const afterElement = getDragAfterElement(layout, event.clientX, event.clientY);
-    if (afterElement === draggingSection) return;
-    if (afterElement == null) {
+    const { reference, highlight } = resolveDropReference(event);
+
+    if (reference === draggingSection) return;
+    if (reference == null) {
       layout.appendChild(draggingSection);
-    } else {
-      layout.insertBefore(draggingSection, afterElement);
+    } else if (reference !== draggingSection.nextElementSibling) {
+      layout.insertBefore(draggingSection, reference);
     }
+
     clearDropHighlights();
-    if (afterElement) {
-      afterElement.classList.add('reorder-drop-target');
+    if (highlight && highlight !== draggingSection) {
+      highlight.classList.add('reorder-drop-target');
     }
   };
 
@@ -3074,6 +3112,7 @@ function initLayoutReordering() {
       clearDropHighlights();
       if (draggingSection) {
         draggingSection.classList.remove('dragging');
+        draggingSection.style.pointerEvents = '';
         draggingSection = null;
       }
       saveOrder();
