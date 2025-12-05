@@ -348,7 +348,11 @@
       backupRunQueued: 'Backup job queued',
       backupRestoreQueued: 'Restore job queued',
       backupRestorePathMissing: 'Specify remote path',
-      backupActiveJobMessage: 'An operation is already running'
+      backupActiveJobMessage: 'An operation is already running',
+      theme: 'Theme',
+      themeDark: 'Dark',
+      themeLight: 'Light',
+      themeSand: 'Sand'
     };
 
     function createLanguage(name, dir, overrides = {}) {
@@ -1145,7 +1149,11 @@
         authErrorInvalid: 'Неверные учетные данные',
         authErrorNetwork: 'Не удалось проверить учетные данные',
         errorAuthRequired: 'Требуется вход администратора',
-        developerCredit: 'Создано дев-бот-су'
+        developerCredit: 'Создано дев-бот-су',
+        theme: 'Тема',
+        themeDark: 'Тёмная',
+        themeLight: 'Светлая',
+        themeSand: 'Песочная'
       }),
       zh: createLanguage('中文', 'ltr', {
         pillOperations: '运维',
