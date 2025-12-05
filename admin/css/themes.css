@@ -370,6 +370,11 @@
   color: var(--text-muted);
 }
 
+[data-theme="light"] .project-domain-field {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.12), rgba(14, 165, 233, 0.06));
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
 /* Light theme: Modals */
 [data-theme="light"] .modal {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.95));
@@ -714,7 +719,8 @@
   color: var(--text-primary);
 }
 
-/* Sand theme specific overrides */
+/* ====== SAND THEME SPECIFIC OVERRIDES ====== */
+
 [data-theme="sand"] .cluster-warning {
   background: rgba(220, 38, 38, 0.92);
   box-shadow: 0 6px 16px rgba(120, 53, 15, 0.3);
@@ -728,6 +734,38 @@
   background: rgba(255, 251, 235, 0.97);
   border: 1px solid rgba(217, 119, 6, 0.3);
   box-shadow: 0 20px 50px rgba(120, 53, 15, 0.18);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .auth-modal h3,
+[data-theme="sand"] .auth-modal p {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .auth-modal p {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .auth-form label {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .auth-form input {
+  background: var(--input-bg);
+  border-color: var(--input-border);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .auth-actions .btn {
+  background: rgba(217, 119, 6, 0.15);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: #92400e;
+}
+
+[data-theme="sand"] .auth-actions .btn.secondary {
+  background: rgba(254, 252, 232, 0.9);
+  border-color: rgba(217, 119, 6, 0.3);
+  color: var(--text-primary);
 }
 
 [data-theme="sand"] .collapsible-card[open] .collapsible-summary {
@@ -747,6 +785,1094 @@
 [data-theme="sand"] .status-group:hover {
   border-color: rgba(217, 119, 6, 0.45);
   box-shadow: 0 10px 20px rgba(120, 53, 15, 0.12);
+}
+
+/* Sand theme: Headers and titles */
+[data-theme="sand"] h1 {
+  color: #451a03 !important;
+  text-shadow: none !important;
+}
+
+[data-theme="sand"] h2 {
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .collapsible-summary {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .collapsible-card[open] .collapsible-summary {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .collapsible-title {
+  color: #92400e;
+  font-weight: 600;
+}
+
+[data-theme="sand"] .collapsible-chevron {
+  border-color: var(--text-muted);
+}
+
+[data-theme="sand"] .collapsible-card[open] .collapsible-chevron {
+  border-color: var(--accent);
+}
+
+/* Sand theme: Page header buttons */
+[data-theme="sand"] .page-header-actions button {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .page-header-actions button:hover {
+  border-color: var(--accent);
+  background: rgba(217, 119, 6, 0.15);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .page-header-actions select {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: var(--text-primary);
+}
+
+/* Sand theme: Status groups and lists */
+[data-theme="sand"] .status-group summary {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .status-group[open] summary {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .status-list li {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .status-label {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .status-value {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .status-value > span {
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  background: rgba(254, 243, 199, 0.8);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .status-value > span.good {
+  border-color: rgba(22, 163, 74, 0.5);
+  background: rgba(22, 163, 74, 0.15);
+  color: #166534;
+}
+
+[data-theme="sand"] .status-value > span.bad {
+  border-color: rgba(220, 38, 38, 0.5);
+  background: rgba(220, 38, 38, 0.15);
+  color: #b91c1c;
+}
+
+/* Sand theme: Knowledge base tabs */
+[data-theme="sand"] .kb-tab-button {
+  background: rgba(255, 251, 235, 0.95);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: #78350f;
+  font-weight: 500;
+}
+
+[data-theme="sand"] .kb-tab-button:hover {
+  border-color: #d97706;
+  color: #92400e;
+  background: rgba(217, 119, 6, 0.1);
+}
+
+[data-theme="sand"] .kb-tab-button.active {
+  background: #d97706;
+  border-color: #d97706;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+[data-theme="sand"] .kb-category-header {
+  color: #78350f;
+}
+
+[data-theme="sand"] .kb-category-header strong {
+  color: #92400e;
+}
+
+[data-theme="sand"] .kb-table-wrapper {
+  background: rgba(254, 243, 199, 0.5);
+}
+
+/* Sand theme: Overview cards */
+[data-theme="sand"] .overview-card {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  box-shadow: 0 4px 16px rgba(120, 53, 15, 0.1) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+[data-theme="sand"] .overview-card:hover {
+  border-color: rgba(217, 119, 6, 0.5) !important;
+  box-shadow: 0 8px 24px rgba(120, 53, 15, 0.15) !important;
+}
+
+[data-theme="sand"] .overview-card h2 {
+  color: #78350f !important;
+  font-weight: 600;
+}
+
+[data-theme="sand"] .overview-card strong {
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .overview-meta {
+  color: #92400e !important;
+}
+
+[data-theme="sand"] .overview-card .overview-pulse {
+  background: rgba(217, 119, 6, 0.2) !important;
+}
+
+/* Sand theme: Project menu and domain */
+[data-theme="sand"] .project-menu-title {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .project-domain-input,
+[data-theme="sand"] #projectModalDomain {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.15), rgba(251, 191, 36, 0.1));
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.15);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .project-domain-input::placeholder,
+[data-theme="sand"] #projectModalDomain::placeholder {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .domain-hint {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .project-domain-field {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.12), rgba(251, 191, 36, 0.08));
+  border: 1px solid rgba(217, 119, 6, 0.35);
+}
+
+/* Sand theme: Modals */
+[data-theme="sand"] .modal {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95));
+  border: 1px solid rgba(217, 119, 6, 0.3);
+}
+
+[data-theme="sand"] .modal-close {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .modal-close:hover {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .modal-header,
+[data-theme="sand"] .modal-footer {
+  border-color: rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] fieldset {
+  border-color: rgba(217, 119, 6, 0.25);
+  background: rgba(254, 243, 199, 0.5);
+}
+
+[data-theme="sand"] legend {
+  color: var(--text-muted);
+}
+
+/* Sand theme: Code and pre elements */
+[data-theme="sand"] code {
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+}
+
+[data-theme="sand"] .logs-card pre,
+[data-theme="sand"] .prompts-card pre {
+  background: rgba(255, 251, 235, 0.95);
+  color: var(--text-primary);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+/* Sand theme: Toasts */
+[data-theme="sand"] .toast {
+  background: rgba(255, 251, 235, 0.98);
+  color: var(--text-primary);
+  box-shadow: 0 10px 30px rgba(120, 53, 15, 0.18);
+}
+
+/* Sand theme: Chips and badges */
+[data-theme="sand"] .chip {
+  background: rgba(217, 119, 6, 0.15);
+  color: #92400e;
+}
+
+[data-theme="sand"] .kb-auto-badge {
+  background: rgba(217, 119, 6, 0.18);
+  color: #92400e;
+}
+
+[data-theme="sand"] .kb-type-badge {
+  background: rgba(217, 119, 6, 0.12);
+  color: #b45309;
+}
+
+/* Sand theme: Prompt preview */
+[data-theme="sand"] .prompt-preview {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .prompt-docs {
+  color: var(--text-muted);
+}
+
+/* Sand theme: Section title */
+[data-theme="sand"] .section-title {
+  color: #92400e;
+  font-weight: 600;
+}
+
+/* Sand theme: Dev credit */
+[data-theme="sand"] .dev-credit {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .dev-credit:hover {
+  color: var(--text-primary);
+}
+
+/* Sand theme: Thinking overlay */
+[data-theme="sand"] .thinking-overlay {
+  background: rgba(254, 243, 199, 0.85);
+}
+
+[data-theme="sand"] .thinking-spinner::after {
+  background: rgba(255, 251, 235, 0.95);
+  box-shadow: inset 0 0 12px rgba(217, 119, 6, 0.2);
+}
+
+[data-theme="sand"] .thinking-subtitle {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .thinking-preview {
+  background: rgba(255, 251, 235, 0.95);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .auto-description {
+  background: linear-gradient(135deg, rgba(217, 119, 6, 0.12), rgba(251, 191, 36, 0.08));
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  color: var(--text-primary);
+}
+
+/* Sand theme: Nested status */
+[data-theme="sand"] .status-nested summary {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .status-nested[open] summary {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] #recent_urls {
+  color: var(--text-primary);
+}
+
+/* Sand theme: Operations and crawler */
+[data-theme="sand"] .card > b {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .icon-button {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .icon-button:hover {
+  border-color: var(--accent);
+  background: rgba(217, 119, 6, 0.15);
+}
+
+[data-theme="sand"] .crawler-progress-track {
+  background: rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] .crawler-progress-meta {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .crawler-progress-note {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .crawler-logs {
+  background: rgba(255, 251, 235, 0.95);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+}
+
+[data-theme="sand"] .crawler-logs-header {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .crawler-logs-output {
+  background: rgba(254, 243, 199, 0.9);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .crawler-actions button {
+  background: rgba(217, 119, 6, 0.15);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .crawler-option {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .file-label {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .voice-samples-list {
+  background: rgba(254, 243, 199, 0.8);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] .voice-sample-row {
+  background: rgba(254, 252, 232, 0.8);
+}
+
+[data-theme="sand"] .voice-sample-row button {
+  background: rgba(220, 38, 38, 0.15);
+  color: #b91c1c;
+}
+
+[data-theme="sand"] .voice-upload-actions button {
+  background: rgba(217, 119, 6, 0.15);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .voice-job-entry {
+  background: rgba(217, 119, 6, 0.12);
+}
+
+/* Sand theme: Stats and graphs */
+[data-theme="sand"] .stats-graph {
+  background: rgba(254, 243, 199, 0.8);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] .stats-tooltip {
+  background: rgba(255, 251, 235, 0.98);
+  color: var(--text-primary);
+  border: 1px solid rgba(217, 119, 6, 0.3);
+}
+
+[data-theme="sand"] .stats-tooltip::after {
+  border-color: rgba(255, 251, 235, 0.98) transparent transparent transparent;
+}
+
+[data-theme="sand"] .project-danger strong {
+  color: #b91c1c;
+}
+
+[data-theme="sand"] .project-danger p {
+  color: #7f1d1d;
+}
+
+[data-theme="sand"] .project-delete-btn {
+  background: rgba(220, 38, 38, 0.15);
+  color: #b91c1c;
+}
+
+[data-theme="sand"] .project-storage-panel {
+  background: rgba(254, 243, 199, 0.5);
+  border: 1px dashed rgba(217, 119, 6, 0.35);
+  color: var(--text-primary);
+}
+
+/* Sand theme: Knowledge controls */
+[data-theme="sand"] .kb-priority-panel {
+  background: rgba(255, 251, 235, 0.95);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+}
+
+[data-theme="sand"] .kb-priority-panel strong {
+  color: #92400e;
+}
+
+[data-theme="sand"] .kb-priority-item {
+  background: rgba(254, 243, 199, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+  color: #78350f;
+}
+
+[data-theme="sand"] .kb-priority-item:hover {
+  background: rgba(217, 119, 6, 0.12);
+  border-color: rgba(217, 119, 6, 0.4);
+}
+
+[data-theme="sand"] .kb-priority-controls button {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--text-primary);
+}
+
+/* Sand theme: Feedback */
+[data-theme="sand"] .feedback-item {
+  background: rgba(254, 243, 199, 0.8);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] .feedback-meta,
+[data-theme="sand"] .feedback-item-meta {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .feedback-message,
+[data-theme="sand"] .feedback-item-message {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .feedback-actions-row select {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .feedback-status-badge,
+[data-theme="sand"] .feedback-status {
+  background: rgba(217, 119, 6, 0.15);
+  color: #92400e;
+}
+
+[data-theme="sand"] .feedback-project,
+[data-theme="sand"] .feedback-page,
+[data-theme="sand"] .feedback-author,
+[data-theme="sand"] .feedback-count {
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .feedback-note {
+  color: var(--text-muted);
+}
+
+[data-theme="sand"] .prompt-ai-controls button {
+  background: rgba(217, 119, 6, 0.15);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: var(--text-primary);
+}
+
+/* Sand theme: Ollama */
+[data-theme="sand"] .ollama-server-row {
+  background: rgba(254, 243, 199, 0.8);
+  border: 1px solid rgba(217, 119, 6, 0.25);
+}
+
+[data-theme="sand"] .ollama-server-actions button {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .ollama-server-form-grid input[type=text] {
+  background: rgba(255, 251, 235, 0.9);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: var(--text-primary);
+}
+
+[data-theme="sand"] .ollama-server-form-grid button {
+  background: rgba(217, 119, 6, 0.15);
+  border: 1px solid rgba(217, 119, 6, 0.4);
+  color: var(--text-primary);
+}
+
+/* Sand theme: Status cards */
+[data-theme="sand"] .status-tiles > .card.status-card,
+[data-theme="sand"] .card.status-card {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  box-shadow: 0 4px 16px rgba(120, 53, 15, 0.1) !important;
+}
+
+[data-theme="sand"] .status-tiles > .card.status-card > b,
+[data-theme="sand"] .card.status-card > b {
+  color: #92400e !important;
+}
+
+[data-theme="sand"] .status-tiles > .card.status-card div,
+[data-theme="sand"] .card.status-card div {
+  color: #78350f;
+}
+
+[data-theme="sand"] .status-tiles > .card.status-card .muted,
+[data-theme="sand"] .card.status-card .muted {
+  color: #92400e;
+}
+
+/* Sand theme: Control cards */
+[data-theme="sand"] .card.control-card {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  box-shadow: 0 4px 16px rgba(120, 53, 15, 0.1) !important;
+}
+
+[data-theme="sand"] .card.control-card > b {
+  color: #92400e !important;
+}
+
+/* Sand theme: Knowledge card */
+[data-theme="sand"] .card.knowledge-card {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  box-shadow: 0 4px 16px rgba(120, 53, 15, 0.1) !important;
+}
+
+[data-theme="sand"] .card.knowledge-card > b {
+  color: #92400e !important;
+}
+
+/* Sand theme: All card titles */
+[data-theme="sand"] .card > b {
+  color: #92400e !important;
+}
+
+/* Sand theme: General cards */
+[data-theme="sand"] .card {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  color: #78350f;
+}
+
+/* Sand theme: Labels */
+[data-theme="sand"] label {
+  color: #78350f;
+}
+
+/* Sand theme: Inputs */
+[data-theme="sand"] input[type="text"],
+[data-theme="sand"] input[type="url"],
+[data-theme="sand"] input[type="number"],
+[data-theme="sand"] input[type="password"],
+[data-theme="sand"] input[type="email"],
+[data-theme="sand"] select,
+[data-theme="sand"] textarea {
+  background: rgba(255, 251, 235, 0.95);
+  border: 1px solid rgba(217, 119, 6, 0.35);
+  color: #451a03;
+}
+
+[data-theme="sand"] input::placeholder,
+[data-theme="sand"] textarea::placeholder {
+  color: #a16207;
+}
+
+/* Sand theme: Pill/badge */
+[data-theme="sand"] .pill {
+  background: rgba(217, 119, 6, 0.18);
+  color: #92400e;
+  border: 1px solid rgba(217, 119, 6, 0.3);
+}
+
+/* Sand theme: Page subtitle */
+[data-theme="sand"] .page-subtitle {
+  color: #92400e;
+}
+
+/* Sand theme: Muted text */
+[data-theme="sand"] .muted {
+  color: #92400e;
+}
+
+/* Sand theme: Overview banner */
+[data-theme="sand"] .overview-banner {
+  background: transparent;
+}
+
+/* Sand theme: Backup section */
+[data-theme="sand"] .backup-section b,
+[data-theme="sand"] .backup-toggle,
+[data-theme="sand"] .backup-field-grid label,
+[data-theme="sand"] .backup-token-row label {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="sand"] .backup-job {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border-color: rgba(217, 119, 6, 0.25) !important;
+  box-shadow: 0 6px 12px rgba(120, 53, 15, 0.1) !important;
+}
+
+[data-theme="sand"] .backup-job.primary {
+  background: rgba(217, 119, 6, 0.12) !important;
+  border-color: rgba(217, 119, 6, 0.4) !important;
+  box-shadow: 0 10px 18px rgba(217, 119, 6, 0.15) !important;
+}
+
+[data-theme="sand"] .backup-job strong {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="sand"] .backup-job small {
+  color: var(--text-muted) !important;
+}
+
+[data-theme="sand"] .backup-status-line,
+[data-theme="sand"] .backup-empty {
+  color: var(--text-muted) !important;
+}
+
+/* ====== Sand theme: Base elements from base.css ====== */
+/* Page header actions */
+[data-theme="sand"] .page-header-actions button,
+[data-theme="sand"] .page-header-actions select {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+/* Status tiles */
+[data-theme="sand"] .status-tiles {
+  background: transparent !important;
+}
+
+[data-theme="sand"] .status-tiles > div {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  color: #78350f !important;
+}
+
+/* Collapsible elements */
+[data-theme="sand"] .collapsible-summary {
+  background: rgba(255, 251, 235, 0.8) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .collapsible-card {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .collapsible-body {
+  background: rgba(254, 243, 199, 0.8) !important;
+  border-top: 1px solid rgba(217, 119, 6, 0.2) !important;
+}
+
+/* ====== Sand theme: Operations elements ====== */
+/* Icon button */
+[data-theme="sand"] .icon-button {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .icon-button:hover {
+  background: rgba(217, 119, 6, 0.15) !important;
+  border-color: rgba(217, 119, 6, 0.6) !important;
+}
+
+/* Crawler elements */
+[data-theme="sand"] .crawler-progress-track {
+  background: rgba(217, 119, 6, 0.2) !important;
+}
+
+[data-theme="sand"] .crawler-logs {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .crawler-logs-header {
+  color: #78350f !important;
+  border-bottom: 1px solid rgba(217, 119, 6, 0.2) !important;
+}
+
+[data-theme="sand"] .crawler-logs-output {
+  background: rgba(254, 243, 199, 0.9) !important;
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .crawler-actions button {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+/* File button */
+[data-theme="sand"] .file-button {
+  background: linear-gradient(135deg, #d97706, #b45309) !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+/* Voice elements */
+[data-theme="sand"] .voice-samples-list {
+  background: rgba(254, 243, 199, 0.8) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .voice-sample-row {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.2) !important;
+}
+
+[data-theme="sand"] .voice-upload-actions button {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+/* ====== Sand theme: UI elements ====== */
+/* Project domain input */
+[data-theme="sand"] .project-domain-input,
+[data-theme="sand"] #projectModalDomain {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #451a03 !important;
+  box-shadow: 0 0 12px rgba(251, 191, 36, 0.15) !important;
+}
+
+/* Chip */
+[data-theme="sand"] .chip {
+  background: rgba(217, 119, 6, 0.15) !important;
+  color: #92400e !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+/* Toast */
+[data-theme="sand"] .toast {
+  background: rgba(255, 251, 235, 0.98) !important;
+  color: #451a03 !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .toast.success {
+  border-color: rgba(22, 163, 74, 0.5) !important;
+}
+
+[data-theme="sand"] .toast.error {
+  border-color: rgba(220, 38, 38, 0.5) !important;
+}
+
+/* Modal */
+[data-theme="sand"] .modal {
+  background: rgba(255, 251, 235, 0.98) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .modal-header {
+  border-bottom: 1px solid rgba(217, 119, 6, 0.2) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .modal-footer {
+  border-top: 1px solid rgba(217, 119, 6, 0.2) !important;
+}
+
+[data-theme="sand"] .modal-close {
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .modal-close:hover {
+  color: #451a03 !important;
+}
+
+/* Fieldset and legend */
+[data-theme="sand"] fieldset {
+  background: rgba(254, 243, 199, 0.5) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] legend {
+  color: #92400e !important;
+}
+
+/* ====== Sand theme: Systems elements ====== */
+/* Stats tooltip */
+[data-theme="sand"] .stats-tooltip {
+  background: rgba(255, 251, 235, 0.98) !important;
+  color: #451a03 !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .stats-tooltip::after {
+  border-color: rgba(255, 251, 235, 0.98) transparent transparent transparent !important;
+}
+
+/* Stats graph */
+[data-theme="sand"] .stats-graph {
+  background: rgba(254, 243, 199, 0.8) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+/* Ollama elements */
+[data-theme="sand"] .ollama-catalog {
+  border-top: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .ollama-server-row {
+  background: rgba(254, 243, 199, 0.8) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+}
+
+[data-theme="sand"] .ollama-server-actions button {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .ollama-server-form-grid input[type=text] {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .ollama-server-form-grid button {
+  background: rgba(217, 119, 6, 0.15) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .ollama-install-btn {
+  background: rgba(217, 119, 6, 0.15) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+/* Project storage panel */
+[data-theme="sand"] .project-storage-panel {
+  background: rgba(254, 243, 199, 0.5) !important;
+  border: 1px dashed rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+/* ====== Sand theme: Knowledge controls ====== */
+/* KB Priority panel */
+[data-theme="sand"] .kb-priority-panel {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.35) !important;
+}
+
+[data-theme="sand"] .kb-priority-item {
+  background: rgba(254, 243, 199, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.25) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .kb-priority-item:hover {
+  background: rgba(217, 119, 6, 0.12) !important;
+  border-color: rgba(217, 119, 6, 0.4) !important;
+}
+
+[data-theme="sand"] .kb-priority-controls button {
+  background: rgba(255, 251, 235, 0.9) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+/* Feedback elements */
+[data-theme="sand"] .feedback-item {
+  background: rgba(254, 243, 199, 0.8) !important;
+  border: 1px solid rgba(217, 119, 6, 0.25) !important;
+}
+
+[data-theme="sand"] .feedback-item-meta {
+  color: #92400e !important;
+}
+
+[data-theme="sand"] .feedback-item-message {
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .feedback-actions-row select {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .feedback-status {
+  background: rgba(217, 119, 6, 0.15) !important;
+  color: #92400e !important;
+}
+
+[data-theme="sand"] .feedback-timestamp {
+  color: #92400e !important;
+}
+
+/* Prompt AI controls */
+[data-theme="sand"] .prompt-ai-controls button {
+  background: rgba(217, 119, 6, 0.15) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .prompt-ai-controls button:hover {
+  background: rgba(217, 119, 6, 0.25) !important;
+}
+
+/* ====== Sand theme: Accent color for checkboxes ====== */
+[data-theme="sand"] input[type="checkbox"] {
+  accent-color: #d97706 !important;
+}
+
+[data-theme="sand"] input[type="radio"] {
+  accent-color: #d97706 !important;
+}
+
+/* ====== Sand theme: Links ====== */
+[data-theme="sand"] a {
+  color: #b45309 !important;
+}
+
+[data-theme="sand"] a:hover {
+  color: #92400e !important;
+}
+
+/* ====== Sand theme: Table ====== */
+[data-theme="sand"] table {
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] th {
+  color: #78350f !important;
+  background: rgba(254, 243, 199, 0.5) !important;
+}
+
+[data-theme="sand"] td {
+  border-bottom: 1px solid rgba(217, 119, 6, 0.15) !important;
+}
+
+[data-theme="sand"] tbody tr:hover {
+  background: rgba(217, 119, 6, 0.08) !important;
+}
+
+/* ====== Sand theme: Scrollbar ====== */
+[data-theme="sand"] ::-webkit-scrollbar-thumb {
+  background: rgba(217, 119, 6, 0.4) !important;
+}
+
+[data-theme="sand"] ::-webkit-scrollbar-track {
+  background: rgba(254, 243, 199, 0.6) !important;
+}
+
+/* ====== Sand theme: Selection ====== */
+[data-theme="sand"] ::selection {
+  background: rgba(217, 119, 6, 0.3) !important;
+  color: #451a03 !important;
+}
+
+/* ====== Sand theme: HIGH SPECIFICITY OVERRIDES ====== */
+
+/* Sand theme: Overview cards - force cream background */
+[data-theme="sand"] .overview-banner .overview-card,
+[data-theme="sand"] .overview-card {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.35) !important;
+  box-shadow: 0 4px 16px rgba(120, 53, 15, 0.12) !important;
+  backdrop-filter: blur(8px) !important;
+}
+
+[data-theme="sand"] .overview-card h2 {
+  color: #92400e !important;
+}
+
+[data-theme="sand"] .overview-card strong {
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .overview-card .overview-meta,
+[data-theme="sand"] .overview-meta {
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .overview-card .prompt-preview,
+[data-theme="sand"] .prompt-preview {
+  color: #451a03 !important;
+}
+
+/* Sand theme: KB Priority items - force cream background */
+[data-theme="sand"] .kb-priority-panel .kb-priority-list .kb-priority-item,
+[data-theme="sand"] .kb-priority-list .kb-priority-item,
+[data-theme="sand"] .kb-priority-item {
+  background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.92)) !important;
+  border: 1px solid rgba(217, 119, 6, 0.3) !important;
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .kb-priority-item:hover {
+  background: linear-gradient(180deg, rgba(254, 243, 199, 0.98), rgba(253, 230, 138, 0.9)) !important;
+  border-color: rgba(217, 119, 6, 0.5) !important;
+}
+
+[data-theme="sand"] .kb-priority-item span,
+[data-theme="sand"] .kb-priority-item div {
+  color: #451a03 !important;
+}
+
+/* Sand theme: KB Priority panel header */
+[data-theme="sand"] .kb-priority-header,
+[data-theme="sand"] .kb-priority-panel .kb-priority-header {
+  color: #451a03 !important;
+}
+
+[data-theme="sand"] .kb-priority-header strong {
+  color: #78350f !important;
+}
+
+/* Sand theme: KB Tab buttons - force sand styling */
+[data-theme="sand"] .kb-tabs .kb-tab-button,
+[data-theme="sand"] .kb-tab-button {
+  background: rgba(255, 251, 235, 0.95) !important;
+  border: 1px solid rgba(217, 119, 6, 0.4) !important;
+  color: #78350f !important;
+}
+
+[data-theme="sand"] .kb-tabs .kb-tab-button:hover,
+[data-theme="sand"] .kb-tab-button:hover {
+  background: rgba(217, 119, 6, 0.15) !important;
+  border-color: #d97706 !important;
+  color: #92400e !important;
+}
+
+[data-theme="sand"] .kb-tabs .kb-tab-button.active,
+[data-theme="sand"] .kb-tab-button.active {
+  background: linear-gradient(135deg, #d97706, #b45309) !important;
+  border-color: #d97706 !important;
+  color: #ffffff !important;
+}
+
+/* Sand theme: All card titles */
+[data-theme="sand"] .card > b,
+[data-theme="sand"] .overview-card > h2 {
+  color: #92400e !important;
+}
+
+/* Sand theme: Card content text */
+[data-theme="sand"] .card div,
+[data-theme="sand"] .card span,
+[data-theme="sand"] .card p {
+  color: #451a03;
+}
+
+[data-theme="sand"] .card .muted {
+  color: #78350f !important;
 }
 
 /* Light theme: Status cards - high specificity to override operations.css */

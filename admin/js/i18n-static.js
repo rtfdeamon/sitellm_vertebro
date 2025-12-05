@@ -2123,6 +2123,26 @@
         ru: 'идентификатор',
         match: ['идентификатор'],
       },
+      theme: {
+        en: 'Theme',
+        ru: 'Тема',
+        match: ['Тема'],
+      },
+      themeDark: {
+        en: 'Dark',
+        ru: 'Тёмная',
+        match: ['Тёмная'],
+      },
+      themeLight: {
+        en: 'Light',
+        ru: 'Светлая',
+        match: ['Светлая'],
+      },
+      themeSand: {
+        en: 'Sand',
+        ru: 'Песочная',
+        match: ['Песочная'],
+      },
     },
     titles: {
       refreshButtonTitle: {
