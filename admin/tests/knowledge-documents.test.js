@@ -44,7 +44,6 @@ const setupDom = () => {
     </div>
     <button id="saveLLM"></button>
     <button id="pingLLM"></button>
-    <input id="ollamaBase" value="">
     <input id="ollamaModel" value="">
     <div id="pingRes"></div>
     <button id="copyLogs"></button>
@@ -159,9 +158,6 @@ const mockFetchSequence = (responses) => {
         ok: true,
         json: async () => ({
           model: null,
-          backend: 'local',
-          device: 'cpu',
-          ollama_base: null,
         }),
       });
     }

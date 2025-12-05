@@ -186,21 +186,6 @@
         ru: 'LLM',
         match: ['LLM'],
       },
-      llmModelLabel: {
-        en: 'Model: {value}',
-        ru: 'Модель: {value}',
-        match: ['Модель: {value}'],
-      },
-      llmBackendLabel: {
-        en: 'Backend: {value}',
-        ru: 'Бэкенд: {value}',
-        match: ['Бэкенд: {value}'],
-      },
-      llmDeviceLabel: {
-        en: 'Device: {value}',
-        ru: 'Устройство: {value}',
-        match: ['Устройство: {value}'],
-      },
       llmSaveButton: {
         en: 'Save',
         ru: 'Сохранить',
@@ -210,11 +195,6 @@
         en: 'Ping',
         ru: 'Проверить',
         match: ['Проверить'],
-      },
-      ollamaBaseLabel: {
-        en: 'Ollama Base:',
-        ru: 'Адрес Ollama:',
-        match: ['Адрес Ollama:'],
       },
       ollamaModelNameLabel: {
         en: 'Model name:',

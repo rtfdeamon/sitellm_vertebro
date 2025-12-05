@@ -3537,20 +3537,11 @@ async def start_voice_training(request: Request, project: str = Form(...)) -> OR
 @llm_router.get("/info")
 def llm_info() -> dict[str, object]:
     """Expose basic LLM runtime details for the admin panel."""
-    device = getattr(llm_client, "DEVICE", "unknown")
     model = getattr(llm_client, "MODEL_NAME", None)
-    ollama = getattr(llm_client, "OLLAMA_BASE", None)
-    backend = "ollama" if ollama else (device or "local")
-    return {
-        "model": model,
-        "device": device,
-        "backend": backend,
-        "ollama_base": ollama,
-    }
+    return {"model": model}
 
 
 class LLMConfig(BaseModel):
-    ollama_base: str | None = None
     model: str | None = None
 
 
@@ -3560,8 +3551,6 @@ def llm_set_config(cfg: LLMConfig) -> ORJSONResponse:
 
     This does not persist across process restarts; intended for quick ops.
     """
-    if cfg.ollama_base is not None:
-        llm_client.OLLAMA_BASE = cfg.ollama_base or None
     if cfg.model:
         llm_client.MODEL_NAME = cfg.model
     return ORJSONResponse(llm_info())
