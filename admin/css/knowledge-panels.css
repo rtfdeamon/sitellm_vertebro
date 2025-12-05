@@ -66,7 +66,7 @@
 }
 
 .kb-table-wrapper {
-  max-height: 260px;
+  max-height: 600px;
   overflow: auto;
   border: 1px solid var(--card-border);
   border-radius: 10px;
@@ -270,4 +270,76 @@
 
 @keyframes thinking-spin {
   to { transform: rotate(360deg); }
+}
+
+/* Image preview thumbnails */
+.knowledge-thumb-wrapper {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+.knowledge-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(15, 23, 42, 0.4);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.knowledge-thumb:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(96, 165, 250, 0.3);
+  border-color: rgba(96, 165, 250, 0.5);
+}
+
+/* Lightbox for full image preview */
+.knowledge-lightbox {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  z-index: 10000;
+  cursor: zoom-out;
+}
+
+.knowledge-lightbox.active {
+  display: flex;
+}
+
+.knowledge-lightbox img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* Photo table: name column header - aligned above filename text */
+.kb-category table th:first-child {
+  min-width: 280px;
+  padding-left: 116px;
+}
+
+/* Photo table: name cell with badge, thumbnail and filename */
+.kb-category table td:first-child {
+  min-width: 280px;
+  white-space: nowrap;
+  max-width: 520px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Photo table: description cell truncation */
+.kb-category table td:nth-child(2) {
+  max-width: 380px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

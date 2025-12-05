@@ -1991,7 +1991,7 @@ def run(
                         image_links = extract_image_links(
                             raw_payload,
                             page_url,
-                            require_alt=not effective_collect_books,
+                            require_alt=False,  # Collect images even without alt text
                         )
                     else:
                         image_links = []
@@ -2201,10 +2201,8 @@ def run(
                         image_url = image_info.get("url") or ""
                         if not image_url or image_url in downloaded_images:
                             continue
-                        if allowed_domain:
-                            parsed_image = urlparse.urlsplit(image_url)
-                            if parsed_image.netloc and parsed_image.netloc.lower() != allowed_domain.lower():
-                                continue
+                        # Note: Domain filtering removed to allow images from CDNs
+                        # and subdomains (cdn.*, static.*, img.*, etc.)
                         try:
                             img_resp = await img_client.get(image_url)
                             img_resp.raise_for_status()
