@@ -22,10 +22,6 @@ const knowledgeServiceCard = document.querySelector('.knowledge-service-card');
 const knowledgeServiceMode = document.getElementById('knowledgeServiceMode');
 const knowledgeServicePrompt = document.getElementById('knowledgeServicePrompt');
 const knowledgeServiceRun = document.getElementById('knowledgeServiceRun');
-const llmModelEl = document.getElementById('model');
-const llmBackendEl = document.getElementById('backend');
-const llmDeviceEl = document.getElementById('device');
-const ollamaBaseInput = document.getElementById('ollamaBase');
 const ollamaModelInput = document.getElementById('ollamaModel');
 const llmPingResultEl = document.getElementById('pingRes');
 const saveLlmButton = document.getElementById('saveLLM');
@@ -692,20 +688,6 @@ async function refreshClusterAvailability() {
   }
 }
 
-const LLM_FIELD_PLACEHOLDER = '—';
-
-const setLlmFieldValue = (element, value) => {
-  if (!element) return;
-  const display =
-    value === null || value === undefined || value === ''
-      ? LLM_FIELD_PLACEHOLDER
-      : String(value);
-  element.textContent = display;
-  if (element.dataset && Object.prototype.hasOwnProperty.call(element.dataset, 'i18nValue')) {
-    element.dataset.i18nValue = display;
-  }
-};
-
 const setInputValue = (input, value) => {
   if (!input) return;
   const normalized = value === null || value === undefined ? '' : String(value);
@@ -715,13 +697,7 @@ const setInputValue = (input, value) => {
 };
 
 async function pollLLM() {
-  if (
-    !llmModelEl &&
-    !llmBackendEl &&
-    !llmDeviceEl &&
-    !ollamaBaseInput &&
-    !ollamaModelInput
-  ) {
+  if (!ollamaModelInput) {
     return;
   }
   try {
@@ -730,14 +706,8 @@ async function pollLLM() {
       throw new Error(`HTTP ${resp.status}`);
     }
     const data = await resp.json();
-    setLlmFieldValue(llmModelEl, data?.model);
-    setLlmFieldValue(llmBackendEl, data?.backend);
-    setLlmFieldValue(llmDeviceEl, data?.device);
-    setInputValue(ollamaBaseInput, data?.ollama_base);
-    if (ollamaModelInput) {
-      const targetModel = typeof data?.model === 'string' ? data.model : '';
-      setInputValue(ollamaModelInput, targetModel);
-    }
+    const targetModel = typeof data?.model === 'string' ? data.model : '';
+    setInputValue(ollamaModelInput, targetModel);
   } catch (error) {
     console.error('llm_info_refresh_failed', error);
   }
@@ -3374,9 +3344,8 @@ document.addEventListener('admin:poll-status-ready', () => {
 // Controls for LLM config
 if (saveLlmButton) {
   saveLlmButton.addEventListener('click', async () => {
-    const base = ollamaBaseInput ? ollamaBaseInput.value.trim() : '';
     const model = ollamaModelInput ? ollamaModelInput.value.trim() : '';
-    const payload = { ollama_base: base || null, model: model || null };
+    const payload = { model: model || null };
     try {
       const resp = await fetch('/api/v1/llm/config', {
         method: 'POST',

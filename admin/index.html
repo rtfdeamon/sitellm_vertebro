@@ -3,7 +3,7 @@
   - Start crawler (URL / depth / pages)
   - Live crawler counters
   - Services health (Mongo/Redis/Qdrant)
-  - LLM runtime (model, backend, device)
+  - LLM runtime (model)
   - App process metrics (CPU/Mem)
 -->
 <!DOCTYPE html>
@@ -727,14 +727,7 @@
     <section id="block-llm" class="dashboard-stack span-4" data-block-id="llm" data-block-group="manage">
       <div class="card control-card">
         <b data-i18n="llmSectionTitle">LLM</b>
-        <div data-i18n-wrapper="llmModelLabel">Model: <code id="model" data-i18n-value>–</code></div>
-        <div data-i18n-wrapper="llmBackendLabel">Backend: <span id="backend" data-i18n-value>–</span></div>
-        <div data-i18n-wrapper="llmDeviceLabel">Device: <span id="device" data-i18n-value>–</span></div>
         <div style="margin-top:6px;">
-          <label>
-            <span data-i18n="ollamaBaseLabel">Ollama Base:</span>
-            <input type="text" id="ollamaBase" placeholder="http://host.docker.internal:11434" style="width:100%">
-          </label>
           <label style="display:block; margin-top:6px;">
             <span data-i18n="ollamaModelNameLabel">Model name:</span>
             <input type="text" id="ollamaModel" placeholder="yandex/YandexGPT-5-Lite-8B-instruct-GGUF:latest" style="width:100%">
