@@ -40,6 +40,7 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
     ) -> None:
         super().__init__(app)
         self.enabled = _env_bool("RATE_LIMIT_ENABLED", True)
+        self.bypass_authenticated = _env_bool("RATE_LIMIT_BYPASS_AUTHENTICATED", True)
         self.max_requests = max(
             1, int(max_requests or os.getenv("RATE_LIMIT_REQUESTS_PER_MINUTE", "120"))
         )
@@ -47,13 +48,15 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
             1, int(window_seconds or os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
         )
         raw_exempt = exempt_paths or os.getenv(
-            "RATE_LIMIT_EXEMPT_PATHS", "/healthz,/health,/metrics"
+            "RATE_LIMIT_EXEMPT_PATHS",
+            "/healthz,/health,/metrics,/admin,/static,/assets,/favicon.ico",
         ).split(",")
         self.exempt_paths = tuple(path.strip() for path in raw_exempt if path.strip())
         self._redis = redis
         logger.info(
             "rate limit init",
             enabled=self.enabled,
+            bypass_authenticated=self.bypass_authenticated,
             max_requests=self.max_requests,
             window_seconds=self.window_seconds,
             exempt_paths=self.exempt_paths,
@@ -62,12 +65,22 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
     def _is_exempt(self, path: str) -> bool:
         return any(path.startswith(prefix) for prefix in self.exempt_paths)
 
+    def _is_authenticated(self, request: Request) -> bool:
+        if request.cookies.get("admin_session"):
+            return True
+        auth_header = request.headers.get("Authorization", "")
+        return auth_header.startswith("Basic ") or auth_header.startswith("Bearer ")
+
     def _key(self, request: Request) -> str:
         client = request.client.host if request.client else "unknown"
         return f"ratelimit:{client}"
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if not self.enabled or self._is_exempt(request.url.path):
+        if (
+            not self.enabled
+            or self._is_exempt(request.url.path)
+            or (self.bypass_authenticated and self._is_authenticated(request))
+        ):
             return await call_next(request)
 
         redis = self._redis or _get_redis()

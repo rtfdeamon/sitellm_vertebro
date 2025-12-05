@@ -807,6 +807,10 @@ def _resolve_admin_project(
 
 def _admin_logout_response(request: Request) -> PlainTextResponse:
     identity = _get_admin_identity(request)
+    # Drop server-side session and expire the client cookie
+    session_token = request.cookies.get("admin_session")
+    if session_token:
+        BasicAuthMiddleware._sessions.pop(session_token, None)
     if identity:
         logger.info(
             "admin_logout",
@@ -814,6 +818,7 @@ def _admin_logout_response(request: Request) -> PlainTextResponse:
             is_super=identity.is_super,
         )
     response = PlainTextResponse("Logged out", status_code=401)
+    response.delete_cookie("admin_session")
     response.headers["WWW-Authenticate"] = 'Basic realm="admin"'
     return response
 
@@ -2626,6 +2631,8 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         method = request.method.upper()
         normalized_path = path.rstrip("/") or "/"
+        auth = request.headers.get("Authorization") or ""
+        has_basic_auth = auth.lower().startswith("basic ")
         is_protected = (
             any(path.startswith(prefix) for prefix in self._PROTECTED_PREFIXES)
             or (method, normalized_path) in self._PROTECTED_EXACT
@@ -2638,11 +2645,11 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
         if session_token and session_token in self._sessions:
             identity = self._sessions[session_token]
             request.state.admin = identity
-            return await call_next(request)
+            response = await call_next(request)
+            return response
 
         # Try HTTP Basic Auth
-        auth = request.headers.get("Authorization")
-        if auth and auth.lower().startswith("basic "):
+        if has_basic_auth:
             encoded = ""
             try:
                 encoded = auth.split(" ", 1)[1].strip()
@@ -2656,18 +2663,18 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
                 if identity:
                     request.state.admin = identity
                     # Create session token and store it
-                    session_token = hashlib.sha256(f"{username}:{uuid4()}".encode()).hexdigest()
-                    self._sessions[session_token] = identity
-                    response = await call_next(request)
-                    # Set cookie with session token
-                    response.set_cookie(
-                        key="admin_session",
-                        value=session_token,
-                        httponly=True,
-                        samesite="lax",
-                        max_age=86400  # 24 hours
-                    )
-                    return response
+                session_token = hashlib.sha256(f"{username}:{uuid4()}".encode()).hexdigest()
+                self._sessions[session_token] = identity
+                response = await call_next(request)
+                # Set cookie with session token
+                response.set_cookie(
+                    key="admin_session",
+                    value=session_token,
+                    httponly=True,
+                    samesite="lax",
+                    max_age=86400  # 24 hours
+                )
+                return response
                 logger.warning("admin_auth_invalid_credentials", username=username)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

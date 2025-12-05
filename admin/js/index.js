@@ -3206,6 +3206,43 @@ if (knowledgeServiceRefresh) {
 if (feedbackRefreshBtn) {
   feedbackRefreshBtn.addEventListener('click', () => fetchFeedbackTasks());
 }
+if (logoutButton) {
+  logoutButton.addEventListener('click', async () => {
+    const originalLabel = logoutButton.textContent;
+    logoutButton.disabled = true;
+    logoutButton.textContent = translate('logoutProgress', 'Signing out…');
+    try {
+      clearAuthHeaderForBase?.(ADMIN_BASE_KEY);
+      setStoredAdminUser?.('');
+      sessionStorage?.removeItem(ADMIN_AUTH_HEADER_SESSION_KEY);
+      // Attempt to logout on server while session cookie is still present
+      try {
+        await fetch('/api/v1/admin/logout', { method: 'POST', credentials: 'same-origin' });
+      } catch (error) {
+        console.warn('admin_logout_request_failed', error);
+      }
+      try {
+        document.cookie = 'admin_session=; Max-Age=0; path=/; SameSite=Lax';
+      } catch (error) {
+        console.warn('admin_logout_cookie_clear_failed', error);
+      }
+      try {
+        await fetchWithAdminAuth(
+          '/api/v1/admin/logout',
+          { method: 'POST', credentials: 'same-origin' },
+          { reauthenticate: false },
+        );
+      } catch (error) {
+        console.warn('admin_logout_request_failed', error);
+      }
+      window.location.href = '/admin?logged_out=1';
+    } catch (error) {
+      console.error('admin_logout_reload_failed', error);
+      logoutButton.disabled = false;
+      logoutButton.textContent = originalLabel;
+    }
+  });
+}
 
 if (kbProjectInput && getActiveProjectKey()) {
   kbProjectInput.value = getActiveProjectKey();
