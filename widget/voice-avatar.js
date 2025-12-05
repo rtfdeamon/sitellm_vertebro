@@ -478,9 +478,12 @@
     }
     .sitellm-voice-widget {
       position: relative;
+      display: flex;
+      flex-direction: column;
       width: min(360px, 100%);
       max-height: 520px;
-      overflow: visible;
+      height: auto;
+      overflow: hidden;
       margin: 24px auto;
       font-family: "Inter", system-ui, -apple-system, Segoe UI, sans-serif;
       border-radius: 24px;
@@ -496,6 +499,7 @@
     }
     .sitellm-voice-header {
       display: flex;
+      flex: 0 0 auto;
       align-items: center;
       justify-content: space-between;
       margin-bottom: 18px;
@@ -615,10 +619,28 @@
     .sitellm-voice-content {
       display: flex;
       flex-direction: column;
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .sitellm-voice-scrollable {
+      flex: 1 1 auto;
+      display: flex;
+      flex-direction: column;
       gap: 18px;
-      max-height: 360px;
       overflow-y: auto;
       padding-right: 6px;
+      min-height: 0;
+    }
+    .sitellm-voice-fixed-controls {
+      flex: 0 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      padding-top: 12px;
+      background: inherit;
+      max-height: 250px;
+      overflow: visible;
     }
     .sitellm-voice-status {
       font-size: 13px;
@@ -645,7 +667,8 @@
       display: flex;
       gap: 12px;
       align-items: center;
-      margin-top: 18px;
+      margin-top: 0;
+      flex-shrink: 0;
     }
     .sitellm-voice-mic {
       flex: none;
@@ -702,17 +725,18 @@
       display: none;
       width: 100%;
       margin-top: 12px;
+      flex-shrink: 0;
     }
     .sitellm-voice-input textarea {
       width: 100%;
       min-height: 64px;
-      max-height: 800px;
+      max-height: 120px;
       border-radius: 14px;
       border: 1px solid rgba(${accent}, 0.24);
       padding: 12px;
       font-family: inherit;
       font-size: 14px;
-      resize: vertical;
+      resize: none;
       overflow-y: auto;
     }
     .sitellm-voice-input button {
@@ -1834,14 +1858,22 @@
       <button type="button">Send</button>
     `;
 
+    const scrollableContent = document.createElement('div');
+    scrollableContent.className = 'sitellm-voice-scrollable';
+    scrollableContent.appendChild(status);
+    scrollableContent.appendChild(readingPanel);
+    scrollableContent.appendChild(sourcesPanel);
+
+    const fixedControls = document.createElement('div');
+    fixedControls.className = 'sitellm-voice-fixed-controls';
+    fixedControls.appendChild(actions);
+    fixedControls.appendChild(manualInput);
+    fixedControls.appendChild(errorBox);
+
     const content = document.createElement('div');
     content.className = 'sitellm-voice-content';
-    content.appendChild(status);
-    content.appendChild(readingPanel);
-    content.appendChild(sourcesPanel);
-    content.appendChild(actions);
-    content.appendChild(manualInput);
-    content.appendChild(errorBox);
+    content.appendChild(scrollableContent);
+    content.appendChild(fixedControls);
 
     container.appendChild(header);
     container.appendChild(content);
@@ -1852,24 +1884,12 @@
     const manualTextarea = manualInput.querySelector('textarea');
     const manualButton = manualInput.querySelector('button');
 
-    // Auto-resize textarea and scroll button into view
+    // Auto-resize textarea within fixed bounds
     if (manualTextarea) {
       manualTextarea.addEventListener('input', () => {
         manualTextarea.style.height = 'auto';
-        const newHeight = Math.min(manualTextarea.scrollHeight, 800);
+        const newHeight = Math.min(manualTextarea.scrollHeight, 120);
         manualTextarea.style.height = newHeight + 'px';
-
-        // Always ensure button is visible after resize
-        requestAnimationFrame(() => {
-          if (manualButton) {
-            // Use scrollIntoView with block: 'nearest' to ensure button stays in view
-            manualButton.scrollIntoView({
-              behavior: 'smooth',
-              block: 'nearest',
-              inline: 'nearest'
-            });
-          }
-        });
       });
     }
 

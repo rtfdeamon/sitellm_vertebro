@@ -2906,6 +2906,7 @@ app.add_middleware(
     allow_origins=["*"] if allow_all_origins else cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition"],
 )
 # Rate limiting middleware - protects API from abuse
 app.add_middleware(RateLimitingMiddleware)
