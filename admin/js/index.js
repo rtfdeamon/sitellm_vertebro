@@ -881,6 +881,27 @@ function isInternalAdminDownloadUrl(href) {
   }
 }
 
+// Image lightbox for full-size preview
+let imageLightbox = null;
+
+function openImageLightbox(src, alt) {
+  if (!imageLightbox) {
+    imageLightbox = document.createElement('div');
+    imageLightbox.className = 'knowledge-lightbox';
+    imageLightbox.addEventListener('click', () => {
+      imageLightbox.classList.remove('active');
+    });
+    document.body.appendChild(imageLightbox);
+  }
+  imageLightbox.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = alt;
+  img.addEventListener('click', (e) => e.stopPropagation());
+  imageLightbox.appendChild(img);
+  imageLightbox.classList.add('active');
+}
+
 function parseFilenameFromDisposition(header) {
   if (!header) return null;
   const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
@@ -921,10 +942,16 @@ async function downloadKnowledgeDocumentWithAuth(href, fallbackName) {
         const blob = await response.blob();
         let filename = fallbackName || 'document';
         const disposition = response.headers.get('Content-Disposition') || response.headers.get('content-disposition');
+        console.log('knowledge_download_headers', {
+          disposition,
+          allHeaders: [...response.headers.entries()],
+          fallbackName,
+        });
         const extracted = parseFilenameFromDisposition(disposition);
         if (extracted) {
           filename = extracted;
         }
+        console.log('knowledge_download_filename', { extracted, filename, disposition });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
@@ -980,6 +1007,28 @@ const renderKnowledgeRow = (doc, category) => {
   if (autoBadge) nameTd.appendChild(autoBadge);
   const typeBadge = createTypeBadge(category);
   if (typeBadge) nameTd.appendChild(typeBadge);
+
+  // Add image preview thumbnail for images
+  const imageUrl = doc.fileId
+    ? `/api/v1/admin/knowledge/documents/${encodeURIComponent(doc.fileId)}`
+    : doc.downloadUrl || doc.url;
+  if (category === 'images' && imageUrl) {
+    const thumbWrapper = document.createElement('div');
+    thumbWrapper.className = 'knowledge-thumb-wrapper';
+    const thumb = document.createElement('img');
+    thumb.src = imageUrl;
+    thumb.alt = doc.name || 'preview';
+    thumb.className = 'knowledge-thumb';
+    thumb.loading = 'lazy';
+    thumb.onerror = () => { thumb.style.display = 'none'; };
+    thumb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openImageLightbox(imageUrl, doc.name || 'image');
+    });
+    thumbWrapper.appendChild(thumb);
+    nameTd.appendChild(thumbWrapper);
+  }
+
   nameTd.appendChild(document.createTextNode(doc.name || '–'));
 
   const descTd = document.createElement('td');
