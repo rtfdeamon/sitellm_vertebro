@@ -36,12 +36,20 @@
 
 .feedback-list { display: flex; flex-direction: column; gap: 12px; max-height: 320px; overflow-y: auto; padding-right: 4px; }
 .feedback-item { border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 12px; padding: 12px; background: rgba(15, 23, 42, 0.45); display: grid; gap: 8px; }
-.feedback-meta { display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px; color: rgba(148, 163, 184, 0.8); }
-.feedback-message { font-size: 13px; color: #e2e8f0; white-space: pre-wrap; }
+.feedback-meta,
+.feedback-item-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; font-size: 12px; color: rgba(148, 163, 184, 0.8); line-height: 1.4; }
+.feedback-message,
+.feedback-item-message { font-size: 13px; color: #e2e8f0; white-space: pre-wrap; line-height: 1.45; word-break: break-word; }
 .feedback-actions-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .feedback-actions-row select { background: rgba(17, 24, 39, 0.6); border: 1px solid rgba(148, 163, 184, 0.35); border-radius: 999px; color: #e2e8f0; padding: 6px 12px; font-size: 12px; }
-.feedback-status-badge { border-radius: 999px; padding: 2px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(79, 124, 255, 0.16); color: rgba(196, 210, 255, 0.95); }
+.feedback-status-badge,
+.feedback-status { border-radius: 999px; padding: 2px 8px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(79, 124, 255, 0.16); color: rgba(196, 210, 255, 0.95); }
 .feedback-timestamp { font-size: 11px; color: rgba(148, 163, 184, 0.7); }
+.feedback-project,
+.feedback-page,
+.feedback-author,
+.feedback-count { color: rgba(226, 232, 240, 0.92); }
+.feedback-note { font-size: 12px; color: rgba(148, 163, 184, 0.85); line-height: 1.4; }
 
 #kbForm {
   display: grid !important;
