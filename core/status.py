@@ -135,8 +135,87 @@ def _compute_system_cpu_fallback() -> float | None:
         return None
 
 
+def _read_proc_meminfo() -> dict[str, int]:
+    """Parse /proc/meminfo into a mapping of values in bytes."""
+    meminfo: dict[str, int] = {}
+    with open("/proc/meminfo", "r", encoding="utf-8", errors="ignore") as handle:
+        for line in handle:
+            if ":" not in line:
+                continue
+            key, raw_value = line.split(":", 1)
+            tokens = raw_value.strip().split()
+            number = None
+            for token in tokens:
+                try:
+                    number = float(token)
+                    break
+                except ValueError:
+                    continue
+            if number is None:
+                continue
+            scale = 1
+            for token in tokens[1:]:
+                upper = token.upper()
+                if upper.startswith("KB"):
+                    scale = 1024
+                    break
+                if upper.startswith("MB"):
+                    scale = 1024 * 1024
+                    break
+                if upper.startswith("GB"):
+                    scale = 1024 * 1024 * 1024
+                    break
+            meminfo[key.strip()] = int(number * scale)
+    return meminfo
+
+
 def _compute_system_memory_fallback() -> tuple[int | None, int | None, float | None]:
-    """Return total/used memory using sysconf or /proc reads."""
+    """Return total/used memory using /proc/meminfo or sysconf fallback.
+
+    Uses MemAvailable from /proc/meminfo which accounts for reclaimable
+    buffers and cache, giving accurate "available for applications" memory.
+    Falls back to sysconf on systems without /proc/meminfo.
+    """
+    # Primary method: /proc/meminfo (more accurate, accounts for reclaimable cache)
+    try:
+        meminfo = _read_proc_meminfo()
+        total = meminfo.get("MemTotal")
+        if total is not None:
+            available = meminfo.get("MemAvailable")
+            if available is not None:
+                used = int(total) - int(available)
+            else:
+                # Fallback for old kernels without MemAvailable
+                free = meminfo.get("MemFree")
+                buffers = meminfo.get("Buffers")
+                cached = meminfo.get("Cached")
+                sreclaimable = meminfo.get("SReclaimable")
+                shmem = meminfo.get("Shmem")
+
+                if all(value is not None for value in (free, buffers, cached)):
+                    cache_total = int(cached)
+                    if sreclaimable is not None:
+                        cache_total += int(sreclaimable)
+                    if shmem is not None:
+                        cache_total -= int(shmem)
+                    cache_total = max(0, cache_total)
+                    used = int(total) - int(free) - int(buffers) - cache_total
+                else:
+                    used = None
+
+            if used is not None:
+                used = max(0, min(int(used), int(total)))
+                percent = (used / total) * 100.0 if total else None
+                if percent is not None:
+                    percent = max(0.0, min(percent, 100.0))
+            else:
+                percent = None
+
+            return int(total), used, percent
+    except Exception:
+        pass
+
+    # Fallback method: sysconf (for non-Linux systems)
     try:
         page_size = int(os.sysconf("SC_PAGE_SIZE"))
         phys_pages = int(os.sysconf("SC_PHYS_PAGES"))
@@ -150,46 +229,6 @@ def _compute_system_memory_fallback() -> tuple[int | None, int | None, float | N
             if total_bytes:
                 percent = (used_bytes / total_bytes) * 100.0
         return total_bytes, used_bytes, percent
-    except Exception:
-        pass
-
-    try:
-        meminfo: dict[str, int] = {}
-        with open("/proc/meminfo", "r", encoding="utf-8", errors="ignore") as handle:
-            for line in handle:
-                if ":" not in line:
-                    continue
-                key, raw_value = line.split(":", 1)
-                tokens = raw_value.strip().split()
-                number = None
-                for token in tokens:
-                    try:
-                        number = float(token)
-                        break
-                    except ValueError:
-                        continue
-                if number is None:
-                    continue
-                scale = 1
-                for token in tokens[1:]:
-                    upper = token.upper()
-                    if upper.startswith("KB"):
-                        scale = 1024
-                        break
-                    if upper.startswith("MB"):
-                        scale = 1024 * 1024
-                        break
-                    if upper.startswith("GB"):
-                        scale = 1024 * 1024 * 1024
-                        break
-                meminfo[key.strip()] = int(number * scale)
-        total = meminfo.get("MemTotal")
-        available = meminfo.get("MemAvailable")
-        if total is None:
-            return None, None, None
-        used = total - available if available is not None else None
-        percent = (used / total) * 100.0 if used is not None else None
-        return total, used, percent
     except Exception:
         return None, None, None
 
