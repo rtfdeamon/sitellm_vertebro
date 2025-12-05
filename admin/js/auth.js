@@ -196,7 +196,10 @@
     async function verifyAdminCredentials(header) {
       try {
         const response = await nativeFetch('/api/v1/admin/session', {
-          headers: { Authorization: header },
+          headers: {
+            Authorization: header,
+            'X-Admin-Force-Login': '1',
+          },
           credentials: 'same-origin',
         });
         return { ok: response.ok, status: response.status };
