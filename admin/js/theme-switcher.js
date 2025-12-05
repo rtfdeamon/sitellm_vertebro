@@ -110,6 +110,22 @@ class ThemeSwitcher {
 
     // Update button states
     this.updateButtonStates();
+
+    // Dispatch event to trigger i18n re-translation for dynamically created elements
+    // Wait for window.load to ensure all scripts (including index.js) are fully loaded
+    const dispatchThemeReady = () => {
+      document.dispatchEvent(new CustomEvent('theme-switcher-ready'));
+    };
+
+    if (document.readyState === 'complete') {
+      // Page already loaded, dispatch after a short delay
+      setTimeout(dispatchThemeReady, 100);
+    } else {
+      // Wait for full page load
+      window.addEventListener('load', () => {
+        setTimeout(dispatchThemeReady, 100);
+      });
+    }
   }
 
   /**

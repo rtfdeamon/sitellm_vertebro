@@ -606,6 +606,28 @@ const KNOWLEDGE_SOURCES = [
 
 applyLanguage(getCurrentLanguage());
 
+// Re-apply translations when theme switcher creates its elements
+document.addEventListener('theme-switcher-ready', () => {
+  applyLanguage(getCurrentLanguage());
+});
+
+// Watch for theme switcher creation and apply translations immediately
+const themeSwitcherObserver = new MutationObserver((mutations) => {
+  for (const mutation of mutations) {
+    for (const node of mutation.addedNodes) {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const switcher = node.id === 'themeSwitcher' ? node : node.querySelector?.('#themeSwitcher');
+        if (switcher) {
+          applyLanguage(getCurrentLanguage());
+          themeSwitcherObserver.disconnect();
+          return;
+        }
+      }
+    }
+  }
+});
+themeSwitcherObserver.observe(document.body, { childList: true, subtree: true });
+
 const normalizeProjectName = (value) => (typeof value === 'string' ? value.trim().toLowerCase() : '');
 
 const getKnowledgeProjectKey = () => {
