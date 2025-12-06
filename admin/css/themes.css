@@ -1327,6 +1327,16 @@
   color: #92400e;
 }
 
+[data-theme="sand"] .status-tiles > .card.status-card .ok,
+[data-theme="sand"] .card.status-card .ok {
+  color: var(--success) !important;
+}
+
+[data-theme="sand"] .status-tiles > .card.status-card .bad,
+[data-theme="sand"] .card.status-card .bad {
+  color: var(--danger) !important;
+}
+
 /* Sand theme: Control cards */
 [data-theme="sand"] .card.control-card {
   background: linear-gradient(180deg, rgba(255, 251, 235, 0.98), rgba(254, 243, 199, 0.95)) !important;

@@ -1755,8 +1755,11 @@ class MongoClient:
         token = stored.get("ya_disk_token")
         if isinstance(token, str):
             cleaned = token.strip()
-            return cleaned or None
-        return None
+            if cleaned:
+                return cleaned
+        # Fallback to environment variable
+        env_token = os.getenv("YA_DISK_TOKEN", "").strip()
+        return env_token or None
 
     async def update_backup_settings(
         self,
