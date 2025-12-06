@@ -40,7 +40,11 @@ def build_mongo_uri(
     password: str | None,
     auth_database: str | None = None,
 ) -> str:
-    """Return a MongoDB URI suitable for command-line tools."""
+    """Return a MongoDB URI suitable for command-line tools.
+
+    Uses authSource query parameter to specify authentication database,
+    keeping the URI path free for mongodump's --db option.
+    """
 
     auth_db = auth_database or "admin"
     has_user = username is not None and str(username) != ""
@@ -49,11 +53,11 @@ def build_mongo_uri(
         user = quote_plus(str(username))
         passwd = quote_plus(str(password))
         auth_part = f"{user}:{passwd}@"
-        auth_db_part = f"/{auth_db}"
+        auth_source = f"?authSource={auth_db}"
     else:
         auth_part = ""
-        auth_db_part = ""
-    return f"mongodb://{auth_part}{host}:{port}{auth_db_part}"
+        auth_source = ""
+    return f"mongodb://{auth_part}{host}:{port}/{auth_source}"
 
 
 def normalize_remote_folder(folder: str | None) -> str:
@@ -202,7 +206,7 @@ def _download_archive(
     if not href:
         raise BackupError("ya_disk_download_href_missing")
 
-    stream = client.get(href, headers=headers)
+    stream = client.get(href, headers=headers, follow_redirects=True)
     if stream.status_code != 200:
         raise BackupError(f"ya_disk_download_failed: {stream.text}")
     with destination.open("wb") as handle:
@@ -240,6 +244,7 @@ def perform_restore(
             f"--uri={mongo_uri}",
             f"--db={database}",
             "--drop",
+            f"--nsExclude={database}.backup_jobs",
             f"--archive={archive_path}",
             "--gzip",
         ]

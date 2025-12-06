@@ -48,9 +48,9 @@ FROM python:3.10-slim AS runtime
 
 # Минимально необходимые рантайм-зависимости
 # - libopenblas: so-шки для numpy/scipy
-# - build-essential и др. — чтобы при необходимости собирать колёса
 # - curl/ca-certificates: для healthcheck и любых http-пингов
 ARG APT_CACHE_ID=apt-cache-runtime
+ARG TARGETARCH
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
     bash -euxo pipefail -c '\
       export DEBIAN_FRONTEND=noninteractive; \
@@ -58,6 +58,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=${APT_CACHE_ID} \
       apt-get install -y --no-install-recommends \
         libopenblas0-pthread \
         curl ca-certificates; \
+      # Устанавливаем MongoDB Database Tools (mongodump/mongorestore) для backup
+      # Используем Ubuntu пакеты которые совместимы с Debian
+      ARCH=$(dpkg --print-architecture); \
+      if [ "$ARCH" = "amd64" ]; then \
+        MONGO_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-x86_64-100.10.0.deb"; \
+      elif [ "$ARCH" = "arm64" ]; then \
+        MONGO_TOOLS_URL="https://fastdl.mongodb.org/tools/db/mongodb-database-tools-ubuntu2204-arm64-100.10.0.deb"; \
+      else \
+        echo "Unsupported architecture: $ARCH"; exit 1; \
+      fi; \
+      curl -fsSL "$MONGO_TOOLS_URL" -o /tmp/mongo-tools.deb; \
+      dpkg -i /tmp/mongo-tools.deb || apt-get install -f -y; \
+      rm /tmp/mongo-tools.deb; \
       apt-get clean; \
       rm -rf /var/lib/apt/lists/* \
     '

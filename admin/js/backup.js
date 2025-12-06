@@ -156,6 +156,8 @@
       scheduleBackupRefresh(false);
       return;
     }
+    // Enable form controls for super admin after successful data load
+    setBackupControlsDisabled(false);
     ensureBackupTimezones();
     backupState = {
       settings: data?.settings || {},
