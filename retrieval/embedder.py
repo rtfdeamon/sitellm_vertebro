@@ -8,11 +8,13 @@ from typing import List
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import structlog
+import os
+
 
 logger = structlog.get_logger(__name__)
 
 
-_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"
+_MODEL_NAME = os.getenv("EMB_MODEL_NAME", "ai-forever/sbert_large_nlu_ru")
 _encoder: SentenceTransformer | None = None
 
 

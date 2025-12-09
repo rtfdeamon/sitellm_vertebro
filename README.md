@@ -132,6 +132,43 @@ sources changed before performing an initial crawl.  The PowerShell variant
 
 ---
 
+**Local Embeddings Cache**
+
+Download the model weights once to the host (via VPN if needed for Hugging Face access):
+
+```python
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="ai-forever/sbert_large_nlu_ru",
+    local_dir="/home/main/sbert_model",
+)
+```
+
+Change `repo_id` and `local_dir` if you are using a different encoder or directory.
+
+Mount the folder to the required services in `compose.yaml`:
+
+```yaml
+services:
+  celery_worker:
+    volumes:
+      - /home/main/sbert_model:/models/sbert_model:ro
+  app:
+    volumes:
+      - /home/main/sbert_model:/models/sbert_model:ro
+```
+
+The path `/models/sbert_model` inside the container must match the one read by the code.
+
+In `.env` (or `.env.example`) set `EMB_MODEL_NAME=/models/sbert_model` so that `worker.py` and `retrieval/embedder.py` use this exact path.
+
+After updating the configuration, run `docker compose up -d --build` for the containers to pick up the volume and environment variables.
+
+This approach eliminates repeated model downloads on every launch and speeds up service startup.
+
+---
+
 ## Knowledge Workflow
 
 1. **Create a project** – provide a slug, optional display title and the

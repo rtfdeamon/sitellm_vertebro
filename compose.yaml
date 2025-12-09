@@ -60,6 +60,7 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      EMB_MODEL_NAME: ${EMB_MODEL_NAME:-/models/sbert_model}
       REDIS_URL: ${REDIS_URL}
       MONGO_URI: ${MONGO_URI:-mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongo:27017}
       CRAWL_START_URL: ${CRAWL_START_URL:-https://mmvs.ru}
@@ -79,6 +80,7 @@ services:
         condition: service_started
     volumes:
       - ./data/hf:/root/.cache/huggingface
+      - /home/main/sbert_model:/models/sbert_model:ro
     deploy:
       # CPU limits left unset to support hosts without CPU CFS; override via a custom compose file if needed.
       resources:
@@ -151,6 +153,7 @@ services:
     ports:
       - "${HOST_APP_PORT:-18000}:8000"
     environment:
+      EMB_MODEL_NAME: ${EMB_MODEL_NAME:-/models/sbert_model}
       REDIS_URL: ${REDIS_URL}
       APP_HOST: "0.0.0.0"
       APP_PORT: "8000"
@@ -165,6 +168,7 @@ services:
       APP_ENABLE_TLS: ${APP_ENABLE_TLS:-0}
     volumes:
       - ./data/hf:/root/.cache/huggingface
+      - /home/main/sbert_model:/models/sbert_model:ro
       - ./certs:/certs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
