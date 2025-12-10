@@ -121,8 +121,8 @@ Useful overrides:
 If your host can reach the internet only via an HTTP(S) proxy, export the variables before building or bake them into the Compose overrides:
 
 ```bash
-export HTTP_PROXY=http://192.168.100.150:3129
-export HTTPS_PROXY=http://192.168.100.150:3129
+export HTTP_PROXY=
+export HTTPS_PROXY=
 docker compose -f compose.yaml -f compose.gpu.yaml up --build
 ```
 
