@@ -118,6 +118,16 @@ Useful overrides:
 - `compose.gpu.yaml` – enable GPU-backed inference.
 - `docker-compose.override.windows.yml` – CPU/memory limits for Windows hosts.
 
+If your host can reach the internet only via an HTTP(S) proxy, export the variables before building or bake them into the Compose overrides:
+
+```bash
+export HTTP_PROXY=http://192.168.100.150:3129
+export HTTPS_PROXY=http://192.168.100.150:3129
+docker compose -f compose.yaml -f compose.gpu.yaml up --build
+```
+
+The provided `compose.yaml` already forwards these values to the backend Dockerfile via `x-backend-build.args`, so every stage (app, Celery worker/beat) picks up the proxy automatically.
+
 > Tip: use `python3 scripts/update_versions.py --format shell` to bump the
 > service-specific image versions before calling `docker compose build`. This
 > keeps unchanged containers cached and mirrors the behaviour of the deploy
