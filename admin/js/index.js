@@ -29,6 +29,8 @@ const pingLlmButton = document.getElementById('pingLLM');
 const copyLogsButton = document.getElementById('copyLogs');
 const logsElement = document.getElementById('logs');
 const logInfoElement = document.getElementById('logInfo');
+const promptLogsElement = document.getElementById('promptLogs');
+const logLimitInput = document.getElementById('logLimit');
 const knowledgeServiceEndpoints = [
   '/api/v1/knowledge/service',
   '/api/v1/admin/knowledge/service',
@@ -3513,10 +3515,64 @@ if (copyLogsButton && logsElement && logInfoElement) {
   });
 }
 
+async function fetchMainLogs() {
+  if (!logsElement) return;
+  const limit = logLimitInput?.value || 200;
+  try {
+    const resp = await fetch(`/api/v1/admin/logs?limit=${limit}`, { credentials: 'same-origin' });
+    if (!resp.ok) throw new Error('logs request failed');
+    const data = await resp.json();
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    if (lines.length) {
+      delete logsElement.dataset.i18n;
+      logsElement.textContent = lines.join('\n');
+    } else {
+      logsElement.dataset.i18n = 'knowledgeServiceNoData';
+      logsElement.textContent = translate('knowledgeServiceNoData', 'No data');
+    }
+  } catch (error) {
+    console.error('main_logs_fetch_failed', error);
+    logsElement.dataset.i18n = 'logsCopyFailed';
+    logsElement.textContent = translate('logsCopyFailed', 'Failed to load logs');
+  }
+}
+
+async function fetchPromptLogs() {
+  if (!promptLogsElement) return;
+  try {
+    const resp = await fetch('/api/v1/admin/logs?limit=500', { credentials: 'same-origin' });
+    if (!resp.ok) throw new Error('logs request failed');
+    const data = await resp.json();
+    const lines = Array.isArray(data.lines) ? data.lines : [];
+    const filtered = lines.filter((line) => /llm|prompt|chat|completion|generate/i.test(line));
+    if (filtered.length) {
+      delete promptLogsElement.dataset.i18n;
+      promptLogsElement.textContent = filtered.slice(0, 50).join('\n');
+    } else {
+      promptLogsElement.dataset.i18n = 'knowledgeServiceNoData';
+      promptLogsElement.textContent = translate('knowledgeServiceNoData', 'No data');
+    }
+  } catch (error) {
+    console.error('prompt_logs_fetch_failed', error);
+    promptLogsElement.dataset.i18n = 'logsCopyFailed';
+    promptLogsElement.textContent = translate('logsCopyFailed', 'Failed to load');
+  }
+}
+
+function initLogsPanel() {
+  fetchMainLogs();
+  fetchPromptLogs();
+  if (logLimitInput) {
+    logLimitInput.addEventListener('change', fetchMainLogs);
+  }
+}
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     pollLLM();
+    initLogsPanel();
   });
 } else {
   pollLLM();
+  initLogsPanel();
 }
