@@ -12,7 +12,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-_MODEL_NAME = "ai-forever/sbert_large_nlu_ru"
+_MODEL_NAME = "deepvk/USER-bge-m3"
 _encoder: SentenceTransformer | None = None
 
 
@@ -28,7 +28,7 @@ def get_encoder() -> SentenceTransformer:
 @lru_cache(maxsize=128)
 def _encode_cached(text: str) -> np.ndarray:
     """Return the embedding vector for ``text`` using cached encoder."""
-    vector = get_encoder().encode(text)
+    vector = get_encoder().encode(text, normalize_embeddings=True)
     logger.debug("encoded", length=len(text))
     return vector
 

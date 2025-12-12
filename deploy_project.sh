@@ -515,8 +515,8 @@ if [ -n "$QDRANT_PLATFORM" ]; then
   update_env_var QDRANT_PLATFORM "$QDRANT_PLATFORM"
 fi
 update_env_var QDRANT_COLLECTION "documents"
-update_env_var EMB_MODEL_NAME "ai-forever/sbert_large_nlu_ru"
-update_env_var RERANK_MODEL_NAME "sbert_cross_ru"
+update_env_var EMB_MODEL_NAME "deepvk/USER-bge-m3"
+update_env_var RERANK_MODEL_NAME "DiTy/cross-encoder-russian-msmarco"
 update_env_var MONGO_HOST "$MONGO_HOST"
 update_env_var MONGO_PORT "$MONGO_PORT"
 update_env_var MONGO_USERNAME "$MONGO_USERNAME"
