@@ -12,7 +12,7 @@ logger = structlog.get_logger(__name__)
 from .search import Doc
 
 
-_MODEL_NAME = "sbert_cross_ru"
+_MODEL_NAME = "DiTy/cross-encoder-russian-msmarco"
 _reranker: CrossEncoder | None = None
 
 

@@ -69,7 +69,7 @@
 - **Sentence Transformers 2.7+** - текстовые эмбеддинги
 - **LangChain 0.3+** - оркестрация LLM
 - Модель по умолчанию: `Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it`
-- Эмбеддинги: `ai-forever/sbert_large_nlu_ru`
+- Эмбеддинги: `deepvk/USER-bge-m3`
 
 #### Хранилище данных
 - **MongoDB 5+** - документы, метаданные, история
@@ -226,12 +226,12 @@ Celery воркер для фоновых задач:
 #### `rerank.py` - Перерангирование
 - Опциональный cross-encoder reranking
 - Повышает релевантность результатов поиска
-- Модель: `sbert_cross_ru`
+- Модель: `DiTy/cross-encoder-russian-msmarco`
 
 #### `embedder.py` - Эмбеддинги
 - Обертка HuggingFace embeddings
 - Поддержка локальных и удаленных моделей
-- Модель по умолчанию: `ai-forever/sbert_large_nlu_ru`
+- Модель по умолчанию: `deepvk/USER-bge-m3`
 
 ### 5. LLM интеграция (`/backend`)
 
@@ -890,8 +890,8 @@ QDRANT_GRPC_PORT=6334               # gRPC порт
 ```bash
 LLM_MODEL=Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it
 OLLAMA_BASE_URL=http://ollama:11434
-EMB_MODEL_NAME=ai-forever/sbert_large_nlu_ru
-RERANK_MODEL_NAME=sbert_cross_ru
+EMB_MODEL_NAME=deepvk/USER-bge-m3
+RERANK_MODEL_NAME=DiTy/cross-encoder-russian-msmarco
 USE_GPU=false                       # Использовать GPU
 ```
 
@@ -931,8 +931,8 @@ TELEGRAM_API_BASE=http://app:8000   # API база
 
 **Модели:**
 - LLM: `Vikhrmodels/Vikhr-YandexGPT-5-Lite-8B-it`
-- Embeddings: `ai-forever/sbert_large_nlu_ru`
-- Rerank: `sbert_cross_ru`
+- Embeddings: `deepvk/USER-bge-m3`
+- Rerank: `DiTy/cross-encoder-russian-msmarco`
 - GPU: отключен
 
 **Краулер:**
