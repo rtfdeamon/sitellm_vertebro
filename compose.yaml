@@ -87,10 +87,11 @@ services:
         reservations:
           memory: 1G
     healthcheck:
-      <<: *health_defaults
-      test:
-        - CMD-SHELL
-        - pgrep -af "[c]elery.*worker" >/dev/null || exit 1
+      test: ["CMD-SHELL", "celery -A worker inspect ping >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
 
   celery_beat:
     # Scheduler for periodic vector store updates
@@ -118,10 +119,11 @@ services:
         reservations:
           memory: 256M
     healthcheck:
-      <<: *health_defaults
-      test:
-        - CMD-SHELL
-        - pgrep -af "[c]elery.*beat" >/dev/null || exit 1
+      test: ["CMD-SHELL", "celery -A worker inspect ping >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 180s
 
   ollama:
     # Local Ollama runtime hosting GGUF models

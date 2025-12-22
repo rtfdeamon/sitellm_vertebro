@@ -1,0 +1,44 @@
+[1mdiff --git a/core/status.py b/core/status.py[m
+[1mindex 8afac0d..16dff90 100644[m
+[1m--- a/core/status.py[m
+[1m+++ b/core/status.py[m
+[36m@@ -378,7 +378,7 @@[m [mdef get_status(domain: str | None = None) -> Status:[m
+         mongo_docs = 0[m
+         last_crawl_ts = None[m
+ [m
+[31m-    # Qdrant health check[m
+[32m+[m[32m    # Qdrant health check and points count[m
+     qdrant_ok = False[m
+     points = 0[m
+     try:[m
+[36m@@ -387,6 +387,30 @@[m [mdef get_status(domain: str | None = None) -> Status:[m
+             resp = client.get(f"{QDRANT_URL}/healthz")[m
+             if resp.status_code == 200:[m
+                 qdrant_ok = True[m
+[32m+[m[32m                # Count points with optional project filter[m
+[32m+[m[32m                count_body: dict = {}[m
+[32m+[m[32m                if domain:[m
+[32m+[m[32m                    count_body["filter"] = {[m
+[32m+[m[32m                        "must": [[m
+[32m+[m[32m                            {"key": "project", "match": {"value": domain}}[m
+[32m+[m[32m                        ][m
+[32m+[m[32m                    }[m
+[32m+[m[32m                try:[m
+[32m+[m[32m                    count_resp = client.post([m
+[32m+[m[32m                        f"{QDRANT_URL}/collections/documents/points/count",[m
+[32m+[m[32m                        json=count_body,[m
+[32m+[m[32m                        timeout=2.0,[m
+[32m+[m[32m                    )[m
+[32m+[m[32m                    if count_resp.status_code == 200:[m
+[32m+[m[32m                        count_data = count_resp.json()[m
+[32m+[m[32m                        points = count_data.get("result", {}).get("count", 0)[m
+[32m+[m[32m                except Exception as count_exc:[m
+[32m+[m[32m                    logger.warning([m
+[32m+[m[32m                        "qdrant points count failed",[m
+[32m+[m[32m                        url=QDRANT_URL,[m
+[32m+[m[32m                        project=domain,[m
+[32m+[m[32m                        error=str(count_exc),[m
+[32m+[m[32m                    )[m
+     except Exception as exc:[m
+         logger.warning([m
+             "qdrant connection failed",[m
