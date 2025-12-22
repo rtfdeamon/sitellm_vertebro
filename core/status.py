@@ -378,7 +378,7 @@ def get_status(domain: str | None = None) -> Status:
         mongo_docs = 0
         last_crawl_ts = None
 
-    # Qdrant health check
+    # Qdrant health check and points count
     qdrant_ok = False
     points = 0
     try:
@@ -387,6 +387,30 @@ def get_status(domain: str | None = None) -> Status:
             resp = client.get(f"{QDRANT_URL}/healthz")
             if resp.status_code == 200:
                 qdrant_ok = True
+                # Count points with optional project filter
+                count_body: dict = {}
+                if domain:
+                    count_body["filter"] = {
+                        "must": [
+                            {"key": "project", "match": {"value": domain}}
+                        ]
+                    }
+                try:
+                    count_resp = client.post(
+                        f"{QDRANT_URL}/collections/documents/points/count",
+                        json=count_body,
+                        timeout=2.0,
+                    )
+                    if count_resp.status_code == 200:
+                        count_data = count_resp.json()
+                        points = count_data.get("result", {}).get("count", 0)
+                except Exception as count_exc:
+                    logger.warning(
+                        "qdrant points count failed",
+                        url=QDRANT_URL,
+                        project=domain,
+                        error=str(count_exc),
+                    )
     except Exception as exc:
         logger.warning(
             "qdrant connection failed",
