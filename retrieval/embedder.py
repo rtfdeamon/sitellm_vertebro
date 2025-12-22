@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import List
 
+import torch
 import numpy as np
 from sentence_transformers import SentenceTransformer
 import structlog
@@ -14,6 +15,7 @@ logger = structlog.get_logger(__name__)
 
 _MODEL_NAME = "deepvk/USER-bge-m3"
 _encoder: SentenceTransformer | None = None
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 def get_encoder() -> SentenceTransformer:
@@ -21,7 +23,7 @@ def get_encoder() -> SentenceTransformer:
     global _encoder
     if _encoder is None:
         logger.info("loading embedding model", model=_MODEL_NAME)
-        _encoder = SentenceTransformer(_MODEL_NAME)
+        _encoder = SentenceTransformer(_MODEL_NAME, device=DEVICE)
     return _encoder
 
 

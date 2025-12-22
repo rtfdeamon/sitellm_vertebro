@@ -8,9 +8,11 @@ services:
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     gpus: "all"
+    runtime: nvidia
 
   celery_worker:
     environment:
       NVIDIA_VISIBLE_DEVICES: "all"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
     gpus: "all"
+    runtime: nvidia
