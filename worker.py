@@ -395,7 +395,10 @@ def _build_embeddings_model():
 
     model_name = os.getenv("EMB_MODEL_NAME") or settings.emb_model_name
     logger.info("using huggingface embeddings", model=model_name)
-    return HuggingFaceEmbeddings(model_name=model_name)
+    return HuggingFaceEmbeddings(
+        model_name=model_name,
+        model_kwargs={"device": "cuda"},
+    )
 
 
 def get_document_parser() -> DocumentsParser:
