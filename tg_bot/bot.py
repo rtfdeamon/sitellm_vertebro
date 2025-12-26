@@ -435,7 +435,8 @@ async def _get_project_features(project: str | None) -> dict[str, bool]:
     now = time.time()
 
     settings = get_settings()
-    api_url = f"{settings.api_base_url}/api/v1/llm/project-config"
+    base_url = str(settings.api_base_url).rstrip("/")
+    api_url = f"{base_url}/api/v1/llm/project-config"
     emotions_enabled = True
     debug_enabled = False
     debug_info_enabled = True

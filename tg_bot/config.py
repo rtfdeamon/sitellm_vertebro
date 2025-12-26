@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Any
 
-from pydantic import AnyUrl, ConfigDict
+from pydantic import AliasChoices, AnyUrl, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     """Configuration for the standalone Telegram bot."""
 
     bot_token: str | None = None
-    project: str = "default"
+    project: str = Field(
+        default="default",
+        validation_alias=AliasChoices("PROJECT", "PROJECT_NAME"),
+    )
     api_base_url: AnyUrl = "http://app:8000"
     backend_url: AnyUrl = "http://app:8000/api/v1/llm/chat"
     backend_verify_ssl: bool = True
